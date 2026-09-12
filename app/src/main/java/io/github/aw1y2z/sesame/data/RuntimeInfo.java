@@ -5,6 +5,7 @@ import org.json.JSONObject;
 
 import io.github.aw1y2z.sesame.util.FileUtil;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 import java.util.Objects;
@@ -38,11 +39,7 @@ public class RuntimeInfo {
     private RuntimeInfo() {
         userId = UserIdMap.getCurrentUid();
         String content = FileUtil.readFromFile(FileUtil.runtimeInfoFile(userId));
-        try {
-            joAll = new JSONObject(content);
-        } catch (Exception ignored) {
-            joAll = new JSONObject();
-        }
+        joAll = MyUtils.newJSONObject(content);
         try {
             if (!joAll.has(userId)) {
                 joAll.put(userId, new JSONObject());

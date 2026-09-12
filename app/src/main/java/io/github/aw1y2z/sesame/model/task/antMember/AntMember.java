@@ -1416,7 +1416,7 @@ public class AntMember extends ModelTask {
                 String triggerResponse = AntMemberRpcCall.trigger(taskId);
                 JSONObject triggerResult = new JSONObject(triggerResponse);
                 // 检查 success 字段
-                boolean success = triggerResult.getBoolean("success");
+                boolean success = triggerResult.optBoolean("success");
                 if (success) {
                     // 从 triggerResponse 中获取 prizeSendInfo 数组
                     JSONArray prizeSendInfo = triggerResult.getJSONArray("prizeSendInfo");
@@ -1443,7 +1443,7 @@ public class AntMember extends ModelTask {
             String response = AntMemberRpcCall.queryOrdinaryTask();
             JSONObject jsonResponse = new JSONObject(response);
             // 检查是否请求成功
-            if (jsonResponse.getBoolean("success")) {
+            if (jsonResponse.optBoolean("success")) {
                 // 获取任务详细列表
                 JSONArray taskDetailList = jsonResponse.getJSONArray("taskDetailList");
                 // 遍历任务详细列表
@@ -1463,7 +1463,7 @@ public class AntMember extends ModelTask {
                         // 解析 sendtriggerResponse
                         JSONObject sendTriggerJson = new JSONObject(sendtriggerResponse);
                         // 判断任务是否成功
-                        if (sendTriggerJson.getBoolean("success")) {
+                        if (sendTriggerJson.optBoolean("success")) {
                             // 从 sendtriggerResponse 中获取 prizeSendInfo 数组
                             JSONArray prizeSendInfo = sendTriggerJson.getJSONArray("prizeSendInfo");
                             // 获取 prizeName

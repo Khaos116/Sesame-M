@@ -168,6 +168,10 @@ public class Log {
         }
     }
 
+    public static void record(String TAG, String msg) {
+        record("[" + TAG + "]: " + msg);
+    }
+
     public static void system(String tag, String s) {
         // system 记录(配置加载/保存/重置等)同样受「查看运行日志」开关控制,
         // 避免关闭运行日志后仍持续写入 system 日志
@@ -227,6 +231,10 @@ public class Log {
         i(s);
     }
 
+    public static void error(String TAG, String msg) {
+        error("[" + TAG + "]: " + msg);
+    }
+
     public static void printStackTrace(Throwable t) {
         String str = android.util.Log.getStackTraceString(t);
         if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog()) {
@@ -239,6 +247,14 @@ public class Log {
         String str = tag + ", " + android.util.Log.getStackTraceString(t);
         if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog()) {
             errorLogger.i(str);
+        }
+        i(str);
+    }
+
+    public static void printStackTrace(String TAG, String msg, Throwable th) {
+        String str = "[" + TAG + "] Throwable error: " + android.util.Log.getStackTraceString(th);
+        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog()) {
+            errorLogger.i(str + "[" + msg + "]");
         }
         i(str);
     }

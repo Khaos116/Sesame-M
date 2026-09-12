@@ -7,6 +7,7 @@ import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
+import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -183,6 +184,14 @@ public class TimeUtil {
 
     public static Calendar getNow() {
         return Calendar.getInstance();
+    }
+
+    /**
+     * 固定 GMT+8 的日历实例，供业务日期判断（签到窗口、每日重置等）在非东八区宿主设备上保持一致。
+     * 与 {@code MyUtils.getInstance()} 对齐，供合并 fork 代码时直接映射调用点，见 doc/MyFix.md。
+     */
+    public static Calendar getInstanceGMT8() {
+        return Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));
     }
 
     public static void sleep(long millis) {

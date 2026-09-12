@@ -49,6 +49,7 @@ import io.github.aw1y2z.sesame.data.task.ModelTask;
 import io.github.aw1y2z.sesame.entity.AlipayVersion;
 import io.github.aw1y2z.sesame.entity.FriendWatch;
 import io.github.aw1y2z.sesame.entity.RpcEntity;
+import io.github.aw1y2z.sesame.hook.ext.VersionHook;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.model.extensions.TestRpc;
 import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
@@ -61,8 +62,8 @@ import io.github.aw1y2z.sesame.rpc.bridge.RpcVersion;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcIntervalLimit;
 import io.github.aw1y2z.sesame.util.ClassUtil;
 import io.github.aw1y2z.sesame.util.FileUtil;
-import io.github.lazyimmortal.sesame.util.LibraryUtil;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.NotificationUtil;
 import io.github.aw1y2z.sesame.util.PermissionUtil;
 import io.github.aw1y2z.sesame.util.Statistics;
@@ -104,6 +105,24 @@ public class ApplicationHook extends XposedModule {
 
     @Getter
     private static AlipayVersion alipayVersion = new AlipayVersion("");
+
+    /** 真实支付宝版本号，用于日志显示（alipayVersion 可能被 VersionHook 伪装替换） */
+    private static String realAlipayVersion = "";
+
+    /**
+     * 获取伪装后的版本号（默认关闭，需用户在扩展功能页手动开启）。
+     * 开启时返回伪装版本名欺骗服务器，使其认为安装了低版本，从而避免高版本特有的拼图验证。
+     * 对齐 GR2026 main_my ApplicationHook.java#getEffectiveVersion，见 doc/MyFix.md 的移植记录。
+     */
+    public static String getEffectiveVersion() {
+        if (VersionHook.isVersionHookEnabled()) {
+            String fakeName = VersionHook.getFakeVersionName();
+            if (!fakeName.isEmpty()) {
+                return fakeName;
+            }
+        }
+        return alipayVersion.getVersionString();
+    }
 
     @Getter
     private static volatile boolean hooked = false;
@@ -195,28 +214,33 @@ public class ApplicationHook extends XposedModule {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     context = (Context) param.args[0];
-                    alipayVersion = new AlipayVersion(context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName);
+                    // 先记录真实版本号，伪装开关判断延后到 Service.onCreate（此时配置文件可读）
+                    String pkgVersion = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName;
+                    realAlipayVersion = pkgVersion;
+                    alipayVersion = new AlipayVersion(pkgVersion);
                     try {
                         AlipayMiniMarkHelper.init(classLoader);
                         AuthCodeHelper.init(classLoader);
                         AuthCodeHelper.getAuthCode("2021005114632037");
-                        // ========== 关键改动：异步执行 initSimplePageManager，不阻塞 ==========
-                        // 用线程直接执行（项目中大量使用 Thread 方式，贴合风格）
-                        //new Thread(() -> {
-                        //    try {
-                        initSimplePageManager();
-                        //     } catch (Throwable t) {
-                        // 复用项目日志风格，捕获异步执行异常
-                        //         Log.i(TAG, "initSimplePageManager async err:");
-                        //         Log.printStackTrace(TAG, t);
-                        //     }
-                        // }, "InitSimplePageManager-Thread").start();
+                        // initSimplePageManager() 挪到 Service.onCreate 里、版本伪装覆盖 alipayVersion 之后
+                        // 再调用（对齐 GR），这样滑块验证初始化用的是最终生效的（可能已伪装的）版本号，
+                        // 不是这里刚读到的真实版本——见 doc/MyFix.md 的 VersionHook 移植记录
                     } catch (Exception e) {
                         Log.printStackTrace(e);
                     }
                     super.afterHookedMethod(param);
                 }
             });
+            // 注册版本伪装 Hook（默认关闭，通过 VersionHook 统一管理），必须在 attach 钩子实际
+            // 触发、读取 getPackageInfo 之前完成注册，才能让上面的 realAlipayVersion/alipayVersion
+            // 初始化也吃到伪装结果——这里只是注册拦截器，真正是否生效仍受 sEnableVersionHook 门控
+            try {
+                VersionHook.initVersionHook(classLoader);
+                Log.i(TAG, "hook getPackageInfo successfully");
+            } catch (Throwable t) {
+                Log.i(TAG, "hook getPackageInfo err:");
+                Log.printStackTrace(TAG, t);
+            }
             try {
                 XHelpers.findAndHookMethod("com.alipay.mobile.nebulaappproxy.api.rpc.H5AppRpcUpdate", classLoader, "matchVersion", classLoader.loadClass(ClassUtil.H5PAGE_NAME), Map.class, String.class, XC_MethodReplacement.returnConstant(false));
                 Log.i(TAG, "hook matchVersion successfully");
@@ -291,7 +315,23 @@ public class ApplicationHook extends XposedModule {
 
                         Log.i(TAG, "Service onCreate");
                         context = appService.getApplicationContext();
-                        System.load(LibraryUtil.getLibSesamePath(context));
+                        // 庄园饲料任务已全部走 AntFarmRpcCall 的 Java RPC 实现（见 AntFarm.java），
+                        // 不再需要加载 libsesame.so；已移除强制加载，jniLibs/util/LibraryUtil 一并删除，见 doc/MyFix.md
+                        // 此时文件系统已就绪，加载 VersionHook 独立配置并按开关应用伪装版本
+                        VersionHook.ensureVersionConfig(context);
+                        VersionHook.loadVersionConfig();
+                        VersionHook.setAlipayVersion(alipayVersion);
+                        if (VersionHook.isVersionHookEnabled()) {
+                            String fakeVer = VersionHook.getFakeVersionName();
+                            alipayVersion = new AlipayVersion(fakeVer);
+                            Log.record("实际支付宝版本 " + realAlipayVersion + "，已开启伪装版本过滑块（伪装为 " + fakeVer + "）");
+                        }
+                        // 用（可能已伪装的）版本号初始化滑块验证，对齐 GR，见 doc/MyFix.md
+                        try {
+                            initSimplePageManager();
+                        } catch (Exception e) {
+                            Log.printStackTrace(e);
+                        }
                         service = appService;
                         mainHandler = new Handler(Looper.getMainLooper());
                         mainTask = BaseTask.newInstance("MAIN_TASK", new Runnable() {
@@ -303,9 +343,14 @@ public class ApplicationHook extends XposedModule {
                                 if (!init) {
                                     return;
                                 }
-                                Log.record("应用版本：" + alipayVersion.getVersionString());
+                                if (VersionHook.isVersionHookEnabled()) {
+                                    Log.record("应用版本：" + getEffectiveVersion() + "（实际 " + realAlipayVersion + "，已伪装）");
+                                } else {
+                                    Log.record("应用版本：" + getEffectiveVersion());
+                                }
                                 Log.record("模块版本：" + modelVersion + "（交流更新QQ群：694474777）");
-                                Log.record("开始执行");
+                                Log.record("编译时间：" + BuildConfig.BUILD_TIME);
+                                Log.record("开始执行" + MyUtils.recordUserName(getUserId()));
                                 try {
                                     int checkInterval = BaseModel.getCheckInterval().getValue();
                                     if (lastExecTime + 2000 > System.currentTimeMillis()) {
@@ -332,7 +377,7 @@ public class ApplicationHook extends XposedModule {
                                         FutureTask<Boolean> checkTask = new FutureTask<>(AntMemberRpcCall::check);
                                         Thread checkThread = new Thread(checkTask);
                                         checkThread.start();
-                                        if (!checkTask.get(10, TimeUnit.SECONDS)) {
+                                        if (!checkTask.get(30, TimeUnit.SECONDS)) {
                                             long waitTime = 10000 - System.currentTimeMillis() + lastExecTime;
                                             if (waitTime > 0) {
                                                 Thread.sleep(waitTime);
@@ -385,7 +430,7 @@ public class ApplicationHook extends XposedModule {
                                 }
                             }
                         });
-                        dayCalendar = Calendar.getInstance();
+                        dayCalendar = MyUtils.getInstance();
                         Statistics.load();
                         FriendWatch.load();
                         if (initHandler(true)) {
@@ -453,7 +498,8 @@ public class ApplicationHook extends XposedModule {
             unsetWakenAtTimeAlarm();
             try {
                 PendingIntent pendingIntent = PendingIntent.getBroadcast(context, 0, new Intent("com.eg.android.AlipayGphone.sesame.execute"), getPendingIntentFlag());
-                Calendar calendar = Calendar.getInstance();
+                // 按北京时间算"明天 00:00"，否则宿主设备非东八区时这个固定唤醒会偏移到错误的本地时刻
+                Calendar calendar = MyUtils.getInstance();
                 calendar.add(Calendar.DAY_OF_MONTH, 1);
                 calendar.set(Calendar.HOUR_OF_DAY, 0);
                 calendar.set(Calendar.MINUTE, 0);
@@ -557,7 +603,7 @@ public class ApplicationHook extends XposedModule {
                 UserIdMap.initUser(userId);
                 Model.initAllModel();
                 Log.record("模块版本：" + modelVersion);
-                Log.record("开始加载");
+                Log.record("开始加载" + MyUtils.recordUserName(userId));
                 ConfigV2.load(userId);
 
                 boolean enableModule = Model.getModel(BaseModel.class).getEnableField().getValue();
@@ -653,7 +699,7 @@ public class ApplicationHook extends XposedModule {
                 BaseModel.initData();
                 BaseModel.initRpcRequest();
                 Log.record("加载完成");
-                Toast.show("芝麻粒加载成功");
+                Toast.show("芝麻粒加载成功:" + modelVersion);
             }
             offline = false;
             execHandler();
@@ -730,7 +776,10 @@ public class ApplicationHook extends XposedModule {
     }
 
     public static void updateDay() {
-        Calendar nowCalendar = Calendar.getInstance();
+        // 必须和 dayCalendar 的初始化（onCreate 处 MyUtils.getInstance()）用同一个 GMT+8 时钟，
+        // 否则每次跨天重新赋值后 dayCalendar 会静默退回系统时区语义——这是 GR2026 自己都没修全的同类 bug，
+        // 这里没有照抄它，两处一起改成 GMT+8 保持自洽
+        Calendar nowCalendar = MyUtils.getInstance();
         try {
             int nowYear = nowCalendar.get(Calendar.YEAR);
             int nowMonth = nowCalendar.get(Calendar.MONTH);

@@ -76,6 +76,11 @@ public class Status {
      * 金豆，已领取奖励的任务ID
      */
     private final Set<String> goldenBeansTaskReceivedSet = new HashSet<>();
+
+    /**
+     * 福气鱼塘上次执行时间（毫秒），鱼塘用自己独立的执行间隔，不跟随全局间隔。
+     */
+    private Long fishLastExecTime = 0L;
     
     public static Boolean hasFlagToday(String tag) {
         return INSTANCE.flagLogList.contains(tag);
@@ -86,6 +91,10 @@ public class Status {
             INSTANCE.flagLogList.add(tag);
             save();
         }
+    }
+
+    public static void setFlagToday(String tag) {
+        flagToday(tag);
     }
     
     //在写入status中时，重要数据提前记录Uid,一定程度上避免因支付宝账号切换导致标记到下一个账号的少数情况

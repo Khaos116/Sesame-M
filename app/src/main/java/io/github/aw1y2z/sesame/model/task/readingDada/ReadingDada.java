@@ -34,7 +34,7 @@ public class ReadingDada {
             }
             String s = ReadingDadaRpcCall.getQuestion(activityId);
             JSONObject jo = new JSONObject(s);
-            if ("200".equals(jo.getString("resultCode"))) {
+            if ("200".equals(jo.optString("resultCode"))) {
                 JSONArray jsonArray = jo.getJSONArray("options");
                 String answer = AnswerAI.getAnswer(jo.getString("title"), JsonUtil.jsonArrayToList(jsonArray));
                 if (answer == null || answer.isEmpty()) {
@@ -42,7 +42,7 @@ public class ReadingDada {
                 }
                 s = ReadingDadaRpcCall.submitAnswer(activityId, outBizId, jo.getString("questionId"), answer);
                 jo = new JSONObject(s);
-                if ("200".equals(jo.getString("resultCode"))) {
+                if ("200".equals(jo.optString("resultCode"))) {
                     Log.record("答题完成");
                     return true;
                 } else {

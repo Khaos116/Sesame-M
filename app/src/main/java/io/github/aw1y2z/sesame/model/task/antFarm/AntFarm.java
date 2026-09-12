@@ -1838,13 +1838,6 @@ public class AntFarm extends ModelTask {
             } else if (Objects.equals(title, "庄园小课堂")) {
                 isDoTask = doAnswerTask();
             } else {
-                // 检查library是否可用
-                /*try {
-                    isDoTask = LibraryUtil.doFarmTask(task);
-                } catch (UnsatisfiedLinkError e) {
-                    Log.record("Native库不可用，跳过任务: " + title);
-                    isDoTask = false;
-                }*/
                 JSONObject jodoFarmTask = new JSONObject(AntFarmRpcCall.doFarmTask(bizKey));
                 //检查并标记黑名单任务（此处是庄园饲料任务，应写入饲料黑名单而非抽抽乐）
                 MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDoFarmTaskList", title, jodoFarmTask);
@@ -2004,7 +1997,7 @@ public class AntFarm extends ModelTask {
                 if (MessageUtil.checkMemo(TAG, jo)) {
                     Log.farm("使用道具🎭[" + toolType.nickName() + "]#剩余" + (toolCount - 1) + "张");
                     return true;
-                } else if (Objects.equals("3D16", jo.getString("resultCode"))) {
+                } else if (Objects.equals("3D16", jo.optString("resultCode"))) {
                     Status.flagToday("farm::useFarmToolLimit::" + toolType);
                 }
                 break;
@@ -2306,7 +2299,7 @@ public class AntFarm extends ModelTask {
                 JSONObject orchardFoodMaterialStatus = jo.getJSONObject("orchardFoodMaterialStatus");
                 if ("FINISHED".equals(orchardFoodMaterialStatus.optString("foodStatus"))) {
                     jo = new JSONObject(AntFarmRpcCall.farmFoodMaterialCollect());
-                    if ("100".equals(jo.getString("resultCode"))) {
+                    if ("100".equals(jo.optString("resultCode"))) {
                         Log.farm("小鸡厨房👨🏻‍🍳农场食材#领取[" + jo.getInt("foodMaterialAddCount") + "g食材]");
                     } else {
                         Log.i(TAG, jo.toString());
@@ -2669,7 +2662,7 @@ public class AntFarm extends ModelTask {
                         if (MessageUtil.checkSuccess(TAG, joReceived)) {
                             int incAwardCount = joReceived.optInt("incAwardCount");
                             JSONObject taskConfigResultVO = joReceived.optJSONObject("taskConfigResultVO");
-                            String awardType = taskConfigResultVO.optString("awardType");
+                            String awardType = taskConfigResultVO == null ? "null" : taskConfigResultVO.optString("awardType");
                             Log.farm("小鸡乐园🎖️领取[" + title + "]奖励[" + awardType + "*" + incAwardCount + "]");
                         }
                     }
@@ -3670,9 +3663,98 @@ public class AntFarm extends ModelTask {
             if (familyOptions.getValue().contains("shareToFriends")) {
                 familyShareToFriends(ownerGroupId, familyUserIds, notInviteList);
             }
+
+            // 兑换家庭装饰（消耗装修金）
+            if (familyOptions.getValue().contains("ExchangeFamilyDecoration")) {
+                autoExchangeFamilyDecoration();
+            }
         } catch (Throwable t) {
             Log.i(TAG, "family err:");
             Log.printStackTrace(TAG, t);
+        }
+    }
+
+    /**
+     * 家庭装扮：分类遍历装修金商城家具列表，逐个兑换当前余额买得起、尚未拥有的家具。
+     * 对齐 GR2026 main_my AntFarmFamily.kt#autoExchangeFamilyDecoration（提交 c9287afd）。
+     */
+    private void autoExchangeFamilyDecoration() {
+        Log.record(TAG, "[家庭装扮] 启动分类购买任务...");
+        try {
+            JSONObject familyJo = new JSONObject(AntFarmRpcCall.enterFamily());
+            if (!ResChecker.checkRes(TAG, familyJo)) return;
+
+            String activityId = familyJo.optString("decorationCoinActivityId", "20250808");
+            Log.record(TAG, "[家庭装扮] 当前活动 ID: " + activityId);
+
+            String[] labelTypes = {
+                    "", "recentlyAdded", "sofa", "seat2", "seat4", "seat5", "seat3",
+                    "curtain", "table", "carpet", "mattress", "bed3", "bed4",
+                    "bed5", "ceiling", "windowView", "firstFloor", "firstWall", "secondFloor",
+                    "secondWall", "leftWallDecoration", "rightWallDecoration", "treadmill", "slide"
+            };
+
+            int currentBalance = 0;
+
+            for (String label : labelTypes) {
+                int startIndex = 0;
+                boolean hasMore = true;
+                Log.record(TAG, "[家庭装扮] 正在检查分类: " + (label.isEmpty() ? "新品" : label));
+
+                while (hasMore) {
+                    JSONObject itemJo = new JSONObject(AntFarmRpcCall.getFitmentItemList(activityId, 10, label, startIndex));
+                    if (!ResChecker.checkRes(TAG, itemJo)) break;
+
+                    JSONObject accountInfo = itemJo.optJSONObject("mallAccountInfoVO");
+                    currentBalance = accountInfo == null ? 0 : accountInfo.optJSONObject("holdingCount") == null ? 0 : accountInfo.optJSONObject("holdingCount").optInt("cent", 0);
+
+                    JSONArray items = itemJo.optJSONArray("itemInfoVOList");
+                    if (items == null || items.length() == 0) break;
+
+                    for (int j = 0; j < items.length(); j++) {
+                        JSONObject item = items.getJSONObject(j);
+                        String spuId = item.getString("spuId");
+                        String spuName = item.getString("spuName");
+                        JSONObject minPrice = item.optJSONObject("minPrice");
+                        int price = minPrice == null ? 9999999 : minPrice.optInt("cent", 9999999);
+
+                        JSONArray itemStatusList = item.optJSONArray("itemStatusList");
+                        boolean canBuy = itemStatusList == null || itemStatusList.length() == 0;
+
+                        if (canBuy && currentBalance >= price) {
+                            JSONArray skuList = item.optJSONArray("skuModelList");
+                            if (skuList != null && skuList.length() > 0) {
+                                String skuId = skuList.getJSONObject(0).getString("skuId");
+                                Log.record(TAG, "[家庭装扮] 发现未拥有家具: " + spuName);
+
+                                JSONObject exchangeJo = new JSONObject(AntFarmRpcCall.exchangeBenefit(spuId, skuId, activityId));
+                                if (ResChecker.checkRes(TAG, exchangeJo)) {
+                                    Log.farm("家庭装扮💸#成功购买[" + spuName + "]#消耗[" + (price / 100) + "装修金]");
+                                    currentBalance -= price;
+                                }
+                                TimeUtil.sleep(2000);
+                            }
+                        }
+                    }
+
+                    int nextIndex = itemJo.optInt("nextStartIndex", 0);
+                    boolean hasMoreField = itemJo.optBoolean("hasMore", false);
+                    if (hasMoreField && nextIndex > startIndex) {
+                        startIndex = nextIndex;
+                    } else {
+                        hasMore = false;
+                    }
+                }
+
+                // seat3 分类处理完后余额不足 49 装修金，终止后续更贵分类的遍历
+                if (currentBalance < 4900 && "seat3".equals(label)) {
+                    Log.record(TAG, "[家庭装扮] 装修金不足 49 且已完成 seat3 遍历，终止任务");
+                    break;
+                }
+            }
+            Log.record(TAG, "[家庭装扮] 全量检查任务执行完毕");
+        } catch (Throwable t) {
+            Log.printStackTrace(TAG, "autoExchangeFamilyDecoration 失败", t);
         }
     }
 
@@ -3686,7 +3768,14 @@ public class AntFarm extends ModelTask {
                 return;
             }
             String beAssignUser = userIds.get(RandomUtil.nextInt(0, userIds.size() - 1));
-            JSONArray assignConfigList = jsonObject.getJSONArray("assignConfigList");
+            JSONArray assignConfigList = jsonObject.optJSONArray("assignConfigList");
+            if (assignConfigList == null || assignConfigList.length() == 0) {
+                // 对齐 Sesame-AG AntFarmFamily.kt#assignFamilyMember 的空列表保护：
+                // 原来的 getJSONArray + nextInt(0, length()-1) 在列表为空时会传入非法区间抛异常，
+                // 虽然外层 try/catch 会吞掉，但不如直接判断跳过更清楚
+                Log.record("家庭任务🏡[使用顶梁柱特权] assignConfigList 为空，跳过");
+                return;
+            }
             JSONObject assignConfig = assignConfigList.getJSONObject(RandomUtil.nextInt(0, assignConfigList.length() - 1));
             JSONObject jo = new JSONObject(AntFarmRpcCall.assignFamilyMember(assignConfig.getString("assignAction"), beAssignUser));
             if (MessageUtil.checkMemo(TAG, jo)) {
@@ -3751,13 +3840,16 @@ public class AntFarm extends ModelTask {
     }
 
     private void familyEatTogether(String groupId, JSONArray EatTogetherUserIds) {
-        long currentTime = System.currentTimeMillis();
+        // 按北京时间判断餐段：TimeUtil.isAfterTimeStr/isBeforeTimeStr 内部用系统默认时区的
+        // Calendar.getInstance() 构造时间边界，宿主设备时区不是东八区时会算错餐段窗口，
+        // 与 deliverMsgSend 的 GMT+8 时间窗问题同一类，这里直接取 GMT+8 小时数比较，不经过 TimeUtil。
+        int hourOfDayGmt8 = MyUtils.getInstance().get(Calendar.HOUR_OF_DAY);
         String periodName;
-        if (TimeUtil.isAfterTimeStr(currentTime, "0600") && TimeUtil.isBeforeTimeStr(currentTime, "1100")) {
+        if (hourOfDayGmt8 >= 6 && hourOfDayGmt8 < 11) {
             periodName = "早餐";
-        } else if (TimeUtil.isAfterTimeStr(currentTime, "1100") && TimeUtil.isBeforeTimeStr(currentTime, "1600")) {
+        } else if (hourOfDayGmt8 >= 11 && hourOfDayGmt8 < 16) {
             periodName = "午餐";
-        } else if (TimeUtil.isAfterTimeStr(currentTime, "1600") && TimeUtil.isBeforeTimeStr(currentTime, "2000")) {
+        } else if (hourOfDayGmt8 >= 16 && hourOfDayGmt8 < 20) {
             periodName = "晚餐";
         } else {
             return;
@@ -3814,17 +3906,47 @@ public class AntFarm extends ModelTask {
      *
      * @param familyUserIds 家庭成员 userId 列表（包含自己，方法内部会移除当前账号）
      */
+    /**
+     * 从道早安相关响应里尽量取出可发送的文案：依次尝试常见字段名，顶层取不到再进 data 里找一遍。
+     * 对齐 Sesame-AG AntFarmFamily.kt#extractGreetingContent，用于 QueryExpandContent 字段名不稳定/
+     * 响应结构变化时不至于直接判定整次道早安失败。
+     */
+    private static String extractGreetingContent(JSONObject response) {
+        if (response == null) {
+            return "";
+        }
+        String[] directKeys = {"content", "expandContent", "deliverContent", "msgContent", "text"};
+        for (String key : directKeys) {
+            String value = response.optString(key, "").trim();
+            if (!value.isEmpty()) {
+                return value;
+            }
+        }
+        JSONObject data = response.optJSONObject("data");
+        if (data != null) {
+            for (String key : directKeys) {
+                String value = data.optString(key, "").trim();
+                if (!value.isEmpty()) {
+                    return value;
+                }
+            }
+        }
+        return "";
+    }
+
     private void deliverMsgSend(JSONArray familyAnimalsExceptUser, List<String> familyUserIds) {
         try {
-            // 时间窗口控制：仅允许在「早安时间段」内自动发送（06:00 ~ 10:00）
-            Calendar now = Calendar.getInstance();
-            Calendar startTime = Calendar.getInstance();
+            // 时间窗口控制：仅允许在「早安时间段」内自动发送（06:00 ~ 10:00，按北京时间判断，
+            // 对齐 Sesame-AG AntFarmFamily.kt#deliverMsgSend 用 MyUtils.getInstance()（GMT+8）而不是
+            // 系统默认时区——宿主设备时区不是东八区时，原来的 Calendar.getInstance() 会算错窗口）
+            Calendar now = MyUtils.getInstance();
+            Calendar startTime = MyUtils.getInstance();
             startTime.set(Calendar.HOUR_OF_DAY, 6);
             startTime.set(Calendar.MINUTE, 0);
             startTime.set(Calendar.SECOND, 0);
             startTime.set(Calendar.MILLISECOND, 0);
 
-            Calendar endTime = Calendar.getInstance();
+            Calendar endTime = MyUtils.getInstance();
             endTime.set(Calendar.HOUR_OF_DAY, 10);
             endTime.set(Calendar.MINUTE, 0);
             endTime.set(Calendar.SECOND, 0);
@@ -3929,14 +4051,19 @@ public class AntFarm extends ModelTask {
             String deliverId = resp2.getString("deliverId");
             //String deliverId = System.currentTimeMillis()+UserIdMap.getCurrentUid();
 
-            // 使用 deliverId 确认扩展内容
+            // 使用 deliverId 确认扩展内容；QueryExpandContent 只是可选的二次校验，
+            // 失败或字段缺失时回退到上一步 DeliverContentExpand 已生成的文案，不直接放弃本次道早安
             JSONObject resp3 = new JSONObject(AntFarmRpcCall.QueryExpandContent(deliverId));
-            if (!MessageUtil.checkMemo(TAG, resp3)) {
-                Log.record("家庭任务🏠道早安#QueryExpandContent 调用失败");
-                return;
+            String content = MessageUtil.checkMemo(TAG, resp3) ? extractGreetingContent(resp3) : "";
+            if (StringUtil.isEmpty(content)) {
+                String fallbackContent = extractGreetingContent(resp2);
+                if (StringUtil.isEmpty(fallbackContent)) {
+                    Log.record("家庭任务🏠道早安#未获取到可发送文案，跳过");
+                    return;
+                }
+                Log.record("家庭任务🏠道早安#QueryExpandContent 调用失败，已回退到 DeliverContentExpand 文案");
+                content = fallbackContent;
             }
-
-            String content = resp3.getString("content");
 
             // 最终发送早安消息
             JSONObject resp4 = new JSONObject(AntFarmRpcCall.deliverMsgSend(ownerGroupId, userIds, content, deliverId));

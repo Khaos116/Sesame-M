@@ -47,24 +47,43 @@ android {
             ext.applicationType = "Normal"
         }
     }
+    def keystorePropertiesFile = rootProject.file("keystore.properties")
+    def keystoreProperties = new Properties()
+    def hasKeystoreConfig = keystorePropertiesFile.exists()
+    if (hasKeystoreConfig) {
+        keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    }
+    // 签名密钥/口令不进 Git；keystore.properties 与其引用的 .jks 均在 .gitignore 中。
+    // 未提供 keystore.properties 时（例如 CI 未注入或贡献者本地未配置）跳过 release 签名配置，
+    // 构建仍可完成，只是产物未签名。详见 doc/MyFix.md 的签名同步记录。
+    if (hasKeystoreConfig) {
+        signingConfigs {
+            release {
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                v1SigningEnabled true
+                v2SigningEnabled true
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasKeystoreConfig) {
+                signingConfig signingConfigs.release
+            }
         }
     }
-    // 按 ABI 拆分 APK：仅发布 arm 主流架构，保留 universal 全架构兜底包
+    // 按 ABI 拆分 APK：只发布 arm64-v8a，不再产出 armeabi-v7a 和 universal 兜底包
     splits {
         abi {
             enable true
             reset()
-            include "armeabi-v7a", "arm64-v8a"
-            universalApk true
-        }
-    }
-    sourceSets {
-        main {
-            jniLibs.srcDirs = ['src/main/jniLibs']
+            include "arm64-v8a"
+            universalApk false
         }
     }
     packaging {
@@ -92,6 +111,24 @@ androidComponents {
                 }
             }
             output.outputFileName.set("Sesame-M-Normal${abiTag}-${project.appVersion}.apk")
+        }
+    }
+}
+
+// Release 打包成功后，把本次产出的全部 APK（ABI 拆分包 + universal 兜底包）
+// 按北京时间归档到项目根目录 APK/Release，参考 Sure-Xu 的 assembleLegacyRelease 归档任务，
+// 因为有 ABI 拆分这里改成整个输出目录一起拷贝而不是单个固定文件名。详见 doc/MyFix.md。
+tasks.matching { it.name == 'assembleNormalRelease' }.configureEach {
+    def outputDir = layout.buildDirectory.dir("outputs/apk/normal/release")
+    def archiveDir = rootProject.layout.projectDirectory.dir('APK/Release').asFile.toPath()
+    doLast {
+        def timestamp = new Date().format('yyyyMMdd_HHmmss', TimeZone.getTimeZone('Asia/Shanghai'))
+        java.nio.file.Files.createDirectories(archiveDir)
+        outputDir.get().asFile.listFiles({ File f -> f.name.endsWith('.apk') } as FileFilter)?.each { apk ->
+            def baseName = apk.name[0..-5] // 去掉 ".apk" 后缀
+            def archivedApk = archiveDir.resolve("${baseName}_${timestamp}.apk")
+            java.nio.file.Files.copy(apk.toPath(), archivedApk, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            logger.lifecycle("Release APK 已归档: ${archivedApk}")
         }
     }
 }

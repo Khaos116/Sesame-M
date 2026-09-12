@@ -36,6 +36,11 @@ public class AppConfig {
     private Boolean enableViewErrorLog = true;
     private Boolean enableViewRuntimeLog = true;
 
+    // 对齐 GR2026 MyUtils 的恒真风控跳过函数，这里改为可配置项而非硬编码 true，见 doc/MyFix.md
+    private Boolean closeVerification = true;
+    private Boolean closeErrorFunction = true;
+    private Boolean closeUnRpc = true;
+
     public Boolean getLanguageSimplifiedChinese() {
         return languageSimplifiedChinese;
     }
@@ -80,6 +85,15 @@ public class AppConfig {
 
     public Boolean getEnableViewRuntimeLog() { return enableViewRuntimeLog; }
     public void setEnableViewRuntimeLog(Boolean value) { enableViewRuntimeLog = value; }
+
+    public Boolean getCloseVerification() { return closeVerification; }
+    public void setCloseVerification(Boolean value) { closeVerification = value; }
+
+    public Boolean getCloseErrorFunction() { return closeErrorFunction; }
+    public void setCloseErrorFunction(Boolean value) { closeErrorFunction = value; }
+
+    public Boolean getCloseUnRpc() { return closeUnRpc; }
+    public void setCloseUnRpc(Boolean value) { closeUnRpc = value; }
 
     public static Boolean save() {
         return FileUtil.write2File(toSaveStr(), new File(APP_CONFIG_DIRECTORY_FILE, "appConfig.json"));

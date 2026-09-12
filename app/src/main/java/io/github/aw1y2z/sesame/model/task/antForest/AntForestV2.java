@@ -68,6 +68,7 @@ import io.github.aw1y2z.sesame.util.JsonUtil;
 import io.github.aw1y2z.sesame.util.ListUtil;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
+import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.NotificationUtil;
 import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.Statistics;
@@ -628,7 +629,7 @@ public class AntForestV2 extends ModelTask {
                 if (consumeAnimalPropType.getValue() != ConsumeAnimalPropType.NONE) {
                     if (!canConsumeAnimalProp) {
                         Log.record("已经有动物伙伴在巡护森林");
-                    } else {
+                    } else if (!MyUtils.closeVerification()) {
                         queryAnimalPropList();
                     }
                 }
@@ -641,7 +642,9 @@ public class AntForestV2 extends ModelTask {
                     queryTaskList();
                 }
 
-                giveProp();
+                if (!MyUtils.closeVerification()) {
+                    giveProp();
+                }
                 if (vitalityExchangeBenefit.getValue()) {
                     vitalityExchangeBenefit();
                 }
@@ -1376,13 +1379,13 @@ public class AntForestV2 extends ModelTask {
                     return;
                 }
                 JSONObject jo = new JSONObject(rpcEntity.getResponseString());
-                String resultCode = jo.getString("resultCode");
+                String resultCode = jo.optString("resultCode");
                 if (!"SUCCESS".equalsIgnoreCase(resultCode)) {
                     if ("PARAM_ILLEGAL2".equals(resultCode)) {
-                        Log.record("[" + username + "]" + "能量已被收取,取消重试 错误:" + jo.getString("resultDesc"));
+                        Log.record("[" + username + "]" + "能量已被收取,取消重试 错误:" + jo.optString("resultDesc"));
                         return;
                     }
-                    Log.record("[" + username + "]" + jo.getString("resultDesc"));
+                    Log.record("[" + username + "]" + jo.optString("resultDesc"));
                     if (tryCount < tryCountInt) {
                         collectEnergyEntity.setNeedRetry();
                         collectEnergy(collectEnergyEntity, username);
@@ -1634,6 +1637,7 @@ public class AntForestV2 extends ModelTask {
      * 检查并处理6秒拼手速逻辑（每天主动执行一次）
      */
     private void whackMole() {
+        if (MyUtils.closeVerification()) return;
         try {
             if (whackModeName.getValue() == whackModeNames.CLOSE) {
                 // 检查今天是否已执行过打地鼠
@@ -2066,7 +2070,7 @@ public class AntForestV2 extends ModelTask {
                 TimeUtil.sleep(1500);
                 jo = new JSONObject(s);
 
-                String resultCode = jo.getString("resultCode");
+                String resultCode = jo.optString("resultCode");
                 switch (resultCode) {
                     case "SUCCESS":
                         //记录浇水次数
@@ -2083,11 +2087,11 @@ public class AntForestV2 extends ModelTask {
                         wateredTimes = 3;
                         break label;
                     case "WATERING_USER_LIMIT":
-                        Log.record("好友浇水🚿给[" + UserIdMap.getMaskName(userId) + "]浇水，" + jo.getString("resultDesc"));
+                        Log.record("好友浇水🚿给[" + UserIdMap.getMaskName(userId) + "]浇水，" + jo.optString("resultDesc"));
                         wateredTimes = 3;
                         break label;
                     default:
-                        Log.record("好友浇水🚿" + jo.getString("resultDesc"));
+                        Log.record("好友浇水🚿" + jo.optString("resultDesc"));
                         Log.i(jo.toString());
                         break;
                 }
@@ -2463,6 +2467,14 @@ public class AntForestV2 extends ModelTask {
     }
 
     private Boolean finishTask(String sceneCode, String taskType, String taskTitle) {
+        if (MyUtils.closeUnRpc() && "ANTFOREST_VITALITY_TASK".equals(sceneCode) && taskType != null) {
+            if (taskType.startsWith("GYG_BK_XYK")
+                    || taskType.startsWith("GYG_jinritoutiao")
+                    || taskType.startsWith("GYG_huabeikaitong")) {
+                // 这几类任务不支持通过 RPC 完成，直接跳过而不是让请求失败重试
+                return false;
+            }
+        }
         try {
             JSONObject jo = new JSONObject(AntForestRpcCall.finishTask(sceneCode, taskType));
             //检查并标记黑名单任务
@@ -3631,7 +3643,7 @@ public class AntForestV2 extends ModelTask {
         try {
             String s = AntForestRpcCall.forFriendCollectEnergy(targetUserId, bubbleId);
             JSONObject jo = new JSONObject(s);
-            if ("SUCCESS".equals(jo.getString("resultCode"))) {
+            if ("SUCCESS".equals(jo.optString("resultCode"))) {
                 JSONArray jaBubbles = jo.getJSONArray("bubbles");
                 for (int i = 0; i < jaBubbles.length(); i++) {
                     jo = jaBubbles.getJSONObject(i);
@@ -3646,7 +3658,7 @@ public class AntForestV2 extends ModelTask {
                     Log.i("，UserID：" + targetUserId + "，BubbleId" + bubbleId);
                 }
             } else {
-                Log.record("[" + UserIdMap.getMaskName(targetUserId) + "]" + jo.getString("resultDesc"));
+                Log.record("[" + UserIdMap.getMaskName(targetUserId) + "]" + jo.optString("resultDesc"));
                 Log.i(s);
             }
         } catch (Throwable t) {

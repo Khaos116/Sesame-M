@@ -402,13 +402,7 @@ fun HomeTab(activity: MiuixMainActivity) {
         onDispose { }
     }
 
-    Text(
-        text = "Sesame-M",
-        fontSize = 32.sp,
-        fontWeight = FontWeight.Bold,
-        color = MiuixTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-    )
+    TabTitleRow(title = "Sesame-M")
     Spacer(Modifier.height(16.dp))
 
     Box(
@@ -531,13 +525,7 @@ fun StatisticsTable(activity: MiuixMainActivity) {
 
 @Composable
 fun LogsTab(activity: MiuixMainActivity) {
-    Text(
-        text = "日志",
-        fontSize = 32.sp,
-        fontWeight = FontWeight.Bold,
-        color = MiuixTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
-    )
+    TabTitleRow(title = "日志")
 
     SmallTitle(text = "分类记录")
     CardColumn {
@@ -661,13 +649,7 @@ fun ConfigTab() {
         list
     }
 
-    Text(
-        text = "配置",
-        fontSize = 32.sp,
-        fontWeight = FontWeight.Bold,
-        color = MiuixTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
-    )
+    TabTitleRow(title = "配置")
 
     SmallTitle(text = "配置管理")
     CardColumn {
@@ -689,13 +671,7 @@ fun ConfigTab() {
 fun SettingsTab(activity: MiuixMainActivity) {
     val context = LocalContext.current
 
-    Text(
-        text = "设置",
-        fontSize = 32.sp,
-        fontWeight = FontWeight.Bold,
-        color = MiuixTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
-    )
+    TabTitleRow(title = "设置")
 
     SmallTitle(text = "功能设置")
     CardColumn {
@@ -752,6 +728,31 @@ fun BooleanSwitch(title: String, checked: Boolean, onCheckedChange: (Boolean) ->
         checked = checked,
         onCheckedChange = onCheckedChange
     )
+}
+
+/** 各 TAB 共用的标题行：标题左对齐，右侧以小字显示版本号与编译时间（北京时间），随每次打包更新 */
+@Composable
+fun TabTitleRow(title: String) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Bottom
+    ) {
+        Text(
+            text = title,
+            fontSize = 32.sp,
+            fontWeight = FontWeight.Bold,
+            color = MiuixTheme.colorScheme.onBackground
+        )
+        Text(
+            text = "${io.github.aw1y2z.sesame.BuildConfig.VERSION_NAME}  ${io.github.aw1y2z.sesame.BuildConfig.BUILD_TIME}",
+            fontSize = 12.sp,
+            color = MiuixTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+    }
 }
 
 @Composable

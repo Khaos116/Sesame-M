@@ -743,4 +743,70 @@ public class AntFarmRpcCall {
 
         return ApplicationHook.requestString("com.alipay.charitygamecenter.queryGameList", data);
     }
+
+    /**
+     * 查询最近的几份美食（家庭请客吃美食用）
+     */
+    public static String queryRecentFarmFood(int queryNum) {
+        String args = "[{\"queryNum\": " + queryNum + ",\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\"}]";
+        return ApplicationHook.requestString("com.alipay.antfarm.queryRecentFarmFood", args);
+    }
+
+    /**
+     * 邀请好友加入/访问家庭
+     */
+    public static String inviteFriendVisitFamily(JSONArray receiverUserId) {
+        String args = "[{\"bizType\":\"FAMILY_SHARE\",\"receiverUserId\":" + receiverUserId + ",\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\"}]";
+        return ApplicationHook.requestString("com.alipay.antfarm.inviteFriendVisitFamily", args);
+    }
+
+    /**
+     * 装修金商城 - 分页查询家具列表
+     */
+    public static String getFitmentItemList(String activityId, int pageSize, String labelType, int startIndex) {
+        try {
+            JSONObject args = new JSONObject();
+            args.put("activityId", activityId);
+            if (labelType != null && !labelType.isEmpty()) {
+                args.put("labelType", labelType);
+            }
+            args.put("pageSize", pageSize);
+            args.put("requestType", "NORMAL");
+            args.put("sceneCode", "ANTFARM_FITMENT_MALL");
+            args.put("source", "antfarm");
+            args.put("startIndex", startIndex);
+
+            return ApplicationHook.requestString("com.alipay.antiep.itemList", "[" + args + "]");
+        } catch (JSONException e) {
+            Log.printStackTrace("getFitmentItemList Error", e);
+            return "";
+        }
+    }
+
+    /**
+     * 兑换庄园家具（装修金商城，activityId 取自 enterFamily 返回的 decorationCoinActivityId）
+     */
+    public static String exchangeBenefit(String spuId, String skuId, String activityId) {
+        String requestId = generateRequestId();
+        try {
+            JSONObject requestDataItem = new JSONObject();
+
+            JSONObject context = new JSONObject();
+            context.put("activityId", activityId);
+
+            requestDataItem.put("context", context);
+            requestDataItem.put("requestId", requestId);
+            requestDataItem.put("requestType", "NORMAL");
+            requestDataItem.put("sceneCode", "ANTFARM_FITMENT_MALL");
+            requestDataItem.put("skuId", skuId);
+            requestDataItem.put("source", "H5");
+            requestDataItem.put("spuId", spuId);
+
+            JSONArray requestData = new JSONArray().put(requestDataItem);
+            return ApplicationHook.requestString("com.alipay.antcommonweal.exchange.h5.exchangeBenefit", requestData.toString());
+        } catch (JSONException e) {
+            Log.printStackTrace("exchangeBenefit Error", e);
+            return "";
+        }
+    }
 }

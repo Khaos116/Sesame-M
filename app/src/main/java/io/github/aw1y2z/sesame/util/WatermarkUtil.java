@@ -1,11 +1,15 @@
 package io.github.aw1y2z.sesame.util;
 
+import io.github.aw1y2z.sesame.BuildConfig;
+
 /**
  * 水印工具类
  * 通过JNI从native层获取水印配置信息
  */
 public class WatermarkUtil {
-    
+
+    private static final String mShowDefault = BuildConfig.VERSION_NAME + "  " + BuildConfig.BUILD_TIME;
+
     private static boolean isLibraryLoaded = false;
     
     static {
@@ -24,13 +28,13 @@ public class WatermarkUtil {
      */
     public static String getWatermarkText() {
         if (!isLibraryLoaded) {
-            return "免费模块 交流QQ群:694474777";
+            return mShowDefault;
         }
         try {
             return getWatermarkTextNative();
         } catch (UnsatisfiedLinkError e) {
             //Log.printStackTrace(e);
-            return "免费模块 交流QQ群:694474777";
+            return mShowDefault;
         }
     }
     

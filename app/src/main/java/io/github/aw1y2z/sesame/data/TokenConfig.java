@@ -131,6 +131,30 @@ public class TokenConfig {
         }
     }
     
+    /**
+     * 手动写入一组光盘行动图片 ID，跳过"需要先手动完成一次真实打卡"这一步。
+     * 对齐 GR2026 main_my TokenConfig.java#writeDishImage（提交 2a6d496b）。
+     */
+    public static Boolean writeDishImage(String beforeMealsId, String afterMealsId) {
+        Map<String, String> dishImage = new HashMap<>();
+        dishImage.put("BEFORE_MEALS", beforeMealsId);
+        dishImage.put("AFTER_MEALS", afterMealsId);
+        if (!checkDishImage(dishImage)) {
+            Log.record("写入光盘图片失败: ID 为空或餐前餐后 ID 相同");
+            return false;
+        }
+        Log.record("写入光盘图片: 餐前=" + beforeMealsId + ", 餐后=" + afterMealsId);
+        saveDishImage(dishImage);
+        return true;
+    }
+
+    /** 随机生成一组不冲突的图片 ID 并写入，供不想手动填 ID 时使用。 */
+    public static Boolean writeDishImageWithRandomIds() {
+        String beforeMealsId = java.util.UUID.randomUUID().toString().replace("-", "");
+        String afterMealsId = java.util.UUID.randomUUID().toString().replace("-", "");
+        return writeDishImage(beforeMealsId, afterMealsId);
+    }
+
     public static int getDishImageCount() {
         load();
         return INSTANCE.dishImageList.size();

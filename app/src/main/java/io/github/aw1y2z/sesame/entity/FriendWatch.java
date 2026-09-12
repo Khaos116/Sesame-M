@@ -118,9 +118,10 @@ public class FriendWatch extends IdAndName {
         if (last == 0L) {
             return true;
         }
-        Calendar cLast = Calendar.getInstance();
+        // 按北京时间判断跨天/星期一，同类问题见 AntFarm.deliverMsgSend / familyEatTogether 的修复记录（doc/MyFix.md）
+        Calendar cLast = MyUtils.getInstance();
         cLast.setTimeInMillis(last);
-        Calendar cNow = Calendar.getInstance();
+        Calendar cNow = MyUtils.getInstance();
         if (cLast.get(Calendar.DAY_OF_YEAR) == cNow.get(Calendar.DAY_OF_YEAR)) {
             return false;
         }

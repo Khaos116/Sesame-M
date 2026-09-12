@@ -624,8 +624,8 @@ public class AntOcean extends ModelTask {
             JSONArray seaAreaVOs = jo.getJSONArray("seaAreaVOs");
             for (int i = 0; i < seaAreaVOs.length(); i++) {
                 JSONObject seaAreaVO = seaAreaVOs.getJSONObject(i);
-                JSONArray fishVOs = seaAreaVO.getJSONArray("fishVO");
-                for (int j = 0; j < fishVOs.length(); j++) {
+                JSONArray fishVOs = seaAreaVO.optJSONArray("fishVO");
+                if (fishVOs != null) for (int j = 0; j < fishVOs.length(); j++) {
                     JSONObject fishVO = fishVOs.getJSONObject(j);
                     if (!fishVO.getBoolean("unlock") && "COMPLETED".equals(fishVO.getString("status"))) {
                         String fishId = fishVO.getString("id");
@@ -636,8 +636,8 @@ public class AntOcean extends ModelTask {
                     JSONObject seaAreaExtraCollectVO = seaAreaVO.getJSONObject("seaAreaExtraCollectVO");
                     String ExtraStatus = seaAreaExtraCollectVO.optString("status");
                     if (!ExtraStatus.equals("FINISHED")) {
-                        JSONArray ExtrafishVOs = seaAreaExtraCollectVO.getJSONArray("fishVO");
-                        for (int j = 0; j < ExtrafishVOs.length(); j++) {
+                        JSONArray ExtrafishVOs = seaAreaExtraCollectVO.optJSONArray("fishVO");
+                        if (ExtrafishVOs != null) for (int j = 0; j < ExtrafishVOs.length(); j++) {
                             JSONObject ExtrafishVO = ExtrafishVOs.getJSONObject(j);
                             if (!ExtrafishVO.getBoolean("unlock") && "COMPLETED".equals(ExtrafishVO.getString("status"))) {
                                 String ExtrafishId = ExtrafishVO.getString("id");

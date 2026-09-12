@@ -44,6 +44,7 @@ public class CustomOption extends IdAndName {
         list.add(new CustomOption("deliverMsgSend", "道早安"));
         list.add(new CustomOption("assignRights", "顶梁柱"));
         list.add(new CustomOption("shareToFriends", "分享给好友"));
+        list.add(new CustomOption("ExchangeFamilyDecoration", "兑换家庭装饰(消耗装修金)"));
         return list;
     }
 

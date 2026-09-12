@@ -874,8 +874,8 @@ public class AntSports extends ModelTask {
 
     private static void parseRewardsByJSONObjectData(JSONObject data) {
         try {
-            JSONArray treasureBoxList = data.getJSONArray("treasureBoxList");
-            openTreasureBox(treasureBoxList);
+            JSONArray treasureBoxList = data.optJSONArray("treasureBoxList");
+            if (treasureBoxList != null) openTreasureBox(treasureBoxList);
             if (data.has("brandRewardVOs")) {
                 JSONArray brandRewardVOs = data.getJSONArray("brandRewardVOs");
                 parseRewardsByJSONArrayRewards(brandRewardVOs, 1);
@@ -1078,8 +1078,8 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            JSONArray userExchangeRecords = jo.getJSONArray("userExchangeRecords");
-            if (userExchangeRecords.length() == 0) {
+            JSONArray userExchangeRecords = jo.optJSONArray("userExchangeRecords");
+            if (userExchangeRecords == null || userExchangeRecords.length() == 0) {
                 return true;
             }
             jo = userExchangeRecords.getJSONObject(0);
@@ -1842,7 +1842,8 @@ public class AntSports extends ModelTask {
             JSONObject jsonResult = new JSONObject(AntSportsRpcCall.build(branchId, mapId, multiNum));
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
                 JSONObject data = jsonResult.getJSONObject("data");
-                JSONObject endStageInfo = data.getJSONObject("endStageInfo");
+                JSONObject endStageInfo = data.optJSONObject("endStageInfo");
+                if (endStageInfo == null) return 0;
                 int buildingEnergyFinal = endStageInfo.optInt("buildingEnergyFinal");
                 String buildingId = endStageInfo.optString("buildingId");
                 int endbuildingEnergyProcess = endStageInfo.optInt("buildingEnergyProcess");
@@ -2158,7 +2159,7 @@ public class AntSports extends ModelTask {
                     }
 
                     String benefitId = item.getString("benefitId");
-                    String itemId = item.getString("itemId");
+                    String itemId = item.optString("itemId");
                     String itemName = item.getString("itemName");
                     int remainCount = item.getInt("remainCount");
                     int cost = Integer.parseInt(item.getString("salePoint"));
