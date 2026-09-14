@@ -276,10 +276,10 @@ public class ProtectEcology extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(CooperateRpcCall.queryCooperateRank(bizType, cooperationId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                JSONArray cooperateRankInfos = jo.getJSONArray("cooperateRankInfos");
-                for (int i = 0; i < cooperateRankInfos.length(); i++) {
-                    jo = cooperateRankInfos.getJSONObject(i);
-                    if (Objects.equals(userId, jo.getString("userId"))) {
+                JSONArray cooperateRankInfos = jo.optJSONArray("cooperateRankInfos");
+                for (int i = 0; cooperateRankInfos != null && i < cooperateRankInfos.length(); i++) {
+                    jo = cooperateRankInfos.optJSONObject(i);
+                    if (jo != null && Objects.equals(userId, jo.optString("userId"))) {
                         return jo.optInt("energySummation");
                     }
                 }
@@ -359,7 +359,7 @@ public class ProtectEcology extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(ProtectTreeRpcCall.queryTreeItemsForExchange(applyActions, itemTypes));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                return jo.getJSONArray("treeItems");
+                return jo.optJSONArray("treeItems");
             }
         }
         catch (Throwable t) {
@@ -376,25 +376,31 @@ public class ProtectEcology extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return exchangeableTree;
             }
-            String applyAction = jo.getString("applyAction");
-            int currentEnergy = jo.getInt("currentEnergy");
-            JSONArray subTreeVOs = jo.getJSONArray("subTreeVOs");
-            jo = jo.getJSONObject("exchangeableTree");
-            exchangeableTree.certCount = jo.getInt("certCount");
-            exchangeableTree.projectName = jo.getString("projectName");
+            String applyAction = jo.optString("applyAction");
+            int currentEnergy = jo.optInt("currentEnergy");
+            JSONArray subTreeVOs = jo.optJSONArray("subTreeVOs");
+            jo = jo.optJSONObject("exchangeableTree");
+            if (jo == null) {
+                return exchangeableTree;
+            }
+            exchangeableTree.certCount = jo.optInt("certCount");
+            exchangeableTree.projectName = jo.optString("projectName");
             if (!Objects.equals("AVAILABLE", applyAction)) {
                 Log.record("生态保护🏕️保护[" + exchangeableTree.projectName + "]停止:数量不足");
                 return exchangeableTree;
             }
-            if (currentEnergy < jo.getInt("energy")) {
+            if (currentEnergy < jo.optInt("energy")) {
                 Log.record("生态保护🏕️保护[" + exchangeableTree.projectName + "]停止:能量不足");
                 return exchangeableTree;
             }
-            if (Objects.equals("ANIMAL", jo.getString("type"))) {
+            if (Objects.equals("ANIMAL", jo.optString("type"))) {
                 if (exchangeableTree.certCount == 0) {
-                    for (int i = 0; i < subTreeVOs.length(); i++) {
-                        jo = subTreeVOs.getJSONObject(i);
-                        int certCountForAlias = jo.getInt("certCountForAlias");
+                    for (int i = 0; subTreeVOs != null && i < subTreeVOs.length(); i++) {
+                        jo = subTreeVOs.optJSONObject(i);
+                        if (jo == null) {
+                            continue;
+                        }
+                        int certCountForAlias = jo.optInt("certCountForAlias");
                         if (certCountForAlias == 0) {
                             exchangeableTree.canExchange = true;
                             break;
@@ -427,9 +433,9 @@ public class ProtectEcology extends ModelTask {
             if (vitalityAmount > 0) {
                 str = "#获得[" + vitalityAmount + "活力值]";
             }
-            jo = jo.getJSONObject("userCertificate");
-            if (Objects.equals("ANIMAL", jo.getString("type"))) {
-                str = "#获得[" + jo.getString("projectName") + "]";
+            jo = jo.optJSONObject("userCertificate");
+            if (jo != null && Objects.equals("ANIMAL", jo.optString("type"))) {
+                str = "#获得[" + jo.optString("projectName") + "]";
             }
             Log.forest("生态保护🏕️保护[" + projectName + "]" + str);
             return true;
@@ -447,8 +453,10 @@ public class ProtectEcology extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            jo = jo.getJSONObject("goldAnimalCertVO");
-            Log.record("生态保护🏕️点亮[" + jo.getString("name") + "]");
+            jo = jo.optJSONObject("goldAnimalCertVO");
+            if (jo != null) {
+                Log.record("生态保护🏕️点亮[" + jo.optString("name") + "]");
+            }
         }
         catch (Throwable t) {
             Log.i(TAG, "applyGoldAnimalCert err:");
