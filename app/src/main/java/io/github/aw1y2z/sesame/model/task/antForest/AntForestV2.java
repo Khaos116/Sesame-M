@@ -2478,13 +2478,16 @@ public class AntForestV2 extends ModelTask {
                 return doubleCheck;
             }
             for (int j = 0; j < taskInfoList.length(); j++) {
-                JSONObject taskInfo = taskInfoList.getJSONObject(j);
-                JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.getString("bizInfo"));
-                String taskType = taskBaseInfo.getString("taskType");
+                JSONObject taskInfo = taskInfoList.optJSONObject(j);
+                JSONObject taskBaseInfo = taskInfo != null ? taskInfo.optJSONObject("taskBaseInfo") : null;
+                if (taskBaseInfo == null) {
+                    continue;
+                }
+                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.optString("bizInfo"));
+                String taskType = taskBaseInfo.optString("taskType");
                 String taskTitle = bizInfo.optString("taskTitle", taskType);
-                String sceneCode = taskBaseInfo.getString("sceneCode");
-                String taskStatus = taskBaseInfo.getString("taskStatus");
+                String sceneCode = taskBaseInfo.optString("sceneCode");
+                String taskStatus = taskBaseInfo.optString("taskStatus");
                 if (TaskStatus.FINISHED.name().equals(taskStatus)) {
                     if (receiveTaskAward(sceneCode, taskType, taskTitle)) {
                         doubleCheck = true;
@@ -2551,14 +2554,15 @@ public class AntForestV2 extends ModelTask {
                 return;
             }
             for (int i = 0; i < taskInfoList.length(); i++) {
-                jo = taskInfoList.getJSONObject(i).getJSONObject("taskBaseInfo");
-                if (!Objects.equals(taskType, jo.getString("taskType"))) {
+                JSONObject taskInfoItem = taskInfoList.optJSONObject(i);
+                jo = taskInfoItem != null ? taskInfoItem.optJSONObject("taskBaseInfo") : null;
+                if (jo == null || !Objects.equals(taskType, jo.optString("taskType"))) {
                     continue;
                 }
-                boolean isReceived = TaskStatus.RECEIVED.name().equals(jo.getString("taskStatus"));
-                if (!isReceived && TaskStatus.FINISHED.name().equals(jo.getString("taskStatus"))) {
-                    String sceneCode = jo.getString("sceneCode");
-                    String taskTitle = MyUtils.newJSONObject(jo.getString("bizInfo")).getString("taskTitle");
+                boolean isReceived = TaskStatus.RECEIVED.name().equals(jo.optString("taskStatus"));
+                if (!isReceived && TaskStatus.FINISHED.name().equals(jo.optString("taskStatus"))) {
+                    String sceneCode = jo.optString("sceneCode");
+                    String taskTitle = MyUtils.newJSONObject(jo.optString("bizInfo")).optString("taskTitle");
                     isReceived = receiveTaskAward(sceneCode, taskType, taskTitle);
                     TimeUtil.sleep(1000);
                 }
@@ -2626,13 +2630,16 @@ public class AntForestV2 extends ModelTask {
     private void doChildTask(JSONArray childTaskTypeList, String title) {
         try {
             for (int i = 0; i < childTaskTypeList.length(); i++) {
-                JSONObject taskInfo = childTaskTypeList.getJSONObject(i);
-                JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.getString("bizInfo"));
-                String taskType = taskBaseInfo.getString("taskType");
+                JSONObject taskInfo = childTaskTypeList.optJSONObject(i);
+                JSONObject taskBaseInfo = taskInfo != null ? taskInfo.optJSONObject("taskBaseInfo") : null;
+                if (taskBaseInfo == null) {
+                    continue;
+                }
+                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.optString("bizInfo"));
+                String taskType = taskBaseInfo.optString("taskType");
                 String taskTitle = bizInfo.optString("taskTitle", title);
-                String sceneCode = taskBaseInfo.getString("sceneCode");
-                String taskStatus = taskBaseInfo.getString("taskStatus");
+                String sceneCode = taskBaseInfo.optString("sceneCode");
+                String taskStatus = taskBaseInfo.optString("taskStatus");
                 if (TaskStatus.TODO.name().equals(taskStatus)) {
                     if (bizInfo.optBoolean("autoCompleteTask")) {
                         finishTask(sceneCode, taskType, taskTitle);
@@ -2652,11 +2659,12 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            String token = jo.getString("token");
-            JSONArray bubbleEnergyList = jo.getJSONObject("difficultyInfo").getJSONArray("bubbleEnergyList");
+            String token = jo.optString("token");
+            JSONObject difficultyInfo = jo.optJSONObject("difficultyInfo");
+            JSONArray bubbleEnergyList = difficultyInfo != null ? difficultyInfo.optJSONArray("bubbleEnergyList") : null;
             int sum = 0;
-            for (int i = 0; i < bubbleEnergyList.length(); i++) {
-                sum += bubbleEnergyList.getInt(i);
+            for (int i = 0; bubbleEnergyList != null && i < bubbleEnergyList.length(); i++) {
+                sum += bubbleEnergyList.optInt(i);
             }
             TimeUtil.sleep(5000L);
             if (sum == 50) {
@@ -2708,21 +2716,21 @@ public class AntForestV2 extends ModelTask {
             JSONObject joEnergyRainHome = MyUtils.newJSONObject(AntForestRpcCall.queryEnergyRainHome());
             TimeUtil.sleep(500);
             if (MessageUtil.checkResultCode(TAG, joEnergyRainHome)) {
-                if (joEnergyRainHome.getBoolean("canPlayToday")) {
+                if (joEnergyRainHome.optBoolean("canPlayToday")) {
                     startEnergyRain();
                 }
-                if (joEnergyRainHome.getBoolean("canGrantStatus")) {
+                if (joEnergyRainHome.optBoolean("canGrantStatus")) {
                     Log.record("有送能量雨的机会");
                     JSONObject joEnergyRainCanGrantList = MyUtils.newJSONObject(AntForestRpcCall.queryEnergyRainCanGrantList());
                     TimeUtil.sleep(500);
-                    JSONArray grantInfos = joEnergyRainCanGrantList.getJSONArray("grantInfos");
+                    JSONArray grantInfos = joEnergyRainCanGrantList.optJSONArray("grantInfos");
                     Set<String> set = giveEnergyRainList.getValue();
                     String userId;
                     boolean granted = false;
-                    for (int j = 0; j < grantInfos.length(); j++) {
-                        JSONObject grantInfo = grantInfos.getJSONObject(j);
-                        if (grantInfo.getBoolean("canGrantedStatus")) {
-                            userId = grantInfo.getString("userId");
+                    for (int j = 0; grantInfos != null && j < grantInfos.length(); j++) {
+                        JSONObject grantInfo = grantInfos.optJSONObject(j);
+                        if (grantInfo != null && grantInfo.optBoolean("canGrantedStatus")) {
+                            userId = grantInfo.optString("userId");
                             if (set.contains(userId)) {
                                 JSONObject joEnergyRainChance = MyUtils.newJSONObject(AntForestRpcCall.grantEnergyRainChance(userId));
                                 TimeUtil.sleep(500);
