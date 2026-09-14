@@ -2749,7 +2749,7 @@ public class AntForestV2 extends ModelTask {
                         Log.record("没有可以送的用户");
                     }
                 }
-                boolean canPlayGame = joEnergyRainHome.getBoolean("canPlayGame");
+                boolean canPlayGame = joEnergyRainHome.optBoolean("canPlayGame");
 
                 if (canPlayGame) {
                     // 检查今日是否需要执行
@@ -2763,7 +2763,7 @@ public class AntForestV2 extends ModelTask {
             }
             joEnergyRainHome = MyUtils.newJSONObject(AntForestRpcCall.queryEnergyRainHome());
             TimeUtil.sleep(500);
-            if (MessageUtil.checkResultCode(TAG, joEnergyRainHome) && joEnergyRainHome.getBoolean("canPlayToday")) {
+            if (MessageUtil.checkResultCode(TAG, joEnergyRainHome) && joEnergyRainHome.optBoolean("canPlayToday")) {
                 startEnergyRain();
             }
         } catch (Throwable th) {
@@ -2865,7 +2865,10 @@ public class AntForestV2 extends ModelTask {
 
                     if (awardList != null) {
                         for (int i = 0; i < awardList.length(); i++) {
-                            JSONObject award = awardList.getJSONObject(i);
+                            JSONObject award = awardList.optJSONObject(i);
+                            if (award == null) {
+                                continue;
+                            }
                             String type = award.optString("awardType");
                             String name = award.optString("awardName");
                             int count = award.optInt("awardCount");
@@ -2924,21 +2927,27 @@ public class AntForestV2 extends ModelTask {
                     return;
                 }
                 JSONObject taskTriggerPlayInfo = jo.optJSONObject("taskTriggerPlayInfo");
-                if (!taskTriggerPlayInfo.has("taskList")) {
+                if (taskTriggerPlayInfo == null || !taskTriggerPlayInfo.has("taskList")) {
                     return;
                 }
-                JSONArray taskList = taskTriggerPlayInfo.getJSONArray("taskList");
+                JSONArray taskList = taskTriggerPlayInfo.optJSONArray("taskList");
+                if (taskList == null) {
+                    return;
+                }
                 for (int j = 0; j < taskList.length(); j++) {
-                    JSONObject task = taskList.getJSONObject(j);
-                    String taskStatus = task.getString("taskStatus");
+                    JSONObject task = taskList.optJSONObject(j);
+                    if (task == null) {
+                        continue;
+                    }
+                    String taskStatus = task.optString("taskStatus");
                     int alreadyReceiveAwardCount = task.optInt("alreadyReceiveAwardCount");
                     int awardCount = task.optInt("awardCount");
                     int awardCountForReceive = awardCount - alreadyReceiveAwardCount;
                     int rightsTimesLimit = task.optInt("rightsTimesLimit");
                     int rightsTimes = task.optInt("rightsTimes");
                     String awardType = task.optString("awardType", "能量");
-                    JSONObject bizInfo = task.getJSONObject("bizInfo");
-                    String title = bizInfo.getString("title");
+                    JSONObject bizInfo = task.optJSONObject("bizInfo");
+                    String title = bizInfo != null ? bizInfo.optString("title") : "";
                     String source = task.optString("source", "ch_appcenter__chsub_9patch");
                     String sceneCode = task.optString("sceneCode", "");
                     String taskType = task.optString("taskType", "");
@@ -3040,7 +3049,8 @@ public class AntForestV2 extends ModelTask {
                         }
                         String propId = propIdList.optString(0);
                         String propType = rightCard.optString("propType");
-                        String propName = rightCard.getJSONObject("propConfigVO").getString("propName");
+                        JSONObject propConfigVO = rightCard.optJSONObject("propConfigVO");
+                        String propName = propConfigVO != null ? propConfigVO.optString("propName") : "";
                         JSONObject joResult;
                         switch (propGroupType) {
                             case "doubleClick":
