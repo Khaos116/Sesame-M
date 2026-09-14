@@ -189,12 +189,15 @@ public class AntMember extends ModelTask {
                     if (!MessageUtil.checkResultCode(TAG, jo)) {
                         break;
                     }
-                    hasNextPage = jo.getBoolean("hasNextPage");
+                    hasNextPage = jo.optBoolean("hasNextPage");
                     page++;
-                    JSONArray jaCertList = jo.getJSONArray("certList");
-                    for (int i = 0; i < jaCertList.length(); i++) {
-                        jo = jaCertList.getJSONObject(i);
-                        String bizTitle = jo.getString("bizTitle");
+                    JSONArray jaCertList = jo.optJSONArray("certList");
+                    for (int i = 0; jaCertList != null && i < jaCertList.length(); i++) {
+                        jo = jaCertList.optJSONObject(i);
+                        if (jo == null) {
+                            continue;
+                        }
+                        String bizTitle = jo.optString("bizTitle");
                         AntMemberTaskListMap.add(bizTitle, bizTitle);
                     }
                 }
@@ -202,18 +205,24 @@ public class AntMember extends ModelTask {
                 
                 jo = MyUtils.newJSONObject(AntMemberRpcCall.queryAllStatusTaskList());
                 if (MessageUtil.checkResultCode(TAG, jo)) {
-                    JSONArray availableTaskList = jo.getJSONArray("availableTaskList");
-                    for (int i = 0; i < availableTaskList.length(); i++) {
-                        JSONObject task = availableTaskList.getJSONObject(i);
-                        JSONObject taskConfigInfo = task.getJSONObject("taskConfigInfo");
-                        String name = taskConfigInfo.getString("name");
+                    JSONArray availableTaskList = jo.optJSONArray("availableTaskList");
+                    for (int i = 0; availableTaskList != null && i < availableTaskList.length(); i++) {
+                        JSONObject task = availableTaskList.optJSONObject(i);
+                        JSONObject taskConfigInfo = task != null ? task.optJSONObject("taskConfigInfo") : null;
+                        if (taskConfigInfo == null) {
+                            continue;
+                        }
+                        String name = taskConfigInfo.optString("name");
                         AntMemberTaskListMap.add(name, name);
                     }
-                    JSONArray taskHistoryList = jo.getJSONArray("taskHistoryList");
-                    for (int i = 0; i < taskHistoryList.length(); i++) {
-                        JSONObject task = taskHistoryList.getJSONObject(i);
-                        JSONObject taskConfigInfo = task.getJSONObject("taskConfigInfo");
-                        String name = taskConfigInfo.getString("name");
+                    JSONArray taskHistoryList = jo.optJSONArray("taskHistoryList");
+                    for (int i = 0; taskHistoryList != null && i < taskHistoryList.length(); i++) {
+                        JSONObject task = taskHistoryList.optJSONObject(i);
+                        JSONObject taskConfigInfo = task != null ? task.optJSONObject("taskConfigInfo") : null;
+                        if (taskConfigInfo == null) {
+                            continue;
+                        }
+                        String name = taskConfigInfo.optString("name");
                         AntMemberTaskListMap.add(name, name);
                     }
                 }
@@ -289,17 +298,20 @@ public class AntMember extends ModelTask {
             if (collectSesame) {
                 jo = MyUtils.newJSONObject(AntMemberRpcCall.queryHome());
                 if (MessageUtil.checkResultCode(TAG, jo)) {
-                    JSONObject entrance = jo.getJSONObject("entrance");
-                    if (entrance.optBoolean("openApp")) {
+                    JSONObject entrance = jo.optJSONObject("entrance");
+                    if (entrance != null && entrance.optBoolean("openApp")) {
                         jo = MyUtils.newJSONObject(AntMemberRpcCall.CreditAccumulateStrategyRpcManager());
                         TimeUtil.sleep(300);
                         if (MessageUtil.checkResultCode(TAG, jo)) {
                             if (jo.has("data")) {
-                                JSONObject data = jo.getJSONObject("data");
-                                if (data.has("completeVOS")) {
-                                    JSONArray completeVOS = data.getJSONArray("completeVOS");
-                                    for (int i = 0; i < completeVOS.length(); i++) {
-                                        JSONObject toCompleteVO = completeVOS.getJSONObject(i);
+                                JSONObject data = jo.optJSONObject("data");
+                                if (data != null && data.has("completeVOS")) {
+                                    JSONArray completeVOS = data.optJSONArray("completeVOS");
+                                    for (int i = 0; completeVOS != null && i < completeVOS.length(); i++) {
+                                        JSONObject toCompleteVO = completeVOS.optJSONObject(i);
+                                        if (toCompleteVO == null) {
+                                            continue;
+                                        }
                                         String title = toCompleteVO.optString("title");
                                         if (title.isEmpty()) {
                                             continue;
@@ -307,10 +319,13 @@ public class AntMember extends ModelTask {
                                         MemberCreditSesameTaskListMap.add(title, title);
                                     }
                                 }
-                                if (data.has("toCompleteVOS")) {
-                                    JSONArray toCompleteVOS = data.getJSONArray("toCompleteVOS");
-                                    for (int i = 0; i < toCompleteVOS.length(); i++) {
-                                        JSONObject toCompleteVO = toCompleteVOS.getJSONObject(i);
+                                if (data != null && data.has("toCompleteVOS")) {
+                                    JSONArray toCompleteVOS = data.optJSONArray("toCompleteVOS");
+                                    for (int i = 0; toCompleteVOS != null && i < toCompleteVOS.length(); i++) {
+                                        JSONObject toCompleteVO = toCompleteVOS.optJSONObject(i);
+                                        if (toCompleteVO == null) {
+                                            continue;
+                                        }
                                         String title = toCompleteVO.optString("title");
                                         if (title.isEmpty()) {
                                             continue;
@@ -373,8 +388,8 @@ public class AntMember extends ModelTask {
                 JSONObject jo = MyUtils.newJSONObject(AntMemberRpcCall.queryMemberSigninCalendar());
                 TimeUtil.sleep(500);
                 if (MessageUtil.checkResultCode(TAG, jo)) {
-                    if (jo.getBoolean("autoSignInSuccess")) {
-                        Log.other("会员任务📅签到[坚持" + jo.getString("signinSumDay") + "天]#获得[" + jo.getString("signinPoint") + "积分]");
+                    if (jo.optBoolean("autoSignInSuccess")) {
+                        Log.other("会员任务📅签到[坚持" + jo.optString("signinSumDay") + "天]#获得[" + jo.optString("signinPoint") + "积分]");
                     }
                     Status.flagToday("member::sign");
                 }
@@ -393,17 +408,20 @@ public class AntMember extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            boolean hasNextPage = jo.getBoolean("hasNextPage");
-            JSONArray jaCertList = jo.getJSONArray("certList");
-            for (int i = 0; i < jaCertList.length(); i++) {
-                jo = jaCertList.getJSONObject(i);
-                String bizTitle = jo.getString("bizTitle");
+            boolean hasNextPage = jo.optBoolean("hasNextPage");
+            JSONArray jaCertList = jo.optJSONArray("certList");
+            for (int i = 0; jaCertList != null && i < jaCertList.length(); i++) {
+                jo = jaCertList.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
+                String bizTitle = jo.optString("bizTitle");
                 //黑名单任务跳过
                 if (AntMemberTaskList.getValue().contains(bizTitle)) {
                     continue;
                 }
-                String id = jo.getString("id");
-                int pointAmount = jo.getInt("pointAmount");
+                String id = jo.optString("id");
+                int pointAmount = jo.optInt("pointAmount");
                 jo = MyUtils.newJSONObject(AntMemberRpcCall.receivePointByUser(id));
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     Log.other("会员任务🎖️领取[" + bizTitle + "]奖励#获得[" + pointAmount + "积分]");
