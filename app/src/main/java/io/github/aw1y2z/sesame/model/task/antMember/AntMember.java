@@ -452,11 +452,17 @@ public class AntMember extends ModelTask {
                 if (!jo.has("categoryTaskList")) {
                     return;
                 }
-                JSONArray categoryTaskList = jo.getJSONArray("categoryTaskList");
-                for (int i = 0; i < categoryTaskList.length(); i++) {
-                    jo = categoryTaskList.getJSONObject(i);
-                    JSONArray taskList = jo.getJSONArray("taskList");
-                    String type = jo.getString("type");
+                JSONArray categoryTaskList = jo.optJSONArray("categoryTaskList");
+                for (int i = 0; categoryTaskList != null && i < categoryTaskList.length(); i++) {
+                    jo = categoryTaskList.optJSONObject(i);
+                    if (jo == null) {
+                        continue;
+                    }
+                    JSONArray taskList = jo.optJSONArray("taskList");
+                    String type = jo.optString("type");
+                    if (taskList == null) {
+                        continue;
+                    }
                     if (Objects.equals("BROWSE", type)) {
                         doubleCheck = doBrowseTask(taskList);
                     }
@@ -487,8 +493,8 @@ public class AntMember extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray availableTaskList = jo.getJSONArray("availableTaskList");
-            if (doBrowseTask(availableTaskList)) {
+            JSONArray availableTaskList = jo.optJSONArray("availableTaskList");
+            if (availableTaskList != null && doBrowseTask(availableTaskList)) {
                 queryAllStatusTaskList();
             }
         }
@@ -505,13 +511,16 @@ public class AntMember extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            jo = jo.getJSONObject("data");
-            JSONArray promiseSimpleTemplates = jo.getJSONArray("promiseSimpleTemplates");
-            for (int i = 0; i < promiseSimpleTemplates.length(); i++) {
-                jo = promiseSimpleTemplates.getJSONObject(i);
-                String templateId = jo.getString("templateId");
-                String promiseName = jo.getString("promiseName");
-                String status = jo.getString("status");
+            jo = jo.optJSONObject("data");
+            JSONArray promiseSimpleTemplates = jo != null ? jo.optJSONArray("promiseSimpleTemplates") : null;
+            for (int i = 0; promiseSimpleTemplates != null && i < promiseSimpleTemplates.length(); i++) {
+                jo = promiseSimpleTemplates.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
+                String templateId = jo.optString("templateId");
+                String promiseName = jo.optString("promiseName");
+                String status = jo.optString("status");
                 if ("un_join".equals(status) && promiseList.getValue().contains(templateId)) {
                     promiseJoin(querySingleTemplate(templateId));
                 }
@@ -531,30 +540,50 @@ public class AntMember extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return null;
             }
-            jo = jo.getJSONObject("data");
+            jo = jo.optJSONObject("data");
+            if (jo == null) {
+                return null;
+            }
             JSONObject result = new JSONObject();
-            
+
             result.put("joinFromOuter", false);
-            result.put("templateId", jo.getString("templateId"));
-            result.put("autoRenewStatus", Boolean.valueOf(jo.getString("autoRenewStatus")));
-            
-            JSONObject joinGuarantyRule = jo.getJSONObject("joinGuarantyRule");
-            joinGuarantyRule.put("selectValue", joinGuarantyRule.getJSONArray("canSelectValues").getString(0));
+            result.put("templateId", jo.optString("templateId"));
+            result.put("autoRenewStatus", Boolean.valueOf(jo.optString("autoRenewStatus")));
+
+            JSONObject joinGuarantyRule = jo.optJSONObject("joinGuarantyRule");
+            JSONArray joinGuarantyValues = joinGuarantyRule != null ? joinGuarantyRule.optJSONArray("canSelectValues") : null;
+            if (joinGuarantyRule == null || joinGuarantyValues == null || joinGuarantyValues.length() == 0) {
+                return null;
+            }
+            joinGuarantyRule.put("selectValue", joinGuarantyValues.optString(0));
             joinGuarantyRule.remove("canSelectValues");
             result.put("joinGuarantyRule", joinGuarantyRule);
-            
-            JSONObject joinRule = jo.getJSONObject("joinRule");
-            joinRule.put("selectValue", joinRule.getJSONArray("canSelectValues").getString(0));
+
+            JSONObject joinRule = jo.optJSONObject("joinRule");
+            JSONArray joinRuleValues = joinRule != null ? joinRule.optJSONArray("canSelectValues") : null;
+            if (joinRule == null || joinRuleValues == null || joinRuleValues.length() == 0) {
+                return null;
+            }
+            joinRule.put("selectValue", joinRuleValues.optString(0));
             joinRule.remove("joinRule");
             result.put("joinRule", joinRule);
-            
-            JSONObject periodTargetRule = jo.getJSONObject("periodTargetRule");
-            periodTargetRule.put("selectValue", periodTargetRule.getJSONArray("canSelectValues").getString(0));
+
+            JSONObject periodTargetRule = jo.optJSONObject("periodTargetRule");
+            JSONArray periodTargetValues = periodTargetRule != null ? periodTargetRule.optJSONArray("canSelectValues") : null;
+            if (periodTargetRule == null || periodTargetValues == null || periodTargetValues.length() == 0) {
+                return null;
+            }
+            periodTargetRule.put("selectValue", periodTargetValues.optString(0));
             periodTargetRule.remove("canSelectValues");
             result.put("periodTargetRule", periodTargetRule);
-            
-            JSONObject dataSourceRule = jo.getJSONObject("dataSourceRule");
-            dataSourceRule.put("selectValue", dataSourceRule.getJSONArray("canSelectValues").getJSONObject(0).getString("merchantId"));
+
+            JSONObject dataSourceRule = jo.optJSONObject("dataSourceRule");
+            JSONArray dataSourceValues = dataSourceRule != null ? dataSourceRule.optJSONArray("canSelectValues") : null;
+            JSONObject firstDataSource = dataSourceValues != null ? dataSourceValues.optJSONObject(0) : null;
+            if (dataSourceRule == null || firstDataSource == null) {
+                return null;
+            }
+            dataSourceRule.put("selectValue", firstDataSource.optString("merchantId"));
             dataSourceRule.remove("canSelectValues");
             result.put("dataSourceRule", dataSourceRule);
             return result;
@@ -575,8 +604,8 @@ public class AntMember extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            jo = jo.getJSONObject("data");
-            String promiseName = jo.getString("promiseName");
+            jo = jo.optJSONObject("data");
+            String promiseName = jo != null ? jo.optString("promiseName") : "";
             Log.other("生活记录📝加入[" + promiseName + "]");
         }
         catch (Throwable t) {
