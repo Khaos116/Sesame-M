@@ -164,8 +164,8 @@ public class ForestChouChouLe {
                                 if (!jo.has("userVitalityInfoVO")) {
                                     return;
                                 }
-                                JSONObject userVitalityInfo = jo.getJSONObject("userVitalityInfoVO");
-                                totalVitalityAmount = userVitalityInfo.optInt("totalVitalityAmount", 0);
+                                JSONObject userVitalityInfo = jo.optJSONObject("userVitalityInfoVO");
+                                totalVitalityAmount = userVitalityInfo != null ? userVitalityInfo.optInt("totalVitalityAmount", 0) : 0;
                             } catch (Throwable th) {
                                 Log.i(TAG, "chouChouLesceneEXCHANGE err:");
                                 Log.printStackTrace(TAG, th);
@@ -177,7 +177,7 @@ public class ForestChouChouLe {
                             //🏆
                             JSONObject sginRes = MyUtils.newJSONObject(AntForestRpcCall.exchangeTimesFromTaskopengreen(activityId, sceneCode, "task_entry", taskSceneCode, taskType));
                             if (MessageUtil.checkSuccess(TAG, sginRes)) {
-                                int times = sginRes.getInt("times");
+                                int times = sginRes.optInt("times");
                                 Log.forest("森林寻宝🎖️[" + taskName + "]获得抽奖*" + times);
                                 doublecheck = true;
                             }
@@ -221,17 +221,20 @@ public class ForestChouChouLe {
             if (ForestHuntDraw) {
                 JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.enterDrawActivityopengreen(activityId, sceneCode, "task_entry"));
                 if (MessageUtil.checkSuccess(TAG, jo)) {
-                    JSONObject drawAsset = jo.getJSONObject("drawAsset");
-                    int blance = drawAsset.getInt("blance");
+                    JSONObject drawAsset = jo.optJSONObject("drawAsset");
+                    int blance = drawAsset != null ? drawAsset.optInt("blance") : 0;
 
                     while (blance > 0) {
                         jo = MyUtils.newJSONObject(AntForestRpcCall.drawopengreen(activityId, sceneCode, "task_entry", UserIdMap.getCurrentUid()));
                         if (MessageUtil.checkSuccess(TAG, jo)) {
-                            drawAsset = jo.getJSONObject("drawAsset");
-                            blance = drawAsset.getInt("blance");
-                            JSONObject prizeVO = jo.getJSONObject("prizeVO");
-                            String prizeName = prizeVO.getString("prizeName");
-                            int prizeNum = prizeVO.getInt("prizeNum");
+                            drawAsset = jo.optJSONObject("drawAsset");
+                            blance = drawAsset != null ? drawAsset.optInt("blance") : 0;
+                            JSONObject prizeVO = jo.optJSONObject("prizeVO");
+                            if (prizeVO == null) {
+                                break;
+                            }
+                            String prizeName = prizeVO.optString("prizeName");
+                            int prizeNum = prizeVO.optInt("prizeNum");
                             Log.forest("森林寻宝🎁领取[" + prizeName + "*" + prizeNum + "]" + "#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                             Toast.show("森林寻宝🎁领取[" + prizeName + "*" + prizeNum + "]");
                             if (prizeName.contains("g能量")) {
