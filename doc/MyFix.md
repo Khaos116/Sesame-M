@@ -4,6 +4,12 @@
 
 ## 变更记录
 
+### 2026-09-14：`AntOrchard.java` `.get*()` → `.opt*()` + 空指针防护，第七个文件全部完成
+
+按调用点数量排序的第七个文件（1395 行，原~106 处调用点）。覆盖 `checkOrchardOpen`/`queryOptionalPlay`（农场乐园限定活动）/`initAntOrchardTaskListMap`、`initPlantScene`/`handleEnableScenes`/`handleTaobaoData`（场景与果树状态解析）、`doSpreadManure`/`canSpreadManure`（主场景+余额宝场景两条施肥前置检查）/`querySpreadManureActivity`、`orchardListTask`/`handleSignTask`/`handleTaskList`/`finishOrchardTask`（农场任务列表与签到）、`triggerTbTask`/`drawLotteryPlus`（七日礼包）/`extraInfoGet`（每日肥料包）、`querySubplotsActivity`/`handleWishActivity`/`handleCampTakeoverActivity`（许愿与营地接管子场景活动）/`queryYebRevenueDetail`（余额宝摇钱树收益）。
+
+`grep` 确认代码里已无可执行的裸 `.get*()` 调用。改的过程中发现一处局部变量名与内层 `optJSONObject("result")` 取的临时变量重名（`queryYebRevenueDetail` 里外层已有 `String result`），编译报错后重命名为 `resultObj` 解决，纯粹是命名冲突不是逻辑改动。每批改完都跑 `./gradlew compileNormalDebugJavaWithJavac -q` 验证，全部编译通过；仅做了编译期验证，未做设备/运行时测试。下一步按调用点数量排序转到 `AntDodo.java`（约 103 处调用点）。
+
 ### 2026-09-14：`AntOcean.java` `.get*()` → `.opt*()` + 空指针防护，第六个文件全部完成
 
 按调用点数量排序的第六个文件（1570 行，原~108 处调用点）。覆盖 `queryOceanStatus`/`initAntOceanAntiepTaskListMap`（普通任务/摸鱼任务列表同步）、`queryHomePage`/`collectEnergy`/`cleanOcean`/`autocleanOcean`/`ipOpenSurprise`/`combineFish`/`checkReward`（能量收取与清理海域主流程）、`queryReplicaHome`/`unLockReplicaPhase`/`queryReplicaTaskList`/`receiveReplicaTaskAward`/`queryMiscInfo`（副本任务）、`querySeaAreaDetailList`/`openWAIT_FOR_UNLOCK`/`switchOceanChapter`/`queryUserRanking`（神秘海域拼图合成与章节切换）、`cleanFriendOcean`（两个重载）/`queryTaskList`（帮好友清理海域、日常任务）、`finishOceanTask`/`answerQuestion`/`exchangeUniversalPiece`（两个重载）/`useUniversalPiece`（两个重载）（答题任务、重复拼图兑换万能拼图、使用万能拼图迎回鱼类）。

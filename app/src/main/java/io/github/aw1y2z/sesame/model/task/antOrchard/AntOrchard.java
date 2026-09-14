@@ -1032,10 +1032,10 @@ public class AntOrchard extends ModelTask {
                 return;
             }
 
-            JSONArray activityList = jo.getJSONArray("subplotsActivityList");
-            for (int i = 0; i < activityList.length(); i++) {
-                JSONObject activity = activityList.getJSONObject(i);
-                if (!activityType.equals(activity.getString("activityType"))) {
+            JSONArray activityList = jo.optJSONArray("subplotsActivityList");
+            for (int i = 0; activityList != null && i < activityList.length(); i++) {
+                JSONObject activity = activityList.optJSONObject(i);
+                if (activity == null || !activityType.equals(activity.optString("activityType"))) {
                     continue;
                 }
 
@@ -1056,15 +1056,15 @@ public class AntOrchard extends ModelTask {
      */
     private void handleWishActivity(JSONObject activity) {
         try {
-            String activityId = activity.getString("activityId");
-            String status = activity.getString("status");
+            String activityId = activity.optString("activityId");
+            String status = activity.optString("status");
 
             // 已完成则领取奖励
             if ("FINISHED".equals(status)) {
                 String result = AntOrchardRpcCall.receiveOrchardRights(activityId, "WISH");
                 JSONObject jo = MyUtils.newJSONObject(result);
                 if (MessageUtil.checkResultCode(TAG, jo)) {
-                    int amount = jo.getInt("amount");
+                    int amount = jo.optInt("amount");
                     Log.farm("农场许愿✨完成承诺#获得[" + amount + "g肥料]");
                     querySubplotsActivity("WISH"); // 重新查询状态
                 }
@@ -1077,13 +1077,13 @@ public class AntOrchard extends ModelTask {
                 int targetCount = mainCount != null && mainCount >= 10 ? 10 : (mainCount != null && mainCount >= 3 ? 3 : 0);
 
                 if (targetCount > 0) {
-                    JSONObject extend = MyUtils.newJSONObject(activity.getString("extend"));
-                    JSONArray options = extend.getJSONArray("wishActivityOptionList");
+                    JSONObject extend = MyUtils.newJSONObject(activity.optString("extend"));
+                    JSONArray options = extend.optJSONArray("wishActivityOptionList");
 
-                    for (int i = 0; i < options.length(); i++) {
-                        JSONObject option = options.getJSONObject(i);
-                        if (option.getInt("taskRequire") == targetCount) {
-                            String result = AntOrchardRpcCall.triggerSubplotsActivity(activityId, "WISH", option.getString("optionKey"));
+                    for (int i = 0; options != null && i < options.length(); i++) {
+                        JSONObject option = options.optJSONObject(i);
+                        if (option != null && option.optInt("taskRequire") == targetCount) {
+                            String result = AntOrchardRpcCall.triggerSubplotsActivity(activityId, "WISH", option.optString("optionKey"));
                             if (MessageUtil.checkResultCode(TAG, MyUtils.newJSONObject(result))) {
                                 Log.farm("农场许愿✨许下承诺[每日施肥" + targetCount + "次]");
                             }
@@ -1103,20 +1103,25 @@ public class AntOrchard extends ModelTask {
      */
     private void handleCampTakeoverActivity(JSONObject activity) {
         try {
-            JSONObject extend = MyUtils.newJSONObject(activity.getString("extend"));
-            JSONObject currentInfo = extend.getJSONObject("currentActivityInfo");
-            String status = currentInfo.getString("activityStatus");
+            JSONObject extend = MyUtils.newJSONObject(activity.optString("extend"));
+            JSONObject currentInfo = extend.optJSONObject("currentActivityInfo");
+            if (currentInfo == null) {
+                return;
+            }
+            String status = currentInfo.optString("activityStatus");
 
             // 待选择奖励
             if ("TO_CHOOSE_PRIZE".equals(status)) {
-                JSONArray prizes = currentInfo.getJSONArray("recommendPrizeList");
-                for (int i = 0; i < prizes.length(); i++) {
-                    JSONObject prize = prizes.getJSONObject(i);
-                    if ("FEILIAO".equals(prize.getString("prizeType"))) {
-                        String result = AntOrchardRpcCall.choosePrize(prize.getString("sendOrderId"));
+                JSONArray prizes = currentInfo.optJSONArray("recommendPrizeList");
+                for (int i = 0; prizes != null && i < prizes.length(); i++) {
+                    JSONObject prize = prizes.optJSONObject(i);
+                    if (prize != null && "FEILIAO".equals(prize.optString("prizeType"))) {
+                        String result = AntOrchardRpcCall.choosePrize(prize.optString("sendOrderId"));
                         JSONObject jo = MyUtils.newJSONObject(result);
                         if (MessageUtil.checkResultCode(TAG, jo)) {
-                            String prizeName = jo.getJSONObject("currentActivityInfo").getJSONObject("currentPrize").getString("prizeName");
+                            JSONObject curActivityInfo = jo.optJSONObject("currentActivityInfo");
+                            JSONObject currentPrize = curActivityInfo != null ? curActivityInfo.optJSONObject("currentPrize") : null;
+                            String prizeName = currentPrize != null ? currentPrize.optString("prizeName") : "";
                             Log.farm("速成奖励✨接受挑战#选择[" + prizeName + "]");
                         }
                         break;
@@ -1126,8 +1131,10 @@ public class AntOrchard extends ModelTask {
 
             // 待完成任务
             if ("TO_DO_TASK".equals(status)) {
-                JSONArray tasks = currentInfo.getJSONArray("taskList");
-                handleTaskList(tasks);
+                JSONArray tasks = currentInfo.optJSONArray("taskList");
+                if (tasks != null) {
+                    handleTaskList(tasks);
+                }
                 querySubplotsActivity("CAMP_TAKEOVER"); // 重新查询状态
             }
         } catch (Throwable t) {
@@ -1147,16 +1154,17 @@ public class AntOrchard extends ModelTask {
                 return;
             }
 
-            JSONArray revenueList = jo.getJSONArray("yebRevenueDetailList");
-            for (int i = 0; i < revenueList.length(); i++) {
-                JSONObject revenue = revenueList.getJSONObject(i);
-                if ("I".equals(revenue.getString("orderStatus"))) {
+            JSONArray revenueList = jo.optJSONArray("yebRevenueDetailList");
+            for (int i = 0; revenueList != null && i < revenueList.length(); i++) {
+                JSONObject revenue = revenueList.optJSONObject(i);
+                if (revenue != null && "I".equals(revenue.optString("orderStatus"))) {
                     String triggerResult = AntOrchardRpcCall.triggerYebMoneyTree();
                     JSONObject triggerJo = MyUtils.newJSONObject(triggerResult);
                     if (MessageUtil.checkResultCode(TAG, triggerJo)) {
-                        JSONObject awardInfo = triggerJo.getJSONObject("result").optJSONObject("awardInfo");
+                        JSONObject resultObj = triggerJo.optJSONObject("result");
+                        JSONObject awardInfo = resultObj != null ? resultObj.optJSONObject("awardInfo") : null;
                         if (awardInfo != null) {
-                            String amount = awardInfo.getString("totalAmount");
+                            String amount = awardInfo.optString("totalAmount");
                             Log.farm("芭芭农场🌳领取奖励[摇钱树]#获得[" + amount + "元余额宝收益]");
                         }
                     }
