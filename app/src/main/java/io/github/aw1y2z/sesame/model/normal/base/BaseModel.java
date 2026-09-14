@@ -11,6 +11,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.SelectAndCountModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.entity.AlipayrpcRequest;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
+import io.github.aw1y2z.sesame.hook.CaptchaHook;
 import io.github.aw1y2z.sesame.model.task.antForest.AntForestRpcCall;
 import lombok.Getter;
 
@@ -65,7 +66,8 @@ public class BaseModel extends Model {
 
     @Getter
     private static final BooleanModelField showToast = new BooleanModelField("showToast", "气泡提示", true);
-    //public static final BooleanModelField closeCaptchaDialogVPN = new BooleanModelField("closeCaptchaDialogVPN", "关闭请检查是否使用了代理软件或VPN", false);
+    @Getter
+    private static final BooleanModelField closeCaptchaDialogVPN = new BooleanModelField("closeCaptchaDialogVPN", "关闭请检查是否使用了代理软件或VPN", false);
     @Getter
     private static final IntegerModelField toastOffsetY = new IntegerModelField("toastOffsetY", "气泡纵向偏移", 0);
     @Getter
@@ -87,13 +89,11 @@ public class BaseModel extends Model {
     }
     
     public void boot(ClassLoader classLoader) {
-        /*// 配置已加载，更新验证码Hook状态
         try {
             CaptchaHook.updateHooks(closeCaptchaDialogVPN.getValue());
-            Log.record("✅ 验证码Hook配置已同步");
         } catch (Throwable t) {
-            Log.printStackTrace("❌ 验证码Hook配置同步失败", t);
-        }*/
+            Log.printStackTrace("验证码Hook配置同步失败", t);
+        }
     }
     @Override
     public ModelFields getFields() {
@@ -114,7 +114,7 @@ public class BaseModel extends Model {
         modelFields.addField(batteryPerm);
         modelFields.addField(recordLog);
         modelFields.addField(showToast);
-        //modelFields.addField(closeCaptchaDialogVPN);
+        modelFields.addField(closeCaptchaDialogVPN);
         modelFields.addField(enableOnGoing);
         modelFields.addField(toastOffsetY);
         return modelFields;
@@ -133,11 +133,7 @@ public class BaseModel extends Model {
         }).start();
     }
     
-    //public static boolean getcloseCaptchaDialogVPN() {
-    //    return closeCaptchaDialogVPN.getValue();
-    //}
-    
-    public static void destroyData() {
+public static void destroyData() {
         try {
             TreeIdMap.clear();
             ReserveIdMap.clear();
