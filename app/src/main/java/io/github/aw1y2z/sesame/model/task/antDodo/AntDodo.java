@@ -157,17 +157,20 @@ public class AntDodo extends ModelTask {
             if (dodoTaskList) {
                 JSONObject jo = MyUtils.newJSONObject(AntDodoRpcCall.taskList());
                 if (MessageUtil.checkResultCode(TAG, jo)) {
-                    jo = jo.getJSONObject("data");
-                    JSONArray taskGroupInfoList = jo.optJSONArray("taskGroupInfoList");
+                    jo = jo.optJSONObject("data");
+                    JSONArray taskGroupInfoList = jo != null ? jo.optJSONArray("taskGroupInfoList") : null;
                     if (taskGroupInfoList != null) {
                         for (int i = 0; i < taskGroupInfoList.length(); i++) {
-                            JSONObject antDodoTask = taskGroupInfoList.getJSONObject(i);
-                            JSONArray taskInfoList = antDodoTask.getJSONArray("taskInfoList");
-                            for (int j = 0; j < taskInfoList.length(); j++) {
-                                JSONObject taskInfo = taskInfoList.getJSONObject(j);
-                                JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.getString("bizInfo"));
-                                String taskTitle = bizInfo.getString("taskTitle");
+                            JSONObject antDodoTask = taskGroupInfoList.optJSONObject(i);
+                            JSONArray taskInfoList = antDodoTask != null ? antDodoTask.optJSONArray("taskInfoList") : null;
+                            for (int j = 0; taskInfoList != null && j < taskInfoList.length(); j++) {
+                                JSONObject taskInfo = taskInfoList.optJSONObject(j);
+                                JSONObject taskBaseInfo = taskInfo != null ? taskInfo.optJSONObject("taskBaseInfo") : null;
+                                if (taskBaseInfo == null) {
+                                    continue;
+                                }
+                                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.optString("bizInfo"));
+                                String taskTitle = bizInfo.optString("taskTitle");
                                 AntDodoTaskListMap.add(taskTitle, taskTitle);
                             }
                         }
@@ -228,9 +231,12 @@ public class AntDodo extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return 0;
             }
-            jo = jo.getJSONObject("data");
-            jo = jo.getJSONObject("animalBook");
-            String endDate = jo.getString("endDate") + " 23:59:59";
+            jo = jo.optJSONObject("data");
+            jo = jo != null ? jo.optJSONObject("animalBook") : null;
+            if (jo == null) {
+                return 0;
+            }
+            String endDate = jo.optString("endDate") + " 23:59:59";
             return Log.timeToStamp(endDate);
         } catch (Throwable t) {
             Log.i(TAG, "getEndDateTime err:");
@@ -250,8 +256,8 @@ public class AntDodo extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntDodoRpcCall.queryAnimalStatus());
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                JSONObject data = jo.getJSONObject("data");
-                if (data.getBoolean("collect")) {
+                JSONObject data = jo.optJSONObject("data");
+                if (data != null && data.optBoolean("collect")) {
                     Log.record("神奇物种卡片今日收集完成！");
                 } else {
                     collectAnimalCard();
@@ -268,23 +274,26 @@ public class AntDodo extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntDodoRpcCall.homePage());
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                JSONObject data = jo.getJSONObject("data");
-                JSONArray ja = data.getJSONArray("limit");
+                JSONObject data = jo.optJSONObject("data");
+                JSONArray ja = data != null ? data.optJSONArray("limit") : null;
                 int index = -1;
-                for (int i = 0; i < ja.length(); i++) {
-                    jo = ja.getJSONObject(i);
-                    if ("DAILY_COLLECT".equals(jo.getString("actionCode"))) {
+                for (int i = 0; ja != null && i < ja.length(); i++) {
+                    jo = ja.optJSONObject(i);
+                    if (jo != null && "DAILY_COLLECT".equals(jo.optString("actionCode"))) {
                         index = i;
                         break;
                     }
                 }
-                if (index >= 0) {
-                    int leftFreeQuota = jo.getInt("leftFreeQuota");
+                if (index >= 0 && jo != null) {
+                    int leftFreeQuota = jo.optInt("leftFreeQuota");
                     for (int j = 0; j < leftFreeQuota; j++) {
                         jo = MyUtils.newJSONObject(AntDodoRpcCall.collect());
                         if (MessageUtil.checkResultCode(TAG, jo)) {
-                            data = jo.getJSONObject("data");
-                            JSONObject animal = data.getJSONObject("animal");
+                            data = jo.optJSONObject("data");
+                            JSONObject animal = data != null ? data.optJSONObject("animal") : null;
+                            if (animal == null) {
+                                continue;
+                            }
                             Log.forest("神奇物种🦕每日抽卡" + getAnimalInfo(animal));
                             checkAnimalAndGiftToFriend(animal);
                         }
@@ -303,26 +312,32 @@ public class AntDodo extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            jo = jo.getJSONObject("data");
-            JSONArray taskGroupInfoList = jo.optJSONArray("taskGroupInfoList");
+            jo = jo.optJSONObject("data");
+            JSONArray taskGroupInfoList = jo != null ? jo.optJSONArray("taskGroupInfoList") : null;
             if (taskGroupInfoList == null) {
                 return;
             }
             for (int i = 0; i < taskGroupInfoList.length(); i++) {
-                JSONObject antDodoTask = taskGroupInfoList.getJSONObject(i);
-                String taskGroupName = antDodoTask.getString("taskGroupName");
-                JSONArray taskInfoList = antDodoTask.getJSONArray("taskInfoList");
-                for (int j = 0; j < taskInfoList.length(); j++) {
-                    JSONObject taskInfo = taskInfoList.getJSONObject(j);
-                    JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                    String taskStatus = taskBaseInfo.getString("taskStatus");
+                JSONObject antDodoTask = taskGroupInfoList.optJSONObject(i);
+                if (antDodoTask == null) {
+                    continue;
+                }
+                String taskGroupName = antDodoTask.optString("taskGroupName");
+                JSONArray taskInfoList = antDodoTask.optJSONArray("taskInfoList");
+                for (int j = 0; taskInfoList != null && j < taskInfoList.length(); j++) {
+                    JSONObject taskInfo = taskInfoList.optJSONObject(j);
+                    JSONObject taskBaseInfo = taskInfo != null ? taskInfo.optJSONObject("taskBaseInfo") : null;
+                    if (taskBaseInfo == null) {
+                        continue;
+                    }
+                    String taskStatus = taskBaseInfo.optString("taskStatus");
                     if (TaskStatus.RECEIVED.name().equals(taskStatus)) {
                         continue;
                     }
-                    String sceneCode = taskBaseInfo.getString("sceneCode");
-                    String taskType = taskBaseInfo.getString("taskType");
-                    JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.getString("bizInfo"));
-                    String taskTitle = bizInfo.getString("taskTitle");
+                    String sceneCode = taskBaseInfo.optString("sceneCode");
+                    String taskType = taskBaseInfo.optString("taskType");
+                    JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.optString("bizInfo"));
+                    String taskTitle = bizInfo.optString("taskTitle");
                     if (TaskStatus.FINISHED.name().equals(taskStatus)) {
                         receiveTaskAward(sceneCode, taskType, taskTitle);
                         continue;
