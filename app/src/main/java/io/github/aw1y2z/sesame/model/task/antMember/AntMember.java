@@ -628,10 +628,17 @@ public class AntMember extends ModelTask {
         boolean doubleCheck = false;
         try {
             for (int i = 0; i < taskList.length(); i++) {
-                JSONObject task = taskList.getJSONObject(i);
-                if (task.getBoolean("hybrid")) {
-                    int periodCurrentCount = Integer.parseInt(task.getJSONObject("extInfo").getString("PERIOD_CURRENT_COUNT"));
-                    int periodTargetCount = Integer.parseInt(task.getJSONObject("extInfo").getString("PERIOD_TARGET_COUNT"));
+                JSONObject task = taskList.optJSONObject(i);
+                if (task == null) {
+                    continue;
+                }
+                if (task.optBoolean("hybrid")) {
+                    JSONObject extInfo = task.optJSONObject("extInfo");
+                    if (extInfo == null) {
+                        continue;
+                    }
+                    int periodCurrentCount = Integer.parseInt(extInfo.optString("PERIOD_CURRENT_COUNT", "0"));
+                    int periodTargetCount = Integer.parseInt(extInfo.optString("PERIOD_TARGET_COUNT", "0"));
                     int count = periodTargetCount > periodCurrentCount ? periodTargetCount - periodCurrentCount : 0;
                     if (count > 0) {
                         doubleCheck = doubleCheck || doBrowseTask(task, periodTargetCount, periodTargetCount);
@@ -652,15 +659,23 @@ public class AntMember extends ModelTask {
     private Boolean doBrowseTask(JSONObject task, int left, int right) {
         boolean doubleCheck = false;
         try {
-            JSONObject taskConfigInfo = task.getJSONObject("taskConfigInfo");
-            String name = taskConfigInfo.getString("name");
+            JSONObject taskConfigInfo = task.optJSONObject("taskConfigInfo");
+            if (taskConfigInfo == null) {
+                return false;
+            }
+            String name = taskConfigInfo.optString("name");
             //黑名单任务跳过
             if (AntMemberTaskList.getValue().contains(name)) {
                 return false;
             }
-            Long id = taskConfigInfo.getLong("id");
-            String awardParamPoint = taskConfigInfo.getJSONObject("awardParam").getString("awardParamPoint");
-            String targetBusiness = taskConfigInfo.getJSONArray("targetBusiness").getString(0);
+            Long id = taskConfigInfo.optLong("id");
+            JSONObject awardParam = taskConfigInfo.optJSONObject("awardParam");
+            JSONArray targetBusinessArr = taskConfigInfo.optJSONArray("targetBusiness");
+            if (awardParam == null || targetBusinessArr == null || targetBusinessArr.length() == 0) {
+                return false;
+            }
+            String awardParamPoint = awardParam.optString("awardParamPoint");
+            String targetBusiness = targetBusinessArr.optString(0);
             for (int i = left; i <= right; i++) {
                 JSONObject jo = MyUtils.newJSONObject(AntMemberRpcCall.applyTask(name, id));
                 TimeUtil.sleep(300);
