@@ -84,20 +84,20 @@ public class ExtensionsHandle {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray ja = jo.getJSONArray("treeItems");
-            if (ja.length() == 0) {
+            JSONArray ja = jo.optJSONArray("treeItems");
+            if (ja == null || ja.length() == 0) {
                 Log.forest("新树上苗🌱[当前没有新树上苗信息!]");
                 return;
             }
             for (int i = 0; i < ja.length(); i++) {
-                jo = ja.getJSONObject(i);
-                if (!jo.has("projectType"))
+                jo = ja.optJSONObject(i);
+                if (jo == null || !jo.has("projectType"))
                     continue;
-                if (!"TREE".equals(jo.getString("projectType")))
+                if (!"TREE".equals(jo.optString("projectType")))
                     continue;
-                if (!"COMING".equals(jo.getString("applyAction")))
+                if (!"COMING".equals(jo.optString("applyAction")))
                     continue;
-                String projectId = jo.getString("itemId");
+                String projectId = jo.optString("itemId");
                 queryTreeForExchange(projectId);
             }
         } catch (Throwable t) {
@@ -112,14 +112,18 @@ public class ExtensionsHandle {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONObject exchangeableTree = jo.getJSONObject("exchangeableTree");
-            int currentBudget = exchangeableTree.getInt("currentBudget");
-            String region = exchangeableTree.getString("region");
-            String treeName = exchangeableTree.getString("treeName");
+            JSONObject exchangeableTree = jo.optJSONObject("exchangeableTree");
+            if (exchangeableTree == null) {
+                return;
+            }
+            int currentBudget = exchangeableTree.optInt("currentBudget");
+            String region = exchangeableTree.optString("region");
+            String treeName = exchangeableTree.optString("treeName");
             String tips = "不可合种";
             if (exchangeableTree.optBoolean("canCoexchange", false)) {
+                JSONObject extendInfo = exchangeableTree.optJSONObject("extendInfo");
                 tips = "可以合种-合种类型："
-                        + exchangeableTree.getJSONObject("extendInfo").getString("cooperate_template_id_list");
+                        + (extendInfo != null ? extendInfo.optString("cooperate_template_id_list") : "");
             }
             Log.forest("新树上苗🌱[" + region + "-" + treeName + "]#" + currentBudget + "株-" + tips);
         } catch (Throwable t) {
@@ -134,13 +138,13 @@ public class ExtensionsHandle {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray ja = jo.getJSONArray("treeItems");
-            for (int i = 0; i < ja.length(); i++) {
-                jo = ja.getJSONObject(i);
-                if (!jo.has("projectType"))
+            JSONArray ja = jo.optJSONArray("treeItems");
+            for (int i = 0; ja != null && i < ja.length(); i++) {
+                jo = ja.optJSONObject(i);
+                if (jo == null || !jo.has("projectType"))
                     continue;
-                String projectId = jo.getString("itemId");
-                String itemName = jo.getString("itemName");
+                String projectId = jo.optString("itemId");
+                String itemName = jo.optString("itemName");
                 getTreeCurrentBudget(projectId, itemName);
                 TimeUtil.sleep(100);
             }
@@ -154,9 +158,12 @@ public class ExtensionsHandle {
         try {
             JSONObject jo = MyUtils.newJSONObject(ProtectTreeRpcCall.queryTreeForExchange(projectId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                JSONObject exchangeableTree = jo.getJSONObject("exchangeableTree");
-                int currentBudget = exchangeableTree.getInt("currentBudget");
-                String region = exchangeableTree.getString("region");
+                JSONObject exchangeableTree = jo.optJSONObject("exchangeableTree");
+                if (exchangeableTree == null) {
+                    return;
+                }
+                int currentBudget = exchangeableTree.optInt("currentBudget");
+                String region = exchangeableTree.optString("region");
                 Log.forest("树苗查询🌱[" + region + "-" + treeName + "]#剩余:" + currentBudget);
             }
         } catch (Throwable t) {
@@ -171,13 +178,19 @@ public class ExtensionsHandle {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONObject areaTrees = jo.getJSONObject("areaTrees");
-            JSONObject regionConfig = jo.getJSONObject("regionConfig");
+            JSONObject areaTrees = jo.optJSONObject("areaTrees");
+            JSONObject regionConfig = jo.optJSONObject("regionConfig");
+            if (areaTrees == null || regionConfig == null) {
+                return;
+            }
             Iterator<String> regionKeys = regionConfig.keys();
             while (regionKeys.hasNext()) {
                 String regionKey = regionKeys.next();
                 if (!areaTrees.has(regionKey)) {
-                    JSONObject region = regionConfig.getJSONObject(regionKey);
+                    JSONObject region = regionConfig.optJSONObject(regionKey);
+                    if (region == null) {
+                        continue;
+                    }
                     String regionName = region.optString("regionName");
                     Log.forest("未解锁地区🗺️[" + regionName + "]");
                 }
@@ -194,10 +207,10 @@ public class ExtensionsHandle {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray ja = jo.getJSONArray("treeItems");
-            for (int i = 0; i < ja.length(); i++) {
-                jo = ja.getJSONObject(i);
-                if (!jo.has("projectType"))
+            JSONArray ja = jo.optJSONArray("treeItems");
+            for (int i = 0; ja != null && i < ja.length(); i++) {
+                jo = ja.optJSONObject(i);
+                if (jo == null || !jo.has("projectType"))
                     continue;
                 int certCountForAlias = jo.optInt("certCountForAlias", -1);
                 if (certCountForAlias == 0) {

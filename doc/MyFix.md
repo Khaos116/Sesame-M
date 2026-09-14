@@ -4,6 +4,12 @@
 
 ## 变更记录
 
+### 2026-09-14：`ExtensionsHandle.java` `.get*()` → `.opt*()` + 空指针防护，第十六个文件全部完成
+
+第十六个文件（248 行，原~23 处调用点，一次会话内全部转完）。覆盖 `getNewTreeItems`/`queryTreeForExchange`/`getTreeItems`/`getTreeCurrentBudget`/`queryAreaTrees`/`getUnlockTreeItems`（新树上苗提醒、树苗余量查询、未解锁地区/项目提醒等扩展信息展示功能）。
+
+`grep` 确认代码里已无可执行的裸 `.get*()` 调用。编译通过；仅做了编译期验证，未做设备/运行时测试。下一步按调用点数量排序转到剩余的小文件（10 处以下），逐个处理。
+
 ### 2026-09-14：`AntInsurance.java` `.get*()` → `.opt*()` + 空指针防护，第十五个文件全部完成
 
 第十五个文件（137 行，原~25 处调用点，一次会话内全部转完）。覆盖 `gainSumInsured`（保障金领取，含遍历 JSON 动态字段用的 `jo.get(key)` 也一并改成 `jo.opt(key)`——这是本轮唯一一处不带类型后缀的裸 `get`，同样会在字段缺失时抛异常，判断属于同一类问题一并处理）/`gainMyAndFamilySumInsured`、`lotteryDraw`（天天领取保障福利）、`beanSignIn`/`beanExchange`（安心豆签到与兑换，含四层嵌套取值链 `result.rspContext.params.exchangeDetail`）。
