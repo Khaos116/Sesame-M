@@ -63,6 +63,7 @@ import io.github.aw1y2z.sesame.util.PermissionUtil
 import io.github.aw1y2z.sesame.util.Statistics
 import io.github.aw1y2z.sesame.util.Statistics.DataType
 import io.github.aw1y2z.sesame.util.Statistics.TimeType
+import io.github.aw1y2z.sesame.util.TimeUtil
 import io.github.aw1y2z.sesame.util.ToastUtil
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap
 import top.yukonga.miuix.kmp.basic.NavigationBar
@@ -211,7 +212,7 @@ class MiuixMainActivity : MiuixBaseActivity() {
         if (!hasPermission) return
         try {
             Statistics.load()
-            Statistics.updateDay(Calendar.getInstance())
+            Statistics.updateDay(TimeUtil.getNow())
             statisticsVersion++
         } catch (e: Exception) {
             Log.printStackTrace(e)

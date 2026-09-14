@@ -749,7 +749,7 @@ public class Status {
     }
     
     public static synchronized void save() {
-        save(Calendar.getInstance());
+        save(TimeUtil.getNow());
     }
     
     public static synchronized void save(Calendar nowCalendar) {

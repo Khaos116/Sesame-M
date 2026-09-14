@@ -1213,8 +1213,8 @@ public class AntFarm extends ModelTask {
                     Log.record("捐蛋排位🥚保底模式目标星级" + desStarNum + "[" + desNickName + "]" + "已捐蛋" + desDonation);
                 }
 
-                // 每天20:01-23:59不执行
-                java.util.Calendar now = java.util.Calendar.getInstance();
+                // 每天20:01-23:59不执行，按北京时间判断（TimeUtil.getNow() 现在固定 GMT+8）
+                java.util.Calendar now = TimeUtil.getNow();
                 int hour = now.get(java.util.Calendar.HOUR_OF_DAY);
                 int minute = now.get(java.util.Calendar.MINUTE);
                 if (hour > 20 || (hour == 20 && minute >= 1)) {
@@ -1281,8 +1281,8 @@ public class AntFarm extends ModelTask {
             //设置偷榜时间定时执行（提前分钟数为 0 表示在 20:00 准时执行）
             if (stealRankEnable.getValue()) {
                 int minutes = Math.max(stealRankMinutes.getValue(), 0);
-                // 计算今天 20:00 的时间戳
-                java.util.Calendar targetTime = java.util.Calendar.getInstance();
+                // 计算今天 20:00 的时间戳，按北京时间
+                java.util.Calendar targetTime = TimeUtil.getNow();
                 targetTime.set(java.util.Calendar.HOUR_OF_DAY, 20);
                 targetTime.set(java.util.Calendar.MINUTE, 0);
                 targetTime.set(java.util.Calendar.SECOND, 0);
@@ -1456,7 +1456,7 @@ public class AntFarm extends ModelTask {
     }
 
     private boolean isStealRankTime(int stealMinutes) {
-        java.util.Calendar calendar = java.util.Calendar.getInstance();
+        java.util.Calendar calendar = TimeUtil.getNow();
         int hour = calendar.get(java.util.Calendar.HOUR_OF_DAY);
         int minute = calendar.get(java.util.Calendar.MINUTE);
         int totalMinutes = hour * 60 + minute;

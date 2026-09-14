@@ -16,6 +16,11 @@ import java.util.concurrent.TimeUnit;
  */
 public class TimeUtil {
 
+    // 固定插件自己的业务时区为北京时间，不修改支付宝宿主进程的默认时区（不调用 TimeZone.setDefault）。
+    // 对齐 Sure-Xu TimeUtil.java 的做法：把 GMT+8 收敛到这一个类内部的 Calendar/DateFormat 构造处，
+    // 调用方（isAfterTimeStr/getToday/getNow 等）不用改，天然全部拿到正确时区，不用挨个调用点手工替换。
+    private static final TimeZone GMT8 = TimeZone.getTimeZone("GMT+8");
+
     public static Boolean checkNowInTimeRange(String timeRange) {
         return checkInTimeRange(System.currentTimeMillis(), timeRange);
     }
@@ -93,7 +98,7 @@ public class TimeUtil {
 
     public static Integer isCompareTimeStr(Long timeMillis, String compareTimeStr) {
         try {
-            Calendar timeCalendar = Calendar.getInstance();
+            Calendar timeCalendar = Calendar.getInstance(GMT8);
             timeCalendar.setTimeInMillis(timeMillis);
             Calendar compareCalendar = getTodayCalendarByTimeStr(compareTimeStr);
             if (compareCalendar != null) {
@@ -150,7 +155,7 @@ public class TimeUtil {
     }
 
     public static Calendar getCalendarByTimeMillis(Long timeMillis) {
-        Calendar timeCalendar = Calendar.getInstance();
+        Calendar timeCalendar = Calendar.getInstance(GMT8);
         if (timeMillis != null) {
             timeCalendar.setTimeInMillis(timeMillis);
         }
@@ -158,7 +163,9 @@ public class TimeUtil {
     }
 
     public static String getTimeStr(long ts) {
-        return DateFormat.getTimeInstance().format(new java.util.Date(ts));
+        DateFormat format = DateFormat.getTimeInstance();
+        format.setTimeZone(GMT8);
+        return format.format(new java.util.Date(ts));
     }
 
     public static String getDateStr() {
@@ -166,15 +173,17 @@ public class TimeUtil {
     }
 
     public static String getDateStr(int plusDay) {
-        Calendar c = Calendar.getInstance();
+        Calendar c = Calendar.getInstance(GMT8);
         if (plusDay != 0) {
             c.add(Calendar.DATE, plusDay);
         }
-        return DateFormat.getDateInstance().format(c.getTime());
+        DateFormat format = DateFormat.getDateInstance();
+        format.setTimeZone(GMT8);
+        return format.format(c.getTime());
     }
 
     public static Calendar getToday() {
-        Calendar c = Calendar.getInstance();
+        Calendar c = Calendar.getInstance(GMT8);
         c.set(Calendar.HOUR_OF_DAY, 0);
         c.set(Calendar.MINUTE, 0);
         c.set(Calendar.SECOND, 0);
@@ -183,15 +192,15 @@ public class TimeUtil {
     }
 
     public static Calendar getNow() {
-        return Calendar.getInstance();
+        return Calendar.getInstance(GMT8);
     }
 
     /**
-     * 固定 GMT+8 的日历实例，供业务日期判断（签到窗口、每日重置等）在非东八区宿主设备上保持一致。
-     * 与 {@code MyUtils.getInstance()} 对齐，供合并 fork 代码时直接映射调用点，见 doc/MyFix.md。
+     * 固定 GMT+8 的日历实例，等价于 {@link #getNow()}，供 {@code MyUtils.getInstance()} 委托、
+     * 以及合并 fork 代码时按名字直接映射调用点，见 doc/MyFix.md。
      */
     public static Calendar getInstanceGMT8() {
-        return Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));
+        return getNow();
     }
 
     public static void sleep(long millis) {
@@ -208,7 +217,7 @@ public class TimeUtil {
      * @return 当前年的第几周
      */
     public static int getWeekNumber(Date dateTime) {
-        Calendar calendar = Calendar.getInstance();
+        Calendar calendar = Calendar.getInstance(GMT8);
         calendar.setTime(dateTime);
         // 设置周的第一天为周一
         calendar.setFirstDayOfWeek(Calendar.MONDAY);
@@ -291,11 +300,15 @@ public class TimeUtil {
 
     @SuppressLint("SimpleDateFormat")
     public static DateFormat getCommonDateFormat() {
-        return new SimpleDateFormat("dd日HH:mm:ss");
+        SimpleDateFormat format = new SimpleDateFormat("dd日HH:mm:ss");
+        format.setTimeZone(GMT8);
+        return format;
     }
     @SuppressLint("SimpleDateFormat")
     public static DateFormat getCommonDateFormatS() {
-        return new SimpleDateFormat("dd日HHmmss");
+        SimpleDateFormat format = new SimpleDateFormat("dd日HHmmss");
+        format.setTimeZone(GMT8);
+        return format;
     }
 
     @SuppressLint("SimpleDateFormat")
