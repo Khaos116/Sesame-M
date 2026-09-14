@@ -192,8 +192,9 @@ public class AntOrchard extends ModelTask {
             }
 
             // 处理七日礼包
-            if (jo.has("lotteryPlusInfo")) {
-                drawLotteryPlus(jo.getJSONObject("lotteryPlusInfo"));
+            JSONObject lotteryPlusInfo = jo.optJSONObject("lotteryPlusInfo");
+            if (lotteryPlusInfo != null) {
+                drawLotteryPlus(lotteryPlusInfo);
             }
 
             //获取场景列表
@@ -203,7 +204,7 @@ public class AntOrchard extends ModelTask {
             handleEnableScenes(jo);
 
             // 处理淘宝数据（果树状态）
-            handleTaobaoData(jo.getString("taobaoData"));
+            handleTaobaoData(jo.optString("taobaoData"));
 
             // 处理金蛋
             if (drawGameCenterAward.getValue()) {
@@ -249,27 +250,30 @@ public class AntOrchard extends ModelTask {
                 return;
             }
             JSONObject taskTriggerPlayInfo = jo.optJSONObject("taskTriggerPlayInfo");
-            if (!taskTriggerPlayInfo.has("taskList")) {
+            if (taskTriggerPlayInfo == null || !taskTriggerPlayInfo.has("taskList")) {
                 return;
             }
-            JSONArray taskList = taskTriggerPlayInfo.getJSONArray("taskList");
-            for (int j = 0; j < taskList.length(); j++) {
-                JSONObject task = taskList.getJSONObject(j);
-                String taskType = task.getString("taskType");
-                String taskStatus = task.getString("taskStatus");
-                String sceneCode = task.getString("sceneCode");
+            JSONArray taskList = taskTriggerPlayInfo.optJSONArray("taskList");
+            for (int j = 0; taskList != null && j < taskList.length(); j++) {
+                JSONObject task = taskList.optJSONObject(j);
+                if (task == null) {
+                    continue;
+                }
+                String taskType = task.optString("taskType");
+                String taskStatus = task.optString("taskStatus");
+                String sceneCode = task.optString("sceneCode");
                 int alreadyReceiveAwardCount = task.optInt("alreadyReceiveAwardCount");
                 int awardCount = task.optInt("awardCount");
                 int awardCountForReceive = awardCount - alreadyReceiveAwardCount;
-                JSONObject bizInfo = task.getJSONObject("bizInfo");
-                String title = bizInfo.getString("title");
+                JSONObject bizInfo = task.optJSONObject("bizInfo");
+                String title = bizInfo != null ? bizInfo.optString("title") : "";
                 if (taskStatus.equals("FINISHED")) {
                     if (awardCountForReceive > 0) {
                         JSONObject joReceived = MyUtils.newJSONObject(AntOrchardRpcCall.receiveTaskAwardantorchard(awardCountForReceive, sceneCode, taskType));
                         if (MessageUtil.checkSuccess(TAG, joReceived)) {
                             int incAwardCount = joReceived.optInt("incAwardCount");
                             JSONObject taskConfigResultVO = joReceived.optJSONObject("taskConfigResultVO");
-                            String awardType = taskConfigResultVO.getString("awardType");
+                            String awardType = taskConfigResultVO != null ? taskConfigResultVO.optString("awardType") : "";
                             Log.farm("农场乐园🎖️领取[" + title + "]奖励[" + awardType + "*" + incAwardCount + "]");
                         }
                     }
@@ -309,11 +313,14 @@ public class AntOrchard extends ModelTask {
                 String result = AntOrchardRpcCall.orchardListTask();
                 JSONObject jo = MyUtils.newJSONObject(result);
                 if (MessageUtil.checkResultCode(TAG, jo)) {
-                    JSONArray taskArray = jo.getJSONArray("taskList");
-                    for (int i = 0; i < taskArray.length(); i++) {
-                        jo = taskArray.getJSONObject(i);
+                    JSONArray taskArray = jo.optJSONArray("taskList");
+                    for (int i = 0; taskArray != null && i < taskArray.length(); i++) {
+                        jo = taskArray.optJSONObject(i);
+                        if (jo == null) {
+                            continue;
+                        }
                         JSONObject displayConfig = jo.optJSONObject("taskDisplayConfig");
-                        if (displayConfig.has("title")) {
+                        if (displayConfig != null && displayConfig.has("title")) {
                             String title = displayConfig.optString("title");
                             AntOrchardTaskListMap.add(title, title);
                         }
