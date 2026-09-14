@@ -79,20 +79,23 @@ public class GreenFinance extends ModelTask {
                 Log.i(TAG, jo.optString("resultDesc"));
                 return;
             }
-            JSONObject result = jo.getJSONObject("result");
-            if (!result.getBoolean("greenFinanceSigned")) {
+            JSONObject result = jo.optJSONObject("result");
+            if (result == null || !result.optBoolean("greenFinanceSigned")) {
                 Log.other("绿色经营📊未开通");
                 return;
             }
-            JSONObject mcaGreenLeafResult = result.getJSONObject("mcaGreenLeafResult");
-            JSONArray greenLeafList = mcaGreenLeafResult.getJSONArray("greenLeafList");
+            JSONObject mcaGreenLeafResult = result.optJSONObject("mcaGreenLeafResult");
+            JSONArray greenLeafList = mcaGreenLeafResult != null ? mcaGreenLeafResult.optJSONArray("greenLeafList") : null;
             String currentCode = "";
             JSONArray bsnIds = new JSONArray();
-            for (int i = 0; i < greenLeafList.length(); i++) {
-                JSONObject greenLeaf = greenLeafList.getJSONObject(i);
-                String code = greenLeaf.getString("code");
+            for (int i = 0; greenLeafList != null && i < greenLeafList.length(); i++) {
+                JSONObject greenLeaf = greenLeafList.optJSONObject(i);
+                if (greenLeaf == null) {
+                    continue;
+                }
+                String code = greenLeaf.optString("code");
                 if (currentCode.equals(code) || bsnIds.length() == 0) {
-                    bsnIds.put(greenLeaf.getString("bsnId"));
+                    bsnIds.put(greenLeaf.optString("bsnId"));
                 } else {
                     batchSelfCollect(bsnIds);
                     bsnIds = new JSONArray();
@@ -135,7 +138,8 @@ public class GreenFinance extends ModelTask {
         try {
             JSONObject joSelfCollect = MyUtils.newJSONObject(s);
             if (joSelfCollect.optBoolean("success")) {
-                int totalCollectPoint = joSelfCollect.getJSONObject("result").getInt("totalCollectPoint");
+                JSONObject collectResult = joSelfCollect.optJSONObject("result");
+                int totalCollectPoint = collectResult != null ? collectResult.optInt("totalCollectPoint") : 0;
                 Log.other("绿色经营📊收集获得" + totalCollectPoint);
             } else {
                 Log.i(TAG + ".batchSelfCollect", joSelfCollect.optString("resultDesc"));
@@ -159,8 +163,8 @@ public class GreenFinance extends ModelTask {
                 Log.i(TAG + ".signIn.signInQuery", jo.optString("resultDesc"));
                 return;
             }
-            JSONObject result = jo.getJSONObject("result");
-            if (result.getBoolean("isTodaySignin")) {
+            JSONObject result = jo.optJSONObject("result");
+            if (result == null || result.optBoolean("isTodaySignin")) {
                 return;
             }
             s = GreenFinanceRpcCall.signInTrigger(sceneId);
@@ -226,21 +230,21 @@ public class GreenFinance extends ModelTask {
                 Log.i(TAG + ".doTick.queryUserTickItem", jsonObject.optString("resultDesc"));
                 return;
             }
-            JSONArray jsonArray = jsonObject.getJSONArray("result");
-            for (int i = 0; i < jsonArray.length(); i++) {
-                jsonObject = jsonArray.getJSONObject(i);
-                if ("Y".equals(jsonObject.getString("status"))) {
+            JSONArray jsonArray = jsonObject.optJSONArray("result");
+            for (int i = 0; jsonArray != null && i < jsonArray.length(); i++) {
+                jsonObject = jsonArray.optJSONObject(i);
+                if (jsonObject == null || "Y".equals(jsonObject.optString("status"))) {
                     continue;
                 }
-                str = GreenFinanceRpcCall.submitTick(type, jsonObject.getString("behaviorCode"));
+                str = GreenFinanceRpcCall.submitTick(type, jsonObject.optString("behaviorCode"));
                 TimeUtil.sleep(1500);
                 JSONObject object = MyUtils.newJSONObject(str);
                 if (!object.optBoolean("success")
                         || !String.valueOf(true).equals(JsonUtil.getValueByPath(object, "result.result"))) {
-                    Log.other("绿色经营📊[" + jsonObject.getString("title") + "]打卡失败");
+                    Log.other("绿色经营📊[" + jsonObject.optString("title") + "]打卡失败");
                     break;
                 }
-                Log.other("绿色经营📊[" + jsonObject.getString("title") + "]打卡成功");
+                Log.other("绿色经营📊[" + jsonObject.optString("title") + "]打卡成功");
 //                Thread.sleep(executeIntervalInt);
             }
         } catch (Throwable th) {
@@ -281,10 +285,14 @@ public class GreenFinance extends ModelTask {
                 Log.i(TAG + ".donation.queryAllDonationProjectNew", jsonObject.optString("resultDesc"));
                 return;
             }
-            JSONArray result = jsonObject.getJSONArray("result");
+            JSONArray result = jsonObject.optJSONArray("result");
             TreeMap<String, String> dicId = new TreeMap<>();
-            for (int i = 0; i < result.length(); i++) {
-                jsonObject = (JSONObject) JsonUtil.getValueByPathObject(result.getJSONObject(i),
+            for (int i = 0; result != null && i < result.length(); i++) {
+                JSONObject resultItem = result.optJSONObject(i);
+                if (resultItem == null) {
+                    continue;
+                }
+                jsonObject = (JSONObject) JsonUtil.getValueByPathObject(resultItem,
                         "mcaDonationProjectResult.[0]");
                 if (jsonObject == null) {
                     continue;
@@ -336,8 +344,11 @@ public class GreenFinance extends ModelTask {
             JSONArray prizes = (JSONArray) JsonUtil.getValueByPathObject(jsonObject, "result.prizes");
             if (prizes != null) {
                 for (int i = 0; i < prizes.length(); i++) {
-                    jsonObject = prizes.getJSONObject(i);
-                    String bizTime = jsonObject.getString("bizTime");
+                    jsonObject = prizes.optJSONObject(i);
+                    if (jsonObject == null) {
+                        continue;
+                    }
+                    String bizTime = jsonObject.optString("bizTime");
                     // 使用 SimpleDateFormat 解析字符串
                     SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH);
                     Date dateTime = formatter.parse(bizTime);
@@ -358,7 +369,7 @@ public class GreenFinance extends ModelTask {
             if (object == null) {
                 return;
             }
-            Log.other("绿色经营🍬评级奖品[" + object.getString("prizeName") + "]" + object.getString("price"));
+            Log.other("绿色经营🍬评级奖品[" + object.optString("prizeName") + "]" + object.optString("price"));
         } catch (Throwable th) {
             Log.i(TAG, "prizes err:");
             Log.printStackTrace(TAG, th);
@@ -383,17 +394,20 @@ public class GreenFinance extends ModelTask {
                         Log.other("绿色经营🙋，好友金币巡查失败");
                         break;
                     }
-                    JSONObject result = jsonObject.getJSONObject("result");
-                    if (result.getBoolean("lastPage")) {
+                    JSONObject result = jsonObject.optJSONObject("result");
+                    if (result == null) {
+                        break;
+                    }
+                    if (result.optBoolean("lastPage")) {
                         Log.other("绿色经营🙋，好友金币巡查完成");
                         Status.greenFinancePointFriend();
                         return;
                     }
-                    n = result.getInt("nextStartIndex");
-                    JSONArray list = result.getJSONArray("rankingList");
-                    for (int i = 0; i < list.length(); i++) {
-                        JSONObject object = list.getJSONObject(i);
-                        if (!object.getBoolean("collectFlag")) {
+                    n = result.optInt("nextStartIndex");
+                    JSONArray list = result.optJSONArray("rankingList");
+                    for (int i = 0; list != null && i < list.length(); i++) {
+                        JSONObject object = list.optJSONObject(i);
+                        if (object == null || !object.optBoolean("collectFlag")) {
                             continue;
                         }
                         String friendId = object.optString("uid");
@@ -413,9 +427,9 @@ public class GreenFinance extends ModelTask {
                         }
                         JSONArray jsonArray = new JSONArray();
                         for (int j = 0; j < points.length(); j++) {
-                            jsonObject = points.getJSONObject(j);
-                            if (!jsonObject.getBoolean("collectFlag")) {
-                                jsonArray.put(jsonObject.getString("bsnId"));
+                            jsonObject = points.optJSONObject(j);
+                            if (jsonObject != null && !jsonObject.optBoolean("collectFlag")) {
+                                jsonArray.put(jsonObject.optString("bsnId"));
                             }
                         }
                         if (jsonArray.length() == 0) {
