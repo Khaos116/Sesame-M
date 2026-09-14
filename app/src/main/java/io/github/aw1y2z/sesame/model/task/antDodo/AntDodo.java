@@ -572,10 +572,12 @@ public class AntDodo extends ModelTask {
                 return false;
             }
 
-            jo = jo.getJSONObject("data");
-            String propName = jo.getJSONObject("propConfig").getString("propName");
+            jo = jo.optJSONObject("data");
+            JSONObject propConfig = jo != null ? jo.optJSONObject("propConfig") : null;
+            String propName = propConfig != null ? propConfig.optString("propName") : "";
 
-            JSONObject animal = jo.getJSONObject("useResult").optJSONObject("animal");
+            JSONObject useResult = jo != null ? jo.optJSONObject("useResult") : null;
+            JSONObject animal = useResult != null ? useResult.optJSONObject("animal") : null;
             Log.forest("使用道具🎭[" + propName + "]" + getAnimalInfo(animal));
             checkAnimalAndGiftToFriend(animal);
             return true;
@@ -592,9 +594,11 @@ public class AntDodo extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            jo = jo.getJSONObject("data");
-            String propName = jo.getJSONObject("propConfig").getString("propName");
-            JSONObject animal = jo.getJSONObject("useResult").optJSONObject("animal");
+            jo = jo.optJSONObject("data");
+            JSONObject propConfig = jo != null ? jo.optJSONObject("propConfig") : null;
+            String propName = propConfig != null ? propConfig.optString("propName") : "";
+            JSONObject useResult = jo != null ? jo.optJSONObject("useResult") : null;
+            JSONObject animal = useResult != null ? useResult.optJSONObject("animal") : null;
             Log.forest("使用道具🎭[" + propName + "]" + getAnimalInfo(animal));
             checkAnimalAndGiftToFriend(animal);
             return true;
@@ -610,25 +614,27 @@ public class AntDodo extends ModelTask {
             JSONObject jo = MyUtils.newJSONObject(AntDodoRpcCall.queryFriend());
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 int count = 0;
-                JSONArray limitList = jo.getJSONObject("data").getJSONObject("extend").getJSONArray("limit");
-                for (int i = 0; i < limitList.length(); i++) {
-                    JSONObject limit = limitList.getJSONObject(i);
-                    if (limit.getString("actionCode").equals("COLLECT_TO_FRIEND")) {
-                        if (limit.getLong("startTime") > System.currentTimeMillis()) {
+                JSONObject data0 = jo.optJSONObject("data");
+                JSONObject extend = data0 != null ? data0.optJSONObject("extend") : null;
+                JSONArray limitList = extend != null ? extend.optJSONArray("limit") : null;
+                for (int i = 0; limitList != null && i < limitList.length(); i++) {
+                    JSONObject limit = limitList.optJSONObject(i);
+                    if (limit != null && limit.optString("actionCode").equals("COLLECT_TO_FRIEND")) {
+                        if (limit.optLong("startTime") > System.currentTimeMillis()) {
                             return;
                         }
-                        count = limit.getInt("leftLimit");
+                        count = limit.optInt("leftLimit");
                         break;
                     }
 
                 }
-                JSONArray friendList = jo.getJSONObject("data").getJSONArray("friends");
-                for (int i = 0; i < friendList.length() && count > 0; i++) {
-                    JSONObject friend = friendList.getJSONObject(i);
-                    if (friend.getBoolean("dailyCollect")) {
+                JSONArray friendList = data0 != null ? data0.optJSONArray("friends") : null;
+                for (int i = 0; friendList != null && i < friendList.length() && count > 0; i++) {
+                    JSONObject friend = friendList.optJSONObject(i);
+                    if (friend == null || friend.optBoolean("dailyCollect")) {
                         continue;
                     }
-                    String useId = friend.getString("userId");
+                    String useId = friend.optString("userId");
                     boolean isCollectToFriend = collectToFriendList.getValue().contains(useId);
                     if (collectToFriendType.getValue() != CollectToFriendType.COLLECT) {
                         isCollectToFriend = !isCollectToFriend;
@@ -639,7 +645,8 @@ public class AntDodo extends ModelTask {
                     jo = MyUtils.newJSONObject(AntDodoRpcCall.collect(useId));
                     if (MessageUtil.checkResultCode(TAG, jo)) {
                         String userName = UserIdMap.getMaskName(useId);
-                        JSONObject animal = jo.getJSONObject("data").optJSONObject("animal");
+                        JSONObject collectData = jo.optJSONObject("data");
+                        JSONObject animal = collectData != null ? collectData.optJSONObject("animal") : null;
                         Log.forest("帮抽卡片🦕[" + userName + "]" + getAnimalInfo(animal));
                         count--;
                     }
@@ -669,18 +676,27 @@ public class AntDodo extends ModelTask {
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     break;
                 }
-                jo = jo.getJSONObject("data");
-                hasMore = jo.getBoolean("hasMore");
+                jo = jo.optJSONObject("data");
+                if (jo == null) {
+                    break;
+                }
+                hasMore = jo.optBoolean("hasMore");
                 pageStart += 9;
-                JSONArray bookForUserList = jo.getJSONArray("bookForUserList");
-                for (int i = 0; i < bookForUserList.length(); i++) {
-                    jo = bookForUserList.getJSONObject(i);
+                JSONArray bookForUserList = jo.optJSONArray("bookForUserList");
+                for (int i = 0; bookForUserList != null && i < bookForUserList.length(); i++) {
+                    jo = bookForUserList.optJSONObject(i);
+                    if (jo == null) {
+                        continue;
+                    }
                     MedalGenerationStatus medalGenerationStatus = MedalGenerationStatus.valueOf(jo.optString("medalGenerationStatus"));
                     if (medalGenerationStatus == MedalGenerationStatus.CAN_GENERATE) {
                         if (bookMedalOptions.getValue().contains("generateBookMedal")) {
-                            JSONObject animalBookResult = jo.getJSONObject("animalBookResult");
-                            String bookId = animalBookResult.getString("bookId");
-                            String ecosystem = animalBookResult.getString("ecosystem");
+                            JSONObject animalBookResult = jo.optJSONObject("animalBookResult");
+                            if (animalBookResult == null) {
+                                continue;
+                            }
+                            String bookId = animalBookResult.optString("bookId");
+                            String ecosystem = animalBookResult.optString("ecosystem");
                             jo = MyUtils.newJSONObject(AntDodoRpcCall.generateBookMedal(bookId));
                             if (!MessageUtil.checkResultCode(TAG, jo)) {
                                 break;
