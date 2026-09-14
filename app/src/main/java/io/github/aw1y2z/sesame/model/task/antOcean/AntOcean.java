@@ -640,39 +640,45 @@ public class AntOcean extends ModelTask {
                     }
                 }
             }
-            int seaAreaNum = jo.getInt("seaAreaNum");
-            int fixSeaAreaNum = jo.getInt("fixSeaAreaNum");
-            int currentSeaAreaIndex = jo.getInt("currentSeaAreaIndex");
+            int seaAreaNum = jo.optInt("seaAreaNum");
+            int fixSeaAreaNum = jo.optInt("fixSeaAreaNum");
+            int currentSeaAreaIndex = jo.optInt("currentSeaAreaIndex");
             if (currentSeaAreaIndex < fixSeaAreaNum && seaAreaNum > fixSeaAreaNum) {
                 queryOceanPropList();
             }
-            JSONArray seaAreaVOs = jo.getJSONArray("seaAreaVOs");
+            JSONArray seaAreaVOs = jo.optJSONArray("seaAreaVOs");
+            if (seaAreaVOs == null || seaAreaVOs.length() == 0) {
+                return;
+            }
             for (int i = 0; i < seaAreaVOs.length(); i++) {
-                JSONObject seaAreaVO = seaAreaVOs.getJSONObject(i);
+                JSONObject seaAreaVO = seaAreaVOs.optJSONObject(i);
+                if (seaAreaVO == null) {
+                    continue;
+                }
                 JSONArray fishVOs = seaAreaVO.optJSONArray("fishVO");
                 if (fishVOs != null) for (int j = 0; j < fishVOs.length(); j++) {
-                    JSONObject fishVO = fishVOs.getJSONObject(j);
-                    if (!fishVO.getBoolean("unlock") && "COMPLETED".equals(fishVO.getString("status"))) {
-                        String fishId = fishVO.getString("id");
+                    JSONObject fishVO = fishVOs.optJSONObject(j);
+                    if (fishVO != null && !fishVO.optBoolean("unlock") && "COMPLETED".equals(fishVO.optString("status"))) {
+                        String fishId = fishVO.optString("id");
                         combineFish(fishId);
                     }
                 }
                 if (seaAreaVO.has("seaAreaExtraCollectVO")) {
-                    JSONObject seaAreaExtraCollectVO = seaAreaVO.getJSONObject("seaAreaExtraCollectVO");
-                    String ExtraStatus = seaAreaExtraCollectVO.optString("status");
-                    if (!ExtraStatus.equals("FINISHED")) {
+                    JSONObject seaAreaExtraCollectVO = seaAreaVO.optJSONObject("seaAreaExtraCollectVO");
+                    String ExtraStatus = seaAreaExtraCollectVO != null ? seaAreaExtraCollectVO.optString("status") : "";
+                    if (seaAreaExtraCollectVO != null && !ExtraStatus.equals("FINISHED")) {
                         JSONArray ExtrafishVOs = seaAreaExtraCollectVO.optJSONArray("fishVO");
                         if (ExtrafishVOs != null) for (int j = 0; j < ExtrafishVOs.length(); j++) {
-                            JSONObject ExtrafishVO = ExtrafishVOs.getJSONObject(j);
-                            if (!ExtrafishVO.getBoolean("unlock") && "COMPLETED".equals(ExtrafishVO.getString("status"))) {
-                                String ExtrafishId = ExtrafishVO.getString("id");
+                            JSONObject ExtrafishVO = ExtrafishVOs.optJSONObject(j);
+                            if (ExtrafishVO != null && !ExtrafishVO.optBoolean("unlock") && "COMPLETED".equals(ExtrafishVO.optString("status"))) {
+                                String ExtrafishId = ExtrafishVO.optString("id");
                                 combineFish(ExtrafishId);
                             }
                         }
                     }
                 }
-                seaAreaVO = seaAreaVOs.getJSONObject(seaAreaVOs.length() - 1);
-                String LastseaAreaStatus = seaAreaVO.optString("status");
+                seaAreaVO = seaAreaVOs.optJSONObject(seaAreaVOs.length() - 1);
+                String LastseaAreaStatus = seaAreaVO != null ? seaAreaVO.optString("status") : "";
                 if (LastseaAreaStatus.equals("WAIT_FOR_UNLOCK")) {
                     AntOceanRpcCall.repairSeaArea();
                 }
@@ -702,9 +708,9 @@ public class AntOcean extends ModelTask {
                     }
                 }
             }
-            JSONArray seaAreaVOs = jo.getJSONArray("seaAreaVOs");
-            JSONObject seaAreaVO = seaAreaVOs.getJSONObject(seaAreaVOs.length() - 1);
-            String LastseaAreaStatus = seaAreaVO.optString("status");
+            JSONArray seaAreaVOs = jo.optJSONArray("seaAreaVOs");
+            JSONObject seaAreaVO = seaAreaVOs != null && seaAreaVOs.length() > 0 ? seaAreaVOs.optJSONObject(seaAreaVOs.length() - 1) : null;
+            String LastseaAreaStatus = seaAreaVO != null ? seaAreaVO.optString("status") : "";
             if (LastseaAreaStatus.equals("WAIT_FOR_UNLOCK")) {
                 AntOceanRpcCall.repairSeaArea();
             }
@@ -732,23 +738,26 @@ public class AntOcean extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            String currentChapterCode = jo.getString("currentChapterCode");
-            JSONArray chapterVOs = jo.getJSONArray("userChapterDetailVOList");
+            String currentChapterCode = jo.optString("currentChapterCode");
+            JSONArray chapterVOs = jo.optJSONArray("userChapterDetailVOList");
             boolean isFinish = false;
             String dstChapterCode = "";
             String dstChapterName = "";
-            for (int i = 0; i < chapterVOs.length(); i++) {
-                JSONObject chapterVO = chapterVOs.getJSONObject(i);
-                int repairedSeaAreaNum = chapterVO.getInt("repairedSeaAreaNum");
-                int seaAreaNum = chapterVO.getInt("seaAreaNum");
-                if (chapterVO.getString("chapterCode").equals(currentChapterCode)) {
+            for (int i = 0; chapterVOs != null && i < chapterVOs.length(); i++) {
+                JSONObject chapterVO = chapterVOs.optJSONObject(i);
+                if (chapterVO == null) {
+                    continue;
+                }
+                int repairedSeaAreaNum = chapterVO.optInt("repairedSeaAreaNum");
+                int seaAreaNum = chapterVO.optInt("seaAreaNum");
+                if (chapterVO.optString("chapterCode").equals(currentChapterCode)) {
                     isFinish = repairedSeaAreaNum >= seaAreaNum;
                 } else {
-                    if (repairedSeaAreaNum >= seaAreaNum || !chapterVO.getBoolean("chapterOpen")) {
+                    if (repairedSeaAreaNum >= seaAreaNum || !chapterVO.optBoolean("chapterOpen")) {
                         continue;
                     }
-                    dstChapterName = chapterVO.getString("chapterName");
-                    dstChapterCode = chapterVO.getString("chapterCode");
+                    dstChapterName = chapterVO.optString("chapterName");
+                    dstChapterCode = chapterVO.optString("chapterCode");
                 }
             }
             if (isFinish && !StringUtil.isEmpty(dstChapterCode)) {
@@ -772,9 +781,12 @@ public class AntOcean extends ModelTask {
             if (Status.hasFlagToday("Ocean::HELP_CLEAN_ALL_FRIEND_LIMIT")) {
                 return;
             }
-            JSONArray fillFlagVOList = jo.getJSONArray("fillFlagVOList");
-            for (int i = 0; i < fillFlagVOList.length(); i++) {
-                JSONObject fillFlag = fillFlagVOList.getJSONObject(i);
+            JSONArray fillFlagVOList = jo.optJSONArray("fillFlagVOList");
+            for (int i = 0; fillFlagVOList != null && i < fillFlagVOList.length(); i++) {
+                JSONObject fillFlag = fillFlagVOList.optJSONObject(i);
+                if (fillFlag == null) {
+                    continue;
+                }
                 if (cleanOceanType.getValue() != CleanOceanType.NONE) {
                     cleanFriendOcean(fillFlag);
                 }
