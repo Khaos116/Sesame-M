@@ -1452,10 +1452,13 @@ public class AntMember extends ModelTask {
             String response = AntMemberRpcCall.queryRecommendTask();
             JSONObject jsonResponse = MyUtils.newJSONObject(response);
             // 获取 taskDetailList 数组
-            JSONArray taskDetailList = jsonResponse.getJSONArray("taskDetailList");
+            JSONArray taskDetailList = jsonResponse.optJSONArray("taskDetailList");
             // 遍历 taskDetailList
-            for (int i = 0; i < taskDetailList.length(); i++) {
-                JSONObject taskDetail = taskDetailList.getJSONObject(i);
+            for (int i = 0; taskDetailList != null && i < taskDetailList.length(); i++) {
+                JSONObject taskDetail = taskDetailList.optJSONObject(i);
+                if (taskDetail == null) {
+                    continue;
+                }
                 // 检查 "canAccess" 的值是否为 true
                 boolean canAccess = taskDetail.optBoolean("canAccess", false);
                 if (!canAccess) {
@@ -1466,6 +1469,9 @@ public class AntMember extends ModelTask {
                 JSONObject taskMaterial = taskDetail.optJSONObject("taskMaterial");
                 // 获取 taskBaseInfo 对象
                 JSONObject taskBaseInfo = taskDetail.optJSONObject("taskBaseInfo");
+                if (taskMaterial == null) {
+                    continue;
+                }
                 // 获取 taskCode
                 String taskCode = taskMaterial.optString("taskCode", "");
                 // 根据 taskCode 执行不同的操作
@@ -1494,7 +1500,7 @@ public class AntMember extends ModelTask {
                     continue;
                 }
                 // 获取 taskId
-                String taskId = taskMaterial.getString("taskId");
+                String taskId = taskMaterial.optString("taskId");
                 // 调用 trigger 方法
                 String triggerResponse = AntMemberRpcCall.trigger(taskId);
                 JSONObject triggerResult = MyUtils.newJSONObject(triggerResponse);
@@ -1502,10 +1508,10 @@ public class AntMember extends ModelTask {
                 boolean success = triggerResult.optBoolean("success");
                 if (success) {
                     // 从 triggerResponse 中获取 prizeSendInfo 数组
-                    JSONArray prizeSendInfo = triggerResult.getJSONArray("prizeSendInfo");
-                    if (prizeSendInfo.length() > 0) {
-                        JSONObject prizeInfo = prizeSendInfo.getJSONObject(0);
-                        JSONObject extInfo = prizeInfo.getJSONObject("extInfo");
+                    JSONArray prizeSendInfo = triggerResult.optJSONArray("prizeSendInfo");
+                    JSONObject prizeInfo = prizeSendInfo != null && prizeSendInfo.length() > 0 ? prizeSendInfo.optJSONObject(0) : null;
+                    JSONObject extInfo = prizeInfo != null ? prizeInfo.optJSONObject("extInfo") : null;
+                    if (extInfo != null) {
                         // 获取 promoCampName
                         String promoCampName = extInfo.optString("promoCampName", "Unknown Promo Campaign");
                         // 输出日志信息
@@ -1528,11 +1534,14 @@ public class AntMember extends ModelTask {
             // 检查是否请求成功
             if (jsonResponse.optBoolean("success")) {
                 // 获取任务详细列表
-                JSONArray taskDetailList = jsonResponse.getJSONArray("taskDetailList");
+                JSONArray taskDetailList = jsonResponse.optJSONArray("taskDetailList");
                 // 遍历任务详细列表
-                for (int i = 0; i < taskDetailList.length(); i++) {
+                for (int i = 0; taskDetailList != null && i < taskDetailList.length(); i++) {
                     // 获取当前任务对象
-                    JSONObject task = taskDetailList.getJSONObject(i);
+                    JSONObject task = taskDetailList.optJSONObject(i);
+                    if (task == null) {
+                        continue;
+                    }
                     // 提取任务 ID、处理状态和触发类型
                     String taskId = task.optString("taskId");
                     String taskProcessStatus = task.optString("taskProcessStatus");
@@ -1548,10 +1557,13 @@ public class AntMember extends ModelTask {
                         // 判断任务是否成功
                         if (sendTriggerJson.optBoolean("success")) {
                             // 从 sendtriggerResponse 中获取 prizeSendInfo 数组
-                            JSONArray prizeSendInfo = sendTriggerJson.getJSONArray("prizeSendInfo");
-                            // 获取 prizeName
-                            String prizeName = prizeSendInfo.getJSONObject(0).getString("prizeName");
-                            Log.other("我的快递💌完成[" + prizeName + "]");
+                            JSONArray prizeSendInfo = sendTriggerJson.optJSONArray("prizeSendInfo");
+                            JSONObject firstPrize = prizeSendInfo != null && prizeSendInfo.length() > 0 ? prizeSendInfo.optJSONObject(0) : null;
+                            if (firstPrize != null) {
+                                // 获取 prizeName
+                                String prizeName = firstPrize.optString("prizeName");
+                                Log.other("我的快递💌完成[" + prizeName + "]");
+                            }
                         }
                         else {
                             Log.i(TAG, "sendtrigger failed for taskId: " + taskId);
