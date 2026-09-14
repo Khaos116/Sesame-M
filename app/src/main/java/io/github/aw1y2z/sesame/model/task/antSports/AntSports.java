@@ -1598,8 +1598,8 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.collectBubble(bubbleId));
             if (jo.optBoolean("success")) {
-                JSONObject ja = jo.getJSONObject("data");
-                String collectCoin = ja.getString("changeAmount");
+                JSONObject ja = jo.optJSONObject("data");
+                String collectCoin = ja != null ? ja.optString("changeAmount") : "";
                 Log.other("好友大战🧊收取" + bubbleType + "获得[" + collectCoin + "运动能量]" + "#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
             }
         } catch (Throwable t) {
@@ -2427,19 +2427,22 @@ public class AntSports extends ModelTask {
                 return;
             }
 
-            JSONObject data = jsonResult.getJSONObject("data");
-            JSONArray tasks = data.getJSONArray("taskCenterTaskVOS");
+            JSONObject data = jsonResult.optJSONObject("data");
+            JSONArray tasks = data != null ? data.optJSONArray("taskCenterTaskVOS") : null;
             boolean needRetry = false;
 
-            for (int i = 0; i < tasks.length(); i++) {
-                JSONObject task = tasks.getJSONObject(i);
-                String status = task.getString("taskStatus");
+            for (int i = 0; tasks != null && i < tasks.length(); i++) {
+                JSONObject task = tasks.optJSONObject(i);
+                if (task == null) {
+                    continue;
+                }
+                String status = task.optString("taskStatus");
 
                 if ("SIGNUP_COMPLETE".equals(status)) {
-                    String taskType = task.getString("taskType");
+                    String taskType = task.optString("taskType");
                     if ("LIGHT_TASK".equals(taskType)) {
                         if (task.has("logExtMap")) {
-                            JSONObject logExtMap = task.getJSONObject("logExtMap");
+                            JSONObject logExtMap = task.optJSONObject("logExtMap");
                             //if (TaskHelper.checkTaskCompleted(logExtMap.getString("taskType"), logExtMap.getString("bizId"))) {
                             //
                             //    TimeUtil.sleep(1000);
@@ -2480,17 +2483,20 @@ public class AntSports extends ModelTask {
                 return;
             }
 
-            JSONObject data = jsonResult.getJSONObject("data");
-            if (!data.has("taskInfos")) {
+            JSONObject data = jsonResult.optJSONObject("data");
+            if (data == null || !data.has("taskInfos")) {
                 return;
             }
 
-            JSONArray tasks = data.getJSONArray("taskInfos");
+            JSONArray tasks = data.optJSONArray("taskInfos");
             boolean hasNewTask = false;
 
-            for (int i = 0; i < tasks.length(); i++) {
-                JSONObject task = tasks.getJSONObject(i);
-                TimeUtil.sleep(TimeUnit.SECONDS.toMillis(task.getInt("viewSec")));
+            for (int i = 0; tasks != null && i < tasks.length(); i++) {
+                JSONObject task = tasks.optJSONObject(i);
+                if (task == null) {
+                    continue;
+                }
+                TimeUtil.sleep(TimeUnit.SECONDS.toMillis(task.optInt("viewSec")));
                 if (receiveBrowseReward(task)) {
                     hasNewTask = true;
                 }
@@ -2514,8 +2520,10 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.queryUserAccount());
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
-                JSONObject data = jsonResult.getJSONObject("data");
-                return Integer.parseInt(data.getString("balance"));
+                JSONObject data = jsonResult.optJSONObject("data");
+                if (data != null) {
+                    return Integer.parseInt(data.optString("balance", "0"));
+                }
             }
         } catch (Exception e) {
             Log.i(TAG, "queryUserEnergy err:");
@@ -2563,33 +2571,39 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkSuccess(TAG, jsonResult)) {
                 return;
             }
-            JSONObject thisdata = jsonResult.getJSONObject("data");
-            String thismapName = thisdata.optString("mapName");
+            JSONObject thisdata = jsonResult.optJSONObject("data");
+            String thismapName = thisdata != null ? thisdata.optString("mapName") : "";
 
             //获取岛地图
             JSONObject jsonLandMap = MyUtils.newJSONObject(AntSportsRpcCall.queryMapList());
             if (MessageUtil.checkSuccess("queryMapList", jsonLandMap)) {
-                JSONObject data = jsonLandMap.getJSONObject("data");
+                JSONObject data = jsonLandMap.optJSONObject("data");
 
-                JSONArray mapList = data.getJSONArray("mapList");
+                JSONArray mapList = data != null ? data.optJSONArray("mapList") : null;
                 boolean needSwitch = false;
 
-                for (int i = 0; i < mapList.length(); i++) {
-                    JSONObject map = mapList.getJSONObject(i);
-                    String mapName = map.getString("mapName");
-                    String status = map.getString("status");
+                for (int i = 0; mapList != null && i < mapList.length(); i++) {
+                    JSONObject map = mapList.optJSONObject(i);
+                    if (map == null) {
+                        continue;
+                    }
+                    String mapName = map.optString("mapName");
+                    String status = map.optString("status");
 
                     if (mapName.equals(thismapName) && status.contains("FINISH")) {
                         needSwitch = true;
                     }
                 }
                 if (needSwitch) {
-                    for (int i = 0; i < mapList.length(); i++) {
-                        JSONObject map = mapList.getJSONObject(i);
-                        String mapName = map.getString("mapName");
-                        String mapId = map.getString("mapId");
-                        String status = map.getString("status");
-                        String branchId = map.getString("branchId");
+                    for (int i = 0; mapList != null && i < mapList.length(); i++) {
+                        JSONObject map = mapList.optJSONObject(i);
+                        if (map == null) {
+                            continue;
+                        }
+                        String mapName = map.optString("mapName");
+                        String mapId = map.optString("mapId");
+                        String status = map.optString("status");
+                        String branchId = map.optString("branchId");
                         //boolean newIsLandFlg = map.optBoolean("newIsLandFlg");
 
                         if (!mapName.equals(thismapName)) {
@@ -2622,7 +2636,8 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.checkAuth());
             if (MessageUtil.checkSuccess("NeverLandAuth", jsonResult)) {
-                return jsonResult.getJSONObject("resultObj").optBoolean("authStatus");
+                JSONObject resultObj = jsonResult.optJSONObject("resultObj");
+                return resultObj != null && resultObj.optBoolean("authStatus");
             }
         } catch (Exception e) {
             Log.i(TAG, "checkAuth err:");
