@@ -2287,28 +2287,31 @@ public class AntSports extends ModelTask {
                     break;
                 }
 
-                JSONObject data = jsonResult.getJSONObject("data");
+                JSONObject data = jsonResult.optJSONObject("data");
+                if (data == null) {
+                    break;
+                }
                 hasMore = data.optBoolean("hasMore");
                 if (!data.has("itemVOList")) {
                     break;
                 }
 
-                JSONArray items = data.getJSONArray("itemVOList");
-                for (int i = 0; i < items.length(); i++) {
-                    JSONObject item = items.getJSONObject(i);
-                    if (!"benefitItem".equals(item.getString("materialType"))) {
+                JSONArray items = data.optJSONArray("itemVOList");
+                for (int i = 0; items != null && i < items.length(); i++) {
+                    JSONObject item = items.optJSONObject(i);
+                    if (item == null || !"benefitItem".equals(item.optString("materialType"))) {
                         continue;
                     }
 
-                    String benefitId = item.getString("benefitId");
+                    String benefitId = item.optString("benefitId");
                     String itemId = item.optString("itemId");
-                    String itemName = item.getString("itemName");
-                    int remainCount = item.getInt("remainCount");
-                    int cost = Integer.parseInt(item.getString("salePoint"));
+                    String itemName = item.optString("itemName");
+                    int remainCount = item.optInt("remainCount");
+                    int cost = Integer.parseInt(item.optString("salePoint"));
 
                     // 检查是否可兑换
                     if (remainCount >= 1 && neverLandBenefitList.contains(itemId) && currentEnergy >= cost) {
-                        if (item.getString("status").equals("ITEM_SALE")) {
+                        if (item.optString("status").equals("ITEM_SALE")) {
                             String exchangeResult = AntSportsRpcCall.createOrder(benefitId, itemId);
                             if (MessageUtil.checkSuccess(TAG, MyUtils.newJSONObject(exchangeResult))) {
                                 Log.other("悦动健康🚑️兑换权益[" + itemName + "]#消耗[" + cost + "g健康能量]");
@@ -2336,9 +2339,12 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.queryMapInfo(branchId, mapId));
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
-                JSONObject data = jsonResult.getJSONObject("data");
-                JSONObject starData = data.getJSONObject("starData");
-                return data.getBoolean("canWalk") && starData.getInt("curr") < starData.getInt("count");
+                JSONObject data = jsonResult.optJSONObject("data");
+                JSONObject starData = data != null ? data.optJSONObject("starData") : null;
+                if (data == null || starData == null) {
+                    return false;
+                }
+                return data.optBoolean("canWalk") && starData.optInt("curr") < starData.optInt("count");
             }
         } catch (Exception e) {
             Log.i(TAG, "canWalkGrid err:");
@@ -2351,9 +2357,12 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.queryMapDetail(mapId));
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
-                JSONObject data = jsonResult.getJSONObject("data");
-                JSONObject baseMapInfo = data.getJSONObject("baseMapInfo");
-                return baseMapInfo.getBoolean("newIsLandFlg") && baseMapInfo.getInt("currentPercent") < 100;
+                JSONObject data = jsonResult.optJSONObject("data");
+                JSONObject baseMapInfo = data != null ? data.optJSONObject("baseMapInfo") : null;
+                if (baseMapInfo == null) {
+                    return false;
+                }
+                return baseMapInfo.optBoolean("newIsLandFlg") && baseMapInfo.optInt("currentPercent") < 100;
             }
         } catch (Exception e) {
             Log.i(TAG, "canBuild err:");
@@ -2376,15 +2385,15 @@ public class AntSports extends ModelTask {
                 return;
             }
 
-            JSONObject data = jsonResult.getJSONObject("data");
-            if (!data.has("days")) {
+            JSONObject data = jsonResult.optJSONObject("data");
+            if (data == null || !data.has("days")) {
                 return;
             }
 
-            JSONArray days = data.getJSONArray("days");
-            for (int i = 0; i < days.length(); i++) {
-                JSONObject day = days.getJSONObject(i);
-                if (day.optBoolean("current") && !day.optBoolean("signIn")) {
+            JSONArray days = data.optJSONArray("days");
+            for (int i = 0; days != null && i < days.length(); i++) {
+                JSONObject day = days.optJSONObject(i);
+                if (day != null && day.optBoolean("current") && !day.optBoolean("signIn")) {
                     if (signIn()) {
                         Status.flagToday("NeverLand::SIGN");
                         return;
@@ -2394,7 +2403,10 @@ public class AntSports extends ModelTask {
 
             // 检查连续签到状态
             if (data.has("continuousSignInfo")) {
-                JSONObject continuousInfo = data.getJSONObject("continuousSignInfo");
+                JSONObject continuousInfo = data.optJSONObject("continuousSignInfo");
+                if (continuousInfo == null) {
+                    return;
+                }
                 if (continuousInfo.optBoolean("signedToday") || signIn()) {
                     Status.flagToday("NeverLand::SIGN");
                 }
