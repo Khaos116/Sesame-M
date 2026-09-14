@@ -1119,8 +1119,8 @@ public class AntOcean extends ModelTask {
         int count = 0;
         try {
             for (int i = 0; i < fishVOS.length() && count < holdsNum; i++) {
-                JSONObject fishVO = fishVOS.getJSONObject(i);
-                if (!fishVO.has("pieces")) {
+                JSONObject fishVO = fishVOS.optJSONObject(i);
+                if (fishVO == null || !fishVO.has("pieces")) {
                     continue;
                 }
                 count += useUniversalPiece(fishVO, holdsNum - count);
@@ -1135,18 +1135,18 @@ public class AntOcean extends ModelTask {
     private static int useUniversalPiece(JSONObject fishVO, int holdsNum) {
         JSONArray assetsDetails = new JSONArray();
         try {
-            int order = fishVO.getInt("order");
-            String name = fishVO.getString("name");
-            JSONArray pieces = fishVO.getJSONArray("pieces");
-            for (int i = 0; i < pieces.length(); i++) {
-                JSONObject piece = pieces.getJSONObject(i);
-                if (piece.getInt("num") > 1) {
+            int order = fishVO.optInt("order");
+            String name = fishVO.optString("name");
+            JSONArray pieces = fishVO.optJSONArray("pieces");
+            for (int i = 0; pieces != null && i < pieces.length(); i++) {
+                JSONObject piece = pieces.optJSONObject(i);
+                if (piece == null || piece.optInt("num") > 1) {
                     continue;
                 }
                 JSONObject assetsDetail = new JSONObject();
                 assetsDetail.put("assets", order);
                 assetsDetail.put("assetsNum", 1);
-                assetsDetail.put("attachAssets", Integer.parseInt(piece.getString("id")));
+                assetsDetail.put("attachAssets", Integer.parseInt(piece.optString("id")));
                 assetsDetail.put("propCode", "UNIVERSAL_PIECE");
                 assetsDetails.put(assetsDetail);
                 if (assetsDetails.length() == holdsNum) {

@@ -4,6 +4,12 @@
 
 ## 变更记录
 
+### 2026-09-14：`AntOcean.java` `.get*()` → `.opt*()` + 空指针防护，第六个文件全部完成
+
+按调用点数量排序的第六个文件（1570 行，原~108 处调用点）。覆盖 `queryOceanStatus`/`initAntOceanAntiepTaskListMap`（普通任务/摸鱼任务列表同步）、`queryHomePage`/`collectEnergy`/`cleanOcean`/`autocleanOcean`/`ipOpenSurprise`/`combineFish`/`checkReward`（能量收取与清理海域主流程）、`queryReplicaHome`/`unLockReplicaPhase`/`queryReplicaTaskList`/`receiveReplicaTaskAward`/`queryMiscInfo`（副本任务）、`querySeaAreaDetailList`/`openWAIT_FOR_UNLOCK`/`switchOceanChapter`/`queryUserRanking`（神秘海域拼图合成与章节切换）、`cleanFriendOcean`（两个重载）/`queryTaskList`（帮好友清理海域、日常任务）、`finishOceanTask`/`answerQuestion`/`exchangeUniversalPiece`（两个重载）/`useUniversalPiece`（两个重载）（答题任务、重复拼图兑换万能拼图、使用万能拼图迎回鱼类）。
+
+`grep` 确认代码里已无可执行的裸 `.get*()` 调用。每批改完都跑 `./gradlew compileNormalDebugJavaWithJavac -q` 验证，全部编译通过；仅做了编译期验证，未做设备/运行时测试。下一步按调用点数量排序转到 `AntOrchard.java`（约 106 处调用点）。
+
 ### 2026-09-14：`AntMember.java` `.get*()` → `.opt*()` + 空指针防护，第五个文件全部完成
 
 按调用点数量排序的第五个文件（1483 行，原~131 处调用点）。覆盖 `initMemberTaskListMap`（会员任务/芝麻信用任务列表同步）、`memberSign`/`queryPointCert`（签到与积分领取）、`signPageTaskList`/`queryAllStatusTaskList`（做任务赚积分）、`promise`/`querySingleTemplate`（生活记录：构建加入请求体时对 `canSelectValues` 等四段规则数组做了长度校验，原代码假设数组必然非空，现在为空时直接返回 null 而不是让 `.getString(0)` 抛异常）/`promiseJoin`、`doBrowseTask`（两个重载：批量/单任务提交）、`goldBillCollect`/`batchReceivePointBall`/`dailySignIn`/`processTask`/`queryAndProcessTaskList`/`queryTaskList`（游戏中心任务体系）、`queryPointBallList`/`checkAndDoSignIn`/`memberPointExchangeBenefit`（玩乐豆签到与会员积分兑换）、`collectSesame`（芝麻信用收芝麻粒：领任务/完成任务/收 feedback 三段流程）、`RecommendTask`/`OrdinaryTask`（我的快递任务，顺带给 `taskMaterial` 可能为 null 的既有隐患加了守卫）。
