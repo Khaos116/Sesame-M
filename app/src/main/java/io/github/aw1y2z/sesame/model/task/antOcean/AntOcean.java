@@ -793,10 +793,10 @@ public class AntOcean extends ModelTask {
             }
             int pos = 20;
             List<String> idList = new ArrayList<>();
-            JSONArray allRankingList = jo.getJSONArray("allRankingList");
-            while (pos < allRankingList.length()) {
-                JSONObject friend = allRankingList.getJSONObject(pos);
-                String userId = friend.optString("userId", "");
+            JSONArray allRankingList = jo.optJSONArray("allRankingList");
+            while (allRankingList != null && pos < allRankingList.length()) {
+                JSONObject friend = allRankingList.optJSONObject(pos);
+                String userId = friend != null ? friend.optString("userId", "") : "";
                 if (userId.equals(UserIdMap.getCurrentUid()) || userId.isEmpty()) {
                     pos++;
                     continue;
@@ -808,10 +808,10 @@ public class AntOcean extends ModelTask {
                     if (!MessageUtil.checkResultCode(TAG, jo)) {
                         return;
                     }
-                    fillFlagVOList = jo.getJSONArray("fillFlagVOList");
-                    for (int i = 0; i < fillFlagVOList.length(); i++) {
-                        JSONObject fillFlag = fillFlagVOList.getJSONObject(i);
-                        if (cleanOceanType.getValue() != CleanOceanType.NONE) {
+                    fillFlagVOList = jo.optJSONArray("fillFlagVOList");
+                    for (int i = 0; fillFlagVOList != null && i < fillFlagVOList.length(); i++) {
+                        JSONObject fillFlag = fillFlagVOList.optJSONObject(i);
+                        if (fillFlag != null && cleanOceanType.getValue() != CleanOceanType.NONE) {
                             cleanFriendOcean(fillFlag);
                             if (Status.hasFlagToday("Ocean::HELP_CLEAN_ALL_FRIEND_LIMIT")) {
                                 return;
@@ -848,7 +848,7 @@ public class AntOcean extends ModelTask {
             return;
         }
         try {
-            String userId = fillFlag.getString("userId");
+            String userId = fillFlag.optString("userId");
             boolean isCleanOcean = cleanOceanList.getValue().contains(userId);
             if (cleanOceanType.getValue() != CleanOceanType.CLEAN) {
                 isCleanOcean = !isCleanOcean;
@@ -876,16 +876,19 @@ public class AntOcean extends ModelTask {
             }
             jo = MyUtils.newJSONObject(AntOceanRpcCall.cleanFriendOcean(userId));
             if (jo.has("resultDesc")) {
-                if (jo.getString("resultDesc").contains("上限")) {
-                    Log.record("神奇海洋🐳" + jo.getString("resultDesc"));
+                String resultDesc = jo.optString("resultDesc");
+                if (resultDesc.contains("上限")) {
+                    Log.record("神奇海洋🐳" + resultDesc);
                     Status.flagToday("Ocean::HELP_CLEAN_ALL_FRIEND_LIMIT");
                 }
                 return false;
             }
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Log.forest("神奇海洋🐳帮助[" + UserIdMap.getMaskName(userId) + "]清理海域");
-                JSONArray cleanRewardVOS = jo.getJSONArray("cleanRewardVOS");
-                checkReward(cleanRewardVOS);
+                JSONArray cleanRewardVOS = jo.optJSONArray("cleanRewardVOS");
+                if (cleanRewardVOS != null) {
+                    checkReward(cleanRewardVOS);
+                }
                 return true;
             }
         } catch (Throwable t) {
@@ -913,13 +916,16 @@ public class AntOcean extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray ja = jo.getJSONArray("antOceanTaskVOList");
-            for (int i = 0; i < ja.length(); i++) {
-                jo = ja.getJSONObject(i);
+            JSONArray ja = jo.optJSONArray("antOceanTaskVOList");
+            for (int i = 0; ja != null && i < ja.length(); i++) {
+                jo = ja.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
                 String taskStatus = jo.optString("taskStatus");
-                String sceneCode = jo.getString("sceneCode");
-                String taskType = jo.getString("taskType");
-                JSONObject bizInfo = MyUtils.newJSONObject(jo.getString("bizInfo"));
+                String sceneCode = jo.optString("sceneCode");
+                String taskType = jo.optString("taskType");
+                JSONObject bizInfo = MyUtils.newJSONObject(jo.optString("bizInfo"));
                 String taskTitle = bizInfo.optString("taskTitle");
                 if (TaskStatus.RECEIVED.name().equals(taskStatus)) {
                     continue;
