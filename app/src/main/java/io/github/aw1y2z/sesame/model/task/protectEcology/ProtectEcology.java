@@ -638,12 +638,15 @@ public class ProtectEcology extends ModelTask {
                     return;
                 }
                 for (int i = 0; i < treeItems.length(); i++) {
-                    JSONObject jo = treeItems.getJSONObject(i);
-                    String itemId = jo.getString("itemId");
-                    String itemName = jo.getString("itemName");
+                    JSONObject jo = treeItems.optJSONObject(i);
+                    if (jo == null) {
+                        continue;
+                    }
+                    String itemId = jo.optString("itemId");
+                    String itemName = jo.optString("itemName");
                     int certCountForAlias=jo.optInt("certCountForAlias");
                     int projectId=jo.optInt("projectId");
-                    if (Objects.equals("RESERVE", jo.getString("projectType"))) {
+                    if (Objects.equals("RESERVE", jo.optString("projectType"))) {
 
                         if(certCountForAlias>=protectReserveNum)
                         {continue;}
@@ -681,13 +684,17 @@ public class ProtectEcology extends ModelTask {
                     return;
                 }
                 for (int i = 0; i < cultivationList.length(); i++) {
-                    JSONObject jo = cultivationList.getJSONObject(i);
-                    if (!Objects.equals("AVAILABLE", jo.getString("applyAction"))) {
+                    JSONObject jo = cultivationList.optJSONObject(i);
+                    if (jo == null || !Objects.equals("AVAILABLE", jo.optString("applyAction"))) {
                         continue;
                     }
-                    String cultivationCode = jo.getString("cultivationCode");
-                    String projectCode = jo.getJSONObject("projectConfigVO").getString("code");
-                    int certNum = jo.getInt("certNum");
+                    String cultivationCode = jo.optString("cultivationCode");
+                    JSONObject projectConfigVO = jo.optJSONObject("projectConfigVO");
+                    if (projectConfigVO == null) {
+                        continue;
+                    }
+                    String projectCode = projectConfigVO.optString("code");
+                    int certNum = jo.optInt("certNum");
                     int energy = jo.optInt("energy", 0);
                     if (energy > 1000) {
                         continue;
@@ -714,13 +721,17 @@ public class ProtectEcology extends ModelTask {
                 return;
             }
             for (int i = 0; i < cultivationList.length(); i++) {
-                JSONObject jo = cultivationList.getJSONObject(i);
-                if (!Objects.equals("AVAILABLE", jo.getString("applyAction"))) {
+                JSONObject jo = cultivationList.optJSONObject(i);
+                if (jo == null || !Objects.equals("AVAILABLE", jo.optString("applyAction"))) {
                     continue;
                 }
-                String cultivationCode = jo.getString("cultivationCode");
-                String projectCode = jo.getJSONObject("projectConfigVO").getString("code");
-                int certNum = jo.getInt("certNum");
+                String cultivationCode = jo.optString("cultivationCode");
+                JSONObject projectConfigVO = jo.optJSONObject("projectConfigVO");
+                if (projectConfigVO == null) {
+                    continue;
+                }
+                String projectCode = projectConfigVO.optString("code");
+                int certNum = jo.optInt("certNum");
                 Integer count = map.get(cultivationCode);
                 if (count == null) {
                     continue;
@@ -743,18 +754,22 @@ public class ProtectEcology extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            int currentEnergy = jo.getJSONObject("userInfoVO").getInt("currentEnergy");
-            jo = jo.getJSONObject("cultivationDetailVO");
-            String cultivationName = jo.getString("cultivationName");
-            if (!Objects.equals("AVAILABLE", jo.getString("applyAction"))) {
+            JSONObject userInfoVO = jo.optJSONObject("userInfoVO");
+            int currentEnergy = userInfoVO != null ? userInfoVO.optInt("currentEnergy") : 0;
+            jo = jo.optJSONObject("cultivationDetailVO");
+            if (jo == null) {
+                return false;
+            }
+            String cultivationName = jo.optString("cultivationName");
+            if (!Objects.equals("AVAILABLE", jo.optString("applyAction"))) {
                 Log.record("保护海洋🏖️保护[" + cultivationName + "]停止:数量不足");
                 return false;
             }
-            if (currentEnergy < jo.getInt("energy")) {
+            if (currentEnergy < jo.optInt("energy")) {
                 Log.record("保护海洋🏖️保护[" + cultivationName + "]停止:能量不足");
                 return false;
             }
-            int count = jo.getInt("certNum") + 1;
+            int count = jo.optInt("certNum") + 1;
             Log.forest("保护海洋🏖️申请[" + cultivationName + "]#第" + count + "次");
             return oceanExchangeTree(cultivationCode, projectCode, cultivationName);
         }
@@ -771,14 +786,17 @@ public class ProtectEcology extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            JSONArray awardInfos = jo.getJSONArray("rewardItemVOs");
+            JSONArray awardInfos = jo.optJSONArray("rewardItemVOs");
             StringBuilder award = new StringBuilder();
-            for (int i = 0; i < awardInfos.length(); i++) {
-                jo = awardInfos.getJSONObject(i);
+            for (int i = 0; awardInfos != null && i < awardInfos.length(); i++) {
+                jo = awardInfos.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
                 if (i > 0) {
                     award.append(";");
                 }
-                award.append(jo.getString("name")).append("*").append(jo.getInt("num"));
+                award.append(jo.optString("name")).append("*").append(jo.optInt("num"));
             }
             Log.forest("保护海洋🏖️保护[" + cultivationName + "]#获得[" + award + "]");
             return true;

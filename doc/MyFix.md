@@ -4,6 +4,12 @@
 
 ## 变更记录
 
+### 2026-09-14：`ProtectEcology.java` `.get*()` → `.opt*()` + 空指针防护，第九个文件全部完成
+
+按调用点数量排序的第九个文件（778 行，原~98 处调用点）。覆盖 `initForest`/`initOcean`/`cooperateWater`/`queryCooperatePlant`/`cooperateWater(4参)`（森林/海洋项目列表同步、合种浇水）、`getEnergySummation`/`queryTreeItemsForExchange`/`queryTreeForExchange`/`exchangeTree`/`applyGoldAnimalCert`（树木兑换核心：证书数量与能量前置检查）、`protectCarbon`/`marathonQueryActivity`/`carbonQueryActivity`/`carbonCharityActivity`/`queryCultivationList`（碳中和马拉松/古树医生助力）、`protectReserveMinNum`/`protectBeachMinNum`/`protectBeach`/`queryCultivationDetail`/`oceanExchangeTree`（保护地/海滩最低数量保底兑换与海洋兑换收尾）。
+
+`grep` 确认代码里已无可执行的裸 `.get*()` 调用。每批改完都跑 `./gradlew compileNormalDebugJavaWithJavac -q` 验证，全部编译通过（`BaseModel.java` 的 Lombok `@Getter` 命名冲突提示是本会话开始前就存在的良性 note，非本次改动引入，确认过 exit code 为 0）；仅做了编译期验证，未做设备/运行时测试。至此全库调用点数量排名前 9 的文件全部转换完毕，下一步按调用点数量排序转到 `AntBookRead.java`（约 43 处调用点）。
+
 ### 2026-09-14：`AntDodo.java` `.get*()` → `.opt*()` + 空指针防护，第八个文件全部完成
 
 按调用点数量排序的第八个文件（921 行，原~103 处调用点）。覆盖 `initAntDodoTaskListMap`/`getEndDateTime`/`collect`/`collectAnimalCard`/`taskList`（神奇物种任务列表与每日抽卡）、`propList`/`usePropUniversalCard`/`queryUniversalAnimal`（道具自动使用与万能卡最优动物选择）、`consumeProp`（两个重载）/`collectToFriend`/`generateBookMedal`（消耗道具、帮好友抽卡、图鉴勋章合成）、`checkAnimalAndGiftToFriend`/`giftToFriend`（三个重载：入口/按 bookId 遍历/单张赠送，赠送稀有卡片给好友）。
