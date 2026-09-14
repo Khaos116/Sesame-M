@@ -2099,18 +2099,24 @@ public class AntForestV2 extends ModelTask {
             JSONArray forestSignVOList = resData.optJSONArray("forestSignVOList");
             if (forestSignVOList != null) {
                 for (int i = 0; i < forestSignVOList.length(); i++) {
-                    JSONObject forestSignVO = forestSignVOList.getJSONObject(i);
-                    String signId = forestSignVO.getString("signId");
-                    String currentSignKey = forestSignVO.getString("currentSignKey");
-                    JSONArray signRecords = forestSignVO.getJSONArray("signRecords");
-                    for (int j = 0; j < signRecords.length(); j++) {
-                        JSONObject signRecord = signRecords.getJSONObject(j);
-                        String signKey = signRecord.getString("signKey");
+                    JSONObject forestSignVO = forestSignVOList.optJSONObject(i);
+                    if (forestSignVO == null) {
+                        continue;
+                    }
+                    String signId = forestSignVO.optString("signId");
+                    String currentSignKey = forestSignVO.optString("currentSignKey");
+                    JSONArray signRecords = forestSignVO.optJSONArray("signRecords");
+                    for (int j = 0; signRecords != null && j < signRecords.length(); j++) {
+                        JSONObject signRecord = signRecords.optJSONObject(j);
+                        if (signRecord == null) {
+                            continue;
+                        }
+                        String signKey = signRecord.optString("signKey");
                         if (signKey.equals(currentSignKey)) {
-                            if (!signRecord.getBoolean("signed")) {
+                            if (!signRecord.optBoolean("signed")) {
                                 JSONObject resData2 = MyUtils.newJSONObject(AntForestRpcCall.antiepSign(signId, "ANTFOREST_ENERGY_SIGN", UserIdMap.getCurrentUid()));
                                 if (MessageUtil.checkSuccess(TAG, resData2)) {
-                                    Log.forest("过期能量💊[" + signRecord.getInt("awardCount") + "g]");
+                                    Log.forest("过期能量💊[" + signRecord.optInt("awardCount") + "g]");
                                 }
                             }
                             break;
@@ -2148,7 +2154,7 @@ public class AntForestV2 extends ModelTask {
                     JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryFriendHomePage(uid));
                     TimeUtil.sleep(100);
                     if (MessageUtil.checkResultCode(TAG, jo)) {
-                        String bizNo = jo.getString("bizNo");
+                        String bizNo = jo.optString("bizNo");
                         KVNode<Integer, Boolean> waterCountKVNode = returnFriendWater(uid, bizNo, waterCount, waterEnergy);
                         waterCount = waterCountKVNode.getKey();
                         if (waterCount > 0) {
@@ -2188,7 +2194,8 @@ public class AntForestV2 extends ModelTask {
                         //记录浇水次数
                         Status.wateringFriendToday(userId);
                         Statistics.addData(Statistics.DataType.WATERINGCOUNT, 1);
-                        int currentEnergy = jo.getJSONObject("userBaseInfo").getInt("currentEnergy");
+                        JSONObject userBaseInfo = jo.optJSONObject("userBaseInfo");
+                        int currentEnergy = userBaseInfo != null ? userBaseInfo.optInt("currentEnergy") : 0;
                         Log.forest("好友浇水🚿给[" + UserIdMap.getShowName(userId) + "]浇" + waterEnergy + "g#剩余能量[" + currentEnergy + "g]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                         Toast.show("好友浇水🚿给[" + UserIdMap.getShowName(userId) + "]浇" + waterEnergy + "g");
                         wateredTimes++;
