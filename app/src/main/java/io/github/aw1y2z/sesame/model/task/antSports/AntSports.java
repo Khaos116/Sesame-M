@@ -684,11 +684,14 @@ public class AntSports extends ModelTask {
         }
         try {
             JSONObject jo = queryPath(goingPathId);
-            jo = jo.getJSONObject("userPathStep");
+            jo = jo != null ? jo.optJSONObject("userPathStep") : null;
+            if (jo == null) {
+                return true;
+            }
             if (jo.optBoolean("dayLimit")) {
                 return true;
             }
-            String pathCompleteStatus = jo.getString("pathCompleteStatus");
+            String pathCompleteStatus = jo.optString("pathCompleteStatus");
             if (PathCompleteStatus.COMPLETED.name().equals(pathCompleteStatus)) {
                 return true;
             }
@@ -708,14 +711,14 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            JSONArray ja = jo.getJSONArray("userMailList");
+            JSONArray ja = jo.optJSONArray("userMailList");
             int count = 0;
-            for (int i = 0; i < ja.length(); i++) {
-                jo = ja.getJSONObject(i);
-                if (!"SPORTSPROD_GOPATH_AWARD_BOX".equals(jo.getString("templateId"))) {
+            for (int i = 0; ja != null && i < ja.length(); i++) {
+                jo = ja.optJSONObject(i);
+                if (jo == null || !"SPORTSPROD_GOPATH_AWARD_BOX".equals(jo.optString("templateId"))) {
                     continue;
                 }
-                if (!TimeUtil.isToday(jo.getLong("receiveTime"))) {
+                if (!TimeUtil.isToday(jo.optLong("receiveTime"))) {
                     break;
                 }
                 count++;
@@ -745,22 +748,25 @@ public class AntSports extends ModelTask {
             if (pathData == null || !pathData.has("path")) {
                 return false;
             }
-            JSONObject path = pathData.getJSONObject("path");
-            JSONObject userPathStep = pathData.getJSONObject("userPathStep");
-            int minGoStepCount = path.getInt("minGoStepCount");
-            int pathStepCount = path.getInt("pathStepCount");
-            if (path.has("dailyMaxGoStepCount")) {
-                pathStepCount = path.getInt("dailyMaxGoStepCount");
+            JSONObject path = pathData.optJSONObject("path");
+            JSONObject userPathStep = pathData.optJSONObject("userPathStep");
+            if (path == null || userPathStep == null) {
+                return false;
             }
-            int forwardStepCount = userPathStep.getInt("forwardStepCount");
-            int remainStepCount = userPathStep.getInt("remainStepCount");
-            boolean dayLimit = userPathStep.getBoolean("dayLimit");
+            int minGoStepCount = path.optInt("minGoStepCount");
+            int pathStepCount = path.optInt("pathStepCount");
+            if (path.has("dailyMaxGoStepCount")) {
+                pathStepCount = path.optInt("dailyMaxGoStepCount");
+            }
+            int forwardStepCount = userPathStep.optInt("forwardStepCount");
+            int remainStepCount = userPathStep.optInt("remainStepCount");
+            boolean dayLimit = userPathStep.optBoolean("dayLimit");
             int useStepCount = Math.min(Math.min(remainStepCount, hasTreasureBox() ? RandomUtil.nextInt(MIN_STEP_FOR_TREASURE, MAX_STEP_FOR_TREASURE) : remainStepCount), Math.max(pathStepCount - forwardStepCount % pathStepCount, minGoStepCount));
             if (useStepCount < minGoStepCount || dayLimit) {
                 return false;
             }
-            String pathId = path.getString("pathId");
-            String pathName = path.getString("name");
+            String pathId = path.optString("pathId");
+            String pathName = path.optString("name");
             return walkGo(pathName, pathId, useStepCount);
         } catch (Throwable t) {
             Log.i(TAG, "walkGo err:");
@@ -777,8 +783,8 @@ public class AntSports extends ModelTask {
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 result = true;
                 Log.other("行走路线🚶🏻‍♂️行走[" + pathName + "]#前进了" + useStepCount + "步");
-                jo = jo.getJSONObject("data");
-                if (jo.has("completeInfo")) {
+                jo = jo.optJSONObject("data");
+                if (jo != null && jo.has("completeInfo")) {
                     Log.other("行走路线🚶🏻‍♂️完成[" + pathName + "]");
                 }
                 parseRewardsByJSONObjectData(jo);
@@ -892,17 +898,24 @@ public class AntSports extends ModelTask {
     }
 
     private static void parseRewardsByJSONObjectData(JSONObject data) {
+        if (data == null) {
+            return;
+        }
         try {
             JSONArray treasureBoxList = data.optJSONArray("treasureBoxList");
             if (treasureBoxList != null) openTreasureBox(treasureBoxList);
             if (data.has("brandRewardVOs")) {
-                JSONArray brandRewardVOs = data.getJSONArray("brandRewardVOs");
-                parseRewardsByJSONArrayRewards(brandRewardVOs, 1);
+                JSONArray brandRewardVOs = data.optJSONArray("brandRewardVOs");
+                if (brandRewardVOs != null) {
+                    parseRewardsByJSONArrayRewards(brandRewardVOs, 1);
+                }
             }
             if (data.has("completeInfo")) {
-                data = data.getJSONObject("completeInfo");
-                JSONArray completeRewards = data.getJSONArray("completeRewards");
-                parseRewardsByJSONArrayRewards(completeRewards, 2);
+                data = data.optJSONObject("completeInfo");
+                JSONArray completeRewards = data != null ? data.optJSONArray("completeRewards") : null;
+                if (completeRewards != null) {
+                    parseRewardsByJSONArrayRewards(completeRewards, 2);
+                }
             }
         } catch (Throwable t) {
             Log.i(TAG, "parseRewardsByJSONObjectData err:");
