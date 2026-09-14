@@ -737,16 +737,17 @@ public class AntDodo extends ModelTask {
             return;
         }
         try {
-            if (!FantasticLevel.MAGIC.name().equals(animal.getString("fantasticLevel"))) {
+            if (!FantasticLevel.MAGIC.name().equals(animal.optString("fantasticLevel"))) {
                 return;
             }
-            String bookId = animal.getString("bookId");
+            String bookId = animal.optString("bookId");
             JSONObject jo = MyUtils.newJSONObject(AntDodoRpcCall.homePage());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            jo = jo.getJSONObject("data").getJSONObject("animalBook");
-            if (!bookId.equals(jo.getString("bookId"))) {
+            JSONObject data = jo.optJSONObject("data");
+            jo = data != null ? data.optJSONObject("animalBook") : null;
+            if (jo == null || !bookId.equals(jo.optString("bookId"))) {
                 return;
             }
             giftToFriend(animal, targetUserId);
@@ -787,17 +788,27 @@ public class AntDodo extends ModelTask {
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     break;
                 }
-                jo = jo.getJSONObject("data");
-                hasMore = jo.getBoolean("hasMore");
+                jo = jo.optJSONObject("data");
+                if (jo == null) {
+                    break;
+                }
+                hasMore = jo.optBoolean("hasMore");
                 pageStart += 9;
-                JSONArray bookForUserList = jo.getJSONArray("bookForUserList");
-                for (int i = 0; i < bookForUserList.length(); i++) {
-                    jo = bookForUserList.getJSONObject(i);
-                    String collectProgress = jo.getString("collectProgress");
+                JSONArray bookForUserList = jo.optJSONArray("bookForUserList");
+                for (int i = 0; bookForUserList != null && i < bookForUserList.length(); i++) {
+                    jo = bookForUserList.optJSONObject(i);
+                    if (jo == null) {
+                        continue;
+                    }
+                    String collectProgress = jo.optString("collectProgress");
                     if (collectProgress.startsWith("0/") || !isQueryBookInfo(jo, 1)) {
                         continue;
                     }
-                    String bookId = jo.getJSONObject("animalBookResult").getString("bookId");
+                    JSONObject animalBookResult = jo.optJSONObject("animalBookResult");
+                    if (animalBookResult == null) {
+                        continue;
+                    }
+                    String bookId = animalBookResult.optString("bookId");
                     giftToFriend(bookId, targetUserId);
                 }
             } while (hasMore);
@@ -813,21 +824,26 @@ public class AntDodo extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray animalForUserList = jo.getJSONObject("data").optJSONArray("animalForUserList");
+            JSONObject dataObj = jo.optJSONObject("data");
+            JSONArray animalForUserList = dataObj != null ? dataObj.optJSONArray("animalForUserList") : null;
             if (animalForUserList == null) {
                 return;
             }
             int star = FantasticLevelType.stars[giftToFriendFantasticLevelType.getValue()];
             for (int i = 0; i < animalForUserList.length(); i++) {
-                JSONObject animalForUser = animalForUserList.getJSONObject(i);
-                if (animalForUser.optInt("star") < star) {
+                JSONObject animalForUser = animalForUserList.optJSONObject(i);
+                if (animalForUser == null || animalForUser.optInt("star") < star) {
                     continue;
                 }
-                int count = animalForUser.getJSONObject("collectDetail").optInt("count");
+                JSONObject collectDetail = animalForUser.optJSONObject("collectDetail");
+                int count = collectDetail != null ? collectDetail.optInt("count") : 0;
                 if (count <= 0) {
                     continue;
                 }
-                JSONObject animal = animalForUser.getJSONObject("animal");
+                JSONObject animal = animalForUser.optJSONObject("animal");
+                if (animal == null) {
+                    continue;
+                }
                 for (int j = 0; j < count; j++) {
                     if (!giftToFriend(animal, targetUserId)) {
                         return;
@@ -843,7 +859,7 @@ public class AntDodo extends ModelTask {
 
     private Boolean giftToFriend(JSONObject animal, String targetUserId) {
         try {
-            String animalId = animal.getString("animalId");
+            String animalId = animal.optString("animalId");
             if (targetUserId.equals(UserIdMap.getCurrentUid())) {
                 return false;
             }
