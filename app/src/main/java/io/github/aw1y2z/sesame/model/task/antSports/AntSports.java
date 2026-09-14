@@ -302,12 +302,15 @@ public class AntSports extends ModelTask {
             if (sportsTasks) {
                 JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryCoinTaskPanel());
                 if (MessageUtil.checkSuccess(TAG, jo)) {
-                    jo = jo.getJSONObject("data");
-                    if (jo.has("taskList")) {
-                        JSONArray taskLists = jo.getJSONArray("taskList");
-                        for (int i = 0; i < taskLists.length(); i++) {
-                            JSONObject taskList = taskLists.getJSONObject(i);
-                            String taskName = taskList.getString("taskName");
+                    jo = jo.optJSONObject("data");
+                    if (jo != null && jo.has("taskList")) {
+                        JSONArray taskLists = jo.optJSONArray("taskList");
+                        for (int i = 0; taskLists != null && i < taskLists.length(); i++) {
+                            JSONObject taskList = taskLists.optJSONObject(i);
+                            if (taskList == null) {
+                                continue;
+                            }
+                            String taskName = taskList.optString("taskName");
                             AntSportsTaskListMap.add(taskName, taskName);
                         }
                     }
@@ -397,22 +400,25 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
-            jo = jo.getJSONObject("data");
-            if (!jo.has("taskList")) {
+            jo = jo.optJSONObject("data");
+            if (jo == null || !jo.has("taskList")) {
                 return;
             }
-            JSONArray taskList = jo.getJSONArray("taskList");
-            for (int i = 0; i < taskList.length(); i++) {
-                jo = taskList.getJSONObject(i);
-                String taskName = jo.getString("taskName");
-                String taskStatus = jo.getString("taskStatus");
+            JSONArray taskList = jo.optJSONArray("taskList");
+            for (int i = 0; taskList != null && i < taskList.length(); i++) {
+                jo = taskList.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
+                String taskName = jo.optString("taskName");
+                String taskStatus = jo.optString("taskStatus");
                 if (TaskStatus.HAS_RECEIVED.name().equals(taskStatus)) {
                     return;
                 }
 
                 if (TaskStatus.WAIT_RECEIVE.name().equals(taskStatus)) {
-                    String assetId = jo.getString("assetId");
-                    int prizeAmount = jo.getInt("prizeAmount");
+                    String assetId = jo.optString("assetId");
+                    int prizeAmount = jo.optInt("prizeAmount");
                     if (receiveCoinAsset(assetId, prizeAmount, taskName)) {
                         TimeUtil.sleep(1000);
                     }
@@ -426,11 +432,11 @@ public class AntSports extends ModelTask {
                     continue;
                 }
                 if (TaskStatus.WAIT_COMPLETE.name().equals(taskStatus)) {
-                    String taskAction = jo.getString("taskAction");
-                    String taskId = jo.getString("taskId");
+                    String taskAction = jo.optString("taskAction");
+                    String taskId = jo.optString("taskId");
                     if (jo.optBoolean("multiTask")) {
-                        int currentNum = jo.getInt("currentNum") + 1;
-                        int limitConfigNum = jo.getInt("limitConfigNum");
+                        int currentNum = jo.optInt("currentNum") + 1;
+                        int limitConfigNum = jo.optInt("limitConfigNum");
                         taskName = taskName.replaceAll("（.*/.*）", "(" + currentNum + "/" + limitConfigNum + ")");
                     }
                     if (jo.optBoolean("needSignUp") && !signUpTask(taskId)) {
@@ -443,8 +449,8 @@ public class AntSports extends ModelTask {
                 }
 
                 //兜底操作
-                String taskAction = jo.getString("taskAction");
-                String taskId = jo.getString("taskId");
+                String taskAction = jo.optString("taskAction");
+                String taskId = jo.optString("taskId");
                 completeTask(taskAction, taskId, taskName);
             }
         } catch (Throwable t) {
@@ -490,12 +496,17 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
-            JSONObject data = jo.getJSONObject("data");
-            if (!data.getBoolean("signed")) {
+            JSONObject data = jo.optJSONObject("data");
+            if (data == null) {
+                return;
+            }
+            if (!data.optBoolean("signed")) {
                 JSONObject subscribeConfig;
                 if (data.has("subscribeConfig")) {
-                    subscribeConfig = data.getJSONObject("subscribeConfig");
-                    Log.other("运动任务🧾[做任务得运动币:签到" + subscribeConfig.getString("subscribeExpireDays") + "天]奖励" + data.getString("toast") + "运动币");
+                    subscribeConfig = data.optJSONObject("subscribeConfig");
+                    if (subscribeConfig != null) {
+                        Log.other("运动任务🧾[做任务得运动币:签到" + subscribeConfig.optString("subscribeExpireDays") + "天]奖励" + data.optString("toast") + "运动币");
+                    }
                 } else {
                     //                        Log.record("没有签到");
                 }
@@ -514,18 +525,18 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
-            JSONObject data = jo.getJSONObject("data");
-            if (!data.has("recBubbleList")) {
+            JSONObject data = jo.optJSONObject("data");
+            if (data == null || !data.has("recBubbleList")) {
                 return;
             }
-            JSONArray ja = data.getJSONArray("recBubbleList");
-            for (int i = 0; i < ja.length(); i++) {
-                jo = ja.getJSONObject(i);
-                if (!data.has("assetId")) {
-                    return;
+            JSONArray ja = data.optJSONArray("recBubbleList");
+            for (int i = 0; ja != null && i < ja.length(); i++) {
+                jo = ja.optJSONObject(i);
+                if (jo == null || !data.has("assetId")) {
+                    continue;
                 }
-                String assetId = jo.getString("assetId");
-                int coinAmount = jo.getInt("coinAmount");
+                String assetId = jo.optString("assetId");
+                int coinAmount = jo.optInt("coinAmount");
                 String simpleSourceName = jo.optString("simpleSourceName");
                 if (receiveCoinAsset(assetId, coinAmount, simpleSourceName)) {
                     TimeUtil.sleep(500);
@@ -577,15 +588,18 @@ public class AntSports extends ModelTask {
                         //Log.other("  " + themeName + "(" + themeId + ")");
                         JSONObject queryWorldMapJo = MyUtils.newJSONObject(AntSportsRpcCall.queryWorldMap(themeId));
                         if (MessageUtil.checkSuccess(TAG, queryWorldMapJo)) {
-                            JSONObject queryWorldMapData = queryWorldMapJo.getJSONObject("data");
+                            JSONObject queryWorldMapData = queryWorldMapJo.optJSONObject("data");
                             //获取线路城市列表
-                            JSONArray cityList = queryWorldMapData.getJSONArray("cityList");
-                            for (int j = 0; j < cityList.length(); j++) {
-                                JSONObject city = cityList.getJSONObject(j);
-                                String cityId = city.getString("cityId");
+                            JSONArray cityList = queryWorldMapData != null ? queryWorldMapData.optJSONArray("cityList") : null;
+                            for (int j = 0; cityList != null && j < cityList.length(); j++) {
+                                JSONObject city = cityList.optJSONObject(j);
+                                if (city == null) {
+                                    continue;
+                                }
+                                String cityId = city.optString("cityId");
                                 String name;
                                 if (city.has("name")) {
-                                    name = city.getString("name");
+                                    name = city.optString("name");
                                 } else {
                                     name = null;
                                 }
@@ -595,13 +609,16 @@ public class AntSports extends ModelTask {
                                 }
                                 JSONObject queryCityPathJo = MyUtils.newJSONObject(AntSportsRpcCall.queryCityPath(cityId));
                                 if (MessageUtil.checkSuccess(TAG, queryCityPathJo)) {
-                                    JSONObject queryCityPathData = queryCityPathJo.getJSONObject("data");
+                                    JSONObject queryCityPathData = queryCityPathJo.optJSONObject("data");
                                     //获取城市包含的路线
-                                    JSONArray cityPathList = queryCityPathData.getJSONArray("cityPathList");
-                                    for (int k = 0; k < cityPathList.length(); k++) {
-                                        JSONObject cityPath = cityPathList.getJSONObject(k);
-                                        String pathId = cityPath.getString("pathId");
-                                        String queryCityPathName = cityPath.getString("name");
+                                    JSONArray cityPathList = queryCityPathData != null ? queryCityPathData.optJSONArray("cityPathList") : null;
+                                    for (int k = 0; cityPathList != null && k < cityPathList.length(); k++) {
+                                        JSONObject cityPath = cityPathList.optJSONObject(k);
+                                        if (cityPath == null) {
+                                            continue;
+                                        }
+                                        String pathId = cityPath.optString("pathId");
+                                        String queryCityPathName = cityPath.optString("name");
                                         int completeCount = cityPath.optInt("completeCount");
                                         boolean locked = cityPath.optBoolean("locked", true);
                                         if (!inited && !locked) {
