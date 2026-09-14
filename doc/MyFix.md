@@ -4,6 +4,12 @@
 
 ## 变更记录
 
+### 2026-09-14：`ForestChouChouLe.java` `.get*()` → `.opt*()` + 空指针防护，第十二个文件全部完成
+
+第十二个文件（1209 行，原~33 处调用点，一次会话内全部转完）。覆盖 `chouChouLe`/`chouChouLescene`（森林抽抽乐任务列表遍历、已完成任务领奖、活力值兑换、统一完成任务分支、抽奖执行循环）、`shareComponentRecall`/`confirmShareRecall`（好友助力解析）。
+
+`grep` 确认代码里已无可执行的裸 `.get*()` 调用。编译通过；仅做了编译期验证，未做设备/运行时测试。下一步按调用点数量排序转到 `GreenFinance.java`（约 32 处调用点）。
+
 ### 2026-09-14：`OmegakoiTown.java` `.get*()` → `.opt*()` + 空指针防护，第十一个文件全部完成
 
 第十一个文件（190 行，小文件一次性全部转完）。覆盖 `getUserTasks`/`getSignInStatus`/`houseProduct`（小镇任务领取、每日签到、房屋收金三个流程）。`grep` 确认代码里已无可执行的裸 `.get*()`（`org.json` 相关）调用，唯一剩余匹配是 `RuntimeInfo.getInstance().getLong(...)`，与前一文件同理不在范围内。编译通过；仅做了编译期验证，未做设备/运行时测试。下一步按调用点数量排序转到 `ForestChouChouLe.java`（约 33 处调用点）。

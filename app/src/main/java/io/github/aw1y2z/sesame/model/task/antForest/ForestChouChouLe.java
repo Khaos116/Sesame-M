@@ -313,8 +313,10 @@ public class ForestChouChouLe {
                 return "解析shareID失败";
             }
             if (jo.has("inviterInfoVo")) {
-                jo = jo.getJSONObject("inviterInfoVo");
-                return jo.getString("userId");
+                jo = jo.optJSONObject("inviterInfoVo");
+                if (jo != null) {
+                    return jo.optString("userId");
+                }
             }
         } catch (Throwable t) {
             Log.i(TAG, "shareComponentRecall err:");
@@ -326,7 +328,7 @@ public class ForestChouChouLe {
     private String confirmShareRecall(String activityId, String p2pSceneCode, String shareId, String userId) {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.confirmShareRecall(activityId, p2pSceneCode, shareId, userId));
-            return jo.getString("desc");
+            return jo.optString("desc");
         } catch (Throwable t) {
             Log.i(TAG, "confirmShareRecall err:");
             Log.printStackTrace(TAG, t);
