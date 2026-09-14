@@ -826,10 +826,10 @@ public class AntOcean extends ModelTask {
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
-                fillFlagVOList = jo.getJSONArray("fillFlagVOList");
-                for (int i = 0; i < fillFlagVOList.length(); i++) {
-                    JSONObject fillFlag = fillFlagVOList.getJSONObject(i);
-                    if (cleanOceanType.getValue() != CleanOceanType.NONE) {
+                fillFlagVOList = jo.optJSONArray("fillFlagVOList");
+                for (int i = 0; fillFlagVOList != null && i < fillFlagVOList.length(); i++) {
+                    JSONObject fillFlag = fillFlagVOList.optJSONObject(i);
+                    if (fillFlag != null && cleanOceanType.getValue() != CleanOceanType.NONE) {
                         cleanFriendOcean(fillFlag);
                         if (Status.hasFlagToday("Ocean::HELP_CLEAN_ALL_FRIEND_LIMIT")) {
                             return;
@@ -965,7 +965,7 @@ public class AntOcean extends ModelTask {
             if (task.has("taskProgress")) {
                 return false;
             }
-            JSONObject bizInfo = MyUtils.newJSONObject(task.getString("bizInfo"));
+            JSONObject bizInfo = MyUtils.newJSONObject(task.optString("bizInfo"));
             String taskTitle = bizInfo.optString("taskTitle");
             //黑名单任务跳过
             if (AntOceanAntiepTaskList.getValue().contains(taskTitle)) {
@@ -981,8 +981,8 @@ public class AntOcean extends ModelTask {
             //不完成限时任务号容易黑
             //else if (taskTitle.startsWith("随机任务：") || taskTitle.startsWith("绿色任务：")|| taskTitle.startsWith("限时任务：")) {
             else if (taskTitle.startsWith("随机任务：") || taskTitle.startsWith("绿色任务：")) {
-                String sceneCode = task.getString("sceneCode");
-                String taskType = task.getString("taskType");
+                String sceneCode = task.optString("sceneCode");
+                String taskType = task.optString("taskType");
                 JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.finishTask(sceneCode, taskType));
                 //检查并标记黑名单任务
                 MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOceanAntiepTaskList", taskTitle, jo);
@@ -1005,13 +1005,16 @@ public class AntOcean extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            if (jo.getBoolean("answered")) {
+            if (jo.optBoolean("answered")) {
                 Log.record("问题已经被回答过，跳过答题流程");
                 return false;
             }
-            String questionId = jo.getString("questionId");
-            JSONArray options = jo.getJSONArray("options");
-            String answer = options.getString(0);
+            String questionId = jo.optString("questionId");
+            JSONArray options = jo.optJSONArray("options");
+            if (options == null || options.length() == 0) {
+                return false;
+            }
+            String answer = options.optString(0);
             TimeUtil.sleep(500);
             jo = MyUtils.newJSONObject(AntOceanRpcCall.submitAnswer(answer, questionId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
@@ -1034,7 +1037,7 @@ public class AntOcean extends ModelTask {
                 return;
             }
             // 获取重复拼图数量
-            int duplicatePieceNum = jo.getInt("duplicatePieceNum");
+            int duplicatePieceNum = jo.optInt("duplicatePieceNum");
             while (duplicatePieceNum >= 10) {
                 // 如果重复拼图数量大于等于10，则执行道具兑换操作
                 int exchangeNum = Math.min(duplicatePieceNum / 10, 50);
@@ -1054,8 +1057,8 @@ public class AntOcean extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.exchangeUniversalPiece(number));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                String duplicatePieceNum = jo.getString("duplicatePieceNum");
-                String exchangeNum = jo.getString("exchangeNum");
+                String duplicatePieceNum = jo.optString("duplicatePieceNum");
+                String exchangeNum = jo.optString("exchangeNum");
                 Log.forest("神奇海洋🐳制作[万能拼图*" + exchangeNum + "]#剩余[重复拼图*" + duplicatePieceNum + "]");
                 return true;
             }
@@ -1075,11 +1078,14 @@ public class AntOcean extends ModelTask {
                 return;
             }
             // 获取道具类型列表中的holdsNum值
-            JSONArray oceanPropVOByTypeList = jo.getJSONArray("oceanPropVOByTypeList");
+            JSONArray oceanPropVOByTypeList = jo.optJSONArray("oceanPropVOByTypeList");
             // 遍历每个道具类型信息
-            for (int i = 0; i < oceanPropVOByTypeList.length(); i++) {
-                JSONObject oceanPropVO = oceanPropVOByTypeList.getJSONObject(i);
-                int holdsNum = oceanPropVO.getInt("holdsNum");
+            for (int i = 0; oceanPropVOByTypeList != null && i < oceanPropVOByTypeList.length(); i++) {
+                JSONObject oceanPropVO = oceanPropVOByTypeList.optJSONObject(i);
+                if (oceanPropVO == null) {
+                    continue;
+                }
+                int holdsNum = oceanPropVO.optInt("holdsNum");
                 int pageNum = 0;
                 boolean hasMore = true;
                 while (holdsNum > 0 && hasMore) {
@@ -1096,7 +1102,10 @@ public class AntOcean extends ModelTask {
                     if (!jo.has("fishVOS")) {
                         return;
                     }
-                    JSONArray fishVOS = jo.getJSONArray("fishVOS");
+                    JSONArray fishVOS = jo.optJSONArray("fishVOS");
+                    if (fishVOS == null) {
+                        return;
+                    }
                     holdsNum -= useUniversalPiece(fishVOS, holdsNum);
                 }
             }
