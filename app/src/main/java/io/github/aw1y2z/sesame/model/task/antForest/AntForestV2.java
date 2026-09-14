@@ -3411,11 +3411,20 @@ public class AntForestV2 extends ModelTask {
                     }
                     JSONArray forestPropVOList = jo.optJSONArray("forestPropVOList");
                     if (forestPropVOList != null && forestPropVOList.length() > 0) {
-                        jo = forestPropVOList.getJSONObject(0);
-                        String giveConfigId = jo.getJSONObject("giveConfigVO").getString("giveConfigId");
+                        jo = forestPropVOList.optJSONObject(0);
+                        if (jo == null) {
+                            break;
+                        }
+                        JSONObject giveConfigVO = jo.optJSONObject("giveConfigVO");
+                        JSONObject propConfigVO = jo.optJSONObject("propConfigVO");
+                        JSONArray propIdList = jo.optJSONArray("propIdList");
+                        if (giveConfigVO == null || propConfigVO == null || propIdList == null || propIdList.length() == 0) {
+                            break;
+                        }
+                        String giveConfigId = giveConfigVO.optString("giveConfigId");
                         int holdsNum = jo.optInt("holdsNum", 0);
-                        String propName = jo.getJSONObject("propConfigVO").getString("propName");
-                        String propId = jo.getJSONArray("propIdList").getString(0);
+                        String propName = propConfigVO.optString("propName");
+                        String propId = propIdList.optString(0);
                         jo = MyUtils.newJSONObject(AntForestRpcCall.giveProp(giveConfigId, propId, targetUserId));
                         if (MessageUtil.checkResultCode(TAG, jo)) {
                             Log.forest("赠送道具🎭[" + UserIdMap.getMaskName(targetUserId) + "]#" + propName);
@@ -3444,8 +3453,11 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONObject data = jo.getJSONObject("data");
-            if (!data.getBoolean("openStatus")) {
+            JSONObject data = jo.optJSONObject("data");
+            if (data == null) {
+                return;
+            }
+            if (!data.optBoolean("openStatus")) {
                 Log.forest("绿色任务☘未开通");
                 jo = MyUtils.newJSONObject(EcoLifeRpcCall.openEcolife());
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -3459,10 +3471,16 @@ public class AntForestV2 extends ModelTask {
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
-                data = jo.getJSONObject("data");
+                data = jo.optJSONObject("data");
+                if (data == null) {
+                    return;
+                }
             }
-            String dayPoint = data.getString("dayPoint");
-            JSONArray actionListVO = data.getJSONArray("actionListVO");
+            String dayPoint = data.optString("dayPoint");
+            JSONArray actionListVO = data.optJSONArray("actionListVO");
+            if (actionListVO == null) {
+                return;
+            }
             if (ecoLifeOptions.getValue().contains("dish")) {
                 photoGuangPan(dayPoint);
             }
@@ -3481,18 +3499,21 @@ public class AntForestV2 extends ModelTask {
         try {
             String source = "source";
             for (int i = 0; i < actionListVO.length(); i++) {
-                JSONObject actionVO = actionListVO.getJSONObject(i);
-                JSONArray actionItemList = actionVO.getJSONArray("actionItemList");
+                JSONObject actionVO = actionListVO.optJSONObject(i);
+                JSONArray actionItemList = actionVO != null ? actionVO.optJSONArray("actionItemList") : null;
+                if (actionItemList == null) {
+                    continue;
+                }
                 for (int j = 0; j < actionItemList.length(); j++) {
-                    JSONObject actionItem = actionItemList.getJSONObject(j);
-                    if (!actionItem.has("actionId")) {
+                    JSONObject actionItem = actionItemList.optJSONObject(j);
+                    if (actionItem == null || !actionItem.has("actionId")) {
                         continue;
                     }
-                    if (actionItem.getBoolean("actionStatus")) {
+                    if (actionItem.optBoolean("actionStatus")) {
                         continue;
                     }
-                    String actionId = actionItem.getString("actionId");
-                    String actionName = actionItem.getString("actionName");
+                    String actionId = actionItem.optString("actionId");
+                    String actionName = actionItem.optString("actionName");
                     if ("photoguangpan".equals(actionId)) {
                         continue;
                     }
