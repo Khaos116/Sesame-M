@@ -878,7 +878,7 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG + "获取PK排行榜失败:", pkObject)) {
                 Log.error("获取PK排行榜失败: " + pkObject.optString("resultDesc"));
             } else {
-                if (!pkObject.getString("rankMemberStatus").equals("JOIN")) {
+                if (!"JOIN".equals(pkObject.optString("rankMemberStatus"))) {
                     Log.record("未加入PK排行榜");
                     return;
                 }
@@ -891,8 +891,11 @@ public class AntForestV2 extends ModelTask {
                 }
                 List<String> pkIdList = new ArrayList<>();
                 for (int pos = 20; pos < totalData.length(); pos++) {
-                    JSONObject pkFriend = totalData.getJSONObject(pos);
-                    String userId = pkFriend.getString("userId");
+                    JSONObject pkFriend = totalData.optJSONObject(pos);
+                    if (pkFriend == null) {
+                        continue;
+                    }
+                    String userId = pkFriend.optString("userId");
                     if (Objects.equals(userId, selfId)) {
                         continue; //如果是自己则跳过
                     }
@@ -926,7 +929,7 @@ public class AntForestV2 extends ModelTask {
             long start = System.currentTimeMillis();
             userHomeObject = MyUtils.newJSONObject(AntForestRpcCall.queryHomePage());
             long end = System.currentTimeMillis();
-            long serverTime = userHomeObject.getLong("now");
+            long serverTime = userHomeObject.optLong("now");
             int offsetTime = offsetTimeMath.nextInteger((int) ((start + end) / 2 - serverTime));
             Log.i("服务器时间：" + serverTime + "，本地与服务器时间差：" + offsetTime);
             //兼容组队模式
@@ -962,7 +965,7 @@ public class AntForestV2 extends ModelTask {
             long start = System.currentTimeMillis();
             userHomeObject = MyUtils.newJSONObject(AntForestRpcCall.queryFriendHomePage(userId));
             long end = System.currentTimeMillis();
-            long serverTime = userHomeObject.getLong("now");
+            long serverTime = userHomeObject.optLong("now");
             int offsetTime = offsetTimeMath.nextInteger((int) ((start + end) / 2 - serverTime));
             Log.i("服务器时间：" + serverTime + "，本地与服务器时间差：" + offsetTime);
         } catch (Throwable t) {
@@ -1021,15 +1024,15 @@ public class AntForestV2 extends ModelTask {
                 return userHomeObject;
             }
 
-            long serverTime = userHomeObject.getLong("now");
+            long serverTime = userHomeObject.optLong("now");
             boolean isSelf = Objects.equals(userId, selfId);
             String userName;
             boolean isCollectEnergy;
             //默认收炸弹能量
             boolean isBombCollectenergy = true;
             if (getType.equals("PK")) {
-                JSONObject userBaseInfo = userHomeObject.getJSONObject("userBaseInfo");
-                userName = userBaseInfo.optString("displayName") + "(PK森友)";
+                JSONObject userBaseInfo = userHomeObject.optJSONObject("userBaseInfo");
+                userName = (userBaseInfo != null ? userBaseInfo.optString("displayName") : "") + "(PK森友)";
                 isCollectEnergy = true;
             } else {
                 userName = UserIdMap.getMaskName(userId);
@@ -1041,24 +1044,30 @@ public class AntForestV2 extends ModelTask {
                 updateUsingPropsEndTime(userHomeObject);
             } else {
                 if (isCollectEnergy) {
-                    JSONArray jaProps = userHomeObject.getJSONArray("usingUserPropsNew");
-                    for (int i = 0; i < jaProps.length(); i++) {
-                        JSONObject joProp = jaProps.getJSONObject(i);
-                        if (Objects.equals("shield", joProp.getString("propGroup"))) {
-                            if (joProp.getLong("endTime") > serverTime) {
-                                Log.record("[" + userName + "]能量罩保护到[" + TimeUtil.getCommonDateS(joProp.getLong("endTime")) + "]");
+                    JSONArray jaProps = userHomeObject.optJSONArray("usingUserPropsNew");
+                    for (int i = 0; jaProps != null && i < jaProps.length(); i++) {
+                        JSONObject joProp = jaProps.optJSONObject(i);
+                        if (joProp == null) {
+                            continue;
+                        }
+                        if (Objects.equals("shield", joProp.optString("propGroup"))) {
+                            if (joProp.optLong("endTime") > serverTime) {
+                                Log.record("[" + userName + "]能量罩保护到[" + TimeUtil.getCommonDateS(joProp.optLong("endTime")) + "]");
                                 isCollectEnergy = false;
-                                JSONArray jaBubbles = userHomeObject.getJSONArray("bubbles");
-                                for (int ii = 0; ii < jaBubbles.length(); ii++) {
-                                    JSONObject canbubble = jaBubbles.getJSONObject(ii);
-                                    long bubbleId = canbubble.getLong("id");
-                                    switch (CollectStatus.valueOf(canbubble.getString("collectStatus"))) {
+                                JSONArray jaBubbles = userHomeObject.optJSONArray("bubbles");
+                                for (int ii = 0; jaBubbles != null && ii < jaBubbles.length(); ii++) {
+                                    JSONObject canbubble = jaBubbles.optJSONObject(ii);
+                                    if (canbubble == null) {
+                                        continue;
+                                    }
+                                    long bubbleId = canbubble.optLong("id");
+                                    switch (CollectStatus.valueOf(canbubble.optString("collectStatus"))) {
                                         case AVAILABLE:
                                             break;
                                         case WAITING:
-                                            long produceTime = canbubble.getLong("produceTime");
+                                            long produceTime = canbubble.optLong("produceTime");
                                             //如果保护罩不能覆盖能量成熟时间
-                                            if (produceTime < joProp.getLong("endTime")) {
+                                            if (produceTime < joProp.optLong("endTime")) {
                                                 break;
                                             }
                                             if (checkIntervalInt + checkIntervalInt / 2 > produceTime - serverTime) {
@@ -1066,7 +1075,7 @@ public class AntForestV2 extends ModelTask {
                                                     break;
                                                 }
                                                 addChildTask(new BubbleTimerTask(userId, bubbleId, produceTime, userName));
-                                                Log.record("[" + userName + "]能量保护罩时间[" + TimeUtil.getCommonDate(joProp.getLong("endTime")) + "]#未覆盖能量球成熟时间[" + TimeUtil.getCommonDate(produceTime) + "]");
+                                                Log.record("[" + userName + "]能量保护罩时间[" + TimeUtil.getCommonDate(joProp.optLong("endTime")) + "]#未覆盖能量球成熟时间[" + TimeUtil.getCommonDate(produceTime) + "]");
                                                 Log.record("添加蹲点收取🪂[" + userName + "]在[" + TimeUtil.getCommonDate(produceTime) + "]执行");
                                             } else {
                                                 Log.i("用户[" + userName + "]能量成熟时间: " + TimeUtil.getCommonDate(produceTime));
@@ -1077,13 +1086,16 @@ public class AntForestV2 extends ModelTask {
                                 break;
                             }
                         }
-                        if (Objects.equals("energyBombCard", joProp.getString("propGroup"))) {
-                            if (joProp.getLong("endTime") > serverTime) {
+                        if (Objects.equals("energyBombCard", joProp.optString("propGroup"))) {
+                            if (joProp.optLong("endTime") > serverTime) {
                                 Log.record("[" + userName + "]使用了炸弹卡");
                                 if (userHomeObject.has("bubbles")) {
-                                    JSONArray jaBubbles = userHomeObject.getJSONArray("bubbles");
-                                    for (int ii = 0; ii < jaBubbles.length(); ii++) {
-                                        JSONObject Bombubble = jaBubbles.getJSONObject(ii);
+                                    JSONArray jaBubbles = userHomeObject.optJSONArray("bubbles");
+                                    for (int ii = 0; jaBubbles != null && ii < jaBubbles.length(); ii++) {
+                                        JSONObject Bombubble = jaBubbles.optJSONObject(ii);
+                                        if (Bombubble == null) {
+                                            continue;
+                                        }
                                         int remainEnergy = Bombubble.optInt("remainEnergy");
                                         //存在小于预设值
                                         if (remainEnergy < CollectBombEnergyLimit.getValue()) {
@@ -1105,13 +1117,16 @@ public class AntForestV2 extends ModelTask {
             }
 
             if (isCollectEnergy) {
-                JSONArray jaBubbles = userHomeObject.getJSONArray("bubbles");
+                JSONArray jaBubbles = userHomeObject.optJSONArray("bubbles");
                 List<Long> bubbleIdList = new ArrayList<>();
-                for (int i = 0; i < jaBubbles.length(); i++) {
-                    JSONObject bubble = jaBubbles.getJSONObject(i);
+                for (int i = 0; jaBubbles != null && i < jaBubbles.length(); i++) {
+                    JSONObject bubble = jaBubbles.optJSONObject(i);
+                    if (bubble == null) {
+                        continue;
+                    }
                     int remainEnergy = bubble.optInt("remainEnergy");
-                    long bubbleId = bubble.getLong("id");
-                    switch (CollectStatus.valueOf(bubble.getString("collectStatus"))) {
+                    long bubbleId = bubble.optLong("id");
+                    switch (CollectStatus.valueOf(bubble.optString("collectStatus"))) {
                         case AVAILABLE:
                             //用阈值判断单个能量球需收取情况
                             if (CollectSelfEnergyType.getValue() == CollectSelfType.ALL) {
@@ -1123,7 +1138,7 @@ public class AntForestV2 extends ModelTask {
                             }
                             break;
                         case WAITING:
-                            long produceTime = bubble.getLong("produceTime");
+                            long produceTime = bubble.optLong("produceTime");
                             if (checkIntervalInt + checkIntervalInt / 2 > produceTime - serverTime) {
                                 if (hasChildTask(AntForestV2.getBubbleTimerTid(userId, bubbleId))) {
                                     break;
@@ -1204,8 +1219,11 @@ public class AntForestV2 extends ModelTask {
             }
             for (int i = 0, len = jaFriendRanking.length(); i < len; i++) {
                 try {
-                    JSONObject friendObject = jaFriendRanking.getJSONObject(i);
-                    String userId = friendObject.getString("userId");
+                    JSONObject friendObject = jaFriendRanking.optJSONObject(i);
+                    if (friendObject == null) {
+                        continue;
+                    }
+                    String userId = friendObject.optString("userId");
                     if (Objects.equals(userId, selfId)) {
                         continue;
                     }
@@ -1213,7 +1231,7 @@ public class AntForestV2 extends ModelTask {
                     if (getType.equals("PK")) {
                         boolean collectEnergy = true;
                         if (!friendObject.optBoolean("canCollectEnergy")) {
-                            long canCollectLaterTime = friendObject.getLong("canCollectLaterTime");
+                            long canCollectLaterTime = friendObject.optLong("canCollectLaterTime");
                             if (canCollectLaterTime <= 0 || (canCollectLaterTime - System.currentTimeMillis() > checkIntervalInt)) {
                                 collectEnergy = false;
                             }
