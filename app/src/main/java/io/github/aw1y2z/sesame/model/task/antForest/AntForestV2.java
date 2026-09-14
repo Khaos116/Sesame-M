@@ -3366,7 +3366,9 @@ public class AntForestV2 extends ModelTask {
                 }
                 // 使用能量双击卡
                 if (consumeProp(jo)) {
-                    Long endTime = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(jo.getJSONObject("propConfigVO").getLong("durationTime"));
+                    JSONObject propConfigVO = jo.optJSONObject("propConfigVO");
+                    long durationTime = propConfigVO != null ? propConfigVO.optLong("durationTime") : 0;
+                    Long endTime = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(durationTime);
                     usingProps.put(PropGroup.doubleClick.name(), endTime);
                     Status.DoubleToday();
                 } else {
