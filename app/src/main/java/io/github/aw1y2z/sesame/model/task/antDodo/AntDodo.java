@@ -396,15 +396,22 @@ public class AntDodo extends ModelTask {
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     break;
                 }
-                jo = jo.getJSONObject("data");
-                JSONArray propList = jo.getJSONArray("propList");
-                for (int i = 0; i < propList.length(); i++) {
-                    JSONObject prop = propList.getJSONObject(i);
-                    String propType = prop.getString("propType");
-                    String propGroup = prop.getJSONObject("propConfig").getString("propGroup");
-                    JSONArray propIdList = prop.getJSONArray("propIdList");
-                    String propId = propIdList.getString(0);
-                    long recentExpireTime = prop.getLong("recentExpireTime");
+                jo = jo.optJSONObject("data");
+                JSONArray propList = jo != null ? jo.optJSONArray("propList") : null;
+                for (int i = 0; propList != null && i < propList.length(); i++) {
+                    JSONObject prop = propList.optJSONObject(i);
+                    if (prop == null) {
+                        continue;
+                    }
+                    String propType = prop.optString("propType");
+                    JSONObject propConfig = prop.optJSONObject("propConfig");
+                    String propGroup = propConfig != null ? propConfig.optString("propGroup") : "";
+                    JSONArray propIdList = prop.optJSONArray("propIdList");
+                    if (propIdList == null || propIdList.length() == 0) {
+                        continue;
+                    }
+                    String propId = propIdList.optString(0);
+                    long recentExpireTime = prop.optLong("recentExpireTime");
                     boolean willExpireSoon = recentExpireTime - TimeUnit.DAYS.toMillis(1) < System.currentTimeMillis();
                     boolean isUseProp = usePropList.getValue().contains(propType);
                     if (!isUseProp && !willExpireSoon) {
@@ -445,20 +452,25 @@ public class AntDodo extends ModelTask {
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     break;
                 }
-                jo = jo.getJSONObject("data");
-                hasMore = jo.getBoolean("hasMore");
+                jo = jo.optJSONObject("data");
+                if (jo == null) {
+                    break;
+                }
+                hasMore = jo.optBoolean("hasMore");
                 pageStart += 9;
-                JSONArray bookForUserList = jo.getJSONArray("bookForUserList");
-                for (int i = 0; i < bookForUserList.length(); i++) {
-                    jo = bookForUserList.getJSONObject(i);
-                    if (isQueryBookInfo(jo, 0)) {
-                        JSONObject animalBookResult = jo.getJSONObject("animalBookResult");
-                        String bookId = animalBookResult.getString("bookId");
-                        animal = queryUniversalAnimal(bookId, animal);
+                JSONArray bookForUserList = jo.optJSONArray("bookForUserList");
+                for (int i = 0; bookForUserList != null && i < bookForUserList.length(); i++) {
+                    jo = bookForUserList.optJSONObject(i);
+                    if (jo != null && isQueryBookInfo(jo, 0)) {
+                        JSONObject animalBookResult = jo.optJSONObject("animalBookResult");
+                        String bookId = animalBookResult != null ? animalBookResult.optString("bookId") : null;
+                        if (bookId != null) {
+                            animal = queryUniversalAnimal(bookId, animal);
+                        }
                     }
                 }
             } while (hasMore);
-            if (animal != null && consumeProp(propId, propType, animal.getString("animalId"))) {
+            if (animal != null && consumeProp(propId, propType, animal.optString("animalId"))) {
                 return true;
             }
         } catch (Throwable t) {
@@ -494,14 +506,21 @@ public class AntDodo extends ModelTask {
             }
             // data: animalBookResult{}
             // data: animalForUserList[]
-            JSONArray animalForUserList = jo.getJSONObject("data").getJSONArray("animalForUserList");
-            for (int i = 0; i < animalForUserList.length(); i++) {
-                jo = animalForUserList.getJSONObject(i);
-                int star = jo.getInt("star");
+            JSONObject data = jo.optJSONObject("data");
+            JSONArray animalForUserList = data != null ? data.optJSONArray("animalForUserList") : null;
+            for (int i = 0; animalForUserList != null && i < animalForUserList.length(); i++) {
+                jo = animalForUserList.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
+                int star = jo.optInt("star");
                 if (star < FantasticLevelType.stars[useUniversalCardFantasticLevelType.getValue()]) {
                     break;
                 }
-                JSONObject collectDetail = jo.getJSONObject("collectDetail");
+                JSONObject collectDetail = jo.optJSONObject("collectDetail");
+                if (collectDetail == null) {
+                    continue;
+                }
                 int count = collectDetail.optInt("count", 1 << 30);
                 boolean hasCollected = collectDetail.optBoolean("hasCollected", false);
                 //hasCollected=true(曾经获取);hasCollected=false(未获取)
@@ -518,19 +537,22 @@ public class AntDodo extends ModelTask {
                     }
                     // 规则2: 如果两者状态相同（都已收集或都未收集），则比较数量和星级
                     if (animal.optBoolean("hasCollected", true) == hasCollected) {
-                        if (count < animal.getInt("count") || (count == animal.getInt("count") && star > animal.getInt("star"))) {
+                        if (count < animal.optInt("count") || (count == animal.optInt("count") && star > animal.optInt("star"))) {
                             isbetteranimal = true;
                         }
                     }
                 }
                 //对比搜集数量和星级，优先选数量少的，数量相同选星级高的
                 else {
-                    if (count < animal.getInt("count") || (count == animal.getInt("count") && star > animal.getInt("star"))) {
+                    if (count < animal.optInt("count") || (count == animal.optInt("count") && star > animal.optInt("star"))) {
                         isbetteranimal = true;
                     }
                 }
                 if (isbetteranimal) {
-                    animal = jo.getJSONObject("animal");
+                    animal = jo.optJSONObject("animal");
+                    if (animal == null) {
+                        continue;
+                    }
                     animal.put("star", star);
                     animal.put("count", count);
                     animal.put("hasCollected", hasCollected);
