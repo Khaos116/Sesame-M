@@ -2315,21 +2315,27 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray forestSignVOList = jo.getJSONArray("forestSignVOList");
-            JSONObject forestSignVO = forestSignVOList.getJSONObject(0);
-            String currentSignKey = forestSignVO.getString("currentSignKey"); // 当前签到的 key
-            String signId = forestSignVO.getString("signId"); // 签到ID
-            String sceneCode = forestSignVO.getString("sceneCode"); // 场景代码
-            JSONArray signRecords = forestSignVO.getJSONArray("signRecords"); // 签到记录
-            for (int i = 0; i < signRecords.length(); i++) { // 遍历签到记录
-                JSONObject signRecord = signRecords.getJSONObject(i);
-                String signKey = signRecord.getString("signKey");
-                int awardCount = signRecord.getInt("awardCount");
-                if (signKey.equals(currentSignKey) && !signRecord.getBoolean("signed")) {
+            JSONArray forestSignVOList = jo.optJSONArray("forestSignVOList");
+            JSONObject forestSignVO = forestSignVOList != null ? forestSignVOList.optJSONObject(0) : null;
+            if (forestSignVO == null) {
+                return;
+            }
+            String currentSignKey = forestSignVO.optString("currentSignKey"); // 当前签到的 key
+            String signId = forestSignVO.optString("signId"); // 签到ID
+            String sceneCode = forestSignVO.optString("sceneCode"); // 场景代码
+            JSONArray signRecords = forestSignVO.optJSONArray("signRecords"); // 签到记录
+            for (int i = 0; signRecords != null && i < signRecords.length(); i++) { // 遍历签到记录
+                JSONObject signRecord = signRecords.optJSONObject(i);
+                if (signRecord == null) {
+                    continue;
+                }
+                String signKey = signRecord.optString("signKey");
+                int awardCount = signRecord.optInt("awardCount");
+                if (signKey.equals(currentSignKey) && !signRecord.optBoolean("signed")) {
                     JSONObject joSign = MyUtils.newJSONObject(AntForestRpcCall.antiepSign(signId, UserIdMap.getCurrentUid(), sceneCode));
                     TimeUtil.sleep(300); // 等待300毫秒
                     if (MessageUtil.checkSuccess(TAG + "森林签到失败:", joSign)) {
-                        int continuousCount = joSign.getInt("continuousCount");
+                        int continuousCount = joSign.optInt("continuousCount");
                         Log.forest("森林签到📆拯救第" + continuousCount + "天#复活[" + awardCount + "g能量]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                         Statistics.addData(Statistics.DataType.COLLECTED, awardCount);
                         // return awardCount;
@@ -2356,23 +2362,29 @@ public class AntForestV2 extends ModelTask {
                 }
                 return;
             }
-            JSONObject forestSignVO = jo.getJSONObject("forestSignVO");
-            String currentSignKey = forestSignVO.getString("currentSignKey"); // 当前签到的 key
-            String signId = forestSignVO.getString("signId"); // 签到ID
-            String sceneCode = forestSignVO.getString("sceneCode"); // 场景代码
-            JSONArray signRecords = forestSignVO.getJSONArray("signRecords"); // 签到记录
-            for (int i = 0; i < signRecords.length(); i++) { // 遍历签到记录
-                JSONObject signRecord = signRecords.getJSONObject(i);
-                String signKey = signRecord.getString("signKey");
-                int awardCount = signRecord.getInt("awardCount");
-                String awardType = signRecord.getString("awardType");
-                JSONObject extInfo = signRecord.getJSONObject("extInfo");
-                String awardName = extInfo.getString("awardName");
-                if (signKey.equals(currentSignKey) && !signRecord.getBoolean("signed")) {
+            JSONObject forestSignVO = jo.optJSONObject("forestSignVO");
+            if (forestSignVO == null) {
+                return;
+            }
+            String currentSignKey = forestSignVO.optString("currentSignKey"); // 当前签到的 key
+            String signId = forestSignVO.optString("signId"); // 签到ID
+            String sceneCode = forestSignVO.optString("sceneCode"); // 场景代码
+            JSONArray signRecords = forestSignVO.optJSONArray("signRecords"); // 签到记录
+            for (int i = 0; signRecords != null && i < signRecords.length(); i++) { // 遍历签到记录
+                JSONObject signRecord = signRecords.optJSONObject(i);
+                if (signRecord == null) {
+                    continue;
+                }
+                String signKey = signRecord.optString("signKey");
+                int awardCount = signRecord.optInt("awardCount");
+                String awardType = signRecord.optString("awardType");
+                JSONObject extInfo = signRecord.optJSONObject("extInfo");
+                String awardName = extInfo != null ? extInfo.optString("awardName") : "";
+                if (signKey.equals(currentSignKey) && !signRecord.optBoolean("signed")) {
                     JSONObject joSign = MyUtils.newJSONObject(AntForestRpcCall.antiepSign(signId, UserIdMap.getCurrentUid(), sceneCode));
                     TimeUtil.sleep(300); // 等待300毫秒
                     if (MessageUtil.checkSuccess(TAG + "森林7日签到:", joSign)) {
-                        int continuousCount = joSign.getInt("continuousCount");
+                        int continuousCount = joSign.optInt("continuousCount");
                         Log.forest("森林签到📆第" + continuousCount + "天#7日签到[" + awardName + "*" + awardCount + "]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                         if (awardType.equals("ENERGY")) {
                             Statistics.addData(Statistics.DataType.COLLECTED, awardCount);
@@ -2393,8 +2405,8 @@ public class AntForestV2 extends ModelTask {
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.vitalitySign());
             TimeUtil.sleep(300);
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                int continuousCount = jo.getInt("continuousCount");
-                int signAwardCount = jo.getInt("signAwardCount");
+                int continuousCount = jo.optInt("continuousCount");
+                int signAwardCount = jo.optInt("signAwardCount");
                 Log.forest("森林任务📆签到[" + continuousCount + "天]奖励[" + signAwardCount + "活力值]");
             }
         } catch (Throwable t) {
