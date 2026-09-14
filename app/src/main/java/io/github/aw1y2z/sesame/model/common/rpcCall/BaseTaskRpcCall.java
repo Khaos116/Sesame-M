@@ -61,18 +61,21 @@ public class BaseTaskRpcCall {
                 Log.i(tag + ".doTask.taskQuery", jo.optString("resultDesc"));
                 return;
             }
-            JSONObject result = jo.getJSONObject("result");
-            JSONArray taskDetailList = result.getJSONArray("taskDetailList");
-            for (int i = 0; i < taskDetailList.length(); i++) {
-                JSONObject taskDetail = taskDetailList.getJSONObject(i);
+            JSONObject result = jo.optJSONObject("result");
+            JSONArray taskDetailList = result != null ? result.optJSONArray("taskDetailList") : null;
+            for (int i = 0; taskDetailList != null && i < taskDetailList.length(); i++) {
+                JSONObject taskDetail = taskDetailList.optJSONObject(i);
+                if (taskDetail == null) {
+                    continue;
+                }
                 //EVENT_TRIGGER、USER_TRIGGER
-                String type = taskDetail.getString("sendCampTriggerType");
+                String type = taskDetail.optString("sendCampTriggerType");
                 if (!"USER_TRIGGER".equals(type) && !"EVENT_TRIGGER".equals(type)) {
                     continue;
                 }
 
-                String status = taskDetail.getString("taskProcessStatus");
-                String taskId = taskDetail.getString("taskId");
+                String status = taskDetail.optString("taskProcessStatus");
+                String taskId = taskDetail.optString("taskId");
                 if ("TO_RECEIVE".equals(status)) {
                     //领取奖品，任务待领奖
                     s = taskTrigger(taskId, "receive", appletId);

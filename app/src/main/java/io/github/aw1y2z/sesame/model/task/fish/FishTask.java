@@ -363,7 +363,10 @@ public class FishTask extends ModelTask {
             }
             int changed = 0;
             for (int i = 0; i < taskList.length(); i++) {
-                JSONObject task = taskList.getJSONObject(i);
+                JSONObject task = taskList.optJSONObject(i);
+                if (task == null) {
+                    continue;
+                }
                 changed += saveTaskIfNeeded(task);
 
                 String taskStatus = task.optString("taskStatus", "");
@@ -608,8 +611,8 @@ public class FishTask extends ModelTask {
                 return "";
             }
             for (int i = 0; i < taskList.length(); i++) {
-                JSONObject task = taskList.getJSONObject(i);
-                if (taskId.equals(task.optString("taskId", ""))) {
+                JSONObject task = taskList.optJSONObject(i);
+                if (task != null && taskId.equals(task.optString("taskId", ""))) {
                     return task.optString("taskStatus", "");
                 }
             }
@@ -768,7 +771,10 @@ public class FishTask extends ModelTask {
             }
 
             for (int i = 0; i < taskList.length(); i++) {
-                JSONObject task = taskList.getJSONObject(i);
+                JSONObject task = taskList.optJSONObject(i);
+                if (task == null) {
+                    continue;
+                }
                 String currentTaskId = task.optString("taskId", "");
                 if (taskId.equals(currentTaskId)) {
                     return task.optString("adBizNo", "");
@@ -967,7 +973,10 @@ public class FishTask extends ModelTask {
             Log.other("鱼塘📊检测到活动任务");
 
             for (int i = 0; i < activitiesArray.length(); i++) {
-                JSONObject activity = activitiesArray.getJSONObject(i);
+                JSONObject activity = activitiesArray.optJSONObject(i);
+                if (activity == null) {
+                    continue;
+                }
                 String activityId = activity.optString("activityId", "");
                 String status = activity.optString("status", "");
                 String activityType = activity.optString("activityType", "");
@@ -1167,7 +1176,10 @@ public class FishTask extends ModelTask {
 
             boolean giftBoxFound = false;
             for (int i = 0; i < activitiesArray.length(); i++) {
-                JSONObject activity = activitiesArray.getJSONObject(i);
+                JSONObject activity = activitiesArray.optJSONObject(i);
+                if (activity == null) {
+                    continue;
+                }
                 String activityType = activity.optString("activityType", "");
                 String status = activity.optString("status", "");
 

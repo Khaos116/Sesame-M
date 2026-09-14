@@ -25,7 +25,7 @@ public class ReadingDada {
         try {
             String taskJumpUrl = bizInfo.optString("taskJumpUrl");
             if (StringUtil.isEmpty(taskJumpUrl)) {
-                taskJumpUrl = bizInfo.getString("targetUrl");
+                taskJumpUrl = bizInfo.optString("targetUrl");
             }
             String activityId = taskJumpUrl.split("activityId%3D")[1].split("%26")[0];
             String outBizId;
@@ -37,12 +37,16 @@ public class ReadingDada {
             String s = ReadingDadaRpcCall.getQuestion(activityId);
             JSONObject jo = MyUtils.newJSONObject(s);
             if ("200".equals(jo.optString("resultCode"))) {
-                JSONArray jsonArray = jo.getJSONArray("options");
-                String answer = AnswerAI.getAnswer(jo.getString("title"), JsonUtil.jsonArrayToList(jsonArray));
-                if (answer == null || answer.isEmpty()) {
-                    answer = jsonArray.getString(0);
+                JSONArray jsonArray = jo.optJSONArray("options");
+                if (jsonArray == null || jsonArray.length() == 0) {
+                    Log.record("获取问题失败");
+                    return false;
                 }
-                s = ReadingDadaRpcCall.submitAnswer(activityId, outBizId, jo.getString("questionId"), answer);
+                String answer = AnswerAI.getAnswer(jo.optString("title"), JsonUtil.jsonArrayToList(jsonArray));
+                if (answer == null || answer.isEmpty()) {
+                    answer = jsonArray.optString(0);
+                }
+                s = ReadingDadaRpcCall.submitAnswer(activityId, outBizId, jo.optString("questionId"), answer);
                 jo = MyUtils.newJSONObject(s);
                 if ("200".equals(jo.optString("resultCode"))) {
                     Log.record("答题完成");
