@@ -136,20 +136,23 @@ public class ProtectEcology extends ModelTask {
             }
             ReserveIdMap.load();
             for (int i = 0; i < treeItems.length(); i++) {
-                JSONObject jo = treeItems.getJSONObject(i);
-                String itemId = jo.getString("itemId");
-                String itemName = jo.getString("itemName");
-                if (Objects.equals("TREE", jo.getString("projectType"))) {
-                    String organization = jo.getString("organization");
-                    String region = jo.getString("region");
+                JSONObject jo = treeItems.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
+                String itemId = jo.optString("itemId");
+                String itemName = jo.optString("itemName");
+                if (Objects.equals("TREE", jo.optString("projectType"))) {
+                    String organization = jo.optString("organization");
+                    String region = jo.optString("region");
                     itemName = itemName + "[" + region + "|" + organization + "]";
-                    TreeIdMap.add(itemId, itemName + "(" + jo.getInt("energy") + "g)");
+                    TreeIdMap.add(itemId, itemName + "(" + jo.optInt("energy") + "g)");
                 }
-                else if (Objects.equals("RESERVE", jo.getString("projectType"))) {
-                    ReserveIdMap.add(itemId, itemName + "(" + jo.getInt("energy") + "g)");
+                else if (Objects.equals("RESERVE", jo.optString("projectType"))) {
+                    ReserveIdMap.add(itemId, itemName + "(" + jo.optInt("energy") + "g)");
                 }
-                else if (Objects.equals("ANIMAL", jo.getString("projectType"))) {
-                    AnimalIdMap.add(itemId, itemName + "(" + jo.getInt("energy") + "g)");
+                else if (Objects.equals("ANIMAL", jo.optString("projectType"))) {
+                    AnimalIdMap.add(itemId, itemName + "(" + jo.optInt("energy") + "g)");
                 }
             }
             TreeIdMap.save();
@@ -171,12 +174,12 @@ public class ProtectEcology extends ModelTask {
             }
             BeachIdMap.load();
             for (int i = 0; i < cultivationList.length(); i++) {
-                JSONObject jo = cultivationList.getJSONObject(i);
-                if (!Objects.equals("AVAILABLE", jo.getString("applyAction"))) {
+                JSONObject jo = cultivationList.optJSONObject(i);
+                if (jo == null || !Objects.equals("AVAILABLE", jo.optString("applyAction"))) {
                     continue;
                 }
-                if (Objects.equals("BEACH", jo.optString("templateSubType")) || Objects.equals("COOPERATE_PLANT", jo.getString("templateType")) || Objects.equals("PROTECT", jo.getString("templateType"))) {
-                    BeachIdMap.add(jo.getString("templateCode"), jo.getString("cultivationName") + "(" + jo.getInt("energy") + "g)");
+                if (Objects.equals("BEACH", jo.optString("templateSubType")) || Objects.equals("COOPERATE_PLANT", jo.optString("templateType")) || Objects.equals("PROTECT", jo.optString("templateType"))) {
+                    BeachIdMap.add(jo.optString("templateCode"), jo.optString("cultivationName") + "(" + jo.optInt("energy") + "g)");
                 }
             }
             BeachIdMap.save();
@@ -194,10 +197,13 @@ public class ProtectEcology extends ModelTask {
                 return;
             }
             String userId = UserIdMap.getCurrentUid();
-            JSONArray cooperatePlants = jo.getJSONArray("cooperatePlants");
-            for (int i = 0; i < cooperatePlants.length(); i++) {
-                jo = cooperatePlants.getJSONObject(i);
-                String cooperationId = jo.getString("cooperationId");
+            JSONArray cooperatePlants = jo.optJSONArray("cooperatePlants");
+            for (int i = 0; cooperatePlants != null && i < cooperatePlants.length(); i++) {
+                jo = cooperatePlants.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
+                String cooperationId = jo.optString("cooperationId");
                 queryCooperatePlant(userId, cooperationId);
             }
             CooperationIdMap.save(userId);
@@ -214,11 +220,14 @@ public class ProtectEcology extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            int userCurrentEnergy = jo.getInt("userCurrentEnergy");
-            jo = jo.getJSONObject("cooperatePlant");
-            String name = jo.getString("name");
+            int userCurrentEnergy = jo.optInt("userCurrentEnergy");
+            jo = jo.optJSONObject("cooperatePlant");
+            if (jo == null) {
+                return;
+            }
+            String name = jo.optString("name");
             CooperationIdMap.add(cooperationId, name);
-            int waterDayLimit = jo.getInt("waterDayLimit");
+            int waterDayLimit = jo.optInt("waterDayLimit");
             int energyCount = getEnergyCount(userId, cooperationId, waterDayLimit);
             if (energyCount > 0 && energyCount <= userCurrentEnergy) {
                 if (cooperateWater(userId, cooperationId, energyCount, name)) {
@@ -236,8 +245,8 @@ public class ProtectEcology extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(CooperateRpcCall.cooperateWater(userId, cooperationId, energyCount));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                Log.forest("合种浇水🚿[" + name + "]#" + jo.getString("barrageText"));
-                Toast.show("合种浇水🚿[" + name + "]#" + jo.getString("barrageText"));
+                Log.forest("合种浇水🚿[" + name + "]#" + jo.optString("barrageText"));
+                Toast.show("合种浇水🚿[" + name + "]#" + jo.optString("barrageText"));
                 return true;
             }
         }
