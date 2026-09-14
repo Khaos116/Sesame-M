@@ -1,0 +1,58 @@
+import java.io.*;
+import java.nio.file.*;
+import java.text.*;
+import java.util.*;
+
+public class LogCheck {
+    static String TAG = "test";
+    static File MAIN_DIRECTORY_FILE, LOG_DIRECTORY_FILE;
+    static class UserIdMap { static String uid; static String getCurrentUid() { return uid; } }
+    static class AtomicConfigFile {
+        static void write(String s, File f) throws IOException { Files.writeString(f.toPath(), s); }
+    }
+    static class Log {
+        static ThreadLocal<SimpleDateFormat> DATE_FORMAT_THREAD_LOCAL = ThreadLocal.withInitial(() -> {
+            SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd");
+            f.setTimeZone(TimeZone.getTimeZone("GMT+8")); return f;
+        });
+        static String getLogFileName(String type) { return type + "." + DATE_FORMAT_THREAD_LOCAL.get().format(new Date()) + ".log"; }
+        static void printStackTrace(String tag, Throwable t) { throw new AssertionError(t); }
+    }
+    static boolean clearFile(File f) {
+        try { Files.writeString(f.toPath(), ""); return true; }
+        catch (IOException e) { throw new AssertionError(e); }
+    }
+@@LOGS@@
+    public static void main(String[] args) throws Exception {
+        MAIN_DIRECTORY_FILE = Files.createTempDirectory("log-check").toFile();
+        LOG_DIRECTORY_FILE = new File(MAIN_DIRECTORY_FILE, "log"); LOG_DIRECTORY_FILE.mkdir();
+        try {
+            publishCurrentLogUser("A");
+            UserIdMap.uid = null;
+            assert getLogFile("runtime").getParentFile().getName().equals("A");
+            UserIdMap.uid = "configB";
+            assert getLogFile("runtime").getParentFile().getName().equals("A");
+            publishCurrentLogUser("B");
+            File current = getLogFile("runtime");
+            assert current.getParentFile().getName().equals("B");
+            File old = new File(getUserLogDirectory("A"), "runtime.2000-01-01.log");
+            Files.writeString(old.toPath(), "old");
+            Files.writeString(current.toPath(), "today");
+            clearLog(); assert !old.exists(); assert current.length() == 5;
+            try (RandomAccessFile out = new RandomAccessFile(current, "rw")) { out.setLength(104_857_600); }
+            clearLog(); assert current.exists() && current.length() == 0;
+            File a = new File(getUserLogDirectory("A"), Log.getLogFileName("runtime"));
+            File other = new File(getUserLogDirectory("A"), Log.getLogFileName("forest"));
+            Files.writeString(a.toPath(), "a"); Files.writeString(current.toPath(), "b");
+            Files.writeString(other.toPath(), "keep"); clearLog("runtime");
+            assert a.length() == 0 && current.length() == 0 && other.length() == 4;
+            publishCurrentLogUser("../escape");
+            assert getLogFile("runtime").getParentFile().getName().equals("default");
+            System.out.println("PASS host log account, account cleanup, open-file truncation and path validation");
+        } finally {
+            try (var paths = Files.walk(MAIN_DIRECTORY_FILE.toPath())) {
+                for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.delete(path);
+            }
+        }
+    }
+}

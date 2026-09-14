@@ -32,7 +32,8 @@ final class VideoPageObserver {
     /** 同一 contentId 的提速请求最小间隔，防止观察期间反复触发 Model 轮询。 */
     private static final long EXPEDITE_INTERVAL_MS = 10 * 60_000L;
 
-    private static final Map<View, Boolean> SAMPLING_VIEWS = new WeakHashMap<>();
+    private static final Map<View, String> SAMPLING_VIEWS = new WeakHashMap<>();
+    private static String lastExpediteAccount;
     private static String lastExpediteContentId;
     private static long lastExpediteAtMs;
     private static boolean installed;
@@ -58,78 +59,76 @@ final class VideoPageObserver {
         try {
             if (activity == null || activity.isFinishing()) return;
             if (!watchSamplingRequested()) return;
+            String account = UserIdMap.getCurrentUid();
+            if (account == null || account.isEmpty()) return;
             View webView = findWebView(activity.getWindow() == null ? null : activity.getWindow().getDecorView());
             if (webView == null || !webView.isAttachedToWindow() || !webView.isShown()) return;
             synchronized (SAMPLING_VIEWS) {
-                if (SAMPLING_VIEWS.containsKey(webView)) return;
-                SAMPLING_VIEWS.put(webView, Boolean.TRUE);
+                if (account.equals(SAMPLING_VIEWS.get(webView))) return;
+                SAMPLING_VIEWS.put(webView, account);
             }
-            scheduleSample(webView, 0);
+            scheduleSample(webView, 0, account);
         } catch (Throwable ignored) {
             // 观察失败不影响宿主页面。
         }
     }
 
-    private static void scheduleSample(View webView, int index) {
+    private static void scheduleSample(View webView, int index, String account) {
         if (index >= MAX_SAMPLES || !webView.isAttachedToWindow()) {
-            stop(webView);
+            stop(webView, account);
             return;
         }
         MAIN.postDelayed(() -> {
-            if (!webView.isAttachedToWindow() || !webView.isShown()) {
-                stop(webView);
-                return;
-            }
-            String account = UserIdMap.getCurrentUid();
-            if (account == null || account.isEmpty()) {
-                stop(webView);
+            if (!webView.isAttachedToWindow() || !webView.isShown()
+                    || !watchSamplingRequested() || !isCurrentSession(webView, account)) {
+                stop(webView, account);
                 return;
             }
             long minimumMs = minimumWatchMs();
             PageSubmissionProbe.sample(webView, -1L, "video_watch", sanitized -> {
                 try {
+                    if (!watchSamplingRequested() || !isCurrentSession(webView, account)) {
+                        stop(webView, account);
+                        return;
+                    }
                     com.fasterxml.jackson.databind.JsonNode page =
                             io.github.aw1y2z.sesame.util.JsonUtil.copyMapper().readTree(sanitized);
                     JsonNode contentId = page.path("contentId");
                     if (!contentId.isTextual() || contentId.textValue().isEmpty()) return;
-                    VideoWatchEvidence.Store.capture(account, page, System.currentTimeMillis());
-                    maybeRequestExpedite(page, contentId.textValue(), minimumMs);
+                    if (!VideoWatchEvidence.Store.capture(
+                            account, page, System.currentTimeMillis(), minimumMs)) return;
+                    maybeRequestExpedite(account, contentId.textValue());
                 } catch (Throwable ignored) {
                 }
             });
-            scheduleSample(webView, index + 1);
+            scheduleSample(webView, index + 1, account);
         }, SAMPLE_INTERVAL_MS);
     }
 
     /** 播放进度达到阈值时请求提前调度；限每 contentId 十分钟一次。 */
-    private static void maybeRequestExpedite(JsonNode page, String contentId, long minimumMs) {
-        JsonNode videos = page.path("videos");
-        if (!videos.isArray() || videos.size() != 1) return;
-        JsonNode row = videos.get(0);
-        if (row == null || !row.isObject()) return;
-        JsonNode paused = row.path("paused");
-        if (paused.isBoolean() && paused.booleanValue()) return;
-        JsonNode current = row.path("currentMs");
-        JsonNode duration = row.path("durationMs");
-        if (!current.isNumber() || !duration.isNumber()) return;
-        long currentMs = current.asLong();
-        long durationMs = duration.asLong();
-        if (currentMs < 0L || durationMs <= 0L) return;
-        if (currentMs < Math.min(Math.max(minimumMs, 0L), durationMs)) return;
+    private static void maybeRequestExpedite(String account, String contentId) {
         long now = System.currentTimeMillis();
         synchronized (VideoPageObserver.class) {
-            if (contentId.equals(lastExpediteContentId)
+            if (account.equals(lastExpediteAccount) && contentId.equals(lastExpediteContentId)
                     && now - lastExpediteAtMs < EXPEDITE_INTERVAL_MS) return;
+            lastExpediteAccount = account;
             lastExpediteContentId = contentId;
             lastExpediteAtMs = now;
         }
-        expediteNextQuery();
+        if (!expediteNextQuery(account)) return;
         Log.record("视频红包：观察到疑似达标真实播放，已请求提前调度核验 contentId长度=" + contentId.length());
     }
 
-    private static void stop(View webView) {
+    private static boolean isCurrentSession(View webView, String account) {
+        if (account == null || !account.equals(UserIdMap.getCurrentUid())) return false;
         synchronized (SAMPLING_VIEWS) {
-            SAMPLING_VIEWS.remove(webView);
+            return account.equals(SAMPLING_VIEWS.get(webView));
+        }
+    }
+
+    private static void stop(View webView, String account) {
+        synchronized (SAMPLING_VIEWS) {
+            if (account.equals(SAMPLING_VIEWS.get(webView))) SAMPLING_VIEWS.remove(webView);
         }
     }
 
@@ -179,10 +178,11 @@ final class VideoPageObserver {
         }
     }
 
-    private static void expediteNextQuery() {
+    private static boolean expediteNextQuery(String account) {
         try {
-            VideoRewards.expediteNextQuery();
+            return VideoRewards.expediteNextQuery(account);
         } catch (Throwable ignored) {
+            return false;
         }
     }
 }

@@ -1,0 +1,1 @@
+package io.github.aw1y2z.sesame.model.task.goldenbeans; public class GoldenBeansEntry {public static GoldenBeansEntry ALCHEMY=new GoldenBeansEntry(); public String bizType="ZHIMA",source="lianjin";}

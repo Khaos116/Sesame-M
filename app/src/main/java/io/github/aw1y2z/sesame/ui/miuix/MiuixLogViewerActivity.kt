@@ -48,7 +48,9 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.receiveAsFlow
 import java.io.File
 
@@ -114,22 +116,29 @@ class MiuixLogViewerActivity : MiuixBaseActivity() {
 @Composable
 fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     val context = LocalContext.current
-    val file = logType.file
+    var file by remember(logType) { mutableStateOf(logType.file) }
+    LaunchedEffect(logType) {
+        while (true) {
+            file = withContext(Dispatchers.IO) { logType.file }
+            delay(1000)
+        }
+    }
     var entries by remember(logType) { mutableStateOf(loadLogEntries(file)) }
     // 实时刷新：文件被写入时重新加载尾部，做到打开日志页能看到正在执行的过程，
     // 不用手动关闭重开。参照 Sesame-AG 的 FileObserver + debounce 思路，
     // 但沿用本页已有的"整段重读"逻辑，不引入它那套 ViewModel/多日志分类体系。
     val fileUpdateChannel = remember(logType) { Channel<Unit>(Channel.CONFLATED) }
-    LaunchedEffect(fileUpdateChannel) {
-        fileUpdateChannel.receiveAsFlow().debounce(300).collect {
-            entries = loadLogEntries(file)
+    LaunchedEffect(fileUpdateChannel, file) {
+        entries = withContext(Dispatchers.IO) { loadLogEntries(file) }
+        fileUpdateChannel.receiveAsFlow().collect {
+            entries = withContext(Dispatchers.IO) { loadLogEntries(file) }
+            delay(300)
         }
     }
     DisposableEffect(file) {
-        entries = loadLogEntries(file)
         val parent = file.parentFile
         val observer = if (parent != null) object : FileObserver(
-            parent,
+            parent.path,
             MODIFY or CREATE or CLOSE_WRITE or MOVED_TO
         ) {
             override fun onEvent(event: Int, path: String?) {

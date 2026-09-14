@@ -46,6 +46,7 @@ import io.github.aw1y2z.sesame.data.TokenConfig;
 import io.github.aw1y2z.sesame.data.ViewAppInfo;
 import io.github.aw1y2z.sesame.data.task.BaseTask;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
+import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
 import io.github.aw1y2z.sesame.entity.AlipayVersion;
 import io.github.aw1y2z.sesame.entity.FriendWatch;
 import io.github.aw1y2z.sesame.entity.RpcEntity;
@@ -289,6 +290,8 @@ public class ApplicationHook extends XposedModule {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
                         Log.i(TAG, "Activity onResume");
+                        try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
+                        if (work == null) return;
                         String targetUid = getUserId();
                         if (targetUid == null) {
                             Log.record("用户未登录");
@@ -316,6 +319,7 @@ public class ApplicationHook extends XposedModule {
                             execHandler();
                             ((Activity) param.thisObject).finish();
                             Log.i(TAG, "Activity reLogin");
+                        }
                         }
                     }
                 });
@@ -415,8 +419,14 @@ public class ApplicationHook extends XposedModule {
                                     lastExecTime = System.currentTimeMillis();
                                     try {
                                         FutureTask<Boolean> checkTask = new FutureTask<>(AntMemberRpcCall::check);
-                                        Thread checkThread = new Thread(checkTask);
-                                        checkThread.start();
+                                        TaskLifecycle.Work checkWork = TaskLifecycle.enter();
+                                        if (checkWork == null) return;
+                                        Thread checkThread = new Thread(() -> {
+                                            try { checkTask.run(); }
+                                            finally { checkWork.close(); }
+                                        });
+                                        try { checkThread.start(); }
+                                        catch (Throwable failed) { checkWork.close(); throw failed; }
                                         if (!checkTask.get(30, TimeUnit.SECONDS)) {
                                             long waitTime = 10000 - System.currentTimeMillis() + lastExecTime;
                                             if (waitTime > 0) {
@@ -488,12 +498,17 @@ public class ApplicationHook extends XposedModule {
                             public String currentUid() { return getUserId(); }
 
                             @Override
-                            public boolean initialize(String expectedUid) {
+                            public boolean initialize(String expectedUid, TaskLifecycle.Freeze owner) {
                                 if (!Objects.equals(expectedUid, getUserId())) return false;
-                                init = initHandler(true);
+                                init = initHandler(true, owner);
                                 BaseModel base = Model.getModel(BaseModel.class);
                                 return base != null && (init || !base.isEnable())
                                         && Objects.equals(expectedUid, UserIdMap.getCurrentUid());
+                            }
+                            @Override
+                            public void resume() {
+                                if (init) BaseModel.initData();
+                                requestEarlyTaskRun();
                             }
                         });
                         AccountSwitchController.hostReady();
@@ -639,13 +654,27 @@ public class ApplicationHook extends XposedModule {
         }
     }
 
+    private Boolean initHandler(Boolean force) {
+        return initHandler(force, null);
+    }
+
+    private synchronized Boolean initHandler(Boolean force, TaskLifecycle.Freeze owner) {
+        try (TaskLifecycle.Work work = TaskLifecycle.enterInitialization(owner)) {
+            if (work == null) return false;
+            boolean initialized = initializeHandler(force);
+            if (initialized && owner == null) BaseModel.initData();
+            return initialized;
+        }
+    }
+
     @SuppressLint("WakelockTimeout")
-    private synchronized Boolean initHandler(Boolean force) {
+    private Boolean initializeHandler(Boolean force) {
         if (service == null) {
             return false;
         }
 
         destroyHandler(force);
+        init = false;
         try {
             if (force) {
                 String userId = getUserId();
@@ -763,12 +792,12 @@ public class ApplicationHook extends XposedModule {
                 Status.load();
                 TokenConfig.load();
                 updateDay();
-                BaseModel.initData();
                 BaseModel.initRpcRequest();
                 Log.record("加载完成");
                 Toast.show("芝麻粒加载成功:" + modelVersion);
             }
             offline = false;
+            init = true;
             execHandler();
             return true;
         } catch (Throwable th) {
@@ -825,17 +854,53 @@ public class ApplicationHook extends XposedModule {
     }
 
     private static void execHandler() {
-        mainTask.startTask(false);
+        if (init && mainTask != null && !AccountSwitchController.isBusy()) mainTask.startTask(false);
     }
 
     private static void execDelayedHandler(long delayMillis) {
-        mainHandler.postDelayed(() -> mainTask.startTask(false), delayMillis);
+        if (mainHandler == null || !TaskLifecycle.isOpen()) return;
+        long generation = TaskLifecycle.generation();
+        mainHandler.postDelayed(() -> {
+            try (TaskLifecycle.Work work = TaskLifecycle.enter(generation)) {
+                if (work != null) execHandler();
+            }
+        }, delayMillis);
         try {
             NotificationUtil.updateNextExecText(System.currentTimeMillis() + delayMillis);
         } catch (Exception e) {
             Log.printStackTrace(e);
         }
     }
+
+    /** Coalesces an early normal dispatch; never interrupts a running dispatcher. */
+    public static void requestEarlyTaskRun() {
+        Handler handler = mainHandler;
+        if (handler == null || !init || offline || !TaskLifecycle.isOpen()
+                || AccountSwitchController.isBusy()) return;
+        long generation = TaskLifecycle.generation();
+        handler.post(() -> {
+            try (TaskLifecycle.Work work = TaskLifecycle.enter(generation)) {
+                if (work == null || !init || offline || AccountSwitchController.isBusy()) return;
+                handler.removeCallbacks(earlyTaskRun);
+                earlyTaskGeneration = generation;
+                handler.postDelayed(earlyTaskRun, 2500);
+            }
+        });
+    }
+
+    private static long earlyTaskGeneration;
+    private static final Runnable earlyTaskRun = new Runnable() {
+        @Override
+        public void run() {
+            try (TaskLifecycle.Work work = TaskLifecycle.enter(earlyTaskGeneration)) {
+                if (work == null || !init || offline || AccountSwitchController.isBusy()) return;
+                Thread running = mainTask == null ? null : mainTask.getThread();
+                if ((running != null && running.isAlive()) || ModelTask.hasPendingMainTask())
+                    mainHandler.postDelayed(this, 2500);
+                else execHandler();
+            }
+        }
+    };
 
     private static void stopHandler() {
         mainTask.stopTask();
@@ -1042,7 +1107,11 @@ public class ApplicationHook extends XposedModule {
     }
 
     public static void reLogin() {
+        if (mainHandler == null) return;
+        long generation = TaskLifecycle.generation();
         mainHandler.post(() -> {
+            try (TaskLifecycle.Work work = TaskLifecycle.enter(generation)) {
+            if (work == null || AccountSwitchController.isBusy()) return;
             if (reLoginCount.get() < 5) {
                 execDelayedHandler(reLoginCount.getAndIncrement() * 5000L);
             } else {
@@ -1053,6 +1122,7 @@ public class ApplicationHook extends XposedModule {
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             offline = true;
             context.startActivity(intent);
+            }
         });
     }
 

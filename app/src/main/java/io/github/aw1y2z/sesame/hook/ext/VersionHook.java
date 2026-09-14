@@ -178,24 +178,21 @@ public class VersionHook {
                                 return;
                             }
 
-                            if (sCachedVersionName != null && !sCachedVersionName.isEmpty()) {
-                                XHelpers.setObjectField(info, "versionName", sCachedVersionName);
-                            }
-
-                            if (sCachedVersionCode > 0) {
-                                try {
-                                    PackageInfo.class.getMethod("setLongVersionCode", long.class)
-                                            .invoke(info, sCachedVersionCode);
-                                } catch (Throwable ignored) {
-                                    XHelpers.setObjectField(info, "versionCode", (int) sCachedVersionCode);
-                                }
+                            String versionName = getFakeVersionName();
+                            long versionCode = getFakeVersionCode();
+                            XHelpers.setObjectField(info, "versionName", versionName);
+                            try {
+                                PackageInfo.class.getMethod("setLongVersionCode", long.class)
+                                        .invoke(info, versionCode);
+                            } catch (Throwable ignored) {
+                                XHelpers.setObjectField(info, "versionCode", (int) versionCode);
                             }
 
                             param.setResult(info);
 
                             if (!logged) {
-                                Log.record("版本伪装已生效: " + sCachedVersionName
-                                        + " (code=" + sCachedVersionCode + ")");
+                                Log.record("版本伪装已生效: " + versionName
+                                        + " (code=" + versionCode + ")");
                                 logged = true;
                             }
                         }
@@ -212,8 +209,8 @@ public class VersionHook {
 
     /** 获取用于展示/上报的版本号：伪装开启时返回伪装版本，否则返回真实版本。 */
     public static String getDisplayVersion() {
-        if (sEnableVersionHook && sCachedVersionName != null && !sCachedVersionName.isEmpty()) {
-            return sCachedVersionName;
+        if (sEnableVersionHook) {
+            return getFakeVersionName();
         }
         if (sAlipayVersion != null) {
             return sAlipayVersion.getVersionString();

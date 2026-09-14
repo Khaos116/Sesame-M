@@ -21,7 +21,7 @@ public class UserIdMap {
     private static final Map<String, UserEntity> readOnlyUserMap = Collections.unmodifiableMap(userMap);
     
     @Getter
-    private static String currentUid = null;
+    private static volatile String currentUid = null;
     
     public static Map<String, UserEntity> getUserMap() {
         return readOnlyUserMap;
@@ -37,6 +37,7 @@ public class UserIdMap {
     
     public synchronized static void initUser(String currentUserId) {
         setCurrentUserId(currentUserId);
+        FileUtil.publishCurrentLogUser(currentUserId);
         ApplicationHook.getMainHandler().post(() -> {
             ClassLoader loader;
             try {

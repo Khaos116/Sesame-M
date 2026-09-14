@@ -513,31 +513,35 @@ public class ProtectEcology extends ModelTask {
             if (jo == null) {
                 return;
             }
-            int currentEnergy = jo.optInt("currentEnergy");
+            int currentEnergy = jo.optInt("currentEnergy", -1);
+            int firstDonated = 0;
             // 如果未曾助力:助力一次
             Integer donateNumber = protectMarathonList.getValue().get(activityId);
             JSONObject donateConfigVO = jo.optJSONObject("donateConfigVO");
+            if (donateConfigVO == null || currentEnergy < 0) return;
             if (!jo.optBoolean("certLockStatus", true)) {
-                int donateNum = donateConfigVO != null ? donateConfigVO.optInt("donateNum") : 0;
+                int donateNum = donateConfigVO.optInt("donateNum", -1);
+                if (donateNum <= 0) return;
                 if (protectMarathonType.getValue() == ProtectType.SELECT) {
                     if (donateNumber == null || donateNumber < donateNum) {
                         return;
                     }
                 }
-                if (currentEnergy >= donateNum && carbonCharityActivity("marathonWater", activityId, donateNum)) {
-                    currentEnergy -= donateNum;
-                }
+                if (currentEnergy < donateNum || !carbonCharityActivity("marathonWater", activityId, donateNum)) return;
+                currentEnergy -= donateNum;
+                firstDonated = donateNum;
             }
             if (protectMarathonType.getValue() == ProtectType.COLLECT) {
                 // 集邮模式:不再助力
                 return;
             }
             JSONObject activityCertVO = jo.optJSONObject("activityCertVO");
-            int energy = activityCertVO != null ? activityCertVO.optInt("energy") : 0;
-            donateNumber = donateNumber == null ? 0 : donateNumber - energy;
-            int secondDonateMinNum = donateConfigVO != null ? donateConfigVO.optInt("secondDonateMinNum") : 0;
-            if (donateNumber >= secondDonateMinNum && currentEnergy >= donateNumber) {
-                carbonCharityActivity("marathonWater", activityId, donateNumber);
+            int energy = activityCertVO != null ? activityCertVO.optInt("energy", -1) : -1;
+            if (energy < 0 || donateNumber == null) return;
+            long remaining = (long) donateNumber - energy - firstDonated;
+            int secondDonateMinNum = donateConfigVO.optInt("secondDonateMinNum", -1);
+            if (secondDonateMinNum > 0 && remaining >= secondDonateMinNum && currentEnergy >= remaining) {
+                carbonCharityActivity("marathonWater", activityId, (int) remaining);
             }
         }
         catch (Throwable t) {
@@ -558,31 +562,35 @@ public class ProtectEcology extends ModelTask {
             if (jo == null) {
                 return;
             }
-            int currentEnergy = jo.optInt("currentEnergy");
+            int currentEnergy = jo.optInt("currentEnergy", -1);
+            int firstDonated = 0;
             // 如果未曾助力:助力一次
             Integer donateNumber = protectNewAncientTreeList.getValue().get(activityId);
             JSONObject donateConfigVO = jo.optJSONObject("donateConfigVO");
+            if (donateConfigVO == null || currentEnergy < 0) return;
             if (!jo.optBoolean("certLockStatus", true)) {
-                int donateNum = donateConfigVO != null ? donateConfigVO.optInt("donateNum") : 0;
+                int donateNum = donateConfigVO.optInt("donateNum", -1);
+                if (donateNum <= 0) return;
                 if (protectNewAncientTreeType.getValue() == ProtectType.SELECT) {
                     if (donateNumber == null || donateNumber < donateNum) {
                         return;
                     }
                 }
-                if (currentEnergy >= donateNum && carbonCharityActivity("carbonWater", activityId, donateNum)) {
-                    currentEnergy -= donateNum;
-                }
+                if (currentEnergy < donateNum || !carbonCharityActivity("carbonWater", activityId, donateNum)) return;
+                currentEnergy -= donateNum;
+                firstDonated = donateNum;
             }
             if (protectNewAncientTreeType.getValue() == ProtectType.COLLECT) {
                 // 集邮模式:不再助力
                 return;
             }
             JSONObject activityCertVO = jo.optJSONObject("activityCertVO");
-            int energy = activityCertVO != null ? activityCertVO.optInt("energy") : 0;
-            donateNumber = donateNumber == null ? 0 : donateNumber - energy;
-            int secondDonateMinNum = donateConfigVO != null ? donateConfigVO.optInt("secondDonateMinNum") : 0;
-            if (donateNumber >= secondDonateMinNum && currentEnergy >= donateNumber) {
-                carbonCharityActivity("carbonWater", activityId, donateNumber);
+            int energy = activityCertVO != null ? activityCertVO.optInt("energy", -1) : -1;
+            if (energy < 0 || donateNumber == null) return;
+            long remaining = (long) donateNumber - energy - firstDonated;
+            int secondDonateMinNum = donateConfigVO.optInt("secondDonateMinNum", -1);
+            if (secondDonateMinNum > 0 && remaining >= secondDonateMinNum && currentEnergy >= remaining) {
+                carbonCharityActivity("carbonWater", activityId, (int) remaining);
             }
         }
         catch (Throwable t) {

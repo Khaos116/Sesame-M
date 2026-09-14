@@ -6,6 +6,7 @@ import org.json.JSONObject;
 import io.github.aw1y2z.sesame.data.ModelFields;
 import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField;
+import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -40,9 +41,15 @@ public final class VideoRewards extends IsolatedRewardTask {
         return model.minimumPlaybackSeconds.getValue() * 1000L;
     }
 
-    /** 观察者请求提前调度：清空下次查询时间，由调度器在常规节奏内尽快执行本轮。 */
-    public static void expediteNextQuery() {
-        RuntimeInfo.getInstance().put("VideoRewards.nextWalletQuery", 0L);
+    /** 观察者请求提前调度；账号和实时开关仍有效时清空普通间隔并唤醒主调度器。 */
+    public static boolean expediteNextQuery(String account) {
+        if (!watchSamplingRequested() || account == null
+                || !account.equals(UserIdMap.getCurrentUid())) return false;
+        VideoRewards model = io.github.aw1y2z.sesame.data.Model.getModel(VideoRewards.class);
+        if (model == null) return false;
+        model.cooldownState().put("VideoRewards.nextWalletQuery", 0L);
+        ApplicationHook.requestEarlyTaskRun();
+        return true;
     }
 
     @Override protected void addFields(ModelFields fields) {
@@ -97,7 +104,7 @@ public final class VideoRewards extends IsolatedRewardTask {
                 if (claimed != null) Log.record(getName() + "：钱包红包领取接口返回成功，服务端到账结果待核对");
             }
         }
-        boolean needTasks = inspectTasks.getValue() || watchRecord.getValue();
+        boolean needTasks = inspectTasks.getValue() || watchRecord.getValue() || reserve.getValue();
         if (!needTasks) return;
         JSONObject tasksResponse = run.query(VideoTaskQueryProtocol.METHOD, VideoTaskQueryProtocol.ARGS);
         java.util.List<VideoTaskDetail> tasks = VideoTaskQueryProtocol.parse(tasksResponse.toString());

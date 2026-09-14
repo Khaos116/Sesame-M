@@ -41,7 +41,9 @@ public class FishTask extends ModelTask {
     private static final ThreadLocal<SimpleDateFormat> DATE_FORMAT = new ThreadLocal<SimpleDateFormat>() {
         @Override
         protected SimpleDateFormat initialValue() {
-            return new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT);
+            format.setTimeZone(TimeZone.getTimeZone("GMT+8"));
+            return format;
         }
     };
     private static final int DELAY_BABA_FARM_BASE = 2000;

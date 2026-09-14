@@ -24,11 +24,17 @@ public class Log {
         XLog.init(LogLevel.ALL);
     }
 
+    private static SimpleDateFormat newDateFormat(String pattern) {
+        SimpleDateFormat format = new SimpleDateFormat(pattern, Locale.ROOT);
+        format.setTimeZone(java.util.TimeZone.getTimeZone("GMT+8"));
+        return format;
+    }
+
     public static final ThreadLocal<SimpleDateFormat> DATE_FORMAT_THREAD_LOCAL = new ThreadLocal<SimpleDateFormat>() {
 
         @Override
         protected SimpleDateFormat initialValue() {
-            return new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+            return newDateFormat("yyyy-MM-dd");
         }
 
     };
@@ -37,7 +43,7 @@ public class Log {
 
         @Override
         protected SimpleDateFormat initialValue() {
-            return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+            return newDateFormat("yyyy-MM-dd HH:mm:ss");
         }
 
     };
@@ -46,7 +52,7 @@ public class Log {
 
         @Override
         protected SimpleDateFormat initialValue() {
-            return new SimpleDateFormat("yyyy.MM.dd HH:mm:ss", Locale.getDefault());
+            return newDateFormat("yyyy.MM.dd HH:mm:ss");
         }
 
     };
@@ -61,7 +67,7 @@ public class Log {
         String userId = UserIdMap.getCurrentUid();
         String key = type + "::" + (userId == null || userId.isEmpty() ? "default" : userId);
         return LOGGER_CACHE.computeIfAbsent(key, k -> XLog.tag(tag).printers(
-                new FilePrinter.Builder(FileUtil.getCurrentUserLogDirectory().getPath())
+                new FilePrinter.Builder(FileUtil.getUserLogDirectory(userId).getPath())
                         .fileNameGenerator(new CustomDateFileNameGenerator(type))
                         .backupStrategy(new NeverBackupStrategy())
                         .cleanStrategy(new NeverCleanStrategy())
@@ -247,7 +253,7 @@ public class Log {
     public static String getLogFileName(String logName) {
         SimpleDateFormat sdf = DATE_FORMAT_THREAD_LOCAL.get();
         if (sdf == null) {
-            sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+            sdf = newDateFormat("yyyy-MM-dd");
         }
         return logName + "." + sdf.format(new Date()) + ".log";
     }
@@ -255,7 +261,7 @@ public class Log {
     public static String getFormatDateTime() {
         SimpleDateFormat simpleDateFormat = DATE_TIME_FORMAT_THREAD_LOCAL.get();
         if (simpleDateFormat == null) {
-            simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+            simpleDateFormat = newDateFormat("yyyy-MM-dd HH:mm:ss");
         }
         return simpleDateFormat.format(new Date());
     }
@@ -275,7 +281,7 @@ public class Log {
         try {
             SimpleDateFormat simpleDateFormat = OTHER_DATE_TIME_FORMAT_THREAD_LOCAL.get();
             if (simpleDateFormat == null) {
-                simpleDateFormat = new SimpleDateFormat("yyyy.MM.dd HH:mm:ss", Locale.getDefault());
+                simpleDateFormat = newDateFormat("yyyy.MM.dd HH:mm:ss");
             }
             Date newD = simpleDateFormat.parse(timers);
             if (newD != null) {
@@ -293,7 +299,7 @@ public class Log {
 
             @Override
             protected SimpleDateFormat initialValue() {
-                return new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+                return newDateFormat("yyyy-MM-dd");
             }
 
         };
@@ -316,7 +322,7 @@ public class Log {
         public String generateFileName(int logLevel, long timestamp) {
             SimpleDateFormat sdf = mLocalDateFormat.get();
             if (sdf == null) {
-                sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+                sdf = newDateFormat("yyyy-MM-dd");
             }
             return name + "." + sdf.format(new Date(timestamp)) + ".log";
         }

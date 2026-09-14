@@ -202,7 +202,7 @@ public final class GoldenBeansTasks {
             JSONArray taskList = syncJo.optJSONArray("taskList");
             if (taskList == null) {
                 Log.goldenBeans("金豆[" + entry.alias + "]任务⚠️未返回任务列表");
-                return true;
+                return false;
             }
 
             int total = 0;
@@ -228,7 +228,11 @@ public final class GoldenBeansTasks {
                 if (isBlacklisted(blacklistKey, taskName)) {
                     if (STATUS_FINISHED.equals(taskStatus) || STATUS_TO_RECEIVE.equals(taskStatus)) {
                         GoldenBeansSupport.pause(interval);
-                        claimAward(entry, taskId, taskName);
+                        if (claimAward(entry, taskId, taskName)) {
+                            changed = true;
+                        } else {
+                            unresolved = true;
+                        }
                     } else {
                         Log.record("金豆[" + entry.alias + "]任务⏭️[" + taskName + "]黑名单跳过");
                     }
@@ -263,8 +267,13 @@ public final class GoldenBeansTasks {
                     }
                     GoldenBeansSupport.pause(interval);
                     if (finishTask(entry, taskId, taskName)) {
-                        handled++;
                         changed = true;
+                        GoldenBeansSupport.pause(interval);
+                        if (claimAward(entry, taskId, taskName)) {
+                            handled++;
+                        } else {
+                            unresolved = true;
+                        }
                     } else {
                         Log.record("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]完成失败["
                                 + (actionType.isEmpty() ? "UNKNOWN" : actionType) + "]");

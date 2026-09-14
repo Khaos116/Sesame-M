@@ -1,0 +1,66 @@
+import java.util.ArrayDeque;
+import java.util.Queue;
+
+public class SchedulerCheck {
+    static boolean init = true, offline;
+    static Handler mainHandler = new Handler();
+    static Task mainTask = new Task();
+    static class Handler {
+        Queue<Runnable> immediate = new ArrayDeque<>(), delayed = new ArrayDeque<>();
+        void post(Runnable r) { immediate.add(r); }
+        void postDelayed(Runnable r, long delay) { delayed.add(r); }
+        void removeCallbacks(Runnable r) { delayed.removeIf(candidate -> candidate == r); }
+        void drainPosts() { while (!immediate.isEmpty()) immediate.remove().run(); }
+        void tick() { delayed.remove().run(); }
+    }
+    static class Task {
+        int starts;
+        Thread thread;
+        Thread getThread() { return thread; }
+        void startTask(boolean force) { starts++; }
+    }
+    static class AccountSwitchController { static boolean busy; static boolean isBusy() { return busy; } }
+    static class ModelTask { static boolean pending; static boolean hasPendingMainTask() { return pending; } }
+    @@LIFECYCLE@@
+    @@EXEC@@
+    @@REQUEST@@
+    private static long earlyTaskGeneration;
+    @@EARLY@@;
+
+    public static void main(String[] args) throws Exception {
+        requestEarlyTaskRun(); requestEarlyTaskRun();
+        mainHandler.drainPosts();
+        assert mainHandler.delayed.size() == 1 : "early requests were not coalesced";
+        mainHandler.tick();
+        assert mainTask.starts == 1 : "early request did not dispatch";
+
+        ModelTask.pending = true;
+        requestEarlyTaskRun(); mainHandler.drainPosts(); mainHandler.tick();
+        assert mainTask.starts == 1 && mainHandler.delayed.size() == 1 : "pending model was restarted";
+        ModelTask.pending = false; mainHandler.tick();
+        assert mainTask.starts == 2 : "finished model blocked later dispatch";
+
+        java.util.concurrent.CountDownLatch finish = new java.util.concurrent.CountDownLatch(1);
+        mainTask.thread = new Thread(() -> { try { finish.await(); } catch (InterruptedException e) { throw new AssertionError(e); } });
+        mainTask.thread.start();
+        try {
+            requestEarlyTaskRun(); mainHandler.drainPosts(); mainHandler.tick();
+            assert mainTask.starts == 2 && mainHandler.delayed.size() == 1 : "live dispatcher was restarted";
+        } finally { finish.countDown(); mainTask.thread.join(); }
+        mainHandler.tick();
+        assert mainTask.starts == 3 : "idle dispatcher was not resumed";
+
+        requestEarlyTaskRun(); mainHandler.drainPosts();
+        TaskLifecycle.Freeze freeze = TaskLifecycle.freezeIfIdle();
+        assert freeze != null;
+        TaskLifecycle.thaw(freeze); mainHandler.tick();
+        assert mainTask.starts == 3 : "old-account delayed callback dispatched";
+        requestEarlyTaskRun();
+        freeze = TaskLifecycle.freezeIfIdle(); TaskLifecycle.thaw(freeze);
+        mainHandler.drainPosts();
+        assert mainHandler.delayed.isEmpty() : "old-account queued request survived switch";
+        offline = true; requestEarlyTaskRun();
+        assert mainHandler.immediate.isEmpty() : "offline dispatch was scheduled";
+        System.out.println("PASS early dispatch, coalescing, live-work deferral and account generations");
+    }
+}

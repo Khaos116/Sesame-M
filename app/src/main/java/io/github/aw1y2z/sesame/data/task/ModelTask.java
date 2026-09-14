@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public abstract class ModelTask extends Model {
 
@@ -30,6 +31,8 @@ public abstract class ModelTask extends Model {
     private final Map<String, ChildModelTask> childTaskMap = new ConcurrentHashMap<>();
 
     private ChildTaskExecutor childTaskExecutor;
+
+    private final AtomicBoolean mainPending = new AtomicBoolean();
 
     @Getter
     private final Runnable mainRunnable = new Runnable() {
@@ -54,7 +57,7 @@ public abstract class ModelTask extends Model {
                     Log.record(task.getName() + "✅本轮无操作");
                 }
                 Log.record("执行结束-" + task.getName());
-                MAIN_TASK_MAP.remove(task);
+                synchronized (MAIN_TASK_MAP) { MAIN_TASK_MAP.remove(task); }
             }
         }
 
@@ -153,23 +156,34 @@ public abstract class ModelTask extends Model {
     }
 
     public synchronized Boolean startTask(Boolean force) {
-        if (MAIN_TASK_MAP.containsKey(this)) {
-            if (!force) {
-                return false;
-            }
-            stopTask();
+        if (mainPending.get()) {
+            if (force) stopTask();
+            return false;
         }
+        TaskLifecycle.Work work = TaskLifecycle.enter();
+        if (work == null) return false;
+        boolean submitted = false;
         try {
-            if (isEnable() && check()) {
-                if (isSync()) {
-                    mainRunnable.run();
-                } else {
-                    MAIN_THREAD_POOL.execute(mainRunnable);
-                }
+            if (isEnable() && check() && mainPending.compareAndSet(false, true)) {
+                Runnable admitted = () -> {
+                    try { mainRunnable.run(); }
+                    finally {
+                        mainPending.set(false);
+                        work.close();
+                    }
+                };
+                if (isSync()) admitted.run();
+                else MAIN_THREAD_POOL.execute(admitted);
+                submitted = true;
                 return true;
             }
         } catch (Exception e) {
             Log.printStackTrace(e);
+        } finally {
+            if (!submitted) {
+                mainPending.set(false);
+                work.close();
+            }
         }
         return false;
     }
@@ -186,8 +200,11 @@ public abstract class ModelTask extends Model {
             childTaskExecutor.clearAllChildTask();
         }
         childTaskMap.clear();
-        MAIN_THREAD_POOL.remove(mainRunnable);
-        MAIN_TASK_MAP.remove(this);
+        synchronized (MAIN_TASK_MAP) {
+            Thread running = MAIN_TASK_MAP.get(this);
+            if (running != null) running.interrupt();
+        }
+        // A cancelled worker remains active until its finally block actually exits.
     }
 
     public static void startAllTask() {
@@ -195,6 +212,13 @@ public abstract class ModelTask extends Model {
     }
 
     public static void startAllTask(Boolean force) {
+        try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
+            if (work == null) return;
+            dispatchAllTask(force);
+        }
+    }
+
+    private static void dispatchAllTask(Boolean force) {
         //自动触发备份配置文件
         if (!Status.hasFlagToday("Config::backup")) {
             FileUtil.backupConfigV2WithRolling(UserIdMap.getCurrentUid());
@@ -209,7 +233,8 @@ public abstract class ModelTask extends Model {
                         try {
                             Thread.sleep(750);
                         } catch (InterruptedException e) {
-                            Log.printStackTrace(e);
+                            Thread.currentThread().interrupt();
+                            return;
                         }
                     }
                 }
@@ -217,20 +242,16 @@ public abstract class ModelTask extends Model {
         }
     }
 
-    /**
-     * 是否所有模型都空闲（没有主任务在跑，也没有子任务排队/执行）。
-     * 给自动切号用：切号前必须确认当前没有正在跑的业务，不然中途换账号会把请求打到错账号上。
-     */
-    public static boolean isAllTaskIdle() {
-        if (!MAIN_TASK_MAP.isEmpty()) {
-            return false;
-        }
+    public static boolean hasPendingMainTask() {
         for (Model model : getModelArray()) {
-            if (model != null && ModelType.TASK == model.getType() && ((ModelTask) model).countChildTask() > 0) {
-                return false;
-            }
+            if (model instanceof ModelTask && ((ModelTask) model).mainPending.get()) return true;
         }
-        return true;
+        return false;
+    }
+
+    /** Delayed children are pending; only admitted dispatch and running work block switching. */
+    public static boolean isAllTaskIdle() {
+        return TaskLifecycle.isIdle();
     }
 
     public static void stopAllTask() {
@@ -279,7 +300,9 @@ public abstract class ModelTask extends Model {
         private CancelTask cancelTask;
 
         @Getter
-        private Boolean isCancel = false;
+        private volatile Boolean isCancel = false;
+
+        private final long generation = TaskLifecycle.generation();
 
         public ChildModelTask() {
             this(null, null, () -> {
@@ -333,14 +356,18 @@ public abstract class ModelTask extends Model {
         }
 
         public final void run() {
-            runnable.run();
+            try (TaskLifecycle.Work work = TaskLifecycle.enter(generation)) {
+                if (work != null && !isCancel) runnable.run();
+            }
         }
 
-        protected void setCancelTask(CancelTask cancelTask) {
+        protected synchronized void setCancelTask(CancelTask cancelTask) {
             this.cancelTask = cancelTask;
+            if (isCancel) cancelTask.cancel();
         }
 
-        public final void cancel() {
+        public final synchronized void cancel() {
+            isCancel = true;
             if (cancelTask != null) {
                 try {
                     cancelTask.cancel();

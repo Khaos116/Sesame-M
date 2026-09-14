@@ -42,28 +42,40 @@ public abstract class IsolatedRewardTask extends ModelTask {
     protected abstract void addFields(ModelFields fields);
     protected abstract void execute(Run run) throws Exception;
 
-    /** Allows a migrated model to retain its persisted query/cooldown key. */
+    /** Allows a migrated model to retain its persisted normal query key. */
     protected String nextKey() { return getClass().getSimpleName() + ".nextQuery"; }
+    protected String cooldownKey() { return getClass().getSimpleName() + ".cooldownUntil"; }
+
+    protected final RuntimeInfo cooldownState() {
+        RuntimeInfo state = RuntimeInfo.getInstance();
+        // 旧键无法区分普通间隔与服务端冷却，首次迁移保留其截止时间。
+        if (state.getLong(cooldownKey(), -1L) < 0L) {
+            state.put(cooldownKey(), state.getLong(nextKey(), 0L));
+        }
+        return state;
+    }
 
     @Override public final Boolean check() {
         String uid = UserIdMap.getCurrentUid();
-        resetCooldownAfterBuild(uid);
+        if (uid == null || uid.isEmpty()) return false;
+        RuntimeInfo state = cooldownState();
+        resetCooldownAfterBuild(uid, state);
+        long now = System.currentTimeMillis();
         return isEnable() && RewardRunPolicy.sameAccount(uid, uid)
                 && !ApplicationHook.isOffline() && !TaskCommon.IS_ENERGY_TIME
-                && RewardRunPolicy.mayQuery(System.currentTimeMillis(),
-                RuntimeInfo.getInstance().getLong(nextKey(), 0));
+                && RewardRunPolicy.mayQuery(now, state.getLong(nextKey(), 0L))
+                && RewardRunPolicy.mayQuery(now, state.getLong(cooldownKey(), 0L));
     }
 
-    /** Clears only this Model's transient cooldown once after a new build. */
-    private void resetCooldownAfterBuild(String uid) {
+    /** Resets the normal interval after a build; server rejection cooldowns remain durable. */
+    private void resetCooldownAfterBuild(String uid, RuntimeInfo state) {
         if (uid == null || uid.isEmpty()) return;
-        RuntimeInfo state = RuntimeInfo.getInstance();
         String marker = getClass().getSimpleName() + ".cooldownResetVersion";
         if (!BuildConfig.VERSION_NAME.equals(state.getString(marker))) {
             state.clearPrefix(getClass().getSimpleName() + ".attempt.");
             state.put(nextKey(), 0L);
             state.put(marker, BuildConfig.VERSION_NAME);
-            Log.record(getName() + "：新版本首次运行，已重置本 Model 冷却记录");
+            Log.record(getName() + "：新版本首次运行，已重置查询间隔，保留服务端冷却");
         }
     }
 
@@ -132,7 +144,7 @@ public abstract class IsolatedRewardTask extends ModelTask {
                     result.optInt("error", 0) == 1009 ? "1009" : result.optString("error", ""),
                     result.optString("errorMessage", ""));
             if (denied) {
-                state.put(nextKey(), RequestBudgetPolicy.cooldownUntil(System.currentTimeMillis(),
+                state.put(cooldownKey(), RequestBudgetPolicy.cooldownUntil(System.currentTimeMillis(),
                         RpcFailurePolicy.RISK_DENIED_MS));
                 Log.record(getName() + "：访问被拒绝，暂停24小时 method=" + method);
                 throw new Stopped();
@@ -145,7 +157,7 @@ public abstract class IsolatedRewardTask extends ModelTask {
                 RpcFailurePolicy.Kind kind = RpcFailurePolicy.kind(code);
                 long cooldown = RpcFailurePolicy.cooldownMs(kind);
                 if (cooldown > 0L) {
-                    state.put(nextKey(), RequestBudgetPolicy.cooldownUntil(
+                    state.put(cooldownKey(), RequestBudgetPolicy.cooldownUntil(
                             System.currentTimeMillis(), cooldown));
                 }
                 if (kind == RpcFailurePolicy.Kind.BUSINESS_REJECTED) {

@@ -697,8 +697,23 @@ public class FileUtil {
      * 账号切换后 {@link UserIdMap#getCurrentUid()} 变化，后续日志自动落到新账号目录下。
      */
     public static File getCurrentUserLogDirectory() {
-        String userId = UserIdMap.getCurrentUid();
-        String dirName = StringUtil.isEmpty(userId) ? "default" : userId;
+        return getUserLogDirectory(UserIdMap.getCurrentUid());
+    }
+
+    private static String logDirectoryName(String userId) {
+        return userId != null && userId.matches("[A-Za-z0-9_-]{1,128}") ? userId : "default";
+    }
+
+    public static void publishCurrentLogUser(String userId) {
+        try {
+            AtomicConfigFile.write(logDirectoryName(userId), new File(MAIN_DIRECTORY_FILE, "current_log_user.txt"));
+        } catch (IOException e) {
+            Log.printStackTrace(TAG, e);
+        }
+    }
+
+    public static File getUserLogDirectory(String userId) {
+        String dirName = logDirectoryName(userId);
         File dir = new File(LOG_DIRECTORY_FILE, dirName);
         if (dir.exists() && dir.isFile()) {
             dir.delete();
@@ -710,7 +725,14 @@ public class FileUtil {
     }
 
     private static File getLogFile(String type) {
-        File logFile = new File(getCurrentUserLogDirectory(), Log.getLogFileName(type));
+        String userId = "default";
+        File currentUser = new File(MAIN_DIRECTORY_FILE, "current_log_user.txt");
+        try {
+            if (currentUser.isFile() && currentUser.length() <= 128) {
+                userId = new String(Files.readAllBytes(currentUser.toPath()), java.nio.charset.StandardCharsets.UTF_8).trim();
+            }
+        } catch (IOException ignored) { }
+        File logFile = new File(getUserLogDirectory(userId), Log.getLogFileName(type));
         if (logFile.exists() && logFile.isDirectory()) {
             logFile.delete();
         }
@@ -760,32 +782,31 @@ public class FileUtil {
         return getLogFile("error");
     }
     
+    private static java.util.List<File> getLogFiles() {
+        java.util.List<File> result = new java.util.ArrayList<>();
+        File[] accounts = LOG_DIRECTORY_FILE.listFiles();
+        if (accounts == null) return result;
+        for (File entry : accounts) {
+            File[] files = entry.isDirectory() ? entry.listFiles() : new File[]{entry};
+            if (files == null) continue;
+            for (File file : files) {
+                if (file.isFile() && file.getName().endsWith(".log")) result.add(file);
+            }
+        }
+        return result;
+    }
+
     public static void clearLog() {
-        File[] files = LOG_DIRECTORY_FILE.listFiles();
-        if (files == null) {
-            return;
-        }
-        SimpleDateFormat sdf = Log.DATE_FORMAT_THREAD_LOCAL.get();
-        if (sdf == null) {
-            sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
-        }
-        String today = sdf.format(new Date());
-        for (File file : files) {
-            String name = file.getName();
-            if (name.endsWith(today + ".log")) {
-                if (file.length() < 104_857_600) {
-                    continue;
-                }
-            }
-            try {
+        String today = Log.DATE_FORMAT_THREAD_LOCAL.get().format(new Date());
+        for (File file : getLogFiles()) {
+            if (file.getName().endsWith(today + ".log")) {
+                if (file.length() >= 104_857_600) clearFile(file);
+            } else {
                 file.delete();
-            }
-            catch (Exception e) {
-                Log.printStackTrace(e);
             }
         }
     }
-    
+
     public static String readFromFile(File f) {
         if (!f.exists()) {
             return "";
@@ -1028,11 +1049,7 @@ public class FileUtil {
      */
     public static void clearLog(String logName) {
         try {
-            File[] files = LOG_DIRECTORY_FILE.listFiles();
-            if (files == null) {
-                return;
-            }
-            for (File f : files) {
+            for (File f : getLogFiles()) {
                 if (f.isFile() && f.getName().startsWith(logName + ".")) {
                     clearFile(f);
                 }

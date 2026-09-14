@@ -89,25 +89,49 @@ public final class VideoWatchEvidence {
 
         private Store() { }
 
-        /** 观察者在主线程写入；只保留含 contentId 的有效快照。 */
-        public static void capture(String account, JsonNode sanitizedPage, long nowMs) {
+        /** 只用达到阈值且仍在播放的真实页面进度替换已有合格快照。 */
+        public static boolean capture(String account, JsonNode sanitizedPage, long nowMs,
+                long minimumMs) {
             if (account == null || account.isEmpty() || sanitizedPage == null
-                    || !sanitizedPage.isObject()) return;
+                    || !sanitizedPage.isObject()) return false;
             JsonNode contentId = sanitizedPage.path("contentId");
             if (!contentId.isTextual() || contentId.textValue().isEmpty()
-                    || contentId.textValue().length() > 256) return;
-            if (sanitizedPage.toString().length() > 16384) return;
+                    || contentId.textValue().length() > 256) return false;
+            JsonNode sourcePage = sanitizedPage.path("pagePath");
+            if (!sourcePage.isTextual()) return false;
+            String source = sourcePage.textValue();
+            if (source.isEmpty() || source.length() > 256
+                    || source.indexOf('"') >= 0 || source.indexOf('\\') >= 0) return false;
+            JsonNode videos = sanitizedPage.path("videos");
+            if (!videos.isArray() || videos.size() != 1) return false;
+            JsonNode row = videos.get(0);
+            if (row == null || !row.isObject()) return false;
+            JsonNode currentNode = row.path("currentMs");
+            JsonNode durationNode = row.path("durationMs");
+            if (!currentNode.isNumber() || !durationNode.isNumber()) return false;
+            long current = currentNode.asLong();
+            long duration = durationNode.asLong();
+            JsonNode paused = row.path("paused");
+            if (current < 0L || duration <= 0L
+                    || (paused.isBoolean() && paused.booleanValue())) return false;
+            long required = Math.min(Math.max(minimumMs, 0L), duration);
+            if (current < required || current > duration + CURRENT_OVERRUN_MS
+                    || sanitizedPage.toString().length() > 16384) return false;
             synchronized (LOCK) {
                 latest = new Snapshot(account, nowMs, sanitizedPage);
             }
+            return true;
         }
 
         /** 模型侧读取：新鲜窗口外或账号变化返回 null。 */
         public static JsonNode takeFresh(String account, long nowMs, long windowMs) {
             synchronized (LOCK) {
                 if (latest == null) return null;
-                if (account == null || !account.equals(latest.account)) return null;
-                if (nowMs - latest.capturedAtMs > windowMs || nowMs < latest.capturedAtMs) return null;
+                if (account == null || !account.equals(latest.account)
+                        || nowMs - latest.capturedAtMs > windowMs || nowMs < latest.capturedAtMs) {
+                    latest = null;
+                    return null;
+                }
                 return latest.page;
             }
         }

@@ -1,0 +1,1 @@
+package io.github.aw1y2z.sesame.util;public class Log {public static void goldenBeans(String s){} public static void record(String s){}public static void i(String a,String b){} public static void printStackTrace(String a,Throwable b){throw new RuntimeException(b);}}

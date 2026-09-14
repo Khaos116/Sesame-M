@@ -1,0 +1,1 @@
+package io.github.aw1y2z.sesame.util; public class Status {public static int tracked;public static int getIntFlagToday(String k){return tracked;}public static void setIntFlagToday(String k,int n){tracked=n;}}

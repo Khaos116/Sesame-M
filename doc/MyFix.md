@@ -11,6 +11,43 @@
 
 ## 变更记录
 
+### 2026-09-14：修复 AG / GR / XU / 新版 GR 快照审查确认的 17 项问题
+
+基于 `e28f3db4` 的只读审查后，按用户要求修复全部 17 项。以下记录补充并更正旧条目中关于“切号只靠 BUSY 足够”“恢复 boot 即可启用 VPN 弹窗开关”的结论；旧记录保留。
+
+| 编号 | 问题 | 实际修复 |
+|---|---|---|
+| 1 | 自动切号仍可能与旧任务并发 | 新增共用 `TaskLifecycle` 准入计数，主分发、模型、正在执行的子任务及初始化均纳入；仅空闲时冻结，初始化结束后恢复，旧代延迟回调失效。取消请求不会提前释放仍在运行的任务。初始化失败保持冻结，避免在错误账号继续请求。 |
+| 2 | 芝麻粒换豆回查失败漏记额度 | 服务端确认兑换成功后立即累计当日额度，再执行回查。 |
+| 3 | 视频提速清掉拒绝冷却 | 公共福利基类拆分普通查询时间与服务端冷却；提速只清普通间隔。首次迁移保留旧共享键截止时间，版本变更不清服务端冷却。旧键不能区分两类等待，因此升级首次可能保留一次普通等待。 |
+| 4 | Android 8～9 日志监听构造函数不兼容 | 改用支持最低 API 26 的路径字符串构造函数，Lint 的该项 `NewApi` 错误消除。 |
+| 5 | 独立 App 日志账号错位 | 宿主原子发布当前日志 UID；读取端跟随该 UID，详情页每秒检查账号/日期变化后重新监听；目录名做边界校验。 |
+| 6 | 账号子目录日志清理失效 | 清理遍历根目录历史日志及一层账号目录；今日超限和指定类别使用清空文件，保留正在写入的文件句柄。日志日期统一 GMT+8。 |
+| 7 | VPN 弹窗 Hook 缺初始化 | `BaseModel.boot` 先调用 `CaptchaHook.setupHook(classLoader)`，再同步配置开关。 |
+| 8 | 绿色金融重复请求第 0 页 | 处理当前页后判断末页；缺失、负数或不前进的游标停止分页，同时修复原先跳过末页好友的问题。 |
+| 9 | 生态/古树捐赠超过配置总额 | 追加捐赠扣除历史累计量及本轮首捐；未知累计量不推定为零，配置缺失或首捐失败停止。差额使用 long 避免减法溢出。 |
+| 10 | 金豆漏领奖、失败后整日不再重试 | 完成任务后继续领奖，失败保留未解决状态；取消整个模块的当日完成短路，各业务按服务端状态及独立额度去重。 |
+| 11 | 单开视频预约不执行 | 预约开关加入任务查询前置条件。 |
+| 12 | 视频提前调度不唤醒任务 | 清普通间隔后请求主调度，合并重复请求；正在执行分发或模型时延后，账号代数变化丢弃旧请求。 |
+| 13 | 暂停/结束帧覆盖达标证据 | 仅合格播放快照替换缓存；暂停、未达阈值等无效帧不覆盖，读取仍校验新鲜度和账号。观察异步回调绑定原账号。 |
+| 14 | 鱼塘签到日期使用设备时区 | 独立日期格式化器显式使用 GMT+8、Locale.ROOT。 |
+| 15 | 留空的伪装版本没有进入 Hook | PackageInfo Hook 与展示统一读取已有默认版本 getter。 |
+| 16 | Gemini 清洗改变小数/误选 | 保留回答原文与标点；优先精确匹配，多选项包含匹配时拒绝猜测。 |
+| 17 | 运动币气泡检查错 JSON 层级 | 从每条气泡读取并校验 `assetId`，不再检查父对象。 |
+
+回归检查使用生产类或抽取的实际方法，配合最小模拟依赖，不请求支付宝接口。运行命令：
+
+```text
+python checks/account_lifecycle/run.py
+python checks/audit_regressions/run.py
+python checks/check_video_rewards.py
+java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :app:assembleNormalDebug :app:lintNormalDebug --console=plain
+```
+
+验证结果：以上三组回归检查全部通过；`account_lifecycle/run.py --baseline` 在旧生产实现上按预期复现 `queued MAIN_TASK escaped admission`，当前实现通过。最终独立 `:app:assembleNormalDebug` exit 0，生成 `app/build/outputs/apk/normal/debug/app-normal-arm64-v8a-debug.apk`。`git diff --check` 通过。
+
+Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors / 286 warnings / 2 hints**，失败项是原有的 `MiuixMainActivity.kt:187` 广播注册缺少导出标志（`UnspecifiedRegisterReceiverFlag`）和 `values/strings.xml:144` 的 `module_description` 缺中文翻译（`MissingTranslation`），均不在本次 17 项中，未顺带修改。报告：`app/build/reports/lint-results-normalDebug.html`；本地命令日志：`build/audit-assemble-final.log`、`build/audit-verification-final.log`。未做支付宝实机回归；模拟检查不代表服务端业务已实测成功。本次修改尚未提交。
+
 ### 2026-09-14：`Privilege.java`/`FriendWatch.java` 收尾修复，全仓库 `.get*()` → `.opt*()` 转换任务完成
 
 全仓库最终扫尾审计（`grep -rn` 排除注释行）额外发现两处此前遗漏的调用点：

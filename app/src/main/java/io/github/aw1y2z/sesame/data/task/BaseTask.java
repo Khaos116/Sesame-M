@@ -87,11 +87,19 @@ public abstract class BaseTask {
                 return false;
             }
             stopTask();
+            if (thread != null && thread.isAlive()) return false;
         }
-        thread = new Thread(this::run);
+        TaskLifecycle.Work work = TaskLifecycle.enter();
+        if (work == null) return false;
+        boolean started = false;
+        thread = new Thread(() -> {
+            try { run(); }
+            finally { work.close(); }
+        });
         try {
             if (check()) {
                 thread.start();
+                started = true;
                 for (BaseTask childTask : childTaskMap.values()) {
                     if (childTask != null) {
                         childTask.startTask();
@@ -101,6 +109,8 @@ public abstract class BaseTask {
             }
         } catch (Exception e) {
             Log.printStackTrace(e);
+        } finally {
+            if (!started) work.close();
         }
         return false;
     }
@@ -114,7 +124,7 @@ public abstract class BaseTask {
                 ThreadUtil.shutdownAndWait(childTask.getThread(), -1, TimeUnit.SECONDS);
             }
         }
-        thread = null;
+        if (thread == null || !thread.isAlive()) thread = null;
         childTaskMap.clear();
     }
 

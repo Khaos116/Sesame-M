@@ -398,12 +398,6 @@ public class GreenFinance extends ModelTask {
                     if (result == null) {
                         break;
                     }
-                    if (result.optBoolean("lastPage")) {
-                        Log.other("绿色经营🙋，好友金币巡查完成");
-                        Status.greenFinancePointFriend();
-                        return;
-                    }
-                    n = result.optInt("nextStartIndex");
                     JSONArray list = result.optJSONArray("rankingList");
                     for (int i = 0; list != null && i < list.length(); i++) {
                         JSONObject object = list.optJSONObject(i);
@@ -445,6 +439,17 @@ public class GreenFinance extends ModelTask {
                         Log.other("绿色经营🤩收[" + object.optString("nickName") + "]" +
                                 JsonUtil.getValueByPath(jsonObject, "result.totalCollectPoint") + "金币");
                     }
+                    if (result.optBoolean("lastPage")) {
+                        Log.other("绿色经营🙋，好友金币巡查完成");
+                        Status.greenFinancePointFriend();
+                        return;
+                    }
+                    int next = result.optInt("nextStartIndex", -1);
+                    if (next <= n) {
+                        Log.record("绿色经营：分页游标缺失或未前进，停止好友金币巡查");
+                        break;
+                    }
+                    n = next;
                 } catch (Exception e) {
                     Log.printStackTrace(e);
                     break;

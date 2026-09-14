@@ -674,7 +674,7 @@ public class AntSports extends ModelTask {
             JSONArray ja = data.optJSONArray("recBubbleList");
             for (int i = 0; ja != null && i < ja.length(); i++) {
                 jo = ja.optJSONObject(i);
-                if (jo == null || !data.has("assetId")) {
+                if (jo == null || jo.optString("assetId").isEmpty()) {
                     continue;
                 }
                 String assetId = jo.optString("assetId");

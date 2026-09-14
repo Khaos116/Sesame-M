@@ -1,0 +1,4 @@
+package io.github.aw1y2z.sesame.model.task.goldenbeans; import org.json.*; public class goldenbeansRpcCall { public static int spent;
+public static String home(){return homeOf("","");} public static String homeOf(String a,String b){return new JSONObject().put("success",true).put("manureExchangeInfo",new JSONObject().put("pageOpened",true).put("beanReward",10).put("currentManure",100).put("effectiveExchangeManure",100).put("minExchangeAmount",1).put("remainQuota",1000-spent)).toString();}
+public static String exchangeBean(int n){return exchangeBeanOf("","",n);}public static String exchangeBeanOf(String a,String b,int n){spent+=n;return new JSONObject().put("success",true).put("beanDelta",n).toString();}
+public static String pull(String...s){return new JSONObject().put("success",false).toString();} public static String pullOf(String a,String b,String...s){return pull(s);}}

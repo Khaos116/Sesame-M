@@ -164,6 +164,8 @@ public final class GoldenBeansExchange {
                 return;
             }
 
+            // 兑换成功即记账，后续回查失败不能恢复已经消耗的单日额度。
+            Status.setIntFlagToday(FLAG_SESAME_BEAN_AMOUNT, exchangedToday + beanDelta);
             GoldenBeansSupport.pause(interval);
             JSONObject syncResponse = GoldenBeansSupport.parse(goldenbeansRpcCall.pullOf(
                     GoldenBeansEntry.ALCHEMY.bizType, GoldenBeansEntry.ALCHEMY.source,
@@ -173,7 +175,6 @@ public final class GoldenBeansExchange {
                 return;
             }
             JSONObject afterInfo = syncResponse.optJSONObject("manureExchangeInfo");
-            Status.setIntFlagToday(FLAG_SESAME_BEAN_AMOUNT, exchangedToday + beanDelta);
             Log.goldenBeans("金豆芝麻粒换豆🌾请求[" + exchangeBeanAmount + "]消耗["
                     + exchangeResponse.optInt("manureCost", -1) + "芝麻粒]#获得[" + beanDelta + "豆]"
                     + "剩余芝麻粒["

@@ -1,0 +1,27 @@
+import org.json.*;import java.util.*;
+public class GreenCurrent {
+static String TAG="test";static List<Integer> pages=new ArrayList<>();static class Field{boolean getValue(){return true;}}static Field greenFinancePointFriend=new Field();
+static class Status{static boolean canGreenFinancePointFriend(){return true;}static void greenFinancePointFriend(){}}
+static class TimeUtil{static void sleep(long n){}}
+static class MyUtils{static JSONObject newJSONObject(String s){return new JSONObject(s);}}
+static class Log{static void record(String s){}static void other(String s){}static void i(String a,String b){}static void printStackTrace(Throwable t){}static void printStackTrace(String s,Throwable t){}}
+static class JsonUtil{static Object getValueByPathObject(JSONObject j,String s){return null;}static String getValueByPath(JSONObject j,String s){return "";}}
+static class GreenFinanceRpcCall{
+static int guests; static boolean lastPage; static int next=-1;
+static String queryRankingList(int n){
+ pages.add(n); if(pages.size()>4)throw new AssertionError("pagination did not stop");
+ JSONObject result=new JSONObject().put("lastPage",lastPage).put("rankingList",new JSONArray().put(new JSONObject().put("collectFlag",true).put("uid","friend")));
+ if(next>=0)result.put("nextStartIndex",next);
+ return new JSONObject().put("success",true).put("result",result).toString();
+}
+static String queryGuestIndexPoints(String s){guests++;return "{}";}
+static String batchSteal(JSONArray a,String s){return "{}";}}
+@@PAGINATION@@
+public static void main(String[] a){
+ new GreenCurrent().batchStealFriend();assert pages.equals(List.of(0)) && GreenFinanceRpcCall.guests==1;
+ pages.clear();GreenFinanceRpcCall.guests=0;GreenFinanceRpcCall.lastPage=true;
+ new GreenCurrent().batchStealFriend();assert pages.equals(List.of(0)) && GreenFinanceRpcCall.guests==1;
+ pages.clear();GreenFinanceRpcCall.guests=0;GreenFinanceRpcCall.lastPage=false;GreenFinanceRpcCall.next=5;
+ new GreenCurrent().batchStealFriend();assert pages.equals(List.of(0,5)) && GreenFinanceRpcCall.guests==2;
+ System.out.println("PASS missing/stalled cursor stops after processing current page, including last page");
+}}

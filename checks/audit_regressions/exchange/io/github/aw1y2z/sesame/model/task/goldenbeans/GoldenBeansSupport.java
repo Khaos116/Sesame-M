@@ -1,0 +1,1 @@
+package io.github.aw1y2z.sesame.model.task.goldenbeans; import org.json.*; public class GoldenBeansSupport {public static String TAG="";public static JSONObject parse(String s){return new JSONObject(s);}public static boolean ok(JSONObject j){return j.optBoolean("success");}public static String describe(JSONObject j){return "";}public static void pause(int n){}}

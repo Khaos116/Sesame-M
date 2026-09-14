@@ -51,7 +51,7 @@ public class GeminiAI implements AnswerAIInterface {
         try {
             JSONObject jsonReq = MyUtils.newJSONObject();
             // 针对选择题优化的 Prompt
-            String fullPrompt = "直接给出答案文字，严禁解释，不要标点符号。题目：" + text;
+            String fullPrompt = "只返回正确选项的原文，保留数字、小数点及标点，不要解释。题目：" + text;
 
             JSONArray contents = new JSONArray();
             contents.put(MyUtils.newJSONObject().put("parts", new JSONArray().put(MyUtils.newJSONObject().put("text", fullPrompt))));
@@ -74,8 +74,7 @@ public class GeminiAI implements AnswerAIInterface {
                 String answer = getValueByPath(resObj, "candidates.[0].content.parts.[0].text");
 
                 if (answer != null) {
-                    // 清理所有可能干扰匹配的杂质
-                    return answer.trim().replaceAll("[。，.！!？? \"'“”]", "");
+                    return answer.trim();
                 }
             }
         } catch (Exception e) {
@@ -102,11 +101,18 @@ public class GeminiAI implements AnswerAIInterface {
         }
         String answerResult = getAnswerStr(title + "\n" + answerStr);
         if (answerResult != null && !answerResult.isEmpty()) {
+            for (int i = 0; i < answerList.size(); i++) {
+                if (answerResult.trim().equals(answerList.get(i))) return i;
+            }
+            int matched = -1;
             for (int i = 0, size = answerList.size(); i < size; i++) {
-                if (answerResult.contains(answerList.get(i))) {
-                    return i;
+                String option = answerList.get(i);
+                if (option != null && !option.isEmpty() && answerResult.contains(option)) {
+                    if (matched != -1) return -1;
+                    matched = i;
                 }
             }
+            return matched;
         }
         return -1;
     }

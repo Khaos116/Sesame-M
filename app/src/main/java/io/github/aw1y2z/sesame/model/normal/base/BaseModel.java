@@ -90,6 +90,7 @@ public class BaseModel extends Model {
     
     public void boot(ClassLoader classLoader) {
         try {
+            CaptchaHook.setupHook(classLoader);
             CaptchaHook.updateHooks(closeCaptchaDialogVPN.getValue());
         } catch (Throwable t) {
             Log.printStackTrace("验证码Hook配置同步失败", t);
@@ -121,11 +122,18 @@ public class BaseModel extends Model {
     }
     
     public static void initData() {
+        long generation = io.github.aw1y2z.sesame.data.task.TaskLifecycle.generation();
+        String userId = io.github.aw1y2z.sesame.util.idMap.UserIdMap.getCurrentUid();
         new Thread(() -> {
             try {
                 TimeUtil.sleep(5000);
-                ProtectEcology.initForest();
-                ProtectEcology.initOcean();
+                try (io.github.aw1y2z.sesame.data.task.TaskLifecycle.Work work =
+                             io.github.aw1y2z.sesame.data.task.TaskLifecycle.enter(generation)) {
+                    if (work == null || !java.util.Objects.equals(userId,
+                            io.github.aw1y2z.sesame.util.idMap.UserIdMap.getCurrentUid())) return;
+                    ProtectEcology.initForest();
+                    ProtectEcology.initOcean();
+                }
             }
             catch (Exception e) {
                 Log.printStackTrace(e);

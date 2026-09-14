@@ -27,8 +27,6 @@ import io.github.aw1y2z.sesame.util.Status;
  */
 public class goldenbeans extends ModelTask {
 
-    /** 当日任务已处理完成的标记 */
-    private static final String FLAG_TASKS_DONE = "goldenBeans::tasksDone";
     /** 任务黑白名单初始化标记 */
     private static final String FLAG_BLACKLIST_INIT = "BlackList::initGoldenBeans";
 
@@ -104,11 +102,6 @@ public class goldenbeans extends ModelTask {
                 return;
             }
 
-            if (Status.hasFlagToday(FLAG_TASKS_DONE)) {
-                Log.record("金豆夺宝⏸️今日任务已全部处理#本轮跳过");
-                return;
-            }
-
             GoldenBeansTasks tasks = new GoldenBeansTasks(GoldenBeansTaskList,
                     GoldenBeansSupport.enabled(AutoGoldenBeansTaskList));
 
@@ -148,10 +141,8 @@ public class goldenbeans extends ModelTask {
                 resync(interval);
             }
 
-            if (taskResolved && gameResolved) {
-                Status.flagToday(FLAG_TASKS_DONE);
-            }
-            Log.record("金豆夺宝" + (taskResolved && gameResolved ? "✅今日任务已全部处理" : "⏳仍有待完成或待领取任务"));
+            // 任务、矿工与兑换进度会在日内变化，各业务按服务端状态和兑换额度自行去重。
+            Log.record("金豆夺宝" + (taskResolved && gameResolved ? "✅本轮处理结束" : "⏳仍有待完成或待领取任务"));
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "run err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);

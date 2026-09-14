@@ -11,19 +11,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.github.aw1y2z.sesame.data.task.ModelTask;
+import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
-/**
- * 全局唯一的自动切号轮询器：按设定间隔，在所有任务空闲、且当前不在登录/验证码页时，
- * 把支付宝切到本机下一个历史登录账号，切完后调用 {@link Host#initialize} 触发模块重新加载。
- * <p>
- * 移植自 GR 分支，为适配 M 更简单的 {@link ModelTask} 调度模型做了简化：去掉了原版
- * 整套 TaskLifecycle 会话/租约/冻结令牌机制，改成"切号前确认空闲 + stopAllTask() +
- * 一个 BUSY 标志挡住并发切号"，不追求形式化并发证明，但足够覆盖实际场景——M 的主循环
- * 本来就能容忍"当前账号和预期账号不一致"这种情况（见 ApplicationHook 的 mainTask，
- * 遇到不一致会自己 reLogin），不是从零搭建这层保护。见 doc/MyFix.md。
- */
+/** Switches only after dispatch and workers finish, holding admission closed through initialization. */
 public final class AccountSwitchController {
 
     interface Host {
@@ -31,7 +23,8 @@ public final class AccountSwitchController {
         String readiness();
         String currentUid();
         /** 切号确认完成后调用，触发模块按 expectedUid 重新加载配置/任务。 */
-        boolean initialize(String expectedUid);
+        boolean initialize(String expectedUid, TaskLifecycle.Freeze owner);
+        void resume();
     }
 
     private static final ScheduledExecutorService CONTROL = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -51,6 +44,7 @@ public final class AccountSwitchController {
     private static long nextCountCheck;
     private static String lastStatus;
     private static AccountSwitchFlight flight;
+    private static TaskLifecycle.Freeze freeze;
 
     private AccountSwitchController() { }
 
@@ -102,6 +96,7 @@ public final class AccountSwitchController {
                 if (flight != null) flight.cancelled = true;
             }
             if (flight != null) { phase("CONFIRMING"); advanceFlight(); return; }
+            if (isBusy()) { phase("PAUSED"); return; }
             long countNow = SystemClock.elapsedRealtime();
             if (countNow >= nextCountCheck) {
                 nextCountCheck = countNow + 30000;
@@ -150,13 +145,12 @@ public final class AccountSwitchController {
                 return;
             }
             BRIDGE.probe();
-            // 上面几步（读账号列表/校验一致性）没有加锁，这里再确认一次空闲，
-            // 缩小"确认空闲"和"真正 stopAllTask()"之间的时间窗口。
-            if (!ModelTask.isAllTaskIdle()) { STATE.defer(); phase("WAIT_TASKS"); return; }
+            freeze = TaskLifecycle.freezeIfIdle();
+            if (freeze == null) { STATE.defer(); phase("WAIT_TASKS"); return; }
             BUSY.set(true);
             if (!AccountSwitchSettings.read().enabled || captchaPending()
                     || !Objects.equals(port.currentUid(), current) || !Objects.equals(BRIDGE.currentUid(), current)) {
-                BUSY.set(false);
+                releaseFreeze();
                 STATE.defer();
                 return;
             }
@@ -164,7 +158,7 @@ public final class AccountSwitchController {
             for (HostAccountSwitchBridge.Account account : accounts) {
                 if (next.equals(account.uid)) target = account;
             }
-            if (target == null) { BUSY.set(false); STATE.fail(); return; }
+            if (target == null) { releaseFreeze(); STATE.fail(); return; }
             ModelTask.stopAllTask();
             AccountSwitchFlight started = new AccountSwitchFlight(current, next, SystemClock.elapsedRealtime(), AccountSwitchState.timeoutMillis(30));
             flight = started;
@@ -183,7 +177,7 @@ public final class AccountSwitchController {
             phase("PAUSED");
             STATE.fail();
             status("切号准备失败，轮询已暂停");
-            if (flight == null) { BUSY.set(false); }
+            if (flight == null) { releaseFreeze(); }
         }
     }
 
@@ -201,10 +195,12 @@ public final class AccountSwitchController {
         if (outcome == AccountSwitchFlight.Outcome.WAIT) return;
         boolean success = outcome == AccountSwitchFlight.Outcome.SUCCESS;
         boolean initialized;
-        try { initialized = host.initialize(auth); }
+        try { initialized = host.initialize(auth, freeze); }
         catch (Throwable failed) { initialized = false; }
         flight = null;
-        BUSY.set(false);
+        if (initialized) {
+            releaseFreeze();
+        }
         if (success && initialized) {
             status("切换成功，新账号配置已加载");
             STATE.onRound(auth);
@@ -213,6 +209,14 @@ public final class AccountSwitchController {
             STATE.fail();
             status(initialized ? "本次切号未完整确认，轮询已暂停" : "新账号初始化失败，轮询已暂停");
         }
+    }
+
+    private static void releaseFreeze() {
+        boolean held = freeze != null;
+        TaskLifecycle.thaw(freeze);
+        freeze = null;
+        BUSY.set(false);
+        if (held && host != null) host.resume();
     }
 
     private static void phase(String phaseName) {

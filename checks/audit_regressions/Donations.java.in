@@ -1,0 +1,36 @@
+import org.json.*; import java.util.*;
+public class ReviewCheck {
+static boolean donationSucceeds=true;
+static String TAG="review"; static List<Integer> calls=new ArrayList<>();
+static class Field<T>{T v;Field(T v){this.v=v;} T getValue(){return v;}}
+static class ProtectType{static int SELECT=1,COLLECT=2;}
+static Field<Integer> protectMarathonType=new Field<>(1);
+static Field<Map<String,Integer>> protectMarathonList=new Field<>(Map.of("a",1000));
+static Field<Integer> protectNewAncientTreeType=protectMarathonType;
+static Field<Map<String,Integer>> protectNewAncientTreeList=protectMarathonList;
+static class MyUtils {static JSONObject newJSONObject(String s){return new JSONObject(s);}}
+static class MessageUtil {static boolean checkResultCode(String tag,JSONObject j){return true;}}
+static class Log {static void i(String a,String b){} static void printStackTrace(String a,Throwable t){System.out.println(t.getClass().getSimpleName());}}
+static class ProtectTreeRpcCall {static String response;static String doRubickActivity(String a,String b,JSONObject c){return response;}}
+static Boolean carbonCharityActivity(String action,String id,int n){calls.add(n);return donationSucceeds;}
+@@DONATIONS@@
+    
+
+static void run(boolean carbon, JSONObject data, List<Integer> expected) {
+ calls.clear(); ProtectTreeRpcCall.response=new JSONObject().put("resultData",data).toString();
+ if(carbon) carbonQueryActivity("a"); else marathonQueryActivity("a");
+ assert calls.equals(expected) : calls;
+}
+public static void main(String[] args) {
+ for(boolean carbon: new boolean[]{false,true}) {
+  JSONObject data=new JSONObject().put("currentEnergy",5000).put("certLockStatus",false)
+   .put("donateConfigVO",new JSONObject().put("donateNum",100).put("secondDonateMinNum",100));
+  run(carbon,data,List.of(100));
+  data.put("activityCertVO",new JSONObject().put("energy",0));
+  run(carbon,data,List.of(100,900));
+  donationSucceeds=false; run(carbon,data,List.of(100)); donationSucceeds=true;
+  data.put("activityCertVO",new JSONObject()); run(carbon,data,List.of(100));
+  data.remove("donateConfigVO"); run(carbon,data,List.of());
+ }
+ System.out.println("PASS donation cap, missing certificate/config and failed first donation (both activities)");
+}}
