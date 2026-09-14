@@ -1359,13 +1359,16 @@ public class AntSports extends ModelTask {
             String s = AntSportsRpcCall.pathFeatureQuery();
             JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
-                JSONObject path = jo.getJSONObject("path");
-                String pathId = path.getString("pathId");
-                String title = path.getString("title");
-                int minGoStepCount = path.getInt("minGoStepCount");
-                if (jo.has("userPath")) {
-                    JSONObject userPath = jo.getJSONObject("userPath");
-                    String userPathRecordStatus = userPath.getString("userPathRecordStatus");
+                JSONObject path = jo.optJSONObject("path");
+                if (path == null) {
+                    return;
+                }
+                String pathId = path.optString("pathId");
+                String title = path.optString("title");
+                int minGoStepCount = path.optInt("minGoStepCount");
+                JSONObject userPath = jo.optJSONObject("userPath");
+                if (userPath != null) {
+                    String userPathRecordStatus = userPath.optString("userPathRecordStatus");
                     if ("COMPLETED".equals(userPathRecordStatus)) {
                         pathMapHomepage(pathId);
                         pathMapJoin(title, pathId);
@@ -1374,9 +1377,9 @@ public class AntSports extends ModelTask {
                         String countDate = Log.getFormatDate();
                         jo = MyUtils.newJSONObject(AntSportsRpcCall.stepQuery(countDate, pathId));
                         if (jo.optBoolean("success")) {
-                            int canGoStepCount = jo.getInt("canGoStepCount");
+                            int canGoStepCount = jo.optInt("canGoStepCount");
                             if (canGoStepCount >= minGoStepCount) {
-                                String userPathRecordId = userPath.getString("userPathRecordId");
+                                String userPathRecordId = userPath.optString("userPathRecordId");
                                 tiyubizGo(countDate, title, canGoStepCount, pathId, userPathRecordId);
                             }
                         }
@@ -1385,7 +1388,7 @@ public class AntSports extends ModelTask {
                     pathMapJoin(title, pathId);
                 }
             } else {
-                Log.i(TAG, jo.getString("resultDesc"));
+                Log.i(TAG, jo.optString("resultDesc"));
             }
         } catch (Throwable t) {
             Log.i(TAG, "pathFeatureQuery err:");
@@ -1401,21 +1404,25 @@ public class AntSports extends ModelTask {
                 if (!jo.has("userPathGoRewardList")) {
                     return;
                 }
-                JSONArray userPathGoRewardList = jo.getJSONArray("userPathGoRewardList");
-                for (int i = 0; i < userPathGoRewardList.length(); i++) {
-                    jo = userPathGoRewardList.getJSONObject(i);
-                    if (!"UNRECEIVED".equals(jo.getString("status"))) {
+                JSONArray userPathGoRewardList = jo.optJSONArray("userPathGoRewardList");
+                for (int i = 0; userPathGoRewardList != null && i < userPathGoRewardList.length(); i++) {
+                    jo = userPathGoRewardList.optJSONObject(i);
+                    if (jo == null || !"UNRECEIVED".equals(jo.optString("status"))) {
                         continue;
                     }
-                    String userPathRewardId = jo.getString("userPathRewardId");
+                    String userPathRewardId = jo.optString("userPathRewardId");
                     jo = MyUtils.newJSONObject(AntSportsRpcCall.rewardReceive(pathId, userPathRewardId));
                     if (jo.optBoolean("success")) {
-                        jo = jo.getJSONObject("userPathRewardDetail");
-                        JSONArray rightsRuleList = jo.getJSONArray("userPathRewardRightsList");
+                        jo = jo.optJSONObject("userPathRewardDetail");
+                        JSONArray rightsRuleList = jo != null ? jo.optJSONArray("userPathRewardRightsList") : null;
                         StringBuilder award = new StringBuilder();
-                        for (int j = 0; j < rightsRuleList.length(); j++) {
-                            jo = rightsRuleList.getJSONObject(j).getJSONObject("rightsContent");
-                            award.append(jo.getString("name")).append("*").append(jo.getInt("count"));
+                        for (int j = 0; rightsRuleList != null && j < rightsRuleList.length(); j++) {
+                            JSONObject rightsItem = rightsRuleList.optJSONObject(j);
+                            jo = rightsItem != null ? rightsItem.optJSONObject("rightsContent") : null;
+                            if (jo == null) {
+                                continue;
+                            }
+                            award.append(jo.optString("name")).append("*").append(jo.optInt("count"));
                         }
                         Log.other("文体宝箱🎁[" + award + "]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                     } else {
@@ -1453,10 +1460,13 @@ public class AntSports extends ModelTask {
             String s = AntSportsRpcCall.tiyubizGo(countDate, goStepCount, pathId, userPathRecordId);
             JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
-                jo = jo.getJSONObject("userPath");
-                Log.other("行走线路🚶🏻‍♂️[" + title + "]#前进了" + jo.getInt("userPathRecordForwardStepCount") + "步");
+                jo = jo.optJSONObject("userPath");
+                if (jo == null) {
+                    return;
+                }
+                Log.other("行走线路🚶🏻‍♂️[" + title + "]#前进了" + jo.optInt("userPathRecordForwardStepCount") + "步");
                 pathMapHomepage(pathId);
-                boolean completed = "COMPLETED".equals(jo.getString("userPathRecordStatus"));
+                boolean completed = "COMPLETED".equals(jo.optString("userPathRecordStatus"));
                 if (completed) {
                     Log.other("完成线路🚶🏻‍♂️[" + title + "]");
                     pathFeatureQuery();
