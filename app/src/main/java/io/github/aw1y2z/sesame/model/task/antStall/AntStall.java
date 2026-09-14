@@ -826,14 +826,17 @@ public class AntStall extends ModelTask {
             JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.signToday());
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 StringBuilder signReward = new StringBuilder();
-                JSONArray signRewardModelList = jo.getJSONArray("signRewardModelList");
-                for (int i = 0; i < signRewardModelList.length(); i++) {
-                    jo = signRewardModelList.getJSONObject(i);
+                JSONArray signRewardModelList = jo.optJSONArray("signRewardModelList");
+                for (int i = 0; signRewardModelList != null && i < signRewardModelList.length(); i++) {
+                    jo = signRewardModelList.optJSONObject(i);
+                    if (jo == null) {
+                        continue;
+                    }
                     if (i > 0) {
                         signReward.append(";");
                     }
-                    int count = jo.getInt("count");
-                    String type = jo.getString("type");
+                    int count = jo.optInt("count");
+                    String type = jo.optString("type");
                     if (Objects.equals("ANTSTALL_HOT", type)) {
                         signReward.append("产速增加").append(count).append("/小时");
                     }
@@ -854,7 +857,7 @@ public class AntStall extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.receiveTaskAward(taskType));
             if (MessageUtil.checkSuccess(TAG, jo)) {
-                Log.farm("新村任务🎖️领取[" + title + "]奖励#获得[产速增加" + jo.getInt("incAwardCount") + "/小时]");
+                Log.farm("新村任务🎖️领取[" + title + "]奖励#获得[产速增加" + jo.optInt("incAwardCount") + "/小时]");
             }
         }
         catch (Throwable t) {
@@ -892,12 +895,12 @@ public class AntStall extends ModelTask {
                 return;
             }
             for (int i = 0; i < friendRankList.length(); i++) {
-                JSONObject friend = friendRankList.getJSONObject(i);
-                if (!friend.optBoolean("canInviteRegister", false) || !"UNREGISTER".equals(friend.getString("userStatus"))) {
+                JSONObject friend = friendRankList.optJSONObject(i);
+                if (friend == null || !friend.optBoolean("canInviteRegister", false) || !"UNREGISTER".equals(friend.optString("userStatus"))) {
                     continue;
                 }
                 /* 名单筛选 */
-                String userId = friend.getString("userId");
+                String userId = friend.optString("userId");
                 if (!inviteRegisterList.getValue().contains(userId)) {
                     continue;
                 }
@@ -919,7 +922,7 @@ public class AntStall extends ModelTask {
             String s = AntStallRpcCall.shareP2P();
             JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
-                String shareId = jo.getString("shareId");
+                String shareId = jo.optString("shareId");
                 Log.record("蚂蚁新村⛪[分享助力]");
                 return shareId;
             }
@@ -953,7 +956,7 @@ public class AntStall extends ModelTask {
                     Log.farm("新村助力🎉助力[" + UserIdMap.getMaskName(friendUserId) + "]成功");
                     Status.stallShareP2PToday(friendUserId);
                 }
-                else if (Objects.equals("600000027", jo.getString("code"))) {
+                else if (Objects.equals("600000027", jo.optString("code"))) {
                     Status.flagToday("stall::shareP2PLimit");
                     return;
                 }
