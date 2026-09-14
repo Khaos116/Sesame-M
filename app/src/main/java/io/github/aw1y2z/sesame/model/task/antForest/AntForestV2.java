@@ -3870,10 +3870,12 @@ public class AntForestV2 extends ModelTask {
             String s = AntForestRpcCall.forFriendCollectEnergy(targetUserId, bubbleId);
             JSONObject jo = MyUtils.newJSONObject(s);
             if ("SUCCESS".equals(jo.optString("resultCode"))) {
-                JSONArray jaBubbles = jo.getJSONArray("bubbles");
-                for (int i = 0; i < jaBubbles.length(); i++) {
-                    jo = jaBubbles.getJSONObject(i);
-                    helped += jo.getInt("collectedEnergy");
+                JSONArray jaBubbles = jo.optJSONArray("bubbles");
+                for (int i = 0; jaBubbles != null && i < jaBubbles.length(); i++) {
+                    jo = jaBubbles.optJSONObject(i);
+                    if (jo != null) {
+                        helped += jo.optInt("collectedEnergy");
+                    }
                 }
                 if (helped > 0) {
                     Log.forest("帮收能量🧺[" + UserIdMap.getMaskName(targetUserId) + "]#" + helped + "g");
@@ -3899,7 +3901,10 @@ public class AntForestV2 extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryPropList(false));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                forestPropVOList = jo.getJSONArray("forestPropVOList");
+                JSONArray list = jo.optJSONArray("forestPropVOList");
+                if (list != null) {
+                    forestPropVOList = list;
+                }
             }
         } catch (Throwable th) {
             Log.i(TAG, "getForestPropVOList err:");
@@ -3913,34 +3918,32 @@ public class AntForestV2 extends ModelTask {
         List<JSONObject> list = new ArrayList<>();
         try {
             for (int i = 0; i < forestPropVOList.length(); i++) {
-                JSONObject forestPropVO = forestPropVOList.getJSONObject(i);
-                if (forestPropVO.getString("propGroup").equals(propGroup)) {
+                JSONObject forestPropVO = forestPropVOList.optJSONObject(i);
+                if (forestPropVO != null && propGroup.equals(forestPropVO.optString("propGroup"))) {
                     list.add(forestPropVO);
                 }
             }
             Collections.sort(list, new Comparator<JSONObject>() {
                 @Override
                 public int compare(JSONObject jsonObject1, JSONObject jsonObject2) {
-                    try {
-                        int durationTime1 = jsonObject1.getJSONObject("propConfigVO").getInt("durationTime");
-                        int durationTime2 = jsonObject2.getJSONObject("propConfigVO").getInt("durationTime");
-                        boolean hasExpireTime1 = jsonObject1.has("recentExpireTime");
-                        boolean hasExpireTime2 = jsonObject2.has("recentExpireTime");
-                        if (hasExpireTime1 && hasExpireTime2) {
-                            long endTime = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(durationTime1);
-                            long recentExpireTime = jsonObject2.getLong("recentExpireTime");
-                            if (endTime < recentExpireTime) {
-                                return -1;
-                            } else {
-                                return durationTime2 - durationTime1;
-                            }
-                        } else if (!hasExpireTime1 && !hasExpireTime2) {
-                            return durationTime1 - durationTime2;
+                    JSONObject propConfigVO1 = jsonObject1.optJSONObject("propConfigVO");
+                    JSONObject propConfigVO2 = jsonObject2.optJSONObject("propConfigVO");
+                    int durationTime1 = propConfigVO1 != null ? propConfigVO1.optInt("durationTime") : 0;
+                    int durationTime2 = propConfigVO2 != null ? propConfigVO2.optInt("durationTime") : 0;
+                    boolean hasExpireTime1 = jsonObject1.has("recentExpireTime");
+                    boolean hasExpireTime2 = jsonObject2.has("recentExpireTime");
+                    if (hasExpireTime1 && hasExpireTime2) {
+                        long endTime = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(durationTime1);
+                        long recentExpireTime = jsonObject2.optLong("recentExpireTime");
+                        if (endTime < recentExpireTime) {
+                            return -1;
                         } else {
-                            return hasExpireTime1 ? -1 : 1;
+                            return durationTime2 - durationTime1;
                         }
-                    } catch (JSONException e) {
-                        throw new RuntimeException(e);
+                    } else if (!hasExpireTime1 && !hasExpireTime2) {
+                        return durationTime1 - durationTime2;
+                    } else {
+                        return hasExpireTime1 ? -1 : 1;
                     }
                 }
             });
@@ -3959,8 +3962,8 @@ public class AntForestV2 extends ModelTask {
     private JSONObject getForestPropVO(JSONArray forestPropVOList, String propType) {
         try {
             for (int i = 0; i < forestPropVOList.length(); i++) {
-                JSONObject forestPropVO = forestPropVOList.getJSONObject(i);
-                if (forestPropVO.getString("propType").equals(propType)) {
+                JSONObject forestPropVO = forestPropVOList.optJSONObject(i);
+                if (forestPropVO != null && propType.equals(forestPropVO.optString("propType"))) {
                     return forestPropVO;
                 }
             }
@@ -3979,10 +3982,15 @@ public class AntForestV2 extends ModelTask {
     public static Boolean consumeProp(JSONObject prop) {
         try {
             // 使用道具
-            String propId = prop.getJSONArray("propIdList").getString(0);
-            String propType = prop.getString("propType");
-            String propGroup = prop.getString("propGroup");
-            String propName = prop.getJSONObject("propConfigVO").getString("propName");
+            JSONArray propIdList = prop.optJSONArray("propIdList");
+            JSONObject propConfigVO = prop.optJSONObject("propConfigVO");
+            if (propIdList == null || propIdList.length() == 0 || propConfigVO == null) {
+                return false;
+            }
+            String propId = propIdList.optString(0);
+            String propType = prop.optString("propType");
+            String propGroup = prop.optString("propGroup");
+            String propName = propConfigVO.optString("propName");
             return consumeProp(propGroup, propId, propType, propName);
         } catch (Throwable th) {
             Log.i(TAG, "consumeProp err:");
