@@ -16,9 +16,7 @@ Sesame-M 包名 `io.github.aw1y2z.sesame`，GR2026 包名 `io.github.lazyimmorta
 
 ## 同步候选（未落地，需单独评估）
 
-| 候选 | GR2026 依据 | 说明 |
-|---|---|---|
-| 福气鱼塘（钓鱼任务） | [model/task/fish/FishTask.java](../../Gr/Sesame-GR2026/app/src/main/java/io/github/lazyimmortal/sesame/model/task/fish/FishTask.java)、[FishConfig.java](../../Gr/Sesame-GR2026/app/src/main/java/io/github/lazyimmortal/sesame/model/task/fish/FishConfig.java) | Sesame-M 当前无 `model/task/fish` 包，未见任何 `antfishpond`/`福气鱼塘` 相关 RPC 调用或配置项。这与 Sure-Xu 从 GR 迁入的"福气鱼塘"功能同源，可参照 [GR-Sync.md](../../Sure-Xu/doc/GR-Sync.md) 中"鱼塘任务"一节的迁移范围与运行窗口约束（GMT+8 05:00–23:00，只收能量时段）评估是否移植。 |
+**福气鱼塘（钓鱼任务）已移植，不再是候选**——本节原先列的唯一候选。2026-09-12 已用 Sure-Xu 的 Java 版打底完成移植（`model/task/fish/FishTask.java`/`FishConfig.java`），详见 [doc/MyFix.md](MyFix.md) "福气鱼塘（FishTask）移植" 一节。此表暂无候选；2026-09-14 用更新版 GR 快照重新审计后发现另外一批新增任务模块（14 个独立业务包，如 dailyCash/dayDaySave/videoRewards/youthPrivilege 等），尚未系统性写入本文档，评估进度以对话记录/后续提交为准。
 
 其余 GR2026 独有目录逐一核实后**不构成**同步候选，原因分述于下一节。除鱼塘外，本次未在 GR2026 侧发现其他可举证的、Sesame-M 完全缺失且明确可迁移的功能模块——`model/task/antFarm` 的装扮焕新（[FarmOrnaments.java](../app/src/main/java/io/github/aw1y2z/sesame/entity/FarmOrnaments.java)）、家庭美食/cuisine（[AntFarm.java:663-666](../app/src/main/java/io/github/aw1y2z/sesame/model/task/antFarm/AntFarm.java#L663)、[AntFarm.java:2365-2377](../app/src/main/java/io/github/aw1y2z/sesame/model/task/antFarm/AntFarm.java#L2365)）、亲密家庭（`AntFarm.java` 的 `family`/`familyOptions` 字段与 `family()` 方法）在 Sesame-M 中已以整块 Java 方法的形式存在，只是组织方式与 GR2026 拆出的 [model/task/antFarm/AntFarmFamily.kt](../../Gr/Sesame-GR2026/app/src/main/java/io/github/lazyimmortal/sesame/model/task/antFarm/AntFarmFamily.kt) 不同，不属于"缺失功能"。
 

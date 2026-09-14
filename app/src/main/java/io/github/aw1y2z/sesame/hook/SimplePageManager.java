@@ -44,6 +44,9 @@ public class SimplePageManager {
     
     private static final ArrayList<WeakReference<Dialog>> dialogs = new ArrayList<>();
     private static boolean windowMonitorEnabled = false;
+
+    /** started 计数大于 0 视为前台；volatile 保证跨线程可见性。 */
+    private static volatile int startedActivityCount = 0;
     
     /**
      * Activity焦点处理器接口
@@ -193,8 +196,47 @@ public class SimplePageManager {
         } catch (Throwable e) {
             Log.e(TAG, "挂钩 Activity->dispatchActivityResumed 错误: ", e);
         }
+        hookActivityStartedCount();
     }
-    
+
+    /**
+     * 前后台状态跟踪。用 started 计数而不是 resumed/paused 配对：Activity 之间切换时
+     * 计数 1→2→1 不会瞬时误判为后台。计数下限钳制为 0，防止重复 stopped 事件导致负数。
+     * 移植自 GR 分支，给视频页观察器判断是否需要采样用，见 doc/MyFix.md。
+     */
+    private static void hookActivityStartedCount() {
+        try {
+            CompatHelpers.findAndHookMethod(
+                    Application.class,
+                    "dispatchActivityStarted",
+                    Activity.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            startedActivityCount++;
+                        }
+                    }
+            );
+            CompatHelpers.findAndHookMethod(
+                    Application.class,
+                    "dispatchActivityStopped",
+                    Activity.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            startedActivityCount = Math.max(0, startedActivityCount - 1);
+                        }
+                    }
+            );
+        } catch (Throwable e) {
+            Log.e(TAG, "挂钩 Activity 前后台计数错误: ", e);
+        }
+    }
+
+    public static boolean isAppForeground() {
+        return startedActivityCount > 0;
+    }
+
     /**
      * 如果对话框不存在则添加到监控列表
      */

@@ -272,6 +272,12 @@ public class ApplicationHook extends XposedModule {
                 Log.printStackTrace(TAG, t);
             }
             try {
+                // 被动观察视频任务页；仅在 VideoRewards 开启且勾了真实观看记录开关时采样，不发送请求。
+                VideoPageObserver.install();
+            } catch (Throwable t) {
+                Log.printStackTrace(TAG + "视频页观察Hook初始化失败", t);
+            }
+            try {
                 XHelpers.findAndHookMethod("com.alipay.mobile.nebulaappproxy.api.rpc.H5AppRpcUpdate", classLoader, "matchVersion", classLoader.loadClass(ClassUtil.H5PAGE_NAME), Map.class, String.class, XC_MethodReplacement.returnConstant(false));
                 Log.i(TAG, "hook matchVersion successfully");
             } catch (Throwable t) {

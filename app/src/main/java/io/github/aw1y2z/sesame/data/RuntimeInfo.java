@@ -92,4 +92,18 @@ public class RuntimeInfo {
         }
         save();
     }
+
+    /** 删除所有以 prefix 开头的 key，给切版本后清冷却记录用。 */
+    public void clearPrefix(String prefix) {
+        if (prefix == null || prefix.isEmpty()) return;
+        java.util.Iterator<String> keys = joCurrent.keys();
+        java.util.ArrayList<String> remove = new java.util.ArrayList<>();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (key.startsWith(prefix)) remove.add(key);
+        }
+        for (String key : remove) joCurrent.remove(key);
+        try { joAll.put(userId, joCurrent); } catch (JSONException ignored) { }
+        save();
+    }
 }

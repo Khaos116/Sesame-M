@@ -2,6 +2,13 @@
 
 本页记录 Sesame-M 每次把上游/同源 fork（GR2026、Sure-Xu、Sesame-AG，本地路径分别为 `E:\Work\Gr\Sesame-GR2026`、`E:\Work\Sure-Xu`、`E:\Work\Sesame-AG`）代码合并进本地后，实际做了哪些改写、跳过了什么、为什么。按时间倒序追加新记录，不要覆盖旧记录。背景资料（GR2026 `MyUtils.java` 的完整拆解）放在文末「附录」，供后续合并对照。
 
+## 硬性规则：每次改代码、合并代码、写新代码都要检查
+
+以下两条不是某一次的修复记录，是长期约束——不管是合并上游代码、修 bug 还是写全新功能，touch 到的代码只要沾这两类问题就必须顺手处理，不能只管当次任务范围：
+
+1. **时间必须按 GMT+8，不能用裸 `Calendar.getInstance()` / 系统默认时区**。用 `MyUtils.getInstance()` 替代 `Calendar.getInstance()`。背景：GR 自己的代码里也反复出现这个 bug（用户不在 GMT+8 时区跑设备时，跨天判断、定时任务会全部错位），Sesame-M 这边已经排查修过好几处（`FriendWatch.needUpdateAll()`、`ApplicationHook` 的 `dayCalendar`/`setWakenAtTimeAlarm`/`updateDay` 等，见下方 2026-09-12 记录）。已知例外：`TimeUtil` 里大部分方法本身还是系统默认时区（历史遗留，范围大，未整体改造），新代码如果要用其中方法做时间比较，先确认语义是否会跟 GMT+8 的另一侧对不上，不要只改一半引入新的隐蔽错位。
+2. **JSON 读取禁止裸 `.get*()`（`getString`/`getInt`/`getLong`/`getDouble`/`getBoolean`/`getJSONObject`/`getJSONArray`/不带类型后缀的 `get`），一律用对应的 `.opt*()` + 空指针防护**。背景：全仓库约 1986 处调用点的转换任务已在 2026-09-14 完成（见下方记录），裸 `get*()` 在字段缺失/服务端返回结构变化时会直接抛异常导致任务崩掉，`opt*()` 返回 null/默认值后自己判空更稳。新写的代码、从 GR/AG/Sure-Xu 合并进来的代码，只要有 `org.json.JSONObject`/`JSONArray` 取值，一律按这个规范来，不要重新引入裸 `get*()`。
+
 ## 变更记录
 
 ### 2026-09-14：`Privilege.java`/`FriendWatch.java` 收尾修复，全仓库 `.get*()` → `.opt*()` 转换任务完成

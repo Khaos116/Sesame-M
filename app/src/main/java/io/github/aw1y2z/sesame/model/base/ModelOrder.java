@@ -19,6 +19,20 @@ import io.github.aw1y2z.sesame.model.task.fish.FishTask;
 import io.github.aw1y2z.sesame.model.task.greenFinance.GreenFinance;
 import io.github.aw1y2z.sesame.model.task.goldenbeans.goldenbeans;
 import io.github.aw1y2z.sesame.model.task.protectEcology.ProtectEcology;
+import io.github.aw1y2z.sesame.model.task.dayDaySave.DayDaySave;
+import io.github.aw1y2z.sesame.model.task.luckCard.LuckCardStatus;
+import io.github.aw1y2z.sesame.model.task.factCheck.FactCheckRewards;
+import io.github.aw1y2z.sesame.model.task.forestPlantRewards.ForestPlantRewards;
+import io.github.aw1y2z.sesame.model.task.dailyCash.DailyCash;
+import io.github.aw1y2z.sesame.model.task.promoprodRewards.PromoprodRewards;
+import io.github.aw1y2z.sesame.model.task.wealthDay.WealthDayRewards;
+import io.github.aw1y2z.sesame.model.task.youthPrivilege.YouthPrivilege;
+import io.github.aw1y2z.sesame.model.task.weeklyWelfare.WeeklyWelfare;
+import io.github.aw1y2z.sesame.model.task.healthIslandRewards.HealthIslandRewards;
+import io.github.aw1y2z.sesame.model.task.myBankWelfare.MyBankWelfare;
+import io.github.aw1y2z.sesame.model.task.myBankWelfare.MyBankBenefitSignIn;
+import io.github.aw1y2z.sesame.model.task.other.OtherTask;
+import io.github.aw1y2z.sesame.model.task.videoRewards.VideoRewards;
 import lombok.Getter;
 
 public class ModelOrder {
@@ -41,6 +55,20 @@ public class ModelOrder {
         clazzList.add(goldenbeans.class);
         clazzList.add(AnswerAI.class);
         clazzList.add(FishTask.class);
+        clazzList.add(DayDaySave.class);
+        clazzList.add(LuckCardStatus.class);
+        clazzList.add(FactCheckRewards.class);
+        clazzList.add(ForestPlantRewards.class);
+        clazzList.add(DailyCash.class);
+        clazzList.add(PromoprodRewards.class);
+        clazzList.add(WealthDayRewards.class);
+        clazzList.add(YouthPrivilege.class);
+        clazzList.add(WeeklyWelfare.class);
+        clazzList.add(HealthIslandRewards.class);
+        clazzList.add(MyBankWelfare.class);
+        clazzList.add(MyBankBenefitSignIn.class);
+        clazzList.add(OtherTask.class);
+        clazzList.add(VideoRewards.class);
 
         ExtensionsHandle.handleAlphaRequest("ModelOrder", "addExtensionsClass", clazzList);
     }
