@@ -1918,19 +1918,25 @@ public class AntForestV2 extends ModelTask {
             if (ForestHunt) {
                 JSONObject resData = MyUtils.newJSONObject(AntForestRpcCall.enterDrawActivityopengreen("", "ANTFOREST_NORMAL_DRAW", "task_entry"));
                 if (MessageUtil.checkSuccess(TAG, resData)) {
-                    JSONArray drawSceneGroups = resData.getJSONArray("drawSceneGroups");
-                    for (int i = 0; i < drawSceneGroups.length(); i++) {
-                        JSONObject drawScene = drawSceneGroups.getJSONObject(i);
-                        JSONObject drawActivity = drawScene.getJSONObject("drawActivity");
-                        String sceneCode = drawActivity.getString("sceneCode");
+                    JSONArray drawSceneGroups = resData.optJSONArray("drawSceneGroups");
+                    for (int i = 0; drawSceneGroups != null && i < drawSceneGroups.length(); i++) {
+                        JSONObject drawScene = drawSceneGroups.optJSONObject(i);
+                        JSONObject drawActivity = drawScene != null ? drawScene.optJSONObject("drawActivity") : null;
+                        if (drawActivity == null) {
+                            continue;
+                        }
+                        String sceneCode = drawActivity.optString("sceneCode");
                         JSONObject listTaskopengreen = MyUtils.newJSONObject(AntForestRpcCall.listTaskopengreen(sceneCode + "_TASK", "task_entry"));
                         if (MessageUtil.checkSuccess(TAG, listTaskopengreen)) {
-                            JSONArray taskList = listTaskopengreen.getJSONArray("taskInfoList");
-                            for (int j = 0; j < taskList.length(); j++) {
-                                JSONObject taskInfo = taskList.getJSONObject(j);
-                                JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.getString("bizInfo"));
-                                String taskName = bizInfo.getString("title");
+                            JSONArray taskList = listTaskopengreen.optJSONArray("taskInfoList");
+                            for (int j = 0; taskList != null && j < taskList.length(); j++) {
+                                JSONObject taskInfo = taskList.optJSONObject(j);
+                                JSONObject taskBaseInfo = taskInfo != null ? taskInfo.optJSONObject("taskBaseInfo") : null;
+                                if (taskBaseInfo == null) {
+                                    continue;
+                                }
+                                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.optString("bizInfo"));
+                                String taskName = bizInfo.optString("title");
                                 AntForestHuntTaskListMap.add(taskName, taskName);
                             }
                         }
@@ -1998,9 +2004,12 @@ public class AntForestV2 extends ModelTask {
                 return;
             }
 
-            JSONObject resultObject = jo.getJSONObject("resultObject");
-            JSONObject energyGenerated = resultObject.getJSONObject("energyGenerated");
-            int zulinshangpinliulan = energyGenerated.getInt("zulinshangpinliulan");
+            JSONObject resultObject = jo.optJSONObject("resultObject");
+            JSONObject energyGenerated = resultObject != null ? resultObject.optJSONObject("energyGenerated") : null;
+            if (energyGenerated == null) {
+                return;
+            }
+            int zulinshangpinliulan = energyGenerated.optInt("zulinshangpinliulan");
             Log.forest("绿色租赁🛍️完成[线上逛街]#产生[" + zulinshangpinliulan + "g能量]");
             Toast.show("绿色租赁🛍️完成[线上逛街]#产生[" + zulinshangpinliulan + "g能量]");
         } catch (Throwable t) {
@@ -2016,30 +2025,36 @@ public class AntForestV2 extends ModelTask {
                 return;
             }
 
-            jo = jo.getJSONObject("data");
-            if (!jo.has("currentActivity")) {
+            jo = jo.optJSONObject("data");
+            if (jo == null || !jo.has("currentActivity")) {
                 return;
             }
-            JSONObject currentActivity = jo.getJSONObject("currentActivity");
-            int numberOfDaysCompleted = currentActivity.getInt("numberOfDaysCompleted") + 1;
-            JSONObject currentTask = jo.getJSONObject("currentTask");
-            if (currentTask.getBoolean("checkInCompleted")) {
+            JSONObject currentActivity = jo.optJSONObject("currentActivity");
+            if (currentActivity == null) {
                 return;
             }
-            String taskTemplateId = currentTask.getString("taskTemplateId");
+            int numberOfDaysCompleted = currentActivity.optInt("numberOfDaysCompleted") + 1;
+            JSONObject currentTask = jo.optJSONObject("currentTask");
+            if (currentTask == null || currentTask.optBoolean("checkInCompleted")) {
+                return;
+            }
+            String taskTemplateId = currentTask.optString("taskTemplateId");
             jo = MyUtils.newJSONObject(GreenLifeRpcCall.finishCurrentTask(taskTemplateId));
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
-            jo = jo.getJSONObject("data");
-            JSONArray ja = jo.getJSONArray("prizes");
+            jo = jo.optJSONObject("data");
+            JSONArray ja = jo != null ? jo.optJSONArray("prizes") : null;
             StringBuilder award = new StringBuilder();
-            for (int i = 0; i < ja.length(); i++) {
-                jo = ja.getJSONObject(i);
+            for (int i = 0; ja != null && i < ja.length(); i++) {
+                jo = ja.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
                 if (i > 0) {
                     award.append(";");
                 }
-                award.append(jo.getString("name"));
+                award.append(jo.optString("name"));
             }
             if (award.length() > 0) {
                 award = new StringBuilder("#获得[" + award + "]");
@@ -2057,13 +2072,13 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
-            JSONObject data = jo.getJSONObject("data");
-            if (data.optBoolean("canSendEnergy", false)) {
+            JSONObject data = jo.optJSONObject("data");
+            if (data != null && data.optBoolean("canSendEnergy", false)) {
                 jo = MyUtils.newJSONObject(GreenLifeRpcCall.sendEnergyByAction(sourceType));
                 if (MessageUtil.checkSuccess(TAG, jo)) {
-                    data = jo.getJSONObject("data");
-                    if (data.optBoolean("canSendEnergy", false)) {
-                        int receivedEnergyAmount = data.getInt("receivedEnergyAmount");
+                    data = jo.optJSONObject("data");
+                    if (data != null && data.optBoolean("canSendEnergy", false)) {
+                        int receivedEnergyAmount = data.optInt("receivedEnergyAmount");
                         Log.forest("森林集市🛍️完成[线上逛街]#产生[" + receivedEnergyAmount + "g能量]");
                         Toast.show("森林集市🛍️完成[线上逛街]#产生[" + receivedEnergyAmount + "g能量]");
                     }
