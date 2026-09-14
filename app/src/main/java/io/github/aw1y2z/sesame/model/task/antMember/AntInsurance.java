@@ -33,14 +33,19 @@ public class AntInsurance {
             JSONObject jo = MyUtils.newJSONObject(AntInsuranceRpcCall.queryMultiSceneWaitToGainList());
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
-            } jo = jo.getJSONObject("data"); Iterator<String> keys = jo.keys();
+            } jo = jo.optJSONObject("data"); if (jo == null) {
+                return;
+            } Iterator<String> keys = jo.keys();
             while (keys.hasNext()) {
-                String key = keys.next(); Object jsonDTO = jo.get(key);
+                String key = keys.next(); Object jsonDTO = jo.opt(key);
                 if (jsonDTO instanceof JSONArray) {
                     // 如eventToWaitDTOList、helpChildSumInsuredDTOList
                     JSONArray jsonArray = ((JSONArray) jsonDTO);
                     for (int i = 0; i < jsonArray.length(); i++) {
-                        gainMyAndFamilySumInsured(jsonArray.getJSONObject(i));
+                        JSONObject item = jsonArray.optJSONObject(i);
+                        if (item != null) {
+                            gainMyAndFamilySumInsured(item);
+                        }
                     }
                 } else if (jsonDTO instanceof JSONObject) {
                     // 如signInDTO、priorityChannelDTO
@@ -62,7 +67,10 @@ public class AntInsurance {
             JSONObject jo = MyUtils.newJSONObject(AntInsuranceRpcCall.gainMyAndFamilySumInsured(giftData));
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
-            } jo = jo.getJSONObject("data").getJSONObject("gainSumInsuredDTO");
+            } JSONObject data = jo.optJSONObject("data"); jo = data != null ? data.optJSONObject("gainSumInsuredDTO") : null;
+            if (jo == null) {
+                return;
+            }
             Log.other("蚂蚁保障🛡️领取保障金#获得[" + jo.optString("gainSumInsuredYuan") + "元保额]");
         } catch (Throwable t) {
             Log.i(TAG, "gainMyAndFamilySumInsured err:"); Log.printStackTrace(TAG, t);
@@ -77,12 +85,14 @@ public class AntInsurance {
             JSONObject jo = MyUtils.newJSONObject(AntInsuranceRpcCall.queryAvailableNum());
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
-            } jo = jo.getJSONObject("result"); if (jo.getInt("num") == 3) {
+            } jo = jo.optJSONObject("result"); if (jo != null && jo.optInt("num") == 3) {
                 jo = MyUtils.newJSONObject(AntInsuranceRpcCall.lotteryDraw());
                 if (!MessageUtil.checkSuccess(TAG, jo)) {
                     return;
-                } JSONArray ja = jo.getJSONArray("result"); for (int i = 0; i < ja.length(); i++) {
-                    jo = ja.getJSONObject(i); String prizeName = jo.getString("prizeName");
+                } JSONArray ja = jo.optJSONArray("result"); for (int i = 0; ja != null && i < ja.length(); i++) {
+                    jo = ja.optJSONObject(i); if (jo == null) {
+                        continue;
+                    } String prizeName = jo.optString("prizeName");
                     Log.other("蚂蚁保障🛡️天天领取保障福利#获得[" + prizeName + "]");
                 }
             } Status.flagToday("insurance::lotteryDraw");
@@ -97,10 +107,13 @@ public class AntInsurance {
             JSONObject jo = MyUtils.newJSONObject(AntInsuranceRpcCall.beanQuerySignInProcess());
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
-            } if (jo.getJSONObject("result").getBoolean("canPush")) {
+            } JSONObject signResult = jo.optJSONObject("result"); if (signResult != null && signResult.optBoolean("canPush")) {
                 jo = MyUtils.newJSONObject(AntInsuranceRpcCall.beanSignInTrigger());
                 if (MessageUtil.checkSuccess(TAG, jo)) {
-                    String prizeName = jo.getJSONObject("result").getJSONArray("prizeSendOrderDTOList").getJSONObject(0).getString("prizeName");
+                    JSONObject triggerResult = jo.optJSONObject("result");
+                    JSONArray prizeList = triggerResult != null ? triggerResult.optJSONArray("prizeSendOrderDTOList") : null;
+                    JSONObject firstPrize = prizeList != null ? prizeList.optJSONObject(0) : null;
+                    String prizeName = firstPrize != null ? firstPrize.optString("prizeName") : "";
                     Log.other("蚂蚁保障🛡️安心豆签到#获得[" + prizeName + "]");
                 }
             }
@@ -115,16 +128,26 @@ public class AntInsurance {
             JSONObject jo = MyUtils.newJSONObject(AntInsuranceRpcCall.queryUserAccountInfo("INS_BLUE_BEAN"));
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
-            } int userCurrentPoint = jo.getJSONObject("result").getInt("userCurrentPoint");
+            } JSONObject accountResult = jo.optJSONObject("result");
+            int userCurrentPoint = accountResult != null ? accountResult.optInt("userCurrentPoint") : 0;
             jo = MyUtils.newJSONObject(AntInsuranceRpcCall.beanExchangeDetail(itemId));
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
-            jo = jo.getJSONObject("result").getJSONObject("rspContext").getJSONObject("params").getJSONObject("exchangeDetail");
-            String itemName = jo.getString("itemName");
-            jo = jo.getJSONObject("itemExchangeConsultDTO");
-            int realConsumePointAmount = jo.getInt("realConsumePointAmount");
-            if (!jo.getBoolean("canExchange") || realConsumePointAmount > userCurrentPoint) {
+            JSONObject exchangeResult = jo.optJSONObject("result");
+            JSONObject rspContext = exchangeResult != null ? exchangeResult.optJSONObject("rspContext") : null;
+            JSONObject params = rspContext != null ? rspContext.optJSONObject("params") : null;
+            jo = params != null ? params.optJSONObject("exchangeDetail") : null;
+            if (jo == null) {
+                return;
+            }
+            String itemName = jo.optString("itemName");
+            jo = jo.optJSONObject("itemExchangeConsultDTO");
+            if (jo == null) {
+                return;
+            }
+            int realConsumePointAmount = jo.optInt("realConsumePointAmount");
+            if (!jo.optBoolean("canExchange") || realConsumePointAmount > userCurrentPoint) {
                 return;
             } jo = MyUtils.newJSONObject(AntInsuranceRpcCall.beanExchange(itemId, realConsumePointAmount));
             if (MessageUtil.checkSuccess(TAG, jo)) {
