@@ -4,6 +4,10 @@
 
 ## 变更记录
 
+### 2026-09-14：`AncientTree.java` `.get*()` → `.opt*()` + 空指针防护，第十四个文件全部完成
+
+第十四个文件（146 行，原~26 处调用点，一次会话内全部转完）。覆盖 `ancientTreeProtect`/`districtDetail`（区划信息与古树列表遍历、保护动作前的能量与配额校验）。`grep` 确认代码里已无可执行的裸 `.get*()` 调用。编译通过；仅做了编译期验证，未做设备/运行时测试。下一步按调用点数量排序转到 `AntInsurance.java`（约 25 处调用点）。
+
 ### 2026-09-14：`GreenFinance.java` `.get*()` → `.opt*()` + 空指针防护，第十三个文件全部完成
 
 第十三个文件（474 行，原~32 处调用点，一次会话内全部转完）。覆盖 `run`（首页解析与分批收集）、`batchSelfCollect`/`signIn`/`doTick`（签到与打卡）、`donation`（快过期金币捐助，含 `mcaDonationProjectResult.[0]` 路径取值改用先取数组元素再传路径查询）、`prizes`（评级奖品）、`batchStealFriend`（收好友金币）。
