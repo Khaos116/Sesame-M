@@ -4036,8 +4036,10 @@ public class AntForestV2 extends ModelTask {
                 return;
             }
             for (int i = 0; i < itemInfoVOList.length(); i++) {
-                JSONObject itemInfoVO = itemInfoVOList.getJSONObject(i);
-                getSkuInfoByItemInfoVO(itemInfoVO);
+                JSONObject itemInfoVO = itemInfoVOList.optJSONObject(i);
+                if (itemInfoVO != null) {
+                    getSkuInfoByItemInfoVO(itemInfoVO);
+                }
             }
         } catch (Throwable th) {
             Log.i(TAG, "getAllSkuInfo err:");
@@ -4051,8 +4053,10 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
-            JSONObject spuItemInfoVo = jo.getJSONObject("spuItemInfoVO");
-            getSkuInfoByItemInfoVO(spuItemInfoVo);
+            JSONObject spuItemInfoVo = jo.optJSONObject("spuItemInfoVO");
+            if (spuItemInfoVo != null) {
+                getSkuInfoByItemInfoVO(spuItemInfoVo);
+            }
         } catch (Throwable th) {
             Log.i(TAG, "getSkuInfoBySpuId err:");
             Log.printStackTrace(TAG, th);
@@ -4061,12 +4065,18 @@ public class AntForestV2 extends ModelTask {
 
     private void getSkuInfoByItemInfoVO(JSONObject spuItem) {
         try {
-            String spuId = spuItem.getString("spuId");
-            JSONArray skuModelList = spuItem.getJSONArray("skuModelList");
+            String spuId = spuItem.optString("spuId");
+            JSONArray skuModelList = spuItem.optJSONArray("skuModelList");
+            if (skuModelList == null) {
+                return;
+            }
             for (int i = 0; i < skuModelList.length(); i++) {
-                JSONObject skuModel = skuModelList.getJSONObject(i);
-                String skuId = skuModel.getString("skuId");
-                String skuName = skuModel.getString("skuName");
+                JSONObject skuModel = skuModelList.optJSONObject(i);
+                if (skuModel == null) {
+                    continue;
+                }
+                String skuId = skuModel.optString("skuId");
+                String skuName = skuModel.optString("skuName");
                 if (!skuModel.has("spuId")) {
                     skuModel.put("spuId", spuId);
                 }
@@ -4096,10 +4106,10 @@ public class AntForestV2 extends ModelTask {
             return false;
         }
         try {
-            String skuName = sku.getString("skuName");
-            JSONArray itemStatusList = sku.getJSONArray("itemStatusList");
-            for (int i = 0; i < itemStatusList.length(); i++) {
-                String itemStatus = itemStatusList.getString(i);
+            String skuName = sku.optString("skuName");
+            JSONArray itemStatusList = sku.optJSONArray("itemStatusList");
+            for (int i = 0; itemStatusList != null && i < itemStatusList.length(); i++) {
+                String itemStatus = itemStatusList.optString(i);
                 if (ItemStatus.REACH_LIMIT.name().equals(itemStatus) || ItemStatus.NO_ENOUGH_POINT.name().equals(itemStatus) || ItemStatus.NO_ENOUGH_STOCK.name().equals(itemStatus)) {
                     Log.record("活力兑换🎐[" + skuName + "]停止:" + ItemStatus.valueOf(itemStatus).nickName());
                     if (ItemStatus.REACH_LIMIT.name().equals(itemStatus)) {
@@ -4108,7 +4118,7 @@ public class AntForestV2 extends ModelTask {
                     return false;
                 }
             }
-            String spuId = sku.getString("spuId");
+            String spuId = sku.optString("spuId");
             if (exchangeBenefit(spuId, skuId, skuName)) {
                 return true;
             }
