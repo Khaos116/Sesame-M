@@ -1579,16 +1579,22 @@ public class AntForestV2 extends ModelTask {
 
     private void updateUsingPropsEndTime(JSONObject joHomePage) {
         try {
-            JSONArray ja = joHomePage.getJSONArray("loginUserUsingPropNew");
-            if (ja.length() == 0) {
-                ja = joHomePage.getJSONArray("usingUserPropsNew");
+            JSONArray ja = joHomePage.optJSONArray("loginUserUsingPropNew");
+            if (ja == null || ja.length() == 0) {
+                ja = joHomePage.optJSONArray("usingUserPropsNew");
+            }
+            if (ja == null) {
+                return;
             }
             for (int i = 0; i < ja.length(); i++) {
-                JSONObject jo = ja.getJSONObject(i);
-                String propGroup = jo.getString("propGroup");
-                Long endTime = jo.getLong("endTime");
-                String propId = jo.getString("propId");
-                String propType = jo.getString("propType");
+                JSONObject jo = ja.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
+                String propGroup = jo.optString("propGroup");
+                Long endTime = jo.optLong("endTime");
+                String propId = jo.optString("propId");
+                String propType = jo.optString("propType");
                 usingProps.put(propGroup, endTime);
                 if (PropGroup.robExpandCard.name().equals(propGroup)) {
                     collectRobExpandEnergy(jo.optString("extInfo"), propId, propType);
@@ -1638,8 +1644,15 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            jo = jo.getJSONObject("data").getJSONObject("response");
-            JSONArray ja = jo.getJSONArray("energyGeneratedList");
+            JSONObject data = jo.optJSONObject("data");
+            jo = data != null ? data.optJSONObject("response") : null;
+            if (jo == null) {
+                return;
+            }
+            JSONArray ja = jo.optJSONArray("energyGeneratedList");
+            if (ja == null) {
+                ja = new JSONArray();
+            }
             if (ja.length() > 0) {
                 harvestForestEnergy(scene, ja);
             }
@@ -1662,11 +1675,16 @@ public class AntForestV2 extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.produceForestEnergy(scene));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                jo = jo.getJSONObject("data").getJSONObject("response");
-                energyGeneratedList = jo.getJSONArray("energyGeneratedList");
+                JSONObject data = jo.optJSONObject("data");
+                jo = data != null ? data.optJSONObject("response") : null;
+                if (jo == null) {
+                    return energyGeneratedList;
+                }
+                JSONArray list = jo.optJSONArray("energyGeneratedList");
+                energyGeneratedList = list != null ? list : new JSONArray();
                 if (energyGeneratedList.length() > 0) {
                     String title = scene.equals("FEEDS") ? "绿色医疗" : "电子小票";
-                    int cumulativeEnergy = jo.getInt("cumulativeEnergy");
+                    int cumulativeEnergy = jo.optInt("cumulativeEnergy");
                     Log.forest("医疗健康🚑完成[" + title + "]#产生[" + cumulativeEnergy + "g能量]");
                 }
             }
@@ -1683,8 +1701,12 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            jo = jo.getJSONObject("data").getJSONObject("response");
-            int collectedEnergy = jo.getInt("collectedEnergy");
+            JSONObject data = jo.optJSONObject("data");
+            jo = data != null ? data.optJSONObject("response") : null;
+            if (jo == null) {
+                return false;
+            }
+            int collectedEnergy = jo.optInt("collectedEnergy");
             if (collectedEnergy > 0) {
                 String title = scene.equals("FEEDS") ? "绿色医疗" : "电子小票";
                 Log.forest("医疗健康🚑收取[" + title + "]#获得[" + collectedEnergy + "g能量]");
@@ -1795,14 +1817,20 @@ public class AntForestV2 extends ModelTask {
                     JSONArray forestTasksNew = jo.optJSONArray("forestTasksNew");
                     if (forestTasksNew != null && forestTasksNew.length() != 0) {
                         for (int i = 0; i < forestTasksNew.length(); i++) {
-                            JSONObject forestTask = forestTasksNew.getJSONObject(i);
+                            JSONObject forestTask = forestTasksNew.optJSONObject(i);
+                            if (forestTask == null) {
+                                continue;
+                            }
                             JSONArray taskInfoList = forestTask.optJSONArray("taskInfoList");
                             if (taskInfoList != null && taskInfoList.length() != 0) {
                                 for (int j = 0; j < taskInfoList.length(); j++) {
-                                    JSONObject taskInfo = taskInfoList.getJSONObject(j);
-                                    JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                                    JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.getString("bizInfo"));
-                                    String taskType = taskBaseInfo.getString("taskType");
+                                    JSONObject taskInfo = taskInfoList.optJSONObject(j);
+                                    JSONObject taskBaseInfo = taskInfo != null ? taskInfo.optJSONObject("taskBaseInfo") : null;
+                                    if (taskBaseInfo == null) {
+                                        continue;
+                                    }
+                                    JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.optString("bizInfo"));
+                                    String taskType = taskBaseInfo.optString("taskType");
                                     String taskTitle = bizInfo.optString("taskTitle", taskType);
                                     AntForestVitalityTaskListMap.add(taskTitle, taskTitle);
                                 }
@@ -1818,10 +1846,13 @@ public class AntForestV2 extends ModelTask {
                         JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
                         if (taskInfoList != null && taskInfoList.length() != 0) {
                             for (int j = 0; j < taskInfoList.length(); j++) {
-                                JSONObject taskInfo = taskInfoList.getJSONObject(j);
-                                JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.getString("bizInfo"));
-                                String taskType = taskBaseInfo.getString("taskType");
+                                JSONObject taskInfo = taskInfoList.optJSONObject(j);
+                                JSONObject taskBaseInfo = taskInfo != null ? taskInfo.optJSONObject("taskBaseInfo") : null;
+                                if (taskBaseInfo == null) {
+                                    continue;
+                                }
+                                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.optString("bizInfo"));
+                                String taskType = taskBaseInfo.optString("taskType");
                                 String taskTitle = bizInfo.optString("taskTitle", taskType);
                                 AntForestVitalityTaskListMap.add(taskTitle, taskTitle);
                             }
