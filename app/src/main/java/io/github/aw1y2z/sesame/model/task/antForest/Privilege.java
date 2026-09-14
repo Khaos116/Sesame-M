@@ -3,7 +3,6 @@ package io.github.aw1y2z.sesame.model.task.antForest;
 import io.github.aw1y2z.sesame.util.MyUtils;
 
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
@@ -18,7 +17,6 @@ import io.github.aw1y2z.sesame.util.TimeUtil;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
@@ -88,12 +86,7 @@ public class Privilege {
     
     private static JSONArray getForestTasks(String queryParam) {
         String response = AntForestRpcCall.queryTaskListV2(queryParam);
-        try {
-            return MyUtils.newJSONObject(response).getJSONArray("forestTasksNew");
-        } catch (JSONException e) {
-            Log.error("获取任务列表失败" + e);
-            return null;
-        }
+        return MyUtils.newJSONObject(response).optJSONArray("forestTasksNew");
     }
     
     private static List<String> handleForestTasks(JSONArray forestTasks, String taskType, String taskName) {

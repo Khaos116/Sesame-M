@@ -77,7 +77,10 @@ public class FriendWatch extends IdAndName {
             Iterator<String> ids = joFriendWatch.keys();
             while (ids.hasNext()) {
                 String id = ids.next();
-                joSingle = joFriendWatch.getJSONObject(id);
+                joSingle = joFriendWatch.optJSONObject(id);
+                if (joSingle == null) {
+                    continue;
+                }
                 joSingle.put("name", joSingle.optString("name"));
                 joSingle.put("allGet", joSingle.optInt("allGet", 0) + joSingle.optInt("weekGet", 0));
                 joSingle.put("weekGet", 0);

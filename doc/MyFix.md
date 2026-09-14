@@ -4,6 +4,17 @@
 
 ## 变更记录
 
+### 2026-09-14：`Privilege.java`/`FriendWatch.java` 收尾修复，全仓库 `.get*()` → `.opt*()` 转换任务完成
+
+全仓库最终扫尾审计（`grep -rn` 排除注释行）额外发现两处此前遗漏的调用点：
+
+- `Privilege.java`：`getForestTasks` 原来包一层 `try { return ....getJSONArray("forestTasksNew"); } catch (JSONException e) { ...; return null; }`，内部已经是 `optJSONArray`（返回 null 语义与 catch 分支等价），直接去掉整个 try/catch，改为一行直接 `return`。顺带清理了该文件里一段此前遗留的重复 import 块（`JSONArray`/`JSONObject`/`JSONException` 各多导入一次），因为 `JSONException` 不再使用一并删除。
+- `FriendWatch.java`：`updateDay()` 里 `joFriendWatch.getJSONObject(id)` 改 `optJSONObject(id)`，加 `if (joSingle == null) { continue; }` 空指针防护。
+
+之后做了一次全仓库地毯式复查：`grep -rn` 匹配 `.get(String|Int|Long|Double|Boolean|JSONObject|JSONArray)\(`，逐条人工分类剩余匹配，确认全部属于范围外（`android.os.Bundle`、`Context.getString(int)` 资源串、`SharedPreferences.getBoolean/getString`、项目自有 `RuntimeInfo.getLong(...)`）或纯注释/已确认的死代码块，**没有任何遗漏的可执行 `org.json.JSONObject`/`JSONArray` 裸 `.get*()` 调用**。
+
+至此，本次跨会话的全仓库 `.get*()` → `.opt*()` + 空指针防护任务（原始统计约 1986 处调用点）全部完成，覆盖 AntFarm/AntForestV2/AntSports/AntStall/AntMember/AntOcean/AntOrchard/AntDodo/ProtectEcology/AntBookRead/OmegakoiTown/ForestChouChouLe/GreenFinance/AncientTree/AntInsurance/ExtensionsHandle 共 16 个主文件，以及 FishTask/ReadingDada/BaseTaskRpcCall/AntSportsRpcCall/AreaCode/MessageUtil/WhackMole/BaseModel/JsonUtil/RuntimeInfo/Privilege/FriendWatch 等零散小文件。编译通过（`compileNormalDebugJavaWithJavac` 全程 exit 0）；**全程仅做了编译期验证，未在设备上做过任何运行时测试**，合并/使用前建议实机走一遍关键流程（森林/庄园/保护地/新村文旅等常用任务）。
+
 ### 2026-09-14：`ExtensionsHandle.java` `.get*()` → `.opt*()` + 空指针防护，第十六个文件全部完成
 
 第十六个文件（248 行，原~23 处调用点，一次会话内全部转完）。覆盖 `getNewTreeItems`/`queryTreeForExchange`/`getTreeItems`/`getTreeCurrentBudget`/`queryAreaTrees`/`getUnlockTreeItems`（新树上苗提醒、树苗余量查询、未解锁地区/项目提醒等扩展信息展示功能）。
