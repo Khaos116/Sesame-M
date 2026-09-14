@@ -515,14 +515,14 @@ public class AntOrchard extends ModelTask {
                 return false;
             }
 
-            JSONObject taobaoData = MyUtils.newJSONObject(jo.getString("taobaoData"));
-            int cost = taobaoData.getInt("currentCost");
+            JSONObject taobaoData = MyUtils.newJSONObject(jo.optString("taobaoData"));
+            int cost = taobaoData.optInt("currentCost");
             Log.farm("芭芭农场🌳" + scene.nickname() + "施肥#消耗[" + cost + "g肥料]");
 
             // 检查施肥进度
             if (taobaoData.has("currentStage")) {
-                JSONObject stage = taobaoData.getJSONObject("currentStage");
-                int newProgress = stage.optInt("totalValue", fertilizerProgress);
+                JSONObject stage = taobaoData.optJSONObject("currentStage");
+                int newProgress = stage != null ? stage.optInt("totalValue", fertilizerProgress) : fertilizerProgress;
                 if (newProgress - fertilizerProgress <= 1) {
                     Log.record("施肥只加0.01%进度今日停止施肥！");
                     Status.flagToday("spreadManureLimit:" + sceneName, userId);
@@ -581,10 +581,13 @@ public class AntOrchard extends ModelTask {
                     if (!MessageUtil.checkResultCode(TAG, mainAccount)) {
                         return false;
                     }
-                    JSONObject accountInfo = mainAccount.getJSONObject("farmMainAccountInfo");
-                    int happyPoint = Integer.parseInt(accountInfo.getString("happyPoint"));
-                    int wateringCost = accountInfo.getInt("wateringCost");
-                    int leftTimes = accountInfo.getInt("wateringLeftTimes");
+                    JSONObject accountInfo = mainAccount.optJSONObject("farmMainAccountInfo");
+                    if (accountInfo == null) {
+                        return false;
+                    }
+                    int happyPoint = Integer.parseInt(accountInfo.optString("happyPoint", "0"));
+                    int wateringCost = accountInfo.optInt("wateringCost");
+                    int leftTimes = accountInfo.optInt("wateringLeftTimes");
 
                     return happyPoint >= wateringCost && (200 - leftTimes) < limit;
 
@@ -594,9 +597,13 @@ public class AntOrchard extends ModelTask {
                     if (!MessageUtil.checkResultCode(TAG, yebProgress) || !yebProgress.has("yebScenePlantInfo")) {
                         return false;
                     }
-                    JSONObject progressInfo = yebProgress.getJSONObject("yebScenePlantInfo").getJSONObject("plantProgressInfo");
-                    int currentProgress = progressInfo.getInt("spreadProgress");
-                    int dailyLimit = progressInfo.getInt("dailySpreadLimit");
+                    JSONObject yebScenePlantInfo = yebProgress.optJSONObject("yebScenePlantInfo");
+                    JSONObject progressInfo = yebScenePlantInfo != null ? yebScenePlantInfo.optJSONObject("plantProgressInfo") : null;
+                    if (progressInfo == null) {
+                        return false;
+                    }
+                    int currentProgress = progressInfo.optInt("spreadProgress");
+                    int dailyLimit = progressInfo.optInt("dailySpreadLimit");
 
                     return currentProgress < limit && limit < dailyLimit;
 
@@ -632,13 +639,13 @@ public class AntOrchard extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntOrchardRpcCall.orchardIndex());
             if (MessageUtil.checkResultCode(TAG, jo) && jo.has("spreadManureActivity")) {
-                JSONObject activity = jo.getJSONObject("spreadManureActivity");
-                JSONObject stage = activity.getJSONObject("spreadManureStage");
-                if ("FINISHED".equals(stage.getString("status"))) {
-                    String result = AntOrchardRpcCall.receiveTaskAward(stage.getString("sceneCode"), stage.getString("taskType"));
+                JSONObject activity = jo.optJSONObject("spreadManureActivity");
+                JSONObject stage = activity != null ? activity.optJSONObject("spreadManureStage") : null;
+                if (stage != null && "FINISHED".equals(stage.optString("status"))) {
+                    String result = AntOrchardRpcCall.receiveTaskAward(stage.optString("sceneCode"), stage.optString("taskType"));
                     JSONObject awardJo = MyUtils.newJSONObject(result);
                     if (MessageUtil.checkResultCode(TAG, awardJo)) {
-                        int awardCount = awardJo.getInt("incAwardCount");
+                        int awardCount = awardJo.optInt("incAwardCount");
                         Log.farm("芭芭农场🎁丰收礼包#获得[" + awardCount + "g肥料]");
                     }
                 }
