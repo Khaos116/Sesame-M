@@ -189,7 +189,7 @@ public class ProtectEcology extends ModelTask {
     
     private static void cooperateWater() {
         try {
-            JSONObject jo = new JSONObject(CooperateRpcCall.queryUserCooperatePlantList());
+            JSONObject jo = MyUtils.newJSONObject(CooperateRpcCall.queryUserCooperatePlantList());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -210,7 +210,7 @@ public class ProtectEcology extends ModelTask {
     
     private static void queryCooperatePlant(String userId, String cooperationId) {
         try {
-            JSONObject jo = new JSONObject(CooperateRpcCall.queryCooperatePlant(cooperationId));
+            JSONObject jo = MyUtils.newJSONObject(CooperateRpcCall.queryCooperatePlant(cooperationId));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -234,7 +234,7 @@ public class ProtectEcology extends ModelTask {
     
     private static Boolean cooperateWater(String userId, String cooperationId, int energyCount, String name) {
         try {
-            JSONObject jo = new JSONObject(CooperateRpcCall.cooperateWater(userId, cooperationId, energyCount));
+            JSONObject jo = MyUtils.newJSONObject(CooperateRpcCall.cooperateWater(userId, cooperationId, energyCount));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Log.forest("合种浇水🚿[" + name + "]#" + jo.getString("barrageText"));
                 Toast.show("合种浇水🚿[" + name + "]#" + jo.getString("barrageText"));
@@ -265,7 +265,7 @@ public class ProtectEcology extends ModelTask {
     
     private static int getEnergySummation(String bizType, String cooperationId, String userId) {
         try {
-            JSONObject jo = new JSONObject(CooperateRpcCall.queryCooperateRank(bizType, cooperationId));
+            JSONObject jo = MyUtils.newJSONObject(CooperateRpcCall.queryCooperateRank(bizType, cooperationId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 JSONArray cooperateRankInfos = jo.getJSONArray("cooperateRankInfos");
                 for (int i = 0; i < cooperateRankInfos.length(); i++) {
@@ -348,7 +348,7 @@ public class ProtectEcology extends ModelTask {
     
     public static JSONArray queryTreeItemsForExchange(String applyActions, String itemTypes) {
         try {
-            JSONObject jo = new JSONObject(ProtectTreeRpcCall.queryTreeItemsForExchange(applyActions, itemTypes));
+            JSONObject jo = MyUtils.newJSONObject(ProtectTreeRpcCall.queryTreeItemsForExchange(applyActions, itemTypes));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 return jo.getJSONArray("treeItems");
             }
@@ -363,7 +363,7 @@ public class ProtectEcology extends ModelTask {
     private static ExchangeableTree queryTreeForExchange(int projectId) {
         ExchangeableTree exchangeableTree = new ExchangeableTree(projectId);
         try {
-            JSONObject jo = new JSONObject(ProtectTreeRpcCall.queryTreeForExchange(projectId));
+            JSONObject jo = MyUtils.newJSONObject(ProtectTreeRpcCall.queryTreeForExchange(projectId));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return exchangeableTree;
             }
@@ -409,7 +409,7 @@ public class ProtectEcology extends ModelTask {
     
     private static Boolean exchangeTree(int projectId, String projectName) {
         try {
-            JSONObject jo = new JSONObject(ProtectTreeRpcCall.exchangeTree(projectId));
+            JSONObject jo = MyUtils.newJSONObject(ProtectTreeRpcCall.exchangeTree(projectId));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
@@ -434,7 +434,7 @@ public class ProtectEcology extends ModelTask {
     
     private static void applyGoldAnimalCert(int projectId) {
         try {
-            JSONObject jo = new JSONObject(ProtectTreeRpcCall.applyGoldAnimalCert(projectId));
+            JSONObject jo = MyUtils.newJSONObject(ProtectTreeRpcCall.applyGoldAnimalCert(projectId));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -485,7 +485,7 @@ public class ProtectEcology extends ModelTask {
         try {
             JSONObject paramMap = new JSONObject();
             paramMap.put("donateQueryActionParam", "marathonWater");
-            JSONObject jo = new JSONObject(ProtectTreeRpcCall.doRubickActivity("marathonHome", activityId, paramMap));
+            JSONObject jo = MyUtils.newJSONObject(ProtectTreeRpcCall.doRubickActivity("marathonHome", activityId, paramMap));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -525,7 +525,7 @@ public class ProtectEcology extends ModelTask {
         try {
             JSONObject paramMap = new JSONObject();
             paramMap.put("donateQueryActionParam", "carbonWater");
-            JSONObject jo = new JSONObject(ProtectTreeRpcCall.doRubickActivity("carbonHome", activityId, paramMap));
+            JSONObject jo = MyUtils.newJSONObject(ProtectTreeRpcCall.doRubickActivity("carbonHome", activityId, paramMap));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -566,7 +566,7 @@ public class ProtectEcology extends ModelTask {
             JSONObject paramMap = new JSONObject();
             paramMap.put("donateNum", donateNum);
             paramMap.put("incrNum", donateNum);
-            JSONObject jo = new JSONObject(ProtectTreeRpcCall.doRubickActivity(actionCode, activityId, paramMap));
+            JSONObject jo = MyUtils.newJSONObject(ProtectTreeRpcCall.doRubickActivity(actionCode, activityId, paramMap));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
@@ -585,7 +585,7 @@ public class ProtectEcology extends ModelTask {
     
     private static JSONArray queryCultivationList() {
         try {
-            JSONObject jo = new JSONObject(ProtectOceanRpcCall.queryCultivationList());
+            JSONObject jo = MyUtils.newJSONObject(ProtectOceanRpcCall.queryCultivationList());
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 return jo.getJSONArray("cultivationItemVOList");
             }
@@ -705,7 +705,7 @@ public class ProtectEcology extends ModelTask {
     
     private static Boolean queryCultivationDetail(String cultivationCode, String projectCode) {
         try {
-            JSONObject jo = new JSONObject(ProtectOceanRpcCall.queryCultivationDetail(cultivationCode, projectCode));
+            JSONObject jo = MyUtils.newJSONObject(ProtectOceanRpcCall.queryCultivationDetail(cultivationCode, projectCode));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
@@ -733,7 +733,7 @@ public class ProtectEcology extends ModelTask {
     
     private static Boolean oceanExchangeTree(String cultivationCode, String projectCode, String cultivationName) {
         try {
-            JSONObject jo = new JSONObject(ProtectOceanRpcCall.oceanExchangeTree(cultivationCode, projectCode));
+            JSONObject jo = MyUtils.newJSONObject(ProtectOceanRpcCall.oceanExchangeTree(cultivationCode, projectCode));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }

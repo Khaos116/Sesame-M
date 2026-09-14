@@ -245,7 +245,7 @@ public class FishTask extends ModelTask {
 
     private boolean isSuccess(Object obj) {
         try {
-            JSONObject jSONObject = obj instanceof String ? new JSONObject((String) obj) : (JSONObject) obj;
+            JSONObject jSONObject = obj instanceof String ? MyUtils.newJSONObject((String) obj) : (JSONObject) obj;
             if (jSONObject == null) {
                 return false;
             }
@@ -335,7 +335,7 @@ public class FishTask extends ModelTask {
             if (response == null) {
                 return;
             }
-            JSONObject jo = new JSONObject(response);
+            JSONObject jo = MyUtils.newJSONObject(response);
             if (isSuccess(jo)) {
                 JSONObject signTaskInfo = jo.optJSONObject("signTaskInfo");
                 if (signTaskInfo != null && signTaskInfo.optBoolean("signed", false)) {
@@ -357,7 +357,7 @@ public class FishTask extends ModelTask {
     private void listTask() {
         try {
             String response = requestString(API_LIST_TASK, buildBaseRequest(SCENE_GAME_CENTER));
-            JSONArray taskList = response == null ? null : new JSONObject(response).optJSONArray("taskList");
+            JSONArray taskList = response == null ? null : MyUtils.newJSONObject(response).optJSONArray("taskList");
             if (taskList == null) {
                 return;
             }
@@ -602,7 +602,7 @@ public class FishTask extends ModelTask {
             if (result == null) {
                 return "";
             }
-            JSONObject json = new JSONObject(result);
+            JSONObject json = MyUtils.newJSONObject(result);
             JSONArray taskList = json.optJSONArray("taskList");
             if (taskList == null) {
                 return "";
@@ -761,7 +761,7 @@ public class FishTask extends ModelTask {
                 return null;
             }
 
-            JSONObject json = new JSONObject(result);
+            JSONObject json = MyUtils.newJSONObject(result);
             JSONArray taskList = json.optJSONArray("taskList");
             if (taskList == null) {
                 return null;
@@ -810,7 +810,7 @@ public class FishTask extends ModelTask {
             String result = requestString(API_FINISH_TASK, request);
 
             if (result != null && isSuccess(result)) {
-                JSONObject jo = new JSONObject(result);
+                JSONObject jo = MyUtils.newJSONObject(result);
                 JSONObject finishAwardResultVO = jo.optJSONObject("finishAwardResultVO");
                 if (finishAwardResultVO != null) {
                     int deltaAwardCount = finishAwardResultVO.optInt("deltaAwardCount", 0);
@@ -821,7 +821,7 @@ public class FishTask extends ModelTask {
             } else {
                 if (result != null) {
                     try {
-                        JSONObject errorJson = new JSONObject(result);
+                        JSONObject errorJson = MyUtils.newJSONObject(result);
                         String code = errorJson.optString("code", "");
                         String desc = errorJson.optString("desc", errorJson.optString("memo", ""));
                         Log.record("鱼塘❌finishTask失败[" + getTaskDisplayName(taskId) + "]#code[" + code + "]#desc[" + desc + "]");
@@ -852,7 +852,7 @@ public class FishTask extends ModelTask {
             String result = requestString(API_FINISH_TASK, request);
 
             if (result != null && isSuccess(result)) {
-                JSONObject jo = new JSONObject(result);
+                JSONObject jo = MyUtils.newJSONObject(result);
                 JSONObject finishAwardResultVO = jo.optJSONObject("finishAwardResultVO");
                 if (finishAwardResultVO != null) {
                     int deltaAwardCount = finishAwardResultVO.optInt("deltaAwardCount", 0);
@@ -864,7 +864,7 @@ public class FishTask extends ModelTask {
             } else {
                 if (result != null) {
                     try {
-                        JSONObject errorJson = new JSONObject(result);
+                        JSONObject errorJson = MyUtils.newJSONObject(result);
                         String code = errorJson.optString("code", "");
                         String desc = errorJson.optString("desc", errorJson.optString("memo", ""));
                         Log.record("鱼塘❌finishTask失败[" + getTaskDisplayName(taskId) + "]#code[" + code + "]#desc[" + desc + "]");
@@ -904,7 +904,7 @@ public class FishTask extends ModelTask {
                 return false;
             }
 
-            JSONObject jo = new JSONObject(response);
+            JSONObject jo = MyUtils.newJSONObject(response);
             String resultCode = jo.optString("resultCode");
 
             if ("TASK_NOT_FINISHED".equals(resultCode)) {
@@ -956,7 +956,7 @@ public class FishTask extends ModelTask {
                 return;
             }
 
-            JSONObject queryJson = new JSONObject(queryResult);
+            JSONObject queryJson = MyUtils.newJSONObject(queryResult);
             JSONArray activitiesArray = queryJson.optJSONArray("subplotsActivityList");
 
             if (activitiesArray == null || activitiesArray.length() == 0) {
@@ -987,13 +987,13 @@ public class FishTask extends ModelTask {
                         );
                         String triggerResult = requestString(API_TRIGGER_SUBPLOTS, triggerRequest);
                         if (triggerResult != null && isSuccess(triggerResult)) {
-                            JSONObject triggerJson = new JSONObject(triggerResult);
+                            JSONObject triggerJson = MyUtils.newJSONObject(triggerResult);
                             JSONObject triggerActivity = triggerJson.optJSONObject("triggerSubplotsActivity");
                             if (triggerActivity != null) {
                                 String extend = triggerActivity.optString("extend", "");
                                 if (!extend.isEmpty()) {
                                     try {
-                                        JSONObject extendJson = new JSONObject(extend);
+                                        JSONObject extendJson = MyUtils.newJSONObject(extend);
                                         String awardCount = extendJson.optString("awardCount", "0");
                                         String awardType = extendJson.optString("awardType", "");
                                         Log.other("鱼塘🎁领取[每日宝箱]#获得[" + toAwardChineseName(awardType) + "*" + awardCount + "]");
@@ -1016,7 +1016,7 @@ public class FishTask extends ModelTask {
                     String extendStr = activity.optString("extend", "");
                     if ("FINISHED".equals(status)) {
                         try {
-                            JSONObject extendJson = new JSONObject(extendStr);
+                            JSONObject extendJson = MyUtils.newJSONObject(extendStr);
                             String taskType = extendJson.optString("taskType", "");
                             String awardCount = extendJson.optString("awardCount", "0");
                             String awardType = extendJson.optString("awardType", "");
@@ -1027,13 +1027,13 @@ public class FishTask extends ModelTask {
                             String triggerResult = requestString(API_TRIGGER_SUBPLOTS, triggerRequest);
                             if (triggerResult != null && isSuccess(triggerResult)) {
                                 Log.other("鱼塘🎣领取[钓鱼活动奖励]#成功");
-                                JSONObject triggerJson = new JSONObject(triggerResult);
+                                JSONObject triggerJson = MyUtils.newJSONObject(triggerResult);
                                 JSONObject triggerActivity = triggerJson.optJSONObject("triggerSubplotsActivity");
                                 if (triggerActivity != null) {
                                     String adExtend = triggerActivity.optString("extend", "");
                                     if (!adExtend.isEmpty()) {
                                         try {
-                                            JSONObject adExtendJson = new JSONObject(adExtend);
+                                            JSONObject adExtendJson = MyUtils.newJSONObject(adExtend);
                                             JSONObject adInfo = adExtendJson.optJSONObject("adInfo");
                                             if (adInfo != null) {
                                                 String adBizNo = adInfo.optString("adBizNo", "");
@@ -1063,7 +1063,7 @@ public class FishTask extends ModelTask {
                     } else if ("TODO".equals(status)) {
                         if (!extendStr.isEmpty()) {
                             try {
-                                JSONObject extendJson = new JSONObject(extendStr);
+                                JSONObject extendJson = MyUtils.newJSONObject(extendStr);
                                 String taskType = extendJson.optString("taskType", "");
                                 int leftFishTimes = extendJson.optInt("leftFishTimes", -1);
                                 Log.other(String.format("鱼塘🎣钓鱼活动[%s]#剩余%d次", taskType, leftFishTimes));
@@ -1129,7 +1129,7 @@ public class FishTask extends ModelTask {
             String result = requestString(API_RECEIVE_AWARD, request);
 
             if (result != null && isSuccess(result)) {
-                JSONObject json = new JSONObject(result);
+                JSONObject json = MyUtils.newJSONObject(result);
                 JSONObject awardInfo = json.optJSONObject("awardInfo");
                 if (awardInfo != null) {
                     int rodCount = awardInfo.optInt("rodCount", 0);
@@ -1157,7 +1157,7 @@ public class FishTask extends ModelTask {
                 return;
             }
 
-            JSONObject queryJson = new JSONObject(queryResult);
+            JSONObject queryJson = MyUtils.newJSONObject(queryResult);
             JSONArray activitiesArray = queryJson.optJSONArray("subplotsActivityList");
 
             if (activitiesArray == null || activitiesArray.length() == 0) {
@@ -1186,13 +1186,13 @@ public class FishTask extends ModelTask {
                         );
                         String triggerResult = requestString(API_TRIGGER_SUBPLOTS, triggerRequest);
                         if (triggerResult != null && isSuccess(triggerResult)) {
-                            JSONObject triggerJson = new JSONObject(triggerResult);
+                            JSONObject triggerJson = MyUtils.newJSONObject(triggerResult);
                             JSONObject triggerActivity = triggerJson.optJSONObject("triggerSubplotsActivity");
                             if (triggerActivity != null) {
                                 String extend = triggerActivity.optString("extend", "");
                                 if (!extend.isEmpty()) {
                                     try {
-                                        JSONObject extendJson = new JSONObject(extend);
+                                        JSONObject extendJson = MyUtils.newJSONObject(extend);
                                         String awardCount = extendJson.optString("awardCount", "0");
                                         String awardType = extendJson.optString("awardType", "");
                                         Log.other("鱼塘🎁领取[每日宝箱]#获得[" + toAwardChineseName(awardType) + "*" + awardCount + "]");
@@ -1242,7 +1242,7 @@ public class FishTask extends ModelTask {
                 sleep(DELAY_MEDIUM);
                 String syncResult = requestString(API_FISHPOND_SYNC_INDEX, buildRequestWithSyncType(SCENE_GAME_CENTER));
                 if (syncResult != null && isSuccess(syncResult)) {
-                    JSONObject syncJson = new JSONObject(syncResult);
+                    JSONObject syncJson = MyUtils.newJSONObject(syncResult);
                     JSONObject tomorrowRod = syncJson.optJSONObject("tomorrowRod");
                     if (tomorrowRod != null) {
                         int tomorrowRodCount = tomorrowRod.optInt("tomorrowRodCount", 0);
@@ -1275,7 +1275,7 @@ public class FishTask extends ModelTask {
         try {
             String baseRequest = buildBaseRequest(SCENE_GAME_CENTER);
             String response = requestString(API_FISHPOND_INDEX, baseRequest);
-            JSONObject roundInfo = response == null ? null : new JSONObject(response).optJSONObject("roundInfo");
+            JSONObject roundInfo = response == null ? null : MyUtils.newJSONObject(response).optJSONObject("roundInfo");
             if (roundInfo != null && roundInfo.optBoolean("canExchange", false)) {
                 Log.other("鱼塘💰兑换奖励");
                 String exchangeResponse = requestString(API_EXCHANGE_REWARD, baseRequest);
@@ -1284,7 +1284,7 @@ public class FishTask extends ModelTask {
                     Log.other("鱼塘❌兑换失败#接口无返回");
                     return false;
                 }
-                JSONObject jo = new JSONObject(exchangeResponse);
+                JSONObject jo = MyUtils.newJSONObject(exchangeResponse);
                 boolean success = isSuccess(jo);
                 if (success) {
                     Log.other("鱼塘💰兑换成功");
@@ -1310,7 +1310,7 @@ public class FishTask extends ModelTask {
         try {
             String response = requestString(API_FISHPOND_SYNC_INDEX, buildRequestWithSyncType(SCENE_GAME_CENTER));
             if (isSuccess(response)) {
-                JSONObject jo = new JSONObject(response);
+                JSONObject jo = MyUtils.newJSONObject(response);
                 lastRodCount = jo.optInt("rodSumCount", 0);
                 JSONObject roundInfo = jo.optJSONObject("roundInfo");
                 JSONObject fishAssetInfo = roundInfo == null ? null : roundInfo.optJSONObject("fishAssetInfo");
@@ -1410,7 +1410,7 @@ public class FishTask extends ModelTask {
             String result = requestString(API_FINISH_TASK, requestData);
 
             if (isSuccess(result)) {
-                JSONObject jo = new JSONObject(result);
+                JSONObject jo = MyUtils.newJSONObject(result);
                 JSONObject finishAwardResultVO = jo.optJSONObject("finishAwardResultVO");
                 if (finishAwardResultVO != null) {
                     int deltaAwardCount = finishAwardResultVO.optInt("deltaAwardCount", 0);
@@ -1444,7 +1444,7 @@ public class FishTask extends ModelTask {
                     Log.other("鱼塘❌收杆定位失败");
                     return null;
                 }
-                JSONObject jo = new JSONObject(response);
+                JSONObject jo = MyUtils.newJSONObject(response);
                 JSONObject angleResultInfo = jo.optJSONObject("angleResultInfo");
                 if (angleResultInfo == null) {
                     Log.other("鱼塘❌收杆数据异常");
@@ -1536,7 +1536,7 @@ public class FishTask extends ModelTask {
         try {
             String result = requestString(API_QUERY_SUBPLOTS, buildBaseRequest(SCENE_GAME_CENTER));
             if (result != null && isSuccess(result)) {
-                JSONObject json = new JSONObject(result);
+                JSONObject json = MyUtils.newJSONObject(result);
                 JSONArray activityList = json.optJSONArray("subplotsActivityList");
                 if (activityList != null) {
                     for (int idx = 0; idx < activityList.length(); idx++) {
@@ -1549,7 +1549,7 @@ public class FishTask extends ModelTask {
                             triggerTomorrowRodAward();
                             String syncResult = requestString(API_FISHPOND_SYNC_INDEX, buildRequestWithSyncType(SCENE_GAME_CENTER));
                             if (syncResult != null && isSuccess(syncResult)) {
-                                JSONObject syncJson = new JSONObject(syncResult);
+                                JSONObject syncJson = MyUtils.newJSONObject(syncResult);
                                 lastRodCount = syncJson.optInt("rodSumCount", lastRodCount);
                             }
                             return;
@@ -1569,7 +1569,7 @@ public class FishTask extends ModelTask {
         try {
             JSONObject riskToken;
             try {
-                riskToken = new JSONObject(token);
+                riskToken = MyUtils.newJSONObject(token);
             } catch (Exception invalidToken) {
                 return FishResult.tokenInvalid();
             }
@@ -1579,12 +1579,12 @@ public class FishTask extends ModelTask {
                     .put("source", SOURCE_FARM_POOL).put("version", "20260211.01");
             String response = requestString(API_FISHPOND_ANGLE, new JSONArray().put(args).toString());
             if (!isSuccess(response)) {
-                if ("C21".equals(new JSONObject(response).optString("resultCode"))) {
+                if ("C21".equals(MyUtils.newJSONObject(response).optString("resultCode"))) {
                     return FishResult.tokenInvalid();
                 }
                 return FishResult.fail();
             }
-            JSONObject jo = new JSONObject(response);
+            JSONObject jo = MyUtils.newJSONObject(response);
             lastRodCount = jo.optInt("rodSumCount", 0);
             boolean needRodPositioning = jo.optBoolean("needRodPositioning", false);
             JSONObject angleResultInfo = jo.optJSONObject("angleResultInfo");
@@ -1633,7 +1633,7 @@ public class FishTask extends ModelTask {
             String syncResponse = requestString(API_FISHPOND_SYNC_INDEX, buildRequestWithSyncType(SCENE_GAME_CENTER));
             if (isSuccess(syncResponse)) {
                 try {
-                    JSONObject jo = new JSONObject(syncResponse);
+                    JSONObject jo = MyUtils.newJSONObject(syncResponse);
                     int rodCount = jo.optInt("rodSumCount", 0);
                     JSONObject roundInfo = jo.optJSONObject("roundInfo");
                     JSONObject fishAssetInfo = roundInfo == null ? null : roundInfo.optJSONObject("fishAssetInfo");
@@ -1647,7 +1647,7 @@ public class FishTask extends ModelTask {
                 String syncResponse2 = requestString(API_FISHPOND_SYNC_INDEX, buildRequestWithSyncType(SCENE_GAME_CENTER));
                 try {
                     if (isSuccess(syncResponse2)) {
-                        JSONObject fishActivity = new JSONObject(syncResponse2).optJSONObject("fishActivity");
+                        JSONObject fishActivity = MyUtils.newJSONObject(syncResponse2).optJSONObject("fishActivity");
                         if (fishActivity != null) {
                             int leftFishTimes = fishActivity.optInt("leftFishTimes", -1);
                             if (leftFishTimes == 0 || leftFishTimes == -1) {
@@ -1724,7 +1724,7 @@ public class FishTask extends ModelTask {
             String result = requestString(API_FINISH_TASK, requestData);
 
             if (isSuccess(result)) {
-                JSONObject jo = new JSONObject(result);
+                JSONObject jo = MyUtils.newJSONObject(result);
                 JSONObject finishAwardResultVO = jo.optJSONObject("finishAwardResultVO");
                 if (finishAwardResultVO != null) {
                     int deltaAwardCount = finishAwardResultVO.optInt("deltaAwardCount", 0);
@@ -1750,7 +1750,7 @@ public class FishTask extends ModelTask {
         try {
             String schemaJson = angleAdInfo.optString("schemaJson");
             if (!schemaJson.isEmpty()) {
-                JSONObject schema = new JSONObject(schemaJson);
+                JSONObject schema = MyUtils.newJSONObject(schemaJson);
                 String url = schema.optString("url");
                 if (!url.isEmpty()) {
                     return url;

@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.entity;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -33,7 +35,7 @@ public class WalkPath extends IdAndName {
         list = new ArrayList<>();
         try {
             String result = AntSportsRpcCall.queryThemeList();
-            JSONObject jo = new JSONObject(result);
+            JSONObject jo = MyUtils.newJSONObject(result);
             JSONObject data = jo.optJSONObject("data");
             if (data != null) {
                 JSONArray themeList = data.optJSONArray("themeList");

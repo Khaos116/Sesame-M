@@ -417,7 +417,7 @@ public class AntForestV2 extends ModelTask {
 
             JSONObject selfHomeObject = collectSelfEnergy();
             try {
-                JSONObject friendsObject = new JSONObject(AntForestRpcCall.queryEnergyRanking());
+                JSONObject friendsObject = MyUtils.newJSONObject(AntForestRpcCall.queryEnergyRanking());
                 if (MessageUtil.checkResultCode(TAG, friendsObject)) {
                     collectFriendsEnergy(friendsObject, "ordinary");
                     int pos = 20;
@@ -463,7 +463,7 @@ public class AntForestV2 extends ModelTask {
                                 String friendShowName = UserIdMap.getShowName(wateringBubble.getString("userId"));
                                 switch (bizType) {
                                     case "jiaoshui": {
-                                        // collectEnergy 请求失败/离线时可能返回 null，new JSONObject(null) 会抛异常
+                                        // collectEnergy 请求失败/离线时可能返回 null，MyUtils.newJSONObject(null) 会抛异常
                                         // 被外层 catch 吞掉、中断本轮剩余金球收取，改用 MyUtils.newJSONObject 容错
                                         JSONObject joEnergy = MyUtils.newJSONObject(AntForestRpcCall.collectEnergy(bizType, selfId, wateringBubble.getLong("id")));
                                         if (MessageUtil.checkResultCode("收取[我]的浇水金球", joEnergy)) {
@@ -488,7 +488,7 @@ public class AntForestV2 extends ModelTask {
                                         break;
                                     }
                                     case "fuhuo": {
-                                        JSONObject joEnergy = new JSONObject(AntForestRpcCall.collectRebornEnergy());
+                                        JSONObject joEnergy = MyUtils.newJSONObject(AntForestRpcCall.collectRebornEnergy());
                                         if (MessageUtil.checkResultCode("收取[我]的复活金球", joEnergy)) {
                                             collected = joEnergy.getInt("energy");
                                             String msg = "收取金球🍯复活[" + collected + "g]";
@@ -534,7 +534,7 @@ public class AntForestV2 extends ModelTask {
                                 String giveConfigId = jo.getString("giveConfigId");
                                 String giveId = jo.getString("giveId");
                                 String propName = jo.getJSONObject("propConfig").getString("propName");
-                                jo = new JSONObject(AntForestRpcCall.collectProp(giveConfigId, giveId));
+                                jo = MyUtils.newJSONObject(AntForestRpcCall.collectProp(giveConfigId, giveId));
                                 if (MessageUtil.checkSuccess(TAG, jo)) {
                                     Log.forest("领取道具🎭[" + propName + "]");
                                 }
@@ -563,14 +563,14 @@ public class AntForestV2 extends ModelTask {
                         } else {
                             canConsumeAnimalProp = false;
                         }
-                        JSONObject extInfo = new JSONObject(jo.getString("extInfo"));
+                        JSONObject extInfo = MyUtils.newJSONObject(jo.getString("extInfo"));
                         int energy = extInfo.optInt("energy", 0);
                         if (energy > 0 && !extInfo.optBoolean("isCollected")) {
                             String propId = jo.getString("propId");
                             String propType = jo.getString("propType");
                             String shortDay = extInfo.getString("shortDay");
                             String animalName = extInfo.getJSONObject("animal").getString("name");
-                            jo = new JSONObject(AntForestRpcCall.collectAnimalRobEnergy(propId, propType, shortDay));
+                            jo = MyUtils.newJSONObject(AntForestRpcCall.collectAnimalRobEnergy(propId, propType, shortDay));
                             if (MessageUtil.checkResultCode(TAG, jo)) {
                                 Log.forest("动物能量🦩派遣" + animalName + "收取能量[" + energy + "g]");
                             }
@@ -720,7 +720,7 @@ public class AntForestV2 extends ModelTask {
 
     private void ForestEnergyInfo() {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryHomePage());
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryHomePage());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -739,7 +739,7 @@ public class AntForestV2 extends ModelTask {
             JSONObject userVitalityInfo = jo.getJSONObject("userVitalityInfo");
             int totalVitalityAmount = userVitalityInfo.optInt("totalVitalityAmount", 0);
 
-            jo = new JSONObject(AntForestRpcCall.queryDynamicsIndex());
+            jo = MyUtils.newJSONObject(AntForestRpcCall.queryDynamicsIndex());
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
@@ -751,7 +751,7 @@ public class AntForestV2 extends ModelTask {
             int robbedTotal = todayEnergySummary.optInt("robbedTotal", 0);
 
             //获取能量日榜top
-            jo = new JSONObject(AntForestRpcCall.queryTopEnergyRanking("energyRank", "day"));
+            jo = MyUtils.newJSONObject(AntForestRpcCall.queryTopEnergyRanking("energyRank", "day"));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -763,7 +763,7 @@ public class AntForestV2 extends ModelTask {
             int dayrank = myself.optInt("rank", 0);
 
             //获取能量周榜top
-            jo = new JSONObject(AntForestRpcCall.queryTopEnergyRanking("energyRank", "week"));
+            jo = MyUtils.newJSONObject(AntForestRpcCall.queryTopEnergyRanking("energyRank", "week"));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -775,7 +775,7 @@ public class AntForestV2 extends ModelTask {
             int weekrank = myself.optInt("rank", 0);
 
             //获取能量总榜top
-            jo = new JSONObject(AntForestRpcCall.queryTopEnergyRanking("energyRank", "total"));
+            jo = MyUtils.newJSONObject(AntForestRpcCall.queryTopEnergyRanking("energyRank", "total"));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -790,7 +790,7 @@ public class AntForestV2 extends ModelTask {
             String dayenergySummationtop3 = "偷我日榜top3:";
             String userId;
             int energySummation;
-            jo = new JSONObject(AntForestRpcCall.queryTopEnergyRanking("robRank", "day"));
+            jo = MyUtils.newJSONObject(AntForestRpcCall.queryTopEnergyRanking("robRank", "day"));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -811,7 +811,7 @@ public class AntForestV2 extends ModelTask {
 
             //获取偷我周榜top
             String weekenergySummationtop3 = "偷我周榜top3:";
-            jo = new JSONObject(AntForestRpcCall.queryTopEnergyRanking("robRank", "week"));
+            jo = MyUtils.newJSONObject(AntForestRpcCall.queryTopEnergyRanking("robRank", "week"));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -844,7 +844,7 @@ public class AntForestV2 extends ModelTask {
 
     private void collectPKEnergy() {
         try {
-            JSONObject pkObject = new JSONObject(AntForestRpcCall.queryTopEnergyChallengeRanking());
+            JSONObject pkObject = MyUtils.newJSONObject(AntForestRpcCall.queryTopEnergyChallengeRanking());
             if (!MessageUtil.checkResultCode(TAG + "获取PK排行榜失败:", pkObject)) {
                 Log.error("获取PK排行榜失败: " + pkObject.optString("resultDesc"));
             } else {
@@ -894,7 +894,7 @@ public class AntForestV2 extends ModelTask {
         JSONObject userHomeObject = null;
         try {
             long start = System.currentTimeMillis();
-            userHomeObject = new JSONObject(AntForestRpcCall.queryHomePage());
+            userHomeObject = MyUtils.newJSONObject(AntForestRpcCall.queryHomePage());
             long end = System.currentTimeMillis();
             long serverTime = userHomeObject.getLong("now");
             int offsetTime = offsetTimeMath.nextInteger((int) ((start + end) / 2 - serverTime));
@@ -930,7 +930,7 @@ public class AntForestV2 extends ModelTask {
         JSONObject userHomeObject = null;
         try {
             long start = System.currentTimeMillis();
-            userHomeObject = new JSONObject(AntForestRpcCall.queryFriendHomePage(userId));
+            userHomeObject = MyUtils.newJSONObject(AntForestRpcCall.queryFriendHomePage(userId));
             long end = System.currentTimeMillis();
             long serverTime = userHomeObject.getLong("now");
             int offsetTime = offsetTimeMath.nextInteger((int) ((start + end) / 2 - serverTime));
@@ -1115,7 +1115,7 @@ public class AntForestV2 extends ModelTask {
                     }
                 }
                 //兼容组队模式
-                JSONObject selfHomeObject = new JSONObject(AntForestRpcCall.queryHomePage());
+                JSONObject selfHomeObject = MyUtils.newJSONObject(AntForestRpcCall.queryHomePage());
                 //不是自己或者是自己不在组队模式全收的情况
                 //if (batchRobEnergy.getValue() && (!isSelf || (CollectSelfEnergyType.getValue() == CollectSelfType.ALL && !isTeam(selfHomeObject)))) {
                 //不在组队模式全收的情况
@@ -1157,7 +1157,7 @@ public class AntForestV2 extends ModelTask {
             if (hasErrorWait) {
                 return;
             }
-            collectFriendsEnergy(new JSONObject(AntForestRpcCall.fillUserRobFlag(new JSONArray(idList).toString())), getType);
+            collectFriendsEnergy(MyUtils.newJSONObject(AntForestRpcCall.fillUserRobFlag(new JSONArray(idList).toString())), getType);
         } catch (Exception e) {
             Log.printStackTrace(e);
         }
@@ -1253,7 +1253,7 @@ public class AntForestV2 extends ModelTask {
                             JSONObject giftBox = giftBoxList.getJSONObject(ii);
                             String giftBoxId = giftBox.getString("giftBoxId");
                             String title = giftBox.getString("title");
-                            JSONObject giftBoxResult = new JSONObject(AntForestRpcCall.collectFriendGiftBox(giftBoxId, userId));
+                            JSONObject giftBoxResult = MyUtils.newJSONObject(AntForestRpcCall.collectFriendGiftBox(giftBoxId, userId));
                             if (!MessageUtil.checkResultCode(TAG, giftBoxResult)) {
                                 continue;
                             }
@@ -1296,7 +1296,7 @@ public class AntForestV2 extends ModelTask {
                         if (fullEnergy < helpFriendCollectListLimit.getValue()) {
                             continue;
                         }
-                        JSONObject joProtect = new JSONObject(AntForestRpcCall.protectBubble(userId));
+                        JSONObject joProtect = MyUtils.newJSONObject(AntForestRpcCall.protectBubble(userId));
                         if (!MessageUtil.checkResultCode(TAG, joProtect)) {
                             continue;
                         }
@@ -1380,7 +1380,7 @@ public class AntForestV2 extends ModelTask {
                     }
                     return;
                 }
-                JSONObject jo = new JSONObject(rpcEntity.getResponseString());
+                JSONObject jo = MyUtils.newJSONObject(rpcEntity.getResponseString());
                 String resultCode = jo.optString("resultCode");
                 if (!"SUCCESS".equalsIgnoreCase(resultCode)) {
                     if ("PARAM_ILLEGAL2".equals(resultCode)) {
@@ -1508,7 +1508,7 @@ public class AntForestV2 extends ModelTask {
     }
 
     private void updateUsingPropsEndTime() throws JSONException {
-        JSONObject joHomePage = new JSONObject(AntForestRpcCall.queryHomePage());
+        JSONObject joHomePage = MyUtils.newJSONObject(AntForestRpcCall.queryHomePage());
         TimeUtil.sleep(100);
         updateUsingPropsEndTime(joHomePage);
     }
@@ -1542,7 +1542,7 @@ public class AntForestV2 extends ModelTask {
             return;
         }
         try {
-            JSONObject jo = new JSONObject(extInfo);
+            JSONObject jo = MyUtils.newJSONObject(extInfo);
             double leftEnergy = Double.parseDouble(jo.optString("leftEnergy", "0"));
             if (leftEnergy > collectRobExpandEnergy.getValue() || (Objects.equals(jo.optString("overLimitToday", "false"), "true") && leftEnergy > 0)) {
                 collectRobExpandEnergy(propId, propType);
@@ -1555,7 +1555,7 @@ public class AntForestV2 extends ModelTask {
 
     private void collectRobExpandEnergy(String propId, String propType) {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.collectRobExpandEnergy(propId, propType));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.collectRobExpandEnergy(propId, propType));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 int collectEnergy = jo.optInt("collectEnergy");
                 Log.forest("额外能量🎄收取[" + collectEnergy + "g]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
@@ -1570,7 +1570,7 @@ public class AntForestV2 extends ModelTask {
 
     private void queryForestEnergy(String scene) {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryForestEnergy(scene));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryForestEnergy(scene));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -1596,7 +1596,7 @@ public class AntForestV2 extends ModelTask {
     private JSONArray produceForestEnergy(String scene) {
         JSONArray energyGeneratedList = new JSONArray();
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.produceForestEnergy(scene));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.produceForestEnergy(scene));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 jo = jo.getJSONObject("data").getJSONObject("response");
                 energyGeneratedList = jo.getJSONArray("energyGeneratedList");
@@ -1615,7 +1615,7 @@ public class AntForestV2 extends ModelTask {
 
     private Boolean harvestForestEnergy(String scene, JSONArray bubbles) {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.harvestForestEnergy(scene, bubbles));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.harvestForestEnergy(scene, bubbles));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
@@ -1726,7 +1726,7 @@ public class AntForestV2 extends ModelTask {
             }
 
             if (receiveForestTaskAward) {
-                JSONObject jo = new JSONObject(AntForestRpcCall.queryTaskList());
+                JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryTaskList());
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     JSONArray forestTasksNew = jo.optJSONArray("forestTasksNew");
                     if (forestTasksNew != null && forestTasksNew.length() != 0) {
@@ -1737,7 +1737,7 @@ public class AntForestV2 extends ModelTask {
                                 for (int j = 0; j < taskInfoList.length(); j++) {
                                     JSONObject taskInfo = taskInfoList.getJSONObject(j);
                                     JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                                    JSONObject bizInfo = new JSONObject(taskBaseInfo.getString("bizInfo"));
+                                    JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.getString("bizInfo"));
                                     String taskType = taskBaseInfo.getString("taskType");
                                     String taskTitle = bizInfo.optString("taskTitle", taskType);
                                     AntForestVitalityTaskListMap.add(taskTitle, taskTitle);
@@ -1747,7 +1747,7 @@ public class AntForestV2 extends ModelTask {
                     }
                 }
 
-                jo = new JSONObject(AntForestRpcCall.listTaskopengreen());
+                jo = MyUtils.newJSONObject(AntForestRpcCall.listTaskopengreen());
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     // 添加安全的空值判断
                     if (jo.has("taskInfoList")) {
@@ -1756,7 +1756,7 @@ public class AntForestV2 extends ModelTask {
                             for (int j = 0; j < taskInfoList.length(); j++) {
                                 JSONObject taskInfo = taskInfoList.getJSONObject(j);
                                 JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                                JSONObject bizInfo = new JSONObject(taskBaseInfo.getString("bizInfo"));
+                                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.getString("bizInfo"));
                                 String taskType = taskBaseInfo.getString("taskType");
                                 String taskTitle = bizInfo.optString("taskTitle", taskType);
                                 AntForestVitalityTaskListMap.add(taskTitle, taskTitle);
@@ -1821,20 +1821,20 @@ public class AntForestV2 extends ModelTask {
             }
 
             if (ForestHunt) {
-                JSONObject resData = new JSONObject(AntForestRpcCall.enterDrawActivityopengreen("", "ANTFOREST_NORMAL_DRAW", "task_entry"));
+                JSONObject resData = MyUtils.newJSONObject(AntForestRpcCall.enterDrawActivityopengreen("", "ANTFOREST_NORMAL_DRAW", "task_entry"));
                 if (MessageUtil.checkSuccess(TAG, resData)) {
                     JSONArray drawSceneGroups = resData.getJSONArray("drawSceneGroups");
                     for (int i = 0; i < drawSceneGroups.length(); i++) {
                         JSONObject drawScene = drawSceneGroups.getJSONObject(i);
                         JSONObject drawActivity = drawScene.getJSONObject("drawActivity");
                         String sceneCode = drawActivity.getString("sceneCode");
-                        JSONObject listTaskopengreen = new JSONObject(AntForestRpcCall.listTaskopengreen(sceneCode + "_TASK", "task_entry"));
+                        JSONObject listTaskopengreen = MyUtils.newJSONObject(AntForestRpcCall.listTaskopengreen(sceneCode + "_TASK", "task_entry"));
                         if (MessageUtil.checkSuccess(TAG, listTaskopengreen)) {
                             JSONArray taskList = listTaskopengreen.getJSONArray("taskInfoList");
                             for (int j = 0; j < taskList.length(); j++) {
                                 JSONObject taskInfo = taskList.getJSONObject(j);
                                 JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                                JSONObject bizInfo = new JSONObject(taskBaseInfo.getString("bizInfo"));
+                                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.getString("bizInfo"));
                                 String taskName = bizInfo.getString("title");
                                 AntForestHuntTaskListMap.add(taskName, taskName);
                             }
@@ -1893,12 +1893,12 @@ public class AntForestV2 extends ModelTask {
     // 绿色租赁
     private static void greenRent() {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.checkUserSecondSceneChance());
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.checkUserSecondSceneChance());
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
             TimeUtil.sleep(200);
-            jo = new JSONObject(AntForestRpcCall.generateEnergy());
+            jo = MyUtils.newJSONObject(AntForestRpcCall.generateEnergy());
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
@@ -1916,7 +1916,7 @@ public class AntForestV2 extends ModelTask {
 
     private static void retrieveCurrentActivity() {
         try {
-            JSONObject jo = new JSONObject(GreenLifeRpcCall.retrieveCurrentActivity());
+            JSONObject jo = MyUtils.newJSONObject(GreenLifeRpcCall.retrieveCurrentActivity());
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
@@ -1932,7 +1932,7 @@ public class AntForestV2 extends ModelTask {
                 return;
             }
             String taskTemplateId = currentTask.getString("taskTemplateId");
-            jo = new JSONObject(GreenLifeRpcCall.finishCurrentTask(taskTemplateId));
+            jo = MyUtils.newJSONObject(GreenLifeRpcCall.finishCurrentTask(taskTemplateId));
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
@@ -1958,13 +1958,13 @@ public class AntForestV2 extends ModelTask {
 
     private static void sendEnergyByAction(String sourceType) {
         try {
-            JSONObject jo = new JSONObject(GreenLifeRpcCall.consultForSendEnergyByAction(sourceType));
+            JSONObject jo = MyUtils.newJSONObject(GreenLifeRpcCall.consultForSendEnergyByAction(sourceType));
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
             JSONObject data = jo.getJSONObject("data");
             if (data.optBoolean("canSendEnergy", false)) {
-                jo = new JSONObject(GreenLifeRpcCall.sendEnergyByAction(sourceType));
+                jo = MyUtils.newJSONObject(GreenLifeRpcCall.sendEnergyByAction(sourceType));
                 if (MessageUtil.checkSuccess(TAG, jo)) {
                     data = jo.getJSONObject("data");
                     if (data.optBoolean("canSendEnergy", false)) {
@@ -1982,7 +1982,7 @@ public class AntForestV2 extends ModelTask {
 
     private void popupTask() {
         try {
-            JSONObject resData = new JSONObject(AntForestRpcCall.popupTask());
+            JSONObject resData = MyUtils.newJSONObject(AntForestRpcCall.popupTask());
             if (!MessageUtil.checkResultCode(TAG, resData)) {
                 return;
             }
@@ -1998,7 +1998,7 @@ public class AntForestV2 extends ModelTask {
                         String signKey = signRecord.getString("signKey");
                         if (signKey.equals(currentSignKey)) {
                             if (!signRecord.getBoolean("signed")) {
-                                JSONObject resData2 = new JSONObject(AntForestRpcCall.antiepSign(signId, "ANTFOREST_ENERGY_SIGN", UserIdMap.getCurrentUid()));
+                                JSONObject resData2 = MyUtils.newJSONObject(AntForestRpcCall.antiepSign(signId, "ANTFOREST_ENERGY_SIGN", UserIdMap.getCurrentUid()));
                                 if (MessageUtil.checkSuccess(TAG, resData2)) {
                                     Log.forest("过期能量💊[" + signRecord.getInt("awardCount") + "g]");
                                 }
@@ -2035,7 +2035,7 @@ public class AntForestV2 extends ModelTask {
             }
             if (Status.canWaterFriendToday(uid, waterCount)) {
                 try {
-                    JSONObject jo = new JSONObject(AntForestRpcCall.queryFriendHomePage(uid));
+                    JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryFriendHomePage(uid));
                     TimeUtil.sleep(100);
                     if (MessageUtil.checkResultCode(TAG, jo)) {
                         String bizNo = jo.getString("bizNo");
@@ -2070,7 +2070,7 @@ public class AntForestV2 extends ModelTask {
             for (int waterCount = 1; waterCount <= count; waterCount++) {
                 s = AntForestRpcCall.transferEnergy(userId, bizNo, energyId, waterFriendEnergySendChat.getValue() ? "Y" : "N");
                 TimeUtil.sleep(1500);
-                jo = new JSONObject(s);
+                jo = MyUtils.newJSONObject(s);
 
                 String resultCode = jo.optString("resultCode");
                 switch (resultCode) {
@@ -2194,7 +2194,7 @@ public class AntForestV2 extends ModelTask {
 
     private void vantiepSign() {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryTaskList());
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryTaskList());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -2209,7 +2209,7 @@ public class AntForestV2 extends ModelTask {
                 String signKey = signRecord.getString("signKey");
                 int awardCount = signRecord.getInt("awardCount");
                 if (signKey.equals(currentSignKey) && !signRecord.getBoolean("signed")) {
-                    JSONObject joSign = new JSONObject(AntForestRpcCall.antiepSign(signId, UserIdMap.getCurrentUid(), sceneCode));
+                    JSONObject joSign = MyUtils.newJSONObject(AntForestRpcCall.antiepSign(signId, UserIdMap.getCurrentUid(), sceneCode));
                     TimeUtil.sleep(300); // 等待300毫秒
                     if (MessageUtil.checkSuccess(TAG + "森林签到失败:", joSign)) {
                         int continuousCount = joSign.getInt("continuousCount");
@@ -2228,7 +2228,7 @@ public class AntForestV2 extends ModelTask {
 
     private void queryCommonSign() {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryCommonSign("ANTFOREST_GIFT7TH_SIGN_202506"));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryCommonSign("ANTFOREST_GIFT7TH_SIGN_202506"));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -2252,7 +2252,7 @@ public class AntForestV2 extends ModelTask {
                 JSONObject extInfo = signRecord.getJSONObject("extInfo");
                 String awardName = extInfo.getString("awardName");
                 if (signKey.equals(currentSignKey) && !signRecord.getBoolean("signed")) {
-                    JSONObject joSign = new JSONObject(AntForestRpcCall.antiepSign(signId, UserIdMap.getCurrentUid(), sceneCode));
+                    JSONObject joSign = MyUtils.newJSONObject(AntForestRpcCall.antiepSign(signId, UserIdMap.getCurrentUid(), sceneCode));
                     TimeUtil.sleep(300); // 等待300毫秒
                     if (MessageUtil.checkSuccess(TAG + "森林7日签到:", joSign)) {
                         int continuousCount = joSign.getInt("continuousCount");
@@ -2273,7 +2273,7 @@ public class AntForestV2 extends ModelTask {
 
     private void vitalitySign() {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.vitalitySign());
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.vitalitySign());
             TimeUtil.sleep(300);
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 int continuousCount = jo.getInt("continuousCount");
@@ -2293,7 +2293,7 @@ public class AntForestV2 extends ModelTask {
         try {
             boolean doubleCheck = true;
             while (doubleCheck) {
-                JSONObject jo = new JSONObject(AntForestRpcCall.queryTaskList());
+                JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryTaskList());
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     doubleCheck = false;
                     continue;
@@ -2322,7 +2322,7 @@ public class AntForestV2 extends ModelTask {
             }
             doubleCheck = true;
             while (doubleCheck) {
-                JSONObject jo = new JSONObject(AntForestRpcCall.listTaskopengreen());
+                JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.listTaskopengreen());
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
@@ -2351,7 +2351,7 @@ public class AntForestV2 extends ModelTask {
             for (int j = 0; j < taskInfoList.length(); j++) {
                 JSONObject taskInfo = taskInfoList.getJSONObject(j);
                 JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                JSONObject bizInfo = new JSONObject(taskBaseInfo.getString("bizInfo"));
+                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.getString("bizInfo"));
                 String taskType = taskBaseInfo.getString("taskType");
                 String taskTitle = bizInfo.optString("taskTitle", taskType);
                 String sceneCode = taskBaseInfo.getString("sceneCode");
@@ -2401,7 +2401,7 @@ public class AntForestV2 extends ModelTask {
             return;
         }
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryTaskList(new JSONObject().put("firstTaskType", firstTaskType)));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryTaskList(new JSONObject().put("firstTaskType", firstTaskType)));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -2429,7 +2429,7 @@ public class AntForestV2 extends ModelTask {
                 boolean isReceived = TaskStatus.RECEIVED.name().equals(jo.getString("taskStatus"));
                 if (!isReceived && TaskStatus.FINISHED.name().equals(jo.getString("taskStatus"))) {
                     String sceneCode = jo.getString("sceneCode");
-                    String taskTitle = new JSONObject(jo.getString("bizInfo")).getString("taskTitle");
+                    String taskTitle = MyUtils.newJSONObject(jo.getString("bizInfo")).getString("taskTitle");
                     isReceived = receiveTaskAward(sceneCode, taskType, taskTitle);
                     TimeUtil.sleep(1000);
                 }
@@ -2446,7 +2446,7 @@ public class AntForestV2 extends ModelTask {
 
     private Boolean receiveTaskAward(String sceneCode, String taskType, String taskTitle) {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.receiveTaskAward(sceneCode, taskType));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.receiveTaskAward(sceneCode, taskType));
             TimeUtil.sleep(500);
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 int incAwardCount = jo.optInt("incAwardCount", 1);
@@ -2478,7 +2478,7 @@ public class AntForestV2 extends ModelTask {
             }
         }
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.finishTask(sceneCode, taskType));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.finishTask(sceneCode, taskType));
             //检查并标记黑名单任务
             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntForestVitalityTaskList", taskTitle, jo);
             TimeUtil.sleep(500);
@@ -2499,7 +2499,7 @@ public class AntForestV2 extends ModelTask {
             for (int i = 0; i < childTaskTypeList.length(); i++) {
                 JSONObject taskInfo = childTaskTypeList.getJSONObject(i);
                 JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                JSONObject bizInfo = new JSONObject(taskBaseInfo.getString("bizInfo"));
+                JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.getString("bizInfo"));
                 String taskType = taskBaseInfo.getString("taskType");
                 String taskTitle = bizInfo.optString("taskTitle", title);
                 String sceneCode = taskBaseInfo.getString("sceneCode");
@@ -2518,7 +2518,7 @@ public class AntForestV2 extends ModelTask {
 
     private void startEnergyRain() {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.startEnergyRain());
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.startEnergyRain());
             TimeUtil.sleep(500);
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
@@ -2533,7 +2533,7 @@ public class AntForestV2 extends ModelTask {
             if (sum == 50) {
                 Status.flagToday("EnergyRain::PlayGame");
             }
-            jo = new JSONObject(AntForestRpcCall.energyRainSettlement(sum, token));
+            jo = MyUtils.newJSONObject(AntForestRpcCall.energyRainSettlement(sum, token));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Toast.show("获得了[" + sum + "g]能量[能量雨]");
                 Log.forest("收能量雨🌧️[" + sum + "g]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
@@ -2576,7 +2576,7 @@ public class AntForestV2 extends ModelTask {
 
     private void energyRain() {
         try {
-            JSONObject joEnergyRainHome = new JSONObject(AntForestRpcCall.queryEnergyRainHome());
+            JSONObject joEnergyRainHome = MyUtils.newJSONObject(AntForestRpcCall.queryEnergyRainHome());
             TimeUtil.sleep(500);
             if (MessageUtil.checkResultCode(TAG, joEnergyRainHome)) {
                 if (joEnergyRainHome.getBoolean("canPlayToday")) {
@@ -2584,7 +2584,7 @@ public class AntForestV2 extends ModelTask {
                 }
                 if (joEnergyRainHome.getBoolean("canGrantStatus")) {
                     Log.record("有送能量雨的机会");
-                    JSONObject joEnergyRainCanGrantList = new JSONObject(AntForestRpcCall.queryEnergyRainCanGrantList());
+                    JSONObject joEnergyRainCanGrantList = MyUtils.newJSONObject(AntForestRpcCall.queryEnergyRainCanGrantList());
                     TimeUtil.sleep(500);
                     JSONArray grantInfos = joEnergyRainCanGrantList.getJSONArray("grantInfos");
                     Set<String> set = giveEnergyRainList.getValue();
@@ -2595,7 +2595,7 @@ public class AntForestV2 extends ModelTask {
                         if (grantInfo.getBoolean("canGrantedStatus")) {
                             userId = grantInfo.getString("userId");
                             if (set.contains(userId)) {
-                                JSONObject joEnergyRainChance = new JSONObject(AntForestRpcCall.grantEnergyRainChance(userId));
+                                JSONObject joEnergyRainChance = MyUtils.newJSONObject(AntForestRpcCall.grantEnergyRainChance(userId));
                                 TimeUtil.sleep(500);
                                 Log.record("尝试送能量雨给【" + UserIdMap.getMaskName(userId) + "】");
                                 granted = true;
@@ -2624,7 +2624,7 @@ public class AntForestV2 extends ModelTask {
                     }
                 }
             }
-            joEnergyRainHome = new JSONObject(AntForestRpcCall.queryEnergyRainHome());
+            joEnergyRainHome = MyUtils.newJSONObject(AntForestRpcCall.queryEnergyRainHome());
             TimeUtil.sleep(500);
             if (MessageUtil.checkResultCode(TAG, joEnergyRainHome) && joEnergyRainHome.getBoolean("canPlayToday")) {
                 startEnergyRain();
@@ -2639,7 +2639,7 @@ public class AntForestV2 extends ModelTask {
         try {
             // 1. 查询游戏任务列表
             String response = AntForestRpcCall.queryEnergyRainEndGameList();
-            JSONObject jo = new JSONObject(response);
+            JSONObject jo = MyUtils.newJSONObject(response);
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
@@ -2652,7 +2652,7 @@ public class AntForestV2 extends ModelTask {
             if (jo.optBoolean("needInitTask", false)) {
                 Log.record("检测到新任务，准备接入[森林救援队]...");
                 String initResStr = AntForestRpcCall.initTask("GAME_DONE_SLJYD");
-                JSONObject initRes = new JSONObject(initResStr);
+                JSONObject initRes = MyUtils.newJSONObject(initResStr);
                 if (!MessageUtil.checkResultCode(TAG, initRes)) {
                     return false;
                 }
@@ -2698,7 +2698,7 @@ public class AntForestV2 extends ModelTask {
     public void doforestgame() {
         try {
             String response = AntForestRpcCall.queryGameList();
-            JSONObject jo = new JSONObject(response);
+            JSONObject jo = MyUtils.newJSONObject(response);
 
             // 验证请求是否成功
             if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -2718,7 +2718,7 @@ public class AntForestV2 extends ModelTask {
                 // 1. 处理待开启奖励 (批量开启)
                 if (canUseCount > 0) {
                     Log.record("森林乐园正在一次性开启 " + canUseCount + " 个宝箱...");
-                    JSONObject drawJo = new JSONObject(AntForestRpcCall.drawGameCenterAward(canUseCount));
+                    JSONObject drawJo = MyUtils.newJSONObject(AntForestRpcCall.drawGameCenterAward(canUseCount));
                     if (!MessageUtil.checkResultCode(drawJo)) {
                         return;
                     }
@@ -2779,7 +2779,7 @@ public class AntForestV2 extends ModelTask {
             boolean doubleCheck = true;
             while (doubleCheck) {
                 doubleCheck = false;
-                JSONObject jo = new JSONObject(AntForestRpcCall.queryOptionalPlay());
+                JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryOptionalPlay());
                 if (!MessageUtil.checkSuccess(TAG, jo)) {
                     return;
                 }
@@ -2809,7 +2809,7 @@ public class AntForestV2 extends ModelTask {
                     if (taskStatus.equals("FINISHED")) {
                         if (awardCountForReceive > 0) {
                             // 领取奖励
-                            JSONObject joReceived = new JSONObject(AntForestRpcCall.receiveTaskAwardopengreen(source, sceneCode, taskType));
+                            JSONObject joReceived = MyUtils.newJSONObject(AntForestRpcCall.receiveTaskAwardopengreen(source, sceneCode, taskType));
                             if (MessageUtil.checkSuccess(TAG, joReceived)) {
                                 int incAwardCount = joReceived.optInt("incAwardCount");
                                 JSONObject taskConfigResultVO = joReceived.optJSONObject("taskConfigResultVO");
@@ -2910,9 +2910,9 @@ public class AntForestV2 extends ModelTask {
                             case "shield":
                             case "robExpandCard":
                                 if (continuousUseCardSecond > 0) {
-                                    joResult = new JSONObject(AntForestRpcCall.consumeProp(propGroupType, propId, propType, true));
+                                    joResult = MyUtils.newJSONObject(AntForestRpcCall.consumeProp(propGroupType, propId, propType, true));
                                 } else {
-                                    joResult = new JSONObject(AntForestRpcCall.consumeProp(propGroupType, propId, propType, false));
+                                    joResult = MyUtils.newJSONObject(AntForestRpcCall.consumeProp(propGroupType, propId, propType, false));
                                 }
                                 holdsNum--;
                                 TimeUtil.sleep(500);
@@ -2922,7 +2922,7 @@ public class AntForestV2 extends ModelTask {
                                 break;
 
                             case "stealthCard":
-                                joResult = new JSONObject(AntForestRpcCall.consumeProp(propGroupType, propId, propType));
+                                joResult = MyUtils.newJSONObject(AntForestRpcCall.consumeProp(propGroupType, propId, propType));
                                 holdsNum--;
                                 TimeUtil.sleep(1000);
                                 if (MessageUtil.checkResultCode(TAG, joResult)) {
@@ -2930,7 +2930,7 @@ public class AntForestV2 extends ModelTask {
                                 }
                                 break;
                             /*case "energyBombCard":
-                                joResult = new JSONObject(AntForestRpcCall.consumeProp(propGroupType, propId, propType,false));
+                                joResult = MyUtils.newJSONObject(AntForestRpcCall.consumeProp(propGroupType, propId, propType,false));
                                 holdsNum--;
                                 TimeUtil.sleep(1000);
                                 if (MessageUtil.checkResultCode(TAG, joResult)) {
@@ -2956,7 +2956,7 @@ public class AntForestV2 extends ModelTask {
     //返回值-1为不可用，0为可用，大于0为剩余时间
     private long continuousUseCardCheak(String propGroupType) {
         try {
-            JSONObject joMiscHomes = new JSONObject(AntForestRpcCall.queryMiscInfo());
+            JSONObject joMiscHomes = MyUtils.newJSONObject(AntForestRpcCall.queryMiscInfo());
             System.out.println(joMiscHomes);
             if (!MessageUtil.checkResultCode(TAG, joMiscHomes)) {
                 return -1;
@@ -3026,7 +3026,7 @@ public class AntForestV2 extends ModelTask {
 
     private String useRobExpandCardFactor() {
         try {
-            JSONObject joMiscHomes = new JSONObject(AntForestRpcCall.queryMiscInfo());
+            JSONObject joMiscHomes = MyUtils.newJSONObject(AntForestRpcCall.queryMiscInfo());
             System.out.println(joMiscHomes);
             if (!MessageUtil.checkResultCode(TAG, joMiscHomes)) {
                 return null;
@@ -3246,7 +3246,7 @@ public class AntForestV2 extends ModelTask {
         try {
             do {
                 try {
-                    JSONObject jo = new JSONObject(AntForestRpcCall.queryPropList(true));
+                    JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryPropList(true));
                     if (!MessageUtil.checkResultCode(TAG, jo)) {
                         return;
                     }
@@ -3257,7 +3257,7 @@ public class AntForestV2 extends ModelTask {
                         int holdsNum = jo.optInt("holdsNum", 0);
                         String propName = jo.getJSONObject("propConfigVO").getString("propName");
                         String propId = jo.getJSONArray("propIdList").getString(0);
-                        jo = new JSONObject(AntForestRpcCall.giveProp(giveConfigId, propId, targetUserId));
+                        jo = MyUtils.newJSONObject(AntForestRpcCall.giveProp(giveConfigId, propId, targetUserId));
                         if (MessageUtil.checkResultCode(TAG, jo)) {
                             Log.forest("赠送道具🎭[" + UserIdMap.getMaskName(targetUserId) + "]#" + propName);
                             if (holdsNum > 1 || forestPropVOList.length() > 1) {
@@ -3281,14 +3281,14 @@ public class AntForestV2 extends ModelTask {
      */
     private void ecoLife() {
         try {
-            JSONObject jo = new JSONObject(EcoLifeRpcCall.queryHomePage());
+            JSONObject jo = MyUtils.newJSONObject(EcoLifeRpcCall.queryHomePage());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
             JSONObject data = jo.getJSONObject("data");
             if (!data.getBoolean("openStatus")) {
                 Log.forest("绿色任务☘未开通");
-                jo = new JSONObject(EcoLifeRpcCall.openEcolife());
+                jo = MyUtils.newJSONObject(EcoLifeRpcCall.openEcolife());
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
@@ -3296,7 +3296,7 @@ public class AntForestV2 extends ModelTask {
                     return;
                 }
                 Log.forest("绿色任务🍀报告大人，开通成功(～￣▽￣)～可以愉快的玩耍了");
-                jo = new JSONObject(EcoLifeRpcCall.queryHomePage());
+                jo = MyUtils.newJSONObject(EcoLifeRpcCall.queryHomePage());
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
@@ -3337,7 +3337,7 @@ public class AntForestV2 extends ModelTask {
                     if ("photoguangpan".equals(actionId)) {
                         continue;
                     }
-                    JSONObject jo = new JSONObject(EcoLifeRpcCall.tick(actionId, dayPoint, source));
+                    JSONObject jo = MyUtils.newJSONObject(EcoLifeRpcCall.tick(actionId, dayPoint, source));
                     if (MessageUtil.checkResultCode(TAG, jo)) {
                         Log.forest("绿色打卡🍀[" + actionName + "]");
                     }
@@ -3360,7 +3360,7 @@ public class AntForestV2 extends ModelTask {
         try {
             String source = "renwuGD";
             // 检查今日任务状态
-            JSONObject jo = new JSONObject(EcoLifeRpcCall.queryDish(source, dayPoint));
+            JSONObject jo = MyUtils.newJSONObject(EcoLifeRpcCall.queryDish(source, dayPoint));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -3394,17 +3394,17 @@ public class AntForestV2 extends ModelTask {
                 return;
             }
             // 上传餐前照片
-            jo = new JSONObject(EcoLifeRpcCall.uploadBeforeMealsDishImage(dishImage.get("BEFORE_MEALS"), dayPoint));
+            jo = MyUtils.newJSONObject(EcoLifeRpcCall.uploadBeforeMealsDishImage(dishImage.get("BEFORE_MEALS"), dayPoint));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
             // 上传餐后照片
-            jo = new JSONObject(EcoLifeRpcCall.uploadAfterMealsDishImage(dishImage.get("AFTER_MEALS"), dayPoint));
+            jo = MyUtils.newJSONObject(EcoLifeRpcCall.uploadAfterMealsDishImage(dishImage.get("AFTER_MEALS"), dayPoint));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
             // 提交
-            jo = new JSONObject(EcoLifeRpcCall.tick("photoguangpan", dayPoint, source));
+            jo = MyUtils.newJSONObject(EcoLifeRpcCall.tick("photoguangpan", dayPoint, source));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -3421,12 +3421,12 @@ public class AntForestV2 extends ModelTask {
         try {
             th:
             do {
-                JSONObject jo = new JSONObject(AntForestRpcCall.queryUserPatrol());
+                JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryUserPatrol());
                 TimeUtil.sleep(500);
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
-                JSONObject resData = new JSONObject(AntForestRpcCall.queryMyPatrolRecord());
+                JSONObject resData = MyUtils.newJSONObject(AntForestRpcCall.queryMyPatrolRecord());
                 TimeUtil.sleep(500);
                 if (resData.optBoolean("canSwitch")) {
                     JSONArray records = resData.getJSONArray("records");
@@ -3437,7 +3437,7 @@ public class AntForestV2 extends ModelTask {
                             if ("silent".equals(userPatrol.getString("mode"))) {
                                 JSONObject patrolConfig = record.getJSONObject("patrolConfig");
                                 String patrolId = patrolConfig.getString("patrolId");
-                                resData = new JSONObject(AntForestRpcCall.switchUserPatrol(patrolId));
+                                resData = MyUtils.newJSONObject(AntForestRpcCall.switchUserPatrol(patrolId));
                                 TimeUtil.sleep(500);
                                 if (MessageUtil.checkResultCode(TAG, resData)) {
                                     Log.forest("巡护⚖️-切换地图至" + patrolId);
@@ -3459,12 +3459,12 @@ public class AntForestV2 extends ModelTask {
                 int usedStep = chance.getInt("usedStep");
                 if ("STANDING".equals(currentStatus)) {
                     if (leftChance > 0) {
-                        jo = new JSONObject(AntForestRpcCall.patrolGo(currentNode, patrolId));
+                        jo = MyUtils.newJSONObject(AntForestRpcCall.patrolGo(currentNode, patrolId));
                         TimeUtil.sleep(500);
                         patrolKeepGoing(jo.toString(), currentNode, patrolId);
                         continue;
                     } else if (leftStep >= 2000 && usedStep < 10000) {
-                        jo = new JSONObject(AntForestRpcCall.exchangePatrolChance(leftStep));
+                        jo = MyUtils.newJSONObject(AntForestRpcCall.exchangePatrolChance(leftStep));
                         TimeUtil.sleep(300);
                         if (MessageUtil.checkResultCode(TAG, jo)) {
                             int addedChance = jo.optInt("addedChance", 0);
@@ -3489,7 +3489,7 @@ public class AntForestV2 extends ModelTask {
                 if (s == null) {
                     s = AntForestRpcCall.patrolKeepGoing(nodeIndex, patrolId, "image");
                 }
-                JSONObject jo = new JSONObject(s);
+                JSONObject jo = MyUtils.newJSONObject(s);
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
@@ -3527,7 +3527,7 @@ public class AntForestV2 extends ModelTask {
     // 查询可派遣伙伴
     private void queryAnimalPropList() {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryAnimalPropList());
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryAnimalPropList());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -3560,7 +3560,7 @@ public class AntForestV2 extends ModelTask {
             String propGroup = animalProp.getJSONObject("main").getString("propGroup");
             String propType = animalProp.getJSONObject("main").getString("propType");
             String name = animalProp.getJSONObject("partner").getString("name");
-            JSONObject jo = new JSONObject(AntForestRpcCall.consumeProp(propGroup, propType, false));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.consumeProp(propGroup, propType, false));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Log.forest("巡护派遣🐆[" + name + "]");
             }
@@ -3572,7 +3572,7 @@ public class AntForestV2 extends ModelTask {
 
     private void queryAnimalAndPiece() {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryAnimalAndPiece(0));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryAnimalAndPiece(0));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -3602,7 +3602,7 @@ public class AntForestV2 extends ModelTask {
     private void combineAnimalPiece(int animalId) {
         try {
             do {
-                JSONObject jo = new JSONObject(AntForestRpcCall.queryAnimalAndPiece(animalId));
+                JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryAnimalAndPiece(animalId));
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
@@ -3624,7 +3624,7 @@ public class AntForestV2 extends ModelTask {
                     }
                 }
                 if (canCombineAnimalPiece) {
-                    jo = new JSONObject(AntForestRpcCall.combineAnimalPiece(id, piecePropIds.toString()));
+                    jo = MyUtils.newJSONObject(AntForestRpcCall.combineAnimalPiece(id, piecePropIds.toString()));
                     if (MessageUtil.checkResultCode(TAG, jo)) {
                         Log.forest("合成动物💡[" + name + "]");
                         animalId = id;
@@ -3644,7 +3644,7 @@ public class AntForestV2 extends ModelTask {
         int helped = 0;
         try {
             String s = AntForestRpcCall.forFriendCollectEnergy(targetUserId, bubbleId);
-            JSONObject jo = new JSONObject(s);
+            JSONObject jo = MyUtils.newJSONObject(s);
             if ("SUCCESS".equals(jo.optString("resultCode"))) {
                 JSONArray jaBubbles = jo.getJSONArray("bubbles");
                 for (int i = 0; i < jaBubbles.length(); i++) {
@@ -3673,7 +3673,7 @@ public class AntForestV2 extends ModelTask {
     public static JSONArray getForestPropVOList() {
         JSONArray forestPropVOList = new JSONArray();
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryPropList(false));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryPropList(false));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 forestPropVOList = jo.getJSONArray("forestPropVOList");
             }
@@ -3769,7 +3769,7 @@ public class AntForestV2 extends ModelTask {
 
     private static Boolean consumeProp(String propGroup, String propId, String propType, String propName) {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.consumeProp(propGroup, propId, propType));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.consumeProp(propGroup, propId, propType));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Log.forest("使用道具🎭[" + propName + "]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                 return true;
@@ -3785,7 +3785,7 @@ public class AntForestV2 extends ModelTask {
     private JSONArray getVitalityItemList(String labelType) {
         JSONArray itemInfoVOList = null;
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.itemList(labelType));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.itemList(labelType));
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 itemInfoVOList = jo.optJSONArray("itemInfoVOList");
             }
@@ -3815,7 +3815,7 @@ public class AntForestV2 extends ModelTask {
 
     private void getSkuInfoBySpuId(String spuId) {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.itemDetail(spuId));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.itemDetail(spuId));
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
@@ -3905,7 +3905,7 @@ public class AntForestV2 extends ModelTask {
 
     private static Boolean exchangeBenefit(String spuId, String skuId) {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.exchangeBenefit(spuId, skuId));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.exchangeBenefit(spuId, skuId));
             if (jo.has("errorMessage")) {
                 String errorMessage = jo.optString("errorMessage");
                 //如果出错今天停止兑换
@@ -3935,7 +3935,7 @@ public class AntForestV2 extends ModelTask {
 
             // 获取组队合种基础信息
             String homeStr = AntForestRpcCall.queryHomePage();
-            JSONObject homeJo = new JSONObject(homeStr);
+            JSONObject homeJo = MyUtils.newJSONObject(homeStr);
             if (!MessageUtil.checkResultCode(TAG, homeJo)) {
                 Log.record("queryHomePage 返回异常");
                 return;
@@ -3963,7 +3963,7 @@ public class AntForestV2 extends ModelTask {
 
             // 获取服务端限制
             String miscStr = AntForestRpcCall.queryMiscInfo("teamCanWaterCount", teamId);
-            JSONObject miscJo = new JSONObject(miscStr);
+            JSONObject miscJo = MyUtils.newJSONObject(miscStr);
             if (!MessageUtil.checkResultCode(TAG, miscJo)) {
                 Log.record("queryMiscInfo 查询失败");
                 if (needReturn) {
@@ -3995,7 +3995,7 @@ public class AntForestV2 extends ModelTask {
 
             // 执行浇水
             String waterStr = AntForestRpcCall.teamWater(teamId, finalWaterAmount);
-            JSONObject waterJo = new JSONObject(waterStr);
+            JSONObject waterJo = MyUtils.newJSONObject(waterStr);
             if (MessageUtil.checkResultCode(TAG, waterJo)) {
                 Log.forest("组队合种🚿给合种浇水" + finalWaterAmount + "g#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                 Toast.show("组队合种🚿给合种浇水" + finalWaterAmount + "g");
@@ -4017,7 +4017,7 @@ public class AntForestV2 extends ModelTask {
     private static boolean updateUserConfiginTeam(Boolean needReturn) {
         try {
             String updateStr = AntForestRpcCall.updateUserConfiginTeam(needReturn);
-            JSONObject updateJo = new JSONObject(updateStr);
+            JSONObject updateJo = MyUtils.newJSONObject(updateStr);
             if (!MessageUtil.checkResultCode(TAG, updateJo)) {
                 Log.record("updateUserConfig 返回异常");
                 return false;
@@ -4039,7 +4039,7 @@ public class AntForestV2 extends ModelTask {
     private static void loveteam(int loveteamWater) {
         if (!Status.hasFlagToday("Forest::loveteamWater")) {
             try {
-                JSONObject jo = new JSONObject(AntForestRpcCall.loveteamHome());
+                JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.loveteamHome());
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
@@ -4059,7 +4059,7 @@ public class AntForestV2 extends ModelTask {
 
     private static void loveteamWater(String loveteamWater, int loveteamWaterNum) {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.loveteamWater(loveteamWater, loveteamWaterNum));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.loveteamWater(loveteamWater, loveteamWaterNum));
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 Log.forest("真爱浇水🚿给[" + loveteamWater + "]合种浇水" + loveteamWaterNum + "g#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                 Toast.show("真爱浇水🚿给[" + loveteamWater + "]合种浇水" + loveteamWaterNum + "g");
@@ -4074,7 +4074,7 @@ public class AntForestV2 extends ModelTask {
     private static boolean updateUserConfigEnergyPvp() {
         try {
             String Str = AntForestRpcCall.queryUserTag();
-            JSONObject Jo = new JSONObject(Str);
+            JSONObject Jo = MyUtils.newJSONObject(Str);
             if (!MessageUtil.checkResultCode(TAG, Jo)) {
                 Log.record("queryUserTag 查询1V1状态返回异常");
                 return false;
@@ -4092,7 +4092,7 @@ public class AntForestV2 extends ModelTask {
             }
             //自动开启挑战
             String updateStr = AntForestRpcCall.updateUserConfigEnergyPvp(true);
-            JSONObject updateJo = new JSONObject(updateStr);
+            JSONObject updateJo = MyUtils.newJSONObject(updateStr);
             if (!MessageUtil.checkResultCode(TAG, updateJo)) {
                 Log.record("updateUserConfigEnergyPvp 返回异常");
             } else {
@@ -4110,7 +4110,7 @@ public class AntForestV2 extends ModelTask {
 
     private static void queryPvpHomeInfo() {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryPvpHomeInfo());
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryPvpHomeInfo());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -4128,7 +4128,7 @@ public class AntForestV2 extends ModelTask {
                 Log.record("比赛情况🆚" + battleType + "赛" + battleStatus + "[" + attackerDisplayName + "]" + attackerWinCount + "胜(" + attackerEnergy + "g)VS[" + defenderDisplayName + "]" + attackerWinCount + "胜(" + defenderEnergy + "g)");
                 //领取奖励
                 if (currentEnergyPvpBattleRecord.optBoolean("hasReward")) {
-                    jo = new JSONObject(AntForestRpcCall.receivePvpRewards());
+                    jo = MyUtils.newJSONObject(AntForestRpcCall.receivePvpRewards());
                     if (!MessageUtil.checkResultCode(TAG, jo)) {
                         return;
                     }
@@ -4159,7 +4159,7 @@ public class AntForestV2 extends ModelTask {
 
     private static void receivePvpRewards() {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.checkRewardqueryMiscInfo());
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.checkRewardqueryMiscInfo());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -4169,7 +4169,7 @@ public class AntForestV2 extends ModelTask {
                     JSONObject energyPvpInfo = combineHandlerVOMap.getJSONObject("energyPvpInfo");
                     //领取奖励
                     if (energyPvpInfo.optBoolean("hasReward")) {
-                        jo = new JSONObject(AntForestRpcCall.receivePvpRewards());
+                        jo = MyUtils.newJSONObject(AntForestRpcCall.receivePvpRewards());
                         if (!MessageUtil.checkResultCode(TAG, jo)) {
                             return;
                         }
@@ -4210,7 +4210,7 @@ public class AntForestV2 extends ModelTask {
     private JSONObject getDressDetail() {
         JSONObject dressDetail = new JSONObject();
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryHomePage());
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryHomePage());
             JSONArray ja = jo.getJSONObject("indexDressVO").getJSONArray("dressDetailList");
             for (int i = 0; i < ja.length(); i++) {
                 jo = ja.getJSONObject(i);
@@ -4242,7 +4242,7 @@ public class AntForestV2 extends ModelTask {
         String[] positions = {"tree__main", "bg__sky_0", "bg__sky_cloud", "bg__ground_a", "bg__ground_b", "bg__ground_c"};
         try {
             boolean isDressExchanged = false;
-            JSONObject jo = new JSONObject(dressDetail);
+            JSONObject jo = MyUtils.newJSONObject(dressDetail);
             for (String position : positions) {
                 String batchType = "";
                 if (jo.has(position)) {
@@ -4263,7 +4263,7 @@ public class AntForestV2 extends ModelTask {
 
     private Boolean queryUserDressForBackpack(String positionType, String batchType) {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.listUserDressForBackpack(positionType));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.listUserDressForBackpack(positionType));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
@@ -4296,7 +4296,7 @@ public class AntForestV2 extends ModelTask {
 
     private Boolean wearDress(String dressType) {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.wearDress(dressType));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.wearDress(dressType));
             return MessageUtil.checkResultCode(TAG, jo);
         } catch (Throwable th) {
             Log.i(TAG, "wearDress err:");
@@ -4307,7 +4307,7 @@ public class AntForestV2 extends ModelTask {
 
     private Boolean takeOffDress(String dressType, String position) {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.takeOffDress(dressType, position));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.takeOffDress(dressType, position));
             return MessageUtil.checkResultCode(TAG, jo);
         } catch (Throwable th) {
             Log.i(TAG, "takeOffDress err:");

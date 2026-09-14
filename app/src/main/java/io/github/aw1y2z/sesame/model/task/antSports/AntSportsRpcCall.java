@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.antSports;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
+
 import org.json.JSONObject;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
@@ -165,7 +167,7 @@ public class AntSportsRpcCall {
     
     public static String queryPathName(String pathId) {
         try {
-            JSONObject jo = new JSONObject(queryPath(Log.getFormatDate(), pathId));
+            JSONObject jo = MyUtils.newJSONObject(queryPath(Log.getFormatDate(), pathId));
             if (MessageUtil.checkSuccess("queryPathName", jo)) {
                 jo = jo.getJSONObject("data").getJSONObject("path");
                 return jo.getString("name");

@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.ancientTree;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -80,7 +82,7 @@ public class AncientTree extends ModelTask {
 
     private static void ancientTreeProtect(String cityCode) {
         try {
-            JSONObject jo = new JSONObject(AncientTreeRpcCall.homePage(cityCode));
+            JSONObject jo = MyUtils.newJSONObject(AncientTreeRpcCall.homePage(cityCode));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             } JSONObject data = jo.getJSONObject("data"); if (!data.has("districtBriefInfoList")) {
@@ -101,7 +103,7 @@ public class AncientTree extends ModelTask {
 
     private static void districtDetail(String districtCode) {
         try {
-            JSONObject jo = new JSONObject(AncientTreeRpcCall.districtDetail(districtCode));
+            JSONObject jo = MyUtils.newJSONObject(AncientTreeRpcCall.districtDetail(districtCode));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             } JSONObject data = jo.getJSONObject("data"); if (!data.has("ancientTreeList")) {
@@ -118,7 +120,7 @@ public class AncientTree extends ModelTask {
                 int quota = ancientTreeControlInfo.optInt("quota", 0);
                 int useQuota = ancientTreeControlInfo.optInt("useQuota", 0); if (quota <= useQuota)
                     continue; String itemId = ancientTreeItem.getString("projectId");
-                JSONObject ancientTreeDetail = new JSONObject(AncientTreeRpcCall.projectDetail(itemId, cityCode));
+                JSONObject ancientTreeDetail = MyUtils.newJSONObject(AncientTreeRpcCall.projectDetail(itemId, cityCode));
                 if (!MessageUtil.checkResultCode(TAG, ancientTreeDetail)) {
                     continue;
                 } data = ancientTreeDetail.getJSONObject("data"); if (data.getBoolean("canProtect")) {
@@ -131,7 +133,7 @@ public class AncientTree extends ModelTask {
                     int protectExpense = ancientTreeInfo.getInt("protectExpense");
                     cityCode = ancientTreeInfo.getString("cityCode"); if (currentEnergy < protectExpense)
                         break; TimeUtil.sleep(200);
-                    jo = new JSONObject(AncientTreeRpcCall.protect(activityId, projectId, cityCode));
+                    jo = MyUtils.newJSONObject(AncientTreeRpcCall.protect(activityId, projectId, cityCode));
                     if (MessageUtil.checkResultCode(TAG, jo)) {
                         Log.forest("保护古树🎐[" + cityName + "-" + districtName + "]#" + age + "年" + name + ",消耗能量" + protectExpense + "g");
                     }

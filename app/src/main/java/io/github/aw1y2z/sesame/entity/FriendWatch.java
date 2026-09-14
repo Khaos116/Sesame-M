@@ -1,6 +1,5 @@
 package io.github.aw1y2z.sesame.entity;
 
-import org.json.JSONException;
 import org.json.JSONObject;
 import io.github.aw1y2z.sesame.util.*;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -95,19 +94,11 @@ public class FriendWatch extends IdAndName {
     }
 
     public static synchronized Boolean load() {
-        try {
-            String strFriendWatch = FileUtil.readFromFile(FileUtil.getFriendWatchFile());
-            if (!strFriendWatch.isEmpty()) {
-                joFriendWatch = new JSONObject(strFriendWatch);
-            } else {
-                joFriendWatch = new JSONObject();
-            }
-            return true;
-        } catch (JSONException e) {
-            Log.printStackTrace(e);
-            joFriendWatch = new JSONObject();
-        }
-        return false;
+        // MyUtils.newJSONObject 内部已经吞掉了 JSONException（null/非法 JSON 时返回空对象），
+        // 不再需要这里再包一层 try/catch
+        String strFriendWatch = FileUtil.readFromFile(FileUtil.getFriendWatchFile());
+        joFriendWatch = strFriendWatch.isEmpty() ? new JSONObject() : MyUtils.newJSONObject(strFriendWatch);
+        return true;
     }
 
     public static synchronized void unload() {
@@ -136,7 +127,7 @@ public class FriendWatch extends IdAndName {
             if (StringUtil.isEmpty(strFriendWatch)) {
                 joFriendWatch = new JSONObject();
             } else {
-                joFriendWatch = new JSONObject(strFriendWatch);
+                joFriendWatch = MyUtils.newJSONObject(strFriendWatch);
             }
             Iterator<String> ids = joFriendWatch.keys();
             while (ids.hasNext()) {

@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.antMember;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -28,7 +30,7 @@ public class AntInsurance {
     // 保障金领取
     private static void gainSumInsured() {
         try {
-            JSONObject jo = new JSONObject(AntInsuranceRpcCall.queryMultiSceneWaitToGainList());
+            JSONObject jo = MyUtils.newJSONObject(AntInsuranceRpcCall.queryMultiSceneWaitToGainList());
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             } jo = jo.getJSONObject("data"); Iterator<String> keys = jo.keys();
@@ -57,7 +59,7 @@ public class AntInsurance {
             return;
         } try {
             giftData.put("entrance", "jkj_zhima_dairy66");
-            JSONObject jo = new JSONObject(AntInsuranceRpcCall.gainMyAndFamilySumInsured(giftData));
+            JSONObject jo = MyUtils.newJSONObject(AntInsuranceRpcCall.gainMyAndFamilySumInsured(giftData));
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             } jo = jo.getJSONObject("data").getJSONObject("gainSumInsuredDTO");
@@ -72,11 +74,11 @@ public class AntInsurance {
         if (Status.hasFlagToday("insurance::lotteryDraw")) {
             return;
         } try {
-            JSONObject jo = new JSONObject(AntInsuranceRpcCall.queryAvailableNum());
+            JSONObject jo = MyUtils.newJSONObject(AntInsuranceRpcCall.queryAvailableNum());
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             } jo = jo.getJSONObject("result"); if (jo.getInt("num") == 3) {
-                jo = new JSONObject(AntInsuranceRpcCall.lotteryDraw());
+                jo = MyUtils.newJSONObject(AntInsuranceRpcCall.lotteryDraw());
                 if (!MessageUtil.checkSuccess(TAG, jo)) {
                     return;
                 } JSONArray ja = jo.getJSONArray("result"); for (int i = 0; i < ja.length(); i++) {
@@ -92,11 +94,11 @@ public class AntInsurance {
     // 安心豆签到
     private static void beanSignIn() {
         try {
-            JSONObject jo = new JSONObject(AntInsuranceRpcCall.beanQuerySignInProcess());
+            JSONObject jo = MyUtils.newJSONObject(AntInsuranceRpcCall.beanQuerySignInProcess());
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             } if (jo.getJSONObject("result").getBoolean("canPush")) {
-                jo = new JSONObject(AntInsuranceRpcCall.beanSignInTrigger());
+                jo = MyUtils.newJSONObject(AntInsuranceRpcCall.beanSignInTrigger());
                 if (MessageUtil.checkSuccess(TAG, jo)) {
                     String prizeName = jo.getJSONObject("result").getJSONArray("prizeSendOrderDTOList").getJSONObject(0).getString("prizeName");
                     Log.other("蚂蚁保障🛡️安心豆签到#获得[" + prizeName + "]");
@@ -110,11 +112,11 @@ public class AntInsurance {
     // 安心豆兑换
     private static void beanExchange(String itemId) {
         try {
-            JSONObject jo = new JSONObject(AntInsuranceRpcCall.queryUserAccountInfo("INS_BLUE_BEAN"));
+            JSONObject jo = MyUtils.newJSONObject(AntInsuranceRpcCall.queryUserAccountInfo("INS_BLUE_BEAN"));
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             } int userCurrentPoint = jo.getJSONObject("result").getInt("userCurrentPoint");
-            jo = new JSONObject(AntInsuranceRpcCall.beanExchangeDetail(itemId));
+            jo = MyUtils.newJSONObject(AntInsuranceRpcCall.beanExchangeDetail(itemId));
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
@@ -124,7 +126,7 @@ public class AntInsurance {
             int realConsumePointAmount = jo.getInt("realConsumePointAmount");
             if (!jo.getBoolean("canExchange") || realConsumePointAmount > userCurrentPoint) {
                 return;
-            } jo = new JSONObject(AntInsuranceRpcCall.beanExchange(itemId, realConsumePointAmount));
+            } jo = MyUtils.newJSONObject(AntInsuranceRpcCall.beanExchange(itemId, realConsumePointAmount));
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 Log.other("蚂蚁保障🛡️安心豆兑换[" + itemName + "]#消耗[" + realConsumePointAmount + "安心豆]");
             }

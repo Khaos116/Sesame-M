@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.antForest;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -87,7 +89,7 @@ public class Privilege {
     private static JSONArray getForestTasks(String queryParam) {
         String response = AntForestRpcCall.queryTaskListV2(queryParam);
         try {
-            return new JSONObject(response).getJSONArray("forestTasksNew");
+            return MyUtils.newJSONObject(response).getJSONArray("forestTasksNew");
         } catch (JSONException e) {
             Log.error("获取任务列表失败" + e);
             return null;
@@ -151,18 +153,14 @@ public class Privilege {
     }
     
     private static void handleYouthTaskAward(String taskType, String taskName, List<String> results) {
-        try {
-            String response = AntForestRpcCall.receiveTaskAwardV2(taskType);
-            JSONObject jsonResponse = new JSONObject(response);
-            String resultDesc = jsonResponse.optString("desc");
-            results.add(resultDesc);
-            
-            String logMessage = "处理成功".equals(resultDesc) ? "领取成功" : "领取结果：" + resultDesc;
-            Log.forest(PREFIX_PRIVILEGE + "[" + taskName + "]" + logMessage+"[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
-        } catch (JSONException e) {
-            Log.error("奖励领取结果解析失败" + e);
-            results.add("处理异常");
-        }
+        // MyUtils.newJSONObject/optString 都不会再抛 JSONException，不需要 try/catch 了
+        String response = AntForestRpcCall.receiveTaskAwardV2(taskType);
+        JSONObject jsonResponse = MyUtils.newJSONObject(response);
+        String resultDesc = jsonResponse.optString("desc");
+        results.add(resultDesc);
+
+        String logMessage = "处理成功".equals(resultDesc) ? "领取成功" : "领取结果：" + resultDesc;
+        Log.forest(PREFIX_PRIVILEGE + "[" + taskName + "]" + logMessage + "[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
     }
     
     public static void studentSignInRedEnvelope() {
@@ -190,14 +188,9 @@ public class Privilege {
     
     private static void processStudentSignIn() {
         String response = AntForestRpcCall.studentQqueryCheckInModel();
-        JSONObject result;
-        try {
-            result = new JSONObject(response);
-        } catch (JSONException e) {
-            Log.error("学生签到模型解析失败" + e);
-            return;
-        }
-        
+        // MyUtils.newJSONObject 不会再抛 JSONException，不需要 try/catch 了
+        JSONObject result = MyUtils.newJSONObject(response);
+
         if (!RPC_SUCCESS.equals(result.optString("resultCode"))) {
             Log.record(PREFIX_SIGN + " 查询失败：" + result.optString("resultDesc"));
             return;
@@ -213,14 +206,11 @@ public class Privilege {
     }
     
     private static void executeStudentSignIn() {
-        try {
-            String tag = TimeUtil.getNow().get(Calendar.HOUR_OF_DAY) < SIGN_END_HOUR ? "double" : "single";
-            String response = AntForestRpcCall.studentCheckin();
-            JSONObject result = new JSONObject(response);
-            handleSignInResult(result, tag);
-        } catch (JSONException e) {
-            Log.error("学生签到失败：" + e.getMessage());
-        }
+        // MyUtils.newJSONObject 不会再抛 JSONException，不需要 try/catch 了
+        String tag = TimeUtil.getNow().get(Calendar.HOUR_OF_DAY) < SIGN_END_HOUR ? "double" : "single";
+        String response = AntForestRpcCall.studentCheckin();
+        JSONObject result = MyUtils.newJSONObject(response);
+        handleSignInResult(result, tag);
     }
     
     private static void handleSignInResult(JSONObject result, String tag) {

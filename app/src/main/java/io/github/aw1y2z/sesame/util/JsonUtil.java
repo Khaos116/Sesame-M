@@ -316,7 +316,7 @@ public class JsonUtil {
                     current = array.get(index);
                 } else {
                     //不是对象、数组，当成字符串重新解析，再取属性
-                    JSONObject object = new JSONObject(current.toString());
+                    JSONObject object = MyUtils.newJSONObject(current.toString());
                     current = object.get(part);
                 }
             }

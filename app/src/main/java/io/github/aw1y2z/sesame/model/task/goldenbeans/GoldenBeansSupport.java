@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.goldenbeans;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -33,7 +35,7 @@ public final class GoldenBeansSupport {
             return null;
         }
         try {
-            return new JSONObject(response);
+            return MyUtils.newJSONObject(response);
         } catch (Exception e) {
             Log.goldenBeans("金豆夺宝响应解析失败：" + response);
             return null;

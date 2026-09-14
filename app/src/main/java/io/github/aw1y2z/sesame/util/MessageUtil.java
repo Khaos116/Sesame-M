@@ -14,7 +14,7 @@ public class MessageUtil {
 
     public static JSONObject newJSONObject(String str) {
         try {
-            return new JSONObject(str);
+            return MyUtils.newJSONObject(str);
         } catch (Throwable t) {
             Log.i(TAG, "newJSONObject err:");
             Log.printStackTrace(TAG, t);

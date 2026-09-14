@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.antGame;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
+
 import static io.github.aw1y2z.sesame.hook.AlipayMiniMarkHelper.getAlipayMiniMark;
 
 import io.github.aw1y2z.sesame.hook.AlipayMiniMarkHelper;
@@ -131,7 +133,7 @@ public enum GameTask {
             //Log.other("login 响应 -> HTTP " + respCode + " " + responseText);
 
             // 解析响应JSON
-            JSONObject resJson = new JSONObject(responseText.toString());
+            JSONObject resJson = MyUtils.newJSONObject(responseText.toString());
             if (resJson.optInt("code") == 1) {
                 JSONObject data = resJson.optJSONObject("data");
                 if (data != null) {
@@ -274,7 +276,7 @@ public enum GameTask {
             //Log.other("taskReport 响应 -> HTTP " + respCode + " " + responseText);
 
             // 解析响应
-            JSONObject resJson = new JSONObject(responseText.toString());
+            JSONObject resJson = MyUtils.newJSONObject(responseText.toString());
             if (resJson.optInt("code") == 1) {
                 if (current % this.requestsPerEgg == 0) {
                     Log.other("游戏进度📈"+ gameType +"[" + current + "/" + total + "](达成" + (current/this.requestsPerEgg) + "个)");

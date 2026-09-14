@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.readingDada;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 import io.github.aw1y2z.sesame.data.ModelGroup;
@@ -33,7 +35,7 @@ public class ReadingDada {
                 outBizId = "";
             }
             String s = ReadingDadaRpcCall.getQuestion(activityId);
-            JSONObject jo = new JSONObject(s);
+            JSONObject jo = MyUtils.newJSONObject(s);
             if ("200".equals(jo.optString("resultCode"))) {
                 JSONArray jsonArray = jo.getJSONArray("options");
                 String answer = AnswerAI.getAnswer(jo.getString("title"), JsonUtil.jsonArrayToList(jsonArray));
@@ -41,7 +43,7 @@ public class ReadingDada {
                     answer = jsonArray.getString(0);
                 }
                 s = ReadingDadaRpcCall.submitAnswer(activityId, outBizId, jo.getString("questionId"), answer);
-                jo = new JSONObject(s);
+                jo = MyUtils.newJSONObject(s);
                 if ("200".equals(jo.optString("resultCode"))) {
                     Log.record("答题完成");
                     return true;

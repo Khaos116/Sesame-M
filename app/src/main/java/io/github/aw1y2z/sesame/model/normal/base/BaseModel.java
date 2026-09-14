@@ -214,7 +214,7 @@ public class BaseModel extends Model {
                 if (taskRpcRequestMethodAndData == null || taskRpcRequestMethodAndData.isEmpty()) {
                     continue; // 跳过空字符串，继续下一次遍历
                 }
-                taskRpcJo = new JSONObject(taskRpcRequestMethodAndData);
+                taskRpcJo = MyUtils.newJSONObject(taskRpcRequestMethodAndData);
                 // 【可选】这里添加解析后的业务逻辑，比如获取JSON中的字段
                 String methodName = taskRpcJo.getString("methodName"); // 假设JSON中有method字段
                 String requestData = taskRpcJo.getString("requestData");     // 假设JSON中有data字段

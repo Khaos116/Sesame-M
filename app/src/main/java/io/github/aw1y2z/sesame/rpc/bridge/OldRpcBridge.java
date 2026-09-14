@@ -137,27 +137,9 @@ public class OldRpcBridge implements RpcBridge {
                                         }
                                     }
                                 } else if (msg.contains("MMTPException")) {
-                                    try {
-                                        String jsonString = "{\"resultCode\":\"FAIL\",\"memo\":\"MMTPException\",\"resultDesc\":\"MMTPException\"}";
-                                        rpcEntity.setResponseObject(new JSONObject(jsonString), jsonString);
-                                        return rpcEntity;
-                                    } catch (JSONException e) {
-                                        Log.printStackTrace(e);
-                                    }
-                                    if (retryInterval < 0) {
-                                        try {
-                                            Thread.sleep(600 + RandomUtil.delay());
-                                        } catch (InterruptedException e) {
-                                            Log.printStackTrace(e);
-                                        }
-                                    } else if (retryInterval > 0) {
-                                        try {
-                                            Thread.sleep(retryInterval);
-                                        } catch (InterruptedException e) {
-                                            Log.printStackTrace(e);
-                                        }
-                                    }
-                                    continue;
+                                    String jsonString = "{\"resultCode\":\"FAIL\",\"memo\":\"MMTPException\",\"resultDesc\":\"MMTPException\"}";
+                                    rpcEntity.setResponseObject(MyUtils.newJSONObject(jsonString), jsonString);
+                                    return rpcEntity;
                                 }
                             }
                         }
@@ -166,7 +148,7 @@ public class OldRpcBridge implements RpcBridge {
                 }
                 try {
                     String resultStr = (String) getResponseMethod.invoke(resp);
-                    JSONObject resultObject = new JSONObject(resultStr);
+                    JSONObject resultObject = MyUtils.newJSONObject(resultStr);
                     rpcEntity.setResponseObject(resultObject, resultStr);
                     if (resultObject.optString("memo", "").contains("系统繁忙")) {
                         ApplicationHook.setOffline(true);
@@ -185,7 +167,6 @@ public class OldRpcBridge implements RpcBridge {
                 }
                 return null;
             } while (count < tryCount);
-            return null;
         } finally {
             Log.debug("Old RPC\n方法: " + method + "\n参数: " + args + "\n数据: " + rpcEntity.getResponseString() + "\n");
         }

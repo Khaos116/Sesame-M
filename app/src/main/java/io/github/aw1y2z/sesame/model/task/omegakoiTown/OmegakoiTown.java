@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.omegakoiTown;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 import io.github.aw1y2z.sesame.data.ModelFields;
@@ -87,7 +89,7 @@ public class OmegakoiTown extends ModelTask {
     private void getUserTasks() {
         try {
             String s = OmegakoiTownRpcCall.getUserTasks();
-            JSONObject jo = new JSONObject(s);
+            JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
                 JSONObject result = jo.getJSONObject("result");
                 JSONArray tasks = result.getJSONArray("tasks");
@@ -105,7 +107,7 @@ public class OmegakoiTown extends ModelTask {
                         String itemId = task.getJSONObject("reward").getString("itemId");
                         try {
                             RewardType rewardType = RewardType.valueOf(itemId);
-                            jo = new JSONObject(OmegakoiTownRpcCall.triggerTaskReward(taskId));
+                            jo = MyUtils.newJSONObject(OmegakoiTownRpcCall.triggerTaskReward(taskId));
                             if (jo.optBoolean("success")) {
                                 Log.other("小镇任务🌇[" + name + "]#" + amount + "[" + rewardType.rewardName() + "]");
                             }
@@ -127,11 +129,11 @@ public class OmegakoiTown extends ModelTask {
     private void getSignInStatus() {
         try {
             String s = OmegakoiTownRpcCall.getSignInStatus();
-            JSONObject jo = new JSONObject(s);
+            JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
                 boolean signed = jo.getJSONObject("result").getBoolean("signed");
                 if (!signed) {
-                    jo = new JSONObject(OmegakoiTownRpcCall.signIn());
+                    jo = MyUtils.newJSONObject(OmegakoiTownRpcCall.signIn());
                     JSONObject diffItem = jo.getJSONObject("result").getJSONArray("diffItems").getJSONObject(0);
                     int amount = diffItem.getInt("amount");
                     String itemId = diffItem.getString("itemId");
@@ -148,7 +150,7 @@ public class OmegakoiTown extends ModelTask {
     private void houseProduct() {
         try {
             String s = OmegakoiTownRpcCall.houseProduct();
-            JSONObject jo = new JSONObject(s);
+            JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
                 JSONObject result = jo.getJSONObject("result");
                 JSONArray userHouses = result.getJSONArray("userHouses");
@@ -164,7 +166,7 @@ public class OmegakoiTown extends ModelTask {
                             continue;
                         String houseId = jo.getString("houseId");
                         long id = jo.getLong("id");
-                        jo = new JSONObject(OmegakoiTownRpcCall.collect(houseId, id));
+                        jo = MyUtils.newJSONObject(OmegakoiTownRpcCall.collect(houseId, id));
                         if (jo.optBoolean("success")) {
                             HouseType houseType = HouseType.valueOf(houseId);
                             String itemId = jo.getJSONObject("result").getJSONArray("rewards").getJSONObject(0)

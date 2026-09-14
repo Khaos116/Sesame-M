@@ -185,7 +185,7 @@ public class AntStall extends ModelTask {
     
     private static JSONObject querySelfHome() {
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.selfHome(""));
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.selfHome(""));
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return null;
             }
@@ -197,7 +197,7 @@ public class AntStall extends ModelTask {
             String villageType = jo.getJSONObject("currentVillage").getString("villageType");
             if (!Objects.equals(currentVillageType, villageType)) {
                 TimeUtil.sleep(2000);
-                jo = new JSONObject(AntStallRpcCall.selfHome(currentVillageType));
+                jo = MyUtils.newJSONObject(AntStallRpcCall.selfHome(currentVillageType));
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return null;
                 }
@@ -255,12 +255,12 @@ public class AntStall extends ModelTask {
                 if (jostr == null) {
                     return;
                 }
-                JSONObject jo = new JSONObject(jostr);
+                JSONObject jo = MyUtils.newJSONObject(jostr);
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     JSONArray taskModels = jo.getJSONArray("taskModels");
                     for (int i = 0; i < taskModels.length(); i++) {
                         JSONObject task = taskModels.getJSONObject(i);
-                        JSONObject bizInfo = new JSONObject(task.getString("bizInfo"));
+                        JSONObject bizInfo = MyUtils.newJSONObject(task.getString("bizInfo"));
                         String title = bizInfo.getString("title");
                         AntStallTaskListMap.add(title, title);
                     }
@@ -319,7 +319,7 @@ public class AntStall extends ModelTask {
                 return;
             }
             double amount = astReceivableCoinVO.getJSONObject("receivableCoin").getDouble("amount");
-            JSONObject jo = new JSONObject(AntStallRpcCall.settleReceivable());
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.settleReceivable());
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Log.farm("蚂蚁新村⛪收取小摊结余#获得[" + amount + "木兰币]");
             }
@@ -332,14 +332,14 @@ public class AntStall extends ModelTask {
     
     private void sendBack(String billNo, String seatId, String shopId, String shopUserId) {
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.shopSendBackPre(billNo, seatId, shopId, shopUserId));
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.shopSendBackPre(billNo, seatId, shopId, shopUserId));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
             JSONObject astPreviewShopSettleVO = jo.getJSONObject("astPreviewShopSettleVO");
             JSONObject income = astPreviewShopSettleVO.getJSONObject("income");
             double amount = income.getDouble("amount");
-            jo = new JSONObject(AntStallRpcCall.shopSendBack(seatId));
+            jo = MyUtils.newJSONObject(AntStallRpcCall.shopSendBack(seatId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Log.farm("蚂蚁新村⛪请走[" + UserIdMap.getMaskName(shopUserId) + "]的小摊" + (amount > 0 ? "#获得[" + amount + "木兰币]" : ""));
             }
@@ -356,7 +356,7 @@ public class AntStall extends ModelTask {
             return;
         }
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.rankInviteOpen());
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.rankInviteOpen());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -373,7 +373,7 @@ public class AntStall extends ModelTask {
                     continue;
                 }
                 if (friend.getBoolean("canOneKeyInviteOpenShop")) {
-                    jo = new JSONObject(AntStallRpcCall.oneKeyInviteOpenShop(friendUserId, seatId));
+                    jo = MyUtils.newJSONObject(AntStallRpcCall.oneKeyInviteOpenShop(friendUserId, seatId));
                     if (MessageUtil.checkResultCode(TAG, jo)) {
                         Log.farm("蚂蚁新村⛪邀请[" + UserIdMap.getMaskName(friendUserId) + "]来新村摆摊");
                         return;
@@ -455,7 +455,7 @@ public class AntStall extends ModelTask {
                 double settleCoin = master.getJSONObject("money").getDouble("amount");
                 boolean fullShow = master.getBoolean("fullShow");
                 if (fullShow || settleCoin > 100) {
-                    JSONObject jo = new JSONObject(AntStallRpcCall.settle(assetId, settleCoin));
+                    JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.settle(assetId, settleCoin));
                     if (MessageUtil.checkResultCode(TAG, jo)) {
                         Log.farm("蚂蚁新村⛪收取经营所得#获得[" + settleCoin + "木兰币]");
                     }
@@ -471,7 +471,7 @@ public class AntStall extends ModelTask {
     
     private void closeShop() {
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.shopList());
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.shopList());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -518,7 +518,7 @@ public class AntStall extends ModelTask {
     
     private synchronized void openShop() {
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.shopList());
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.shopList());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -540,7 +540,7 @@ public class AntStall extends ModelTask {
     
     private void rankCoinDonate(Queue<String> shopIds) {
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.rankCoinDonate());
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.rankCoinDonate());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -571,7 +571,7 @@ public class AntStall extends ModelTask {
     
     private Boolean openShop(String seatId, String userId, String shopId) {
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.shopOpen(seatId, userId, shopId));
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.shopOpen(seatId, userId, shopId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Log.farm("蚂蚁新村⛪在[" + UserIdMap.getMaskName(userId) + "]的新村摆摊");
                 return true;
@@ -597,7 +597,7 @@ public class AntStall extends ModelTask {
             }
             String userId = seat.userId;
             try {
-                JSONObject jo = new JSONObject(AntStallRpcCall.friendHome(userId));
+                JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.friendHome(userId));
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
@@ -634,12 +634,12 @@ public class AntStall extends ModelTask {
     
     private void closeShop(String shopId, String billNo, String userId) {
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.shopClosePre(shopId, billNo));
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.shopClosePre(shopId, billNo));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
             JSONObject income = jo.getJSONObject("astPreviewShopSettleVO").getJSONObject("income");
-            jo = new JSONObject(AntStallRpcCall.shopClose(shopId));
+            jo = MyUtils.newJSONObject(AntStallRpcCall.shopClose(shopId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 double amount = income.getDouble("amount");
                 Log.farm("蚂蚁新村⛪在[" + UserIdMap.getMaskName(userId) + "]的新村收摊#获得[" + amount + "木兰币]");
@@ -657,7 +657,7 @@ public class AntStall extends ModelTask {
             if (jostr == null) {
                 return;
             }
-            JSONObject jo = new JSONObject(jostr);
+            JSONObject jo = MyUtils.newJSONObject(jostr);
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 if (jo.has("errorMessage")) {
                     String errorMessage = jo.optString("errorMessage");
@@ -681,7 +681,7 @@ public class AntStall extends ModelTask {
                     continue;
                 }
                 String taskType = task.getString("taskType");
-                JSONObject bizInfo = new JSONObject(task.getString("bizInfo"));
+                JSONObject bizInfo = MyUtils.newJSONObject(task.getString("bizInfo"));
                 String title = bizInfo.getString("title");
                 //黑名单任务跳过
                 if (AntStallTaskList.getValue().contains(title)) {
@@ -711,7 +711,7 @@ public class AntStall extends ModelTask {
     private Boolean doStallTask(JSONObject task, String title) {
         try {
             String taskType = task.getString("taskType");
-            JSONObject bizInfo = new JSONObject(task.getString("bizInfo"));
+            JSONObject bizInfo = MyUtils.newJSONObject(task.getString("bizInfo"));
             if (Objects.equals("VISIT_AUTO_FINISH", bizInfo.getString("actionType")) || taskTypeList.contains(taskType)) {
                 return finishTask(taskType, title);
             }
@@ -729,7 +729,7 @@ public class AntStall extends ModelTask {
                     if (sceneCode.isEmpty()) {
                         return false;
                     }
-                    JSONObject jo = new JSONObject(AntStallRpcCall.queryCallAppSchema(sceneCode));
+                    JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.queryCallAppSchema(sceneCode));
                     if (!MessageUtil.checkResultCode(TAG, jo)) {
                         return false;
                     }
@@ -741,7 +741,7 @@ public class AntStall extends ModelTask {
                 }
                 case "ANTSTALL_XLIGHT_VARIABLE_AWARD": {
                     //【木兰市集】逛精选好物
-                    JSONObject jo = new JSONObject(AntStallRpcCall.xlightPlugin());
+                    JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.xlightPlugin());
                     if (!jo.has("playingResult")) {
                         Log.i(TAG, "taskList.xlightPlugin err:" + jo.optString("resultDesc"));
                         return false;
@@ -757,7 +757,7 @@ public class AntStall extends ModelTask {
                         try {
                             JSONObject jsonObject = jsonArray.getJSONObject(j);
                             TimeUtil.sleep(5000);
-                            jo = new JSONObject(AntStallRpcCall.finish(pid, jsonObject));
+                            jo = MyUtils.newJSONObject(AntStallRpcCall.finish(pid, jsonObject));
                             if (!jo.optBoolean("success")) {
                                 Log.i(TAG, "taskList.finish err:" + jo.optString("resultDesc"));
                             }
@@ -780,7 +780,7 @@ public class AntStall extends ModelTask {
     
     private void signToday() {
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.signToday());
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.signToday());
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 StringBuilder signReward = new StringBuilder();
                 JSONArray signRewardModelList = jo.getJSONArray("signRewardModelList");
@@ -809,7 +809,7 @@ public class AntStall extends ModelTask {
     
     private static void receiveTaskAward(String taskType, String title) {
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.receiveTaskAward(taskType));
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.receiveTaskAward(taskType));
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 Log.farm("新村任务🎖️领取[" + title + "]奖励#获得[产速增加" + jo.getInt("incAwardCount") + "/小时]");
             }
@@ -823,7 +823,7 @@ public class AntStall extends ModelTask {
     private static Boolean finishTask(String taskType, String title) {
         // String s = AntStallRpcCall.finishTask(FriendIdMap.currentUid + "_" + taskType, taskType);
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.finishTask(taskType));
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.finishTask(taskType));
             //检查并标记黑名单任务
             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntStallTaskList", title, jo);
             return MessageUtil.checkSuccess(TAG, jo);
@@ -840,7 +840,7 @@ public class AntStall extends ModelTask {
             return;
         }
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.rankInviteRegister());
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.rankInviteRegister());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -858,7 +858,7 @@ public class AntStall extends ModelTask {
                 if (!inviteRegisterList.getValue().contains(userId)) {
                     continue;
                 }
-                jo = new JSONObject(AntStallRpcCall.friendInviteRegister(userId));
+                jo = MyUtils.newJSONObject(AntStallRpcCall.friendInviteRegister(userId));
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     Log.farm("蚂蚁新村⛪邀请[" + UserIdMap.getMaskName(userId) + "]开通新村");
                     return;
@@ -874,7 +874,7 @@ public class AntStall extends ModelTask {
     private String shareP2P() {
         try {
             String s = AntStallRpcCall.shareP2P();
-            JSONObject jo = new JSONObject(s);
+            JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
                 String shareId = jo.getString("shareId");
                 Log.record("蚂蚁新村⛪[分享助力]");
@@ -904,7 +904,7 @@ public class AntStall extends ModelTask {
                 if (!Status.canStallShareP2PToday(friendUserId)) {
                     continue;
                 }
-                JSONObject jo = new JSONObject(AntStallRpcCall.achieveBeShareP2P(friendUserId));
+                JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.achieveBeShareP2P(friendUserId));
                 TimeUtil.sleep(5000);
                 if (MessageUtil.checkSuccess(TAG, jo)) {
                     Log.farm("新村助力🎉助力[" + UserIdMap.getMaskName(friendUserId) + "]成功");
@@ -937,7 +937,7 @@ public class AntStall extends ModelTask {
             return;
         }
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.projectList());
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.projectList());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -962,7 +962,7 @@ public class AntStall extends ModelTask {
     
     private Boolean projectDetail(String projectId) {
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.projectDetail(projectId));
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.projectDetail(projectId));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
@@ -982,7 +982,7 @@ public class AntStall extends ModelTask {
     
     private Boolean projectDonate(String projectId) {
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.projectDonate(projectId));
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.projectDonate(projectId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 JSONObject donateBillVO = jo.getJSONObject("donateBillVO");
                 String projectTitle = donateBillVO.getString("projectTitle");
@@ -1010,7 +1010,7 @@ public class AntStall extends ModelTask {
             return false;
         }
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.letterList());
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.letterList());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
@@ -1070,7 +1070,7 @@ public class AntStall extends ModelTask {
     
     private static Boolean nextVillage() {
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.nextVillage());
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.nextVillage());
             return MessageUtil.checkResultCode(TAG, jo);
         }
         catch (Throwable t) {
@@ -1085,7 +1085,7 @@ public class AntStall extends ModelTask {
             if (Status.hasFlagToday("stall::queryManureInfo")) {
                     return;
             }
-            JSONObject jo = new JSONObject(AntStallRpcCall.queryManureInfo());
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.queryManureInfo());
             if(jo.optString("errorMessage").equals("系统繁忙，请稍后再试。"))
             {
                 Log.record("新村queryManureInfo有点黑了，今天不再尝试");
@@ -1097,7 +1097,7 @@ public class AntStall extends ModelTask {
             JSONObject astManureInfoVO = jo.getJSONObject("astManureInfoVO");
             if (astManureInfoVO.optBoolean("hasManure")) {
                 int manure = astManureInfoVO.getInt("manure");
-                jo = new JSONObject(AntStallRpcCall.collectManure());
+                jo = MyUtils.newJSONObject(AntStallRpcCall.collectManure());
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     Log.farm("蚂蚁新村⛪收取[" + manure + "g肥料]");
                 }
@@ -1111,7 +1111,7 @@ public class AntStall extends ModelTask {
     
     private Boolean throwManure(JSONArray dynamicList) {
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.throwManure(dynamicList));
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.throwManure(dynamicList));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 int income = jo.getInt("income");
                 Log.farm("蚂蚁新村⛪一键丢肥料#讨回[" + income + "木兰币]");
@@ -1136,7 +1136,7 @@ public class AntStall extends ModelTask {
             return;
         }
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.dynamicLoss());
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.dynamicLoss());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -1185,7 +1185,7 @@ public class AntStall extends ModelTask {
         }
         try {
             while (true) {
-                JSONObject jo = new JSONObject(AntStallRpcCall.nextTicketFriend());
+                JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.nextTicketFriend());
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
@@ -1215,7 +1215,7 @@ public class AntStall extends ModelTask {
             return;
         }
         try {
-            JSONObject jo = new JSONObject(AntStallRpcCall.friendHome(friendUserId));
+            JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.friendHome(friendUserId));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -1225,7 +1225,7 @@ public class AntStall extends ModelTask {
                 if (jo.getBoolean("canOpenShop") || !jo.getBoolean("overTicketProtection")) {
                     continue;
                 }
-                jo = new JSONObject(AntStallRpcCall.pasteTicket(jo.getString("rentLastBill"), jo.getString("seatId"), jo.getString("rentLastShop"), jo.getString("rentLastUser"), jo.getString("userId")));
+                jo = MyUtils.newJSONObject(AntStallRpcCall.pasteTicket(jo.getString("rentLastBill"), jo.getString("seatId"), jo.getString("rentLastShop"), jo.getString("rentLastUser"), jo.getString("userId")));
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     double amount = jo.getJSONObject("pasteIncome").getDouble("amount");
                     Log.farm("蚂蚁新村🚫在[" + UserIdMap.getMaskName(friendUserId) + "]的新村贴罚单#获得[" + amount + "木兰币]");

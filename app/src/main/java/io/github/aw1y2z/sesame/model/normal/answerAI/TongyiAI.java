@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.model.normal.answerAI;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
+
 import io.github.aw1y2z.sesame.util.JsonUtil;
 import io.github.aw1y2z.sesame.util.Log;
 import okhttp3.*;
@@ -66,7 +68,7 @@ public class TongyiAI implements AnswerAIInterface {
                 Log.i("Tongyi接口异常：" + json);
                 return result;
             }
-            JSONObject jsonObject = new JSONObject(json);
+            JSONObject jsonObject = MyUtils.newJSONObject(json);
             result = JsonUtil.getValueByPath(jsonObject, "choices.[0].message.content");
         } catch (Throwable t) {
             Log.printStackTrace(TAG, t);

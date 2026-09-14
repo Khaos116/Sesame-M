@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.antBookRead;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 import io.github.aw1y2z.sesame.data.ModelFields;
@@ -55,13 +57,13 @@ public class AntBookRead extends ModelTask {
     private static void queryTaskCenterPage() {
         try {
             String s = AntBookReadRpcCall.queryTaskCenterPage();
-            JSONObject jo = new JSONObject(s);
+            JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
                 JSONObject data = jo.getJSONObject("data");
                 String todayPlayDurationText = data.getJSONObject("benefitAggBlock").getString("todayPlayDurationText");
                 int PlayDuration = Integer.parseInt(StringUtil.getSubString(todayPlayDurationText, "今日听读时长", "分钟"));
                 if (PlayDuration < 450) {
-                    jo = new JSONObject(AntBookReadRpcCall.queryHomePage());
+                    jo = MyUtils.newJSONObject(AntBookReadRpcCall.queryHomePage());
                     if (jo.optBoolean("success")) {
                         JSONArray bookList = jo.getJSONObject("data").getJSONArray("dynamicCardList").getJSONObject(0)
                                 .getJSONObject("data").getJSONArray("bookList");
@@ -69,15 +71,15 @@ public class AntBookRead extends ModelTask {
                         int postion = RandomUtil.nextInt(0, bookListLength - 1);
                         JSONObject book = bookList.getJSONObject(postion);
                         String bookId = book.getString("bookId");
-                        jo = new JSONObject(AntBookReadRpcCall.queryReaderContent(bookId));
+                        jo = MyUtils.newJSONObject(AntBookReadRpcCall.queryReaderContent(bookId));
                         if (jo.optBoolean("success")) {
                             String nextChapterId = jo.getJSONObject("data").getString("nextChapterId");
                             String name = jo.getJSONObject("data").getJSONObject("readerHomePageVO").getString("name");
                             for (int i = 0; i < 17; i++) {
                                 int energy = 0;
-                                jo = new JSONObject(AntBookReadRpcCall.syncUserReadInfo(bookId, nextChapterId));
+                                jo = MyUtils.newJSONObject(AntBookReadRpcCall.syncUserReadInfo(bookId, nextChapterId));
                                 if (jo.optBoolean("success")) {
-                                    jo = new JSONObject(AntBookReadRpcCall.queryReaderForestEnergyInfo(bookId));
+                                    jo = MyUtils.newJSONObject(AntBookReadRpcCall.queryReaderForestEnergyInfo(bookId));
                                     if (jo.optBoolean("success")) {
                                         String tips = jo.getJSONObject("data").getString("tips");
                                         if (tips.contains("已得")) {
@@ -109,7 +111,7 @@ public class AntBookRead extends ModelTask {
         boolean doubleCheck = false;
         try {
             String s = AntBookReadRpcCall.queryTaskCenterPage();
-            JSONObject jo = new JSONObject(s);
+            JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
                 JSONObject data = jo.getJSONObject("data");
                 JSONArray userTaskGroupList = data.getJSONObject("userTaskListModuleVO")
@@ -169,7 +171,7 @@ public class AntBookRead extends ModelTask {
     private static void collectTaskPrize(String taskId, String taskType, String name) {
         try {
             String s = AntBookReadRpcCall.collectTaskPrize(taskId, taskType);
-            JSONObject jo = new JSONObject(s);
+            JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
                 int coinNum = jo.getJSONObject("data").getInt("coinNum");
                 Log.other("阅读任务📖[" + name + "]#" + coinNum);
@@ -183,7 +185,7 @@ public class AntBookRead extends ModelTask {
     private static void taskFinish(String taskId, String taskType) {
         try {
             String s = AntBookReadRpcCall.taskFinish(taskId, taskType);
-            JSONObject jo = new JSONObject(s);
+            JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
 
             }
@@ -196,14 +198,14 @@ public class AntBookRead extends ModelTask {
     private static void queryTreasureBox() {
         try {
             String s = AntBookReadRpcCall.queryTreasureBox();
-            JSONObject jo = new JSONObject(s);
+            JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
                 JSONObject treasureBoxVo = jo.getJSONObject("data").getJSONObject("treasureBoxVo");
                 if (treasureBoxVo.has("countdown"))
                     return;
                 String status = treasureBoxVo.getString("status");
                 if ("CAN_OPEN".equals(status)) {
-                    jo = new JSONObject(AntBookReadRpcCall.openTreasureBox());
+                    jo = MyUtils.newJSONObject(AntBookReadRpcCall.openTreasureBox());
                     if (jo.optBoolean("success")) {
                         int coinNum = jo.getJSONObject("data").getInt("coinNum");
                         Log.other("阅读任务📖[打开宝箱]#" + coinNum);
