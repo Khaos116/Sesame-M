@@ -671,13 +671,16 @@ public class AntOrchard extends ModelTask {
             Log.record(inTeam ? "当前为芭芭农场 team 模式（合种/帮帮种已开启）" : "当前为普通单人农场模式");
 
             // 处理签到任务
-            if (jo.has("signTaskInfo")) {
-                handleSignTask(jo.getJSONObject("signTaskInfo"));
+            JSONObject signTaskInfo = jo.optJSONObject("signTaskInfo");
+            if (signTaskInfo != null) {
+                handleSignTask(signTaskInfo);
             }
 
             // 处理任务列表
-            JSONArray taskArray = jo.getJSONArray("taskList");
-            handleTaskList(taskArray);
+            JSONArray taskArray = jo.optJSONArray("taskList");
+            if (taskArray != null) {
+                handleTaskList(taskArray);
+            }
 
             // 触发已完成任务的奖励
             triggerTbTask();
@@ -696,8 +699,11 @@ public class AntOrchard extends ModelTask {
         }
 
         try {
-            JSONObject currentSign = signInfo.getJSONObject("currentSignItem");
-            if (currentSign.getBoolean("signed")) {
+            JSONObject currentSign = signInfo.optJSONObject("currentSignItem");
+            if (currentSign == null) {
+                return;
+            }
+            if (currentSign.optBoolean("signed")) {
                 Log.record("农场今日已签到");
                 Status.flagToday("orchardSign", userId);
                 return;
@@ -707,9 +713,13 @@ public class AntOrchard extends ModelTask {
             String result = AntOrchardRpcCall.orchardSign();
             JSONObject signJo = MyUtils.newJSONObject(result);
             if (MessageUtil.checkResultCode(TAG, signJo)) {
-                JSONObject newSignInfo = signJo.getJSONObject("signTaskInfo").getJSONObject("currentSignItem");
-                int continuousDays = newSignInfo.getInt("currentContinuousCount");
-                int award = newSignInfo.getInt("awardCount");
+                JSONObject newSignTaskInfo = signJo.optJSONObject("signTaskInfo");
+                JSONObject newSignInfo = newSignTaskInfo != null ? newSignTaskInfo.optJSONObject("currentSignItem") : null;
+                if (newSignInfo == null) {
+                    return;
+                }
+                int continuousDays = newSignInfo.optInt("currentContinuousCount");
+                int award = newSignInfo.optInt("awardCount");
                 Log.farm("农场任务📅七天签到[第" + continuousDays + "天]#获得[" + award + "g肥料]");
                 Status.flagToday("orchardSign", userId);
             }
@@ -725,8 +735,11 @@ public class AntOrchard extends ModelTask {
     private void handleTaskList(JSONArray taskArray) {
         try {
             for (int i = 0; i < taskArray.length(); i++) {
-                JSONObject jo = taskArray.getJSONObject(i);
-                String taskStatus = jo.getString("taskStatus");
+                JSONObject jo = taskArray.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
+                String taskStatus = jo.optString("taskStatus");
                 if (TaskStatus.RECEIVED.name().equals(taskStatus)) {
                     continue;
                 }
@@ -762,11 +775,12 @@ public class AntOrchard extends ModelTask {
             if (!task.has("taskDisplayConfig")) {
                 return false;
             }
-            if (!task.getJSONObject("taskDisplayConfig").has("title")) {
+            JSONObject taskDisplayConfig = task.optJSONObject("taskDisplayConfig");
+            if (taskDisplayConfig == null || !taskDisplayConfig.has("title")) {
                 return false;
             }
-            String title = task.getJSONObject("taskDisplayConfig").getString("title");
-            String actionType = task.getString("actionType");
+            String title = taskDisplayConfig.optString("title");
+            String actionType = task.optString("actionType");
             String sceneCode = task.optString("sceneCode");
             String taskId = task.optString("taskId");
 
