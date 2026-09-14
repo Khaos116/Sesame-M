@@ -492,17 +492,18 @@ public class AntOcean extends ModelTask {
                 return;
             }
 
-            if (jo.has("userReplicaAssetVO")) {
-                JSONObject userReplicaAssetVO = jo.getJSONObject("userReplicaAssetVO");
-                int canCollectAssetNum = userReplicaAssetVO.getInt("canCollectAssetNum");
+            JSONObject userReplicaAssetVO = jo.optJSONObject("userReplicaAssetVO");
+            if (userReplicaAssetVO != null) {
+                int canCollectAssetNum = userReplicaAssetVO.optInt("canCollectAssetNum");
                 collectReplicaAsset(canCollectAssetNum);
             }
 
-            if (jo.has("userCurrentPhaseVO")) {
-                JSONObject userCurrentPhaseVO = jo.getJSONObject("userCurrentPhaseVO");
-                String phaseCode = userCurrentPhaseVO.getString("phaseCode");
-                String code = jo.getJSONObject("userReplicaInfoVO").getString("code");
-                if ("COMPLETED".equals(userCurrentPhaseVO.getString("phaseStatus"))) {
+            JSONObject userCurrentPhaseVO = jo.optJSONObject("userCurrentPhaseVO");
+            JSONObject userReplicaInfoVO = jo.optJSONObject("userReplicaInfoVO");
+            if (userCurrentPhaseVO != null && userReplicaInfoVO != null) {
+                String phaseCode = userCurrentPhaseVO.optString("phaseCode");
+                String code = userReplicaInfoVO.optString("code");
+                if ("COMPLETED".equals(userCurrentPhaseVO.optString("phaseStatus"))) {
                     unLockReplicaPhase(code, phaseCode);
                 }
             }
@@ -532,7 +533,9 @@ public class AntOcean extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.unLockReplicaPhase(replicaCode, replicaPhaseCode));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                String name = jo.getJSONObject("currentPhaseInfo").getJSONObject("extInfo").getString("name");
+                JSONObject currentPhaseInfo = jo.optJSONObject("currentPhaseInfo");
+                JSONObject extInfo = currentPhaseInfo != null ? currentPhaseInfo.optJSONObject("extInfo") : null;
+                String name = extInfo != null ? extInfo.optString("name") : "";
                 Log.forest("神奇海洋🐳迎回[" + name + "]");
             }
         } catch (Throwable t) {
@@ -547,16 +550,19 @@ public class AntOcean extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray ja = jo.getJSONArray("antOceanTaskVOList");
-            for (int i = 0; i < ja.length(); i++) {
-                jo = ja.getJSONObject(i);
-                String taskStatus = jo.getString("taskStatus");
+            JSONArray ja = jo.optJSONArray("antOceanTaskVOList");
+            for (int i = 0; ja != null && i < ja.length(); i++) {
+                jo = ja.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
+                String taskStatus = jo.optString("taskStatus");
                 if (!TaskStatus.FINISHED.name().equals(taskStatus)) {
                     continue;
                 }
-                String taskType = jo.getString("taskType");
-                JSONObject bizInfo = MyUtils.newJSONObject(jo.getString("bizInfo"));
-                String taskTitle = bizInfo.getString("taskTitle");
+                String taskType = jo.optString("taskType");
+                JSONObject bizInfo = MyUtils.newJSONObject(jo.optString("bizInfo"));
+                String taskTitle = bizInfo.optString("taskTitle");
                 receiveReplicaTaskAward(taskType, taskTitle);
             }
         } catch (Throwable t) {
@@ -569,7 +575,7 @@ public class AntOcean extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.receiveReplicaTaskAward(taskType));
             if (MessageUtil.checkSuccess(TAG, jo)) {
-                int incAwardCount = jo.getInt("incAwardCount");
+                int incAwardCount = jo.optInt("incAwardCount");
                 Log.forest("神奇海洋🐳领取[" + taskTitle + "]奖励#获得[潘多拉能量*" + incAwardCount + "]");
             }
         } catch (Throwable t) {
@@ -584,9 +590,9 @@ public class AntOcean extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONObject miscHandlerVOMap = jo.getJSONObject("miscHandlerVOMap");
-            JSONObject homeTipsRefresh = miscHandlerVOMap.getJSONObject("HOME_TIPS_REFRESH");
-            if (homeTipsRefresh.optBoolean("fishCanBeCombined") || homeTipsRefresh.optBoolean("canBeRepaired")) {
+            JSONObject miscHandlerVOMap = jo.optJSONObject("miscHandlerVOMap");
+            JSONObject homeTipsRefresh = miscHandlerVOMap != null ? miscHandlerVOMap.optJSONObject("HOME_TIPS_REFRESH") : null;
+            if (homeTipsRefresh != null && (homeTipsRefresh.optBoolean("fishCanBeCombined") || homeTipsRefresh.optBoolean("canBeRepaired"))) {
                 querySeaAreaDetailList();
             }
             switchOceanChapter();
