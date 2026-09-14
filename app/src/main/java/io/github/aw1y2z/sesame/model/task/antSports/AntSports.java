@@ -5,10 +5,18 @@ import io.github.aw1y2z.sesame.util.MyUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -196,7 +204,7 @@ public class AntSports extends ModelTask {
                     if (stepCount < step) {
                         try {
                             ClassLoader classLoader = ApplicationHook.getClassLoader();
-                            if ((Boolean) XHelpers.callMethod(XHelpers.callStaticMethod(classLoader.loadClass("com.alibaba.health.pedometer.intergation.rpc.RpcManager"), "a"), "a", new Object[]{step, Boolean.FALSE, "system"})) {
+                            if (syncStepByRpcManager(classLoader, step)) {
                                 Toast.show("同步步数🏃🏻‍♂️[" + step + "步]");
                                 Log.other("同步步数🏃🏻‍♂️[" + step + "步]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                                 Status.flagToday("sport::syncStep");
@@ -269,6 +277,140 @@ public class AntSports extends ModelTask {
         } catch (Throwable t) {
             Log.i(TAG, "start.run err:");
             Log.printStackTrace(TAG, t);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // 同步步数：特征匹配调用 RpcManager，不依赖硬编码的类名/方法名/参数类型
+    // 参照 Sesame-AG 的 AntSports.kt#syncStepByRpcManager 移植
+    // ---------------------------------------------------------------------
+
+    private static boolean syncStepByRpcManager(ClassLoader loader, int step) {
+        String[] candidateClassNames = {
+                "com.alibaba.health.pedometer.intergation.rpc.RpcManager",
+                "com.alibaba.health.pedometer.integration.rpc.RpcManager"
+        };
+        for (String className : candidateClassNames) {
+            Class<?> rpcManagerClass;
+            try {
+                rpcManagerClass = loader.loadClass(className);
+            } catch (Throwable t) {
+                continue;
+            }
+            List<Method> syncMethods = findSyncStepMethods(rpcManagerClass);
+            if (syncMethods.isEmpty()) {
+                continue;
+            }
+            for (Method method : syncMethods) {
+                List<Object> targets = Modifier.isStatic(method.getModifiers())
+                        ? Collections.singletonList(null)
+                        : collectRpcManagerInstances(rpcManagerClass);
+                for (Object target : targets) {
+                    if (invokeSyncStepMethod(method, target, step)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private static List<Method> findSyncStepMethods(Class<?> clazz) {
+        Map<String, Method> unique = new LinkedHashMap<>();
+        List<Method> all = new ArrayList<>();
+        all.addAll(Arrays.asList(clazz.getDeclaredMethods()));
+        all.addAll(Arrays.asList(clazz.getMethods()));
+        for (Method method : all) {
+            Class<?>[] paramTypes = method.getParameterTypes();
+            if (paramTypes.length != 3) {
+                continue;
+            }
+            boolean firstArgMatches = paramTypes[0] == int.class || paramTypes[0] == Integer.class
+                    || paramTypes[0] == long.class || paramTypes[0] == Long.class;
+            boolean secondArgMatches = paramTypes[1] == boolean.class || paramTypes[1] == Boolean.class;
+            boolean thirdArgMatches = paramTypes[2] == String.class
+                    || CharSequence.class.isAssignableFrom(paramTypes[2])
+                    || paramTypes[2] == Object.class;
+            if (!firstArgMatches || !secondArgMatches || !thirdArgMatches) {
+                continue;
+            }
+            String key = method.getName() + "#" + paramTypes[0].getName() + "," + paramTypes[1].getName() + "," + paramTypes[2].getName();
+            unique.putIfAbsent(key, method);
+        }
+        List<Method> result = new ArrayList<>(unique.values());
+        result.sort((a, b) -> scoreSyncStepMethod(b) - scoreSyncStepMethod(a));
+        return result;
+    }
+
+    private static int scoreSyncStepMethod(Method method) {
+        int score = 0;
+        if (method.getReturnType() == boolean.class || method.getReturnType() == Boolean.class) {
+            score += 4;
+        }
+        if ("a".equals(method.getName())) {
+            score += 2;
+        }
+        if (Modifier.isPublic(method.getModifiers())) {
+            score += 1;
+        }
+        return score;
+    }
+
+    private static List<Object> collectRpcManagerInstances(Class<?> clazz) {
+        LinkedHashSet<Object> instances = new LinkedHashSet<>();
+
+        try {
+            Field instanceField = clazz.getDeclaredField("INSTANCE");
+            if (Modifier.isStatic(instanceField.getModifiers())) {
+                instanceField.setAccessible(true);
+                instances.add(instanceField.get(null));
+            }
+        } catch (Throwable ignored) {
+        }
+
+        Set<String> singletonMethodNames = new HashSet<>(Arrays.asList("a", "getInstance", "instance"));
+        List<Method> all = new ArrayList<>();
+        all.addAll(Arrays.asList(clazz.getDeclaredMethods()));
+        all.addAll(Arrays.asList(clazz.getMethods()));
+        for (Method method : all) {
+            if (!Modifier.isStatic(method.getModifiers()) || method.getParameterCount() != 0 || method.getReturnType() == void.class) {
+                continue;
+            }
+            boolean nameMatches = singletonMethodNames.contains(method.getName());
+            boolean returnsSelf = clazz.isAssignableFrom(method.getReturnType());
+            if (!nameMatches && !returnsSelf) {
+                continue;
+            }
+            try {
+                method.setAccessible(true);
+                instances.add(method.invoke(null));
+            } catch (Throwable ignored) {
+            }
+        }
+
+        try {
+            Constructor<?> constructor = clazz.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            instances.add(constructor.newInstance());
+        } catch (Throwable ignored) {
+        }
+
+        instances.remove(null);
+        return new ArrayList<>(instances);
+    }
+
+    private static boolean invokeSyncStepMethod(Method method, Object target, int step) {
+        try {
+            method.setAccessible(true);
+            Class<?> firstParamType = method.getParameterTypes()[0];
+            Object stepArg = (firstParamType == long.class || firstParamType == Long.class) ? (Object) (long) step : (Object) step;
+            Object result = method.invoke(target, stepArg, Boolean.FALSE, "system");
+            if (result instanceof Boolean) {
+                return (Boolean) result;
+            }
+            return result == null && method.getReturnType() == void.class;
+        } catch (Throwable t) {
+            return false;
         }
     }
 
