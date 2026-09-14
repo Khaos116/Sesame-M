@@ -988,14 +988,17 @@ public class AntStall extends ModelTask {
                 return;
             }
             // 获取项目列表中的 astProjectVOS 数组
-            JSONArray astProjectVOS = jo.getJSONArray("astProjectVOS");
-            for (int i = 0; i < astProjectVOS.length(); i++) {
-                jo = astProjectVOS.getJSONObject(i);
+            JSONArray astProjectVOS = jo.optJSONArray("astProjectVOS");
+            for (int i = 0; astProjectVOS != null && i < astProjectVOS.length(); i++) {
+                jo = astProjectVOS.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
                 // status: ONLINE FINISH
-                if (!Objects.equals("ONLINE", jo.getString("status"))) {
+                if (!Objects.equals("ONLINE", jo.optString("status"))) {
                     break;
                 }
-                if (!projectDetail(jo.getString("projectId"))) {
+                if (!projectDetail(jo.optString("projectId"))) {
                     break;
                 }
             }
@@ -1012,8 +1015,13 @@ public class AntStall extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            int currentCoin = jo.getJSONObject("astUserInfoVO").getJSONObject("currentCoin").getInt("cent");
-            int donateAmount = jo.getJSONObject("astProjectVO").getJSONObject("jobModel").getJSONObject("donateAmount").getInt("cent");
+            JSONObject astUserInfoVO = jo.optJSONObject("astUserInfoVO");
+            JSONObject currentCoinObj = astUserInfoVO != null ? astUserInfoVO.optJSONObject("currentCoin") : null;
+            int currentCoin = currentCoinObj != null ? currentCoinObj.optInt("cent") : 0;
+            JSONObject astProjectVO = jo.optJSONObject("astProjectVO");
+            JSONObject jobModel = astProjectVO != null ? astProjectVO.optJSONObject("jobModel") : null;
+            JSONObject donateAmountObj = jobModel != null ? jobModel.optJSONObject("donateAmount") : null;
+            int donateAmount = donateAmountObj != null ? donateAmountObj.optInt("cent") : 0;
             if (currentCoin < donateAmount) {
                 return false;
             }
@@ -1030,12 +1038,15 @@ public class AntStall extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.projectDonate(projectId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                JSONObject donateBillVO = jo.getJSONObject("donateBillVO");
-                String projectTitle = donateBillVO.getString("projectTitle");
-                int donateAmount = donateBillVO.getInt("donateAmount");
+                JSONObject donateBillVO = jo.optJSONObject("donateBillVO");
+                if (donateBillVO == null) {
+                    return false;
+                }
+                String projectTitle = donateBillVO.optString("projectTitle");
+                int donateAmount = donateBillVO.optInt("donateAmount");
                 Log.farm("公益捐赠❤️[捐木兰币:" + projectTitle + "]#捐赠[" + (donateAmount / 100) + "木兰币]");
-                JSONObject astUserVillageVO = jo.getJSONObject("astUserVillageVO");
-                if (canUnlockNewVillage(astUserVillageVO)) {
+                JSONObject astUserVillageVO = jo.optJSONObject("astUserVillageVO");
+                if (astUserVillageVO != null && canUnlockNewVillage(astUserVillageVO)) {
                     if (nextVillage.getValue()) {
                         return unlockNewVillage();
                     }
@@ -1060,12 +1071,15 @@ public class AntStall extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            JSONArray ja = jo.getJSONArray("letterList");
-            if (ja.length() == 0) {
+            JSONArray ja = jo.optJSONArray("letterList");
+            if (ja == null || ja.length() == 0) {
                 return true;
             }
-            jo = ja.getJSONObject(0);
-            long gmtBiz = jo.getLong("gmtBiz");
+            jo = ja.optJSONObject(0);
+            if (jo == null) {
+                return false;
+            }
+            long gmtBiz = jo.optLong("gmtBiz");
             if (TimeUtil.isLessThanNowOfDays(gmtBiz)) {
                 return true;
             }
@@ -1088,9 +1102,13 @@ public class AntStall extends ModelTask {
             if (jo == null) {
                 return false;
             }
-            jo = jo.getJSONObject("currentVillage");
-            String villageName = jo.getString("villageName");
-            String villageDesc = jo.getJSONObject("properties").getString("villageDesc");
+            jo = jo.optJSONObject("currentVillage");
+            if (jo == null) {
+                return false;
+            }
+            String villageName = jo.optString("villageName");
+            JSONObject properties = jo.optJSONObject("properties");
+            String villageDesc = properties != null ? properties.optString("villageDesc") : "";
             Log.farm("蚂蚁新村⛪解锁[" + villageName + "]#" + villageDesc);
             return true;
         }
@@ -1103,8 +1121,8 @@ public class AntStall extends ModelTask {
     
     private Boolean canUnlockNewVillage(JSONObject currentVillage) {
         try {
-            int donateCount = currentVillage.getInt("donateCount");
-            int donateLimit = currentVillage.getInt("donateLimit");
+            int donateCount = currentVillage.optInt("donateCount");
+            int donateLimit = currentVillage.optInt("donateLimit");
             return donateCount >= donateLimit;
         }
         catch (Throwable t) {
