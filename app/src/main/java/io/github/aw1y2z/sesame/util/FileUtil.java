@@ -5,6 +5,7 @@ import android.os.Build;
 import android.os.Environment;
 import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
+import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 import java.io.*;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
@@ -263,6 +264,14 @@ public class FileUtil {
         }
         else {
             logDir.mkdirs();
+        }
+        // 改成按账号分子目录之前遗留的旧版日志文件（直接躺在 log/ 根目录下），迁移后不再使用，清理掉。
+        // 新版日志都在 log/<userId>/ 子目录下，只删根目录下的文件，不碰子目录。
+        File[] legacyFiles = logDir.listFiles(File::isFile);
+        if (legacyFiles != null) {
+            for (File legacyFile : legacyFiles) {
+                legacyFile.delete();
+            }
         }
         return logDir;
     }
@@ -683,139 +692,72 @@ public class FileUtil {
         return cityCodeFile;
     }
     
+    /**
+     * 当前账号的日志目录：{@code log/<userId>/}，未登录/取不到当前账号时用 "default"。
+     * 账号切换后 {@link UserIdMap#getCurrentUid()} 变化，后续日志自动落到新账号目录下。
+     */
+    public static File getCurrentUserLogDirectory() {
+        String userId = UserIdMap.getCurrentUid();
+        String dirName = StringUtil.isEmpty(userId) ? "default" : userId;
+        File dir = new File(LOG_DIRECTORY_FILE, dirName);
+        if (dir.exists() && dir.isFile()) {
+            dir.delete();
+        }
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        return dir;
+    }
+
+    private static File getLogFile(String type) {
+        File logFile = new File(getCurrentUserLogDirectory(), Log.getLogFileName(type));
+        if (logFile.exists() && logFile.isDirectory()) {
+            logFile.delete();
+        }
+        if (!logFile.exists()) {
+            try {
+                logFile.createNewFile();
+            }
+            catch (Throwable ignored) {
+            }
+        }
+        return logFile;
+    }
+
     public static File getRuntimeLogFile() {
-        File runtimeLogFile = new File(LOG_DIRECTORY_FILE, Log.getLogFileName("runtime"));
-        if (runtimeLogFile.exists() && runtimeLogFile.isDirectory()) {
-            runtimeLogFile.delete();
-        }
-        if (!runtimeLogFile.exists()) {
-            try {
-                runtimeLogFile.createNewFile();
-            }
-            catch (Throwable ignored) {
-            }
-        }
-        return runtimeLogFile;
+        return getLogFile("runtime");
     }
-    
+
     public static File getRecordLogFile() {
-        File recordLogFile = new File(LOG_DIRECTORY_FILE, Log.getLogFileName("record"));
-        if (recordLogFile.exists() && recordLogFile.isDirectory()) {
-            recordLogFile.delete();
-        }
-        if (!recordLogFile.exists()) {
-            try {
-                recordLogFile.createNewFile();
-            }
-            catch (Throwable ignored) {
-            }
-        }
-        return recordLogFile;
+        return getLogFile("record");
     }
-    
+
     public static File getSystemLogFile() {
-        File systemLogFile = new File(LOG_DIRECTORY_FILE, Log.getLogFileName("system"));
-        if (systemLogFile.exists() && systemLogFile.isDirectory()) {
-            systemLogFile.delete();
-        }
-        if (!systemLogFile.exists()) {
-            try {
-                systemLogFile.createNewFile();
-            }
-            catch (Throwable ignored) {
-            }
-        }
-        return systemLogFile;
+        return getLogFile("system");
     }
-    
+
     public static File getDebugLogFile() {
-        File debugLogFile = new File(LOG_DIRECTORY_FILE, Log.getLogFileName("debug"));
-        if (debugLogFile.exists() && debugLogFile.isDirectory()) {
-            debugLogFile.delete();
-        }
-        if (!debugLogFile.exists()) {
-            try {
-                debugLogFile.createNewFile();
-            }
-            catch (Throwable ignored) {
-            }
-        }
-        return debugLogFile;
+        return getLogFile("debug");
     }
-    
+
     public static File getForestLogFile() {
-        File forestLogFile = new File(LOG_DIRECTORY_FILE, Log.getLogFileName("forest"));
-        if (forestLogFile.exists() && forestLogFile.isDirectory()) {
-            forestLogFile.delete();
-        }
-        if (!forestLogFile.exists()) {
-            try {
-                forestLogFile.createNewFile();
-            }
-            catch (Throwable ignored) {
-            }
-        }
-        return forestLogFile;
+        return getLogFile("forest");
     }
-    
+
     public static File getFarmLogFile() {
-        File farmLogFile = new File(LOG_DIRECTORY_FILE, Log.getLogFileName("farm"));
-        if (farmLogFile.exists() && farmLogFile.isDirectory()) {
-            farmLogFile.delete();
-        }
-        if (!farmLogFile.exists()) {
-            try {
-                farmLogFile.createNewFile();
-            }
-            catch (Throwable ignored) {
-            }
-        }
-        return farmLogFile;
+        return getLogFile("farm");
     }
-    
+
     public static File getOtherLogFile() {
-        File otherLogFile = new File(LOG_DIRECTORY_FILE, Log.getLogFileName("other"));
-        if (otherLogFile.exists() && otherLogFile.isDirectory()) {
-            otherLogFile.delete();
-        }
-        if (!otherLogFile.exists()) {
-            try {
-                otherLogFile.createNewFile();
-            }
-            catch (Throwable ignored) {
-            }
-        }
-        return otherLogFile;
+        return getLogFile("other");
     }
-    
+
     public static File getGoldenBeansLogFile() {
-        File goldenBeansLogFile = new File(LOG_DIRECTORY_FILE, Log.getLogFileName("goldenbeans"));
-        if (goldenBeansLogFile.exists() && goldenBeansLogFile.isDirectory()) {
-            goldenBeansLogFile.delete();
-        }
-        if (!goldenBeansLogFile.exists()) {
-            try {
-                goldenBeansLogFile.createNewFile();
-            }
-            catch (Throwable ignored) {
-            }
-        }
-        return goldenBeansLogFile;
+        return getLogFile("goldenbeans");
     }
-    
+
     public static File getErrorLogFile() {
-        File errorLogFile = new File(LOG_DIRECTORY_FILE, Log.getLogFileName("error"));
-        if (errorLogFile.exists() && errorLogFile.isDirectory()) {
-            errorLogFile.delete();
-        }
-        if (!errorLogFile.exists()) {
-            try {
-                errorLogFile.createNewFile();
-            }
-            catch (Throwable ignored) {
-            }
-        }
-        return errorLogFile;
+        return getLogFile("error");
     }
     
     public static void clearLog() {

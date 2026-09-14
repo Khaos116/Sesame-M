@@ -9,11 +9,14 @@ import com.elvishew.xlog.printer.file.backup.NeverBackupStrategy;
 import com.elvishew.xlog.printer.file.clean.NeverCleanStrategy;
 import com.elvishew.xlog.printer.file.naming.FileNameGenerator;
 import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
+import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class Log {
 
@@ -48,83 +51,65 @@ public class Log {
 
     };
 
-    private static final Logger runtimeLogger = XLog.tag("RUNTIME").printers(
-            new FilePrinter.Builder(FileUtil.LOG_DIRECTORY_FILE.getPath())
-                    .fileNameGenerator(new CustomDateFileNameGenerator("runtime"))
-                    .backupStrategy(new NeverBackupStrategy())
-                    .cleanStrategy(new NeverCleanStrategy())
-                    .flattener(new PatternFlattener("{d HH:mm:ss.SSS} {t}: {m}"))
-                    .build()).build();
+    /**
+     * 每个日志类型 × 账号一个 Logger，懒加载缓存。账号切换后 {@link UserIdMap#getCurrentUid()}
+     * 变化，下一次取 Logger 时 key 跟着变，自动落到新账号的日志目录（{@code log/<userId或default>/}）。
+     */
+    private static final Map<String, Logger> LOGGER_CACHE = new ConcurrentHashMap<>();
 
-    private static final Logger recordLogger = XLog.tag("RECORD").printers(
-            new FilePrinter.Builder(FileUtil.LOG_DIRECTORY_FILE.getPath())
-                    .fileNameGenerator(new CustomDateFileNameGenerator("record"))
-                    .backupStrategy(new NeverBackupStrategy())
-                    .cleanStrategy(new NeverCleanStrategy())
-                    .flattener(new PatternFlattener("{d HH:mm:ss.SSS} {m}"))
-                    .build()).build();
+    private static Logger getUserLogger(String type, String tag, String pattern) {
+        String userId = UserIdMap.getCurrentUid();
+        String key = type + "::" + (userId == null || userId.isEmpty() ? "default" : userId);
+        return LOGGER_CACHE.computeIfAbsent(key, k -> XLog.tag(tag).printers(
+                new FilePrinter.Builder(FileUtil.getCurrentUserLogDirectory().getPath())
+                        .fileNameGenerator(new CustomDateFileNameGenerator(type))
+                        .backupStrategy(new NeverBackupStrategy())
+                        .cleanStrategy(new NeverCleanStrategy())
+                        .flattener(new PatternFlattener(pattern))
+                        .build()).build());
+    }
 
-    private static final Logger systemLogger = XLog.tag("SYSTEM").printers(
-            new FilePrinter.Builder(FileUtil.LOG_DIRECTORY_FILE.getPath())
-                    .fileNameGenerator(new CustomDateFileNameGenerator("system"))
-                    .backupStrategy(new NeverBackupStrategy())
-                    .cleanStrategy(new NeverCleanStrategy())
-                    .flattener(new PatternFlattener("{d HH:mm:ss.SSS} {t}: {m}"))
-                    .build()).build();
+    private static Logger runtimeLogger() {
+        return getUserLogger("runtime", "RUNTIME", "{d HH:mm:ss.SSS} {t}: {m}");
+    }
 
-    private static final Logger debugLogger = XLog.tag("DEBUG").printers(
-            new FilePrinter.Builder(FileUtil.LOG_DIRECTORY_FILE.getPath())
-                    .fileNameGenerator(new CustomDateFileNameGenerator("debug"))
-                    .backupStrategy(new NeverBackupStrategy())
-                    .cleanStrategy(new NeverCleanStrategy())
-                    .flattener(new PatternFlattener("{d HH:mm:ss.SSS} {t}: {m}"))
-                    .build()).build();
+    private static Logger recordLogger() {
+        return getUserLogger("record", "RECORD", "{d HH:mm:ss.SSS} {m}");
+    }
 
-    private static final Logger forestLogger = XLog.tag("FOREST").printers(
-            new FilePrinter.Builder(FileUtil.LOG_DIRECTORY_FILE.getPath())
-                    .fileNameGenerator(new CustomDateFileNameGenerator("forest"))
-                    .backupStrategy(new NeverBackupStrategy())
-                    .cleanStrategy(new NeverCleanStrategy())
-                    .flattener(new PatternFlattener("{d HH:mm:ss.SSS} {m}"))
-                    .build()).build();
+    private static Logger systemLogger() {
+        return getUserLogger("system", "SYSTEM", "{d HH:mm:ss.SSS} {t}: {m}");
+    }
 
-    private static final Logger goldenBeansLogger = XLog.tag("GOLDENBEANS").printers(
-            new FilePrinter.Builder(FileUtil.LOG_DIRECTORY_FILE.getPath())
-                    .fileNameGenerator(new CustomDateFileNameGenerator("goldenbeans"))
-                    .backupStrategy(new NeverBackupStrategy())
-                    .cleanStrategy(new NeverCleanStrategy())
-                    .flattener(new PatternFlattener("{d HH:mm:ss.SSS} {m}"))
-                    .build()).build();
+    private static Logger debugLogger() {
+        return getUserLogger("debug", "DEBUG", "{d HH:mm:ss.SSS} {t}: {m}");
+    }
 
-    private static final Logger farmLogger = XLog.tag("FARM").printers(
-            new FilePrinter.Builder(FileUtil.LOG_DIRECTORY_FILE.getPath())
-                    .fileNameGenerator(new CustomDateFileNameGenerator("farm"))
-                    .backupStrategy(new NeverBackupStrategy())
-                    .cleanStrategy(new NeverCleanStrategy())
-                    .flattener(new PatternFlattener("{d HH:mm:ss.SSS} {m}"))
-                    .build()).build();
+    private static Logger forestLogger() {
+        return getUserLogger("forest", "FOREST", "{d HH:mm:ss.SSS} {m}");
+    }
 
-    private static final Logger otherLogger = XLog.tag("OTHER").printers(
-            new FilePrinter.Builder(FileUtil.LOG_DIRECTORY_FILE.getPath())
-                    .fileNameGenerator(new CustomDateFileNameGenerator("other"))
-                    .backupStrategy(new NeverBackupStrategy())
-                    .cleanStrategy(new NeverCleanStrategy())
-                    .flattener(new PatternFlattener("{d HH:mm:ss.SSS} {m}"))
-                    .build()).build();
+    private static Logger goldenBeansLogger() {
+        return getUserLogger("goldenbeans", "GOLDENBEANS", "{d HH:mm:ss.SSS} {m}");
+    }
 
-    private static final Logger errorLogger = XLog.tag("ERROR").printers(
-            new FilePrinter.Builder(FileUtil.LOG_DIRECTORY_FILE.getPath())
-                    .fileNameGenerator(new CustomDateFileNameGenerator("error"))
-                    .backupStrategy(new NeverBackupStrategy())
-                    .cleanStrategy(new NeverCleanStrategy())
-                    .flattener(new PatternFlattener("{d HH:mm:ss.SSS} {t}: {m}"))
-                    .build()).build();
+    private static Logger farmLogger() {
+        return getUserLogger("farm", "FARM", "{d HH:mm:ss.SSS} {m}");
+    }
+
+    private static Logger otherLogger() {
+        return getUserLogger("other", "OTHER", "{d HH:mm:ss.SSS} {m}");
+    }
+
+    private static Logger errorLogger() {
+        return getUserLogger("error", "ERROR", "{d HH:mm:ss.SSS} {t}: {m}");
+    }
 
     public static void i(String s) {
         if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
             return;
         }
-        runtimeLogger.i(s);
+        runtimeLogger().i(s);
     }
 
     public static void i(String tag, String s) {
@@ -164,7 +149,7 @@ public class Log {
         countModuleLog();
         // 记录日志(record)已停用,只按「查看运行日志」开关写入运行日志
         if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
-            runtimeLogger.i(str);
+            runtimeLogger().i(str);
         }
     }
 
@@ -178,7 +163,7 @@ public class Log {
         if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
             return;
         }
-        systemLogger.i(tag + ", " + s);
+        systemLogger().i(tag + ", " + s);
     }
 
     public static void forest(String s) {
@@ -187,7 +172,7 @@ public class Log {
             return;
         }
         record(s);
-        forestLogger.i(s);
+        forestLogger().i(s);
     }
 
     public static void goldenBeans(String s) {
@@ -196,7 +181,7 @@ public class Log {
             return;
         }
         record(s);
-        goldenBeansLogger.i(s);
+        goldenBeansLogger().i(s);
     }
 
     public static void farm(String s) {
@@ -205,7 +190,7 @@ public class Log {
             return;
         }
         record(s);
-        farmLogger.i(s);
+        farmLogger().i(s);
     }
 
     public static void other(String s) {
@@ -214,19 +199,19 @@ public class Log {
             return;
         }
         record(s);
-        otherLogger.i(s);
+        otherLogger().i(s);
     }
 
     public static void debug(String s) {
         if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableDebugLog()) {
             return;
         }
-        debugLogger.d(s);
+        debugLogger().d(s);
     }
 
     public static void error(String s) {
         if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog()) {
-            errorLogger.i(s);
+            errorLogger().i(s);
         }
         i(s);
     }
@@ -238,7 +223,7 @@ public class Log {
     public static void printStackTrace(Throwable t) {
         String str = android.util.Log.getStackTraceString(t);
         if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog()) {
-            errorLogger.i(str);
+            errorLogger().i(str);
         }
         i(str);
     }
@@ -246,7 +231,7 @@ public class Log {
     public static void printStackTrace(String tag, Throwable t) {
         String str = tag + ", " + android.util.Log.getStackTraceString(t);
         if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog()) {
-            errorLogger.i(str);
+            errorLogger().i(str);
         }
         i(str);
     }
@@ -254,7 +239,7 @@ public class Log {
     public static void printStackTrace(String TAG, String msg, Throwable th) {
         String str = "[" + TAG + "] Throwable error: " + android.util.Log.getStackTraceString(th);
         if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog()) {
-            errorLogger.i(str + "[" + msg + "]");
+            errorLogger().i(str + "[" + msg + "]");
         }
         i(str);
     }
