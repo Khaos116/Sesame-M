@@ -57,7 +57,6 @@ public class BaseModel extends Model {
     private static final SelectModelField rpcRequestTaskList= new SelectModelField("rpcRequestTaskList", "RPC可选任务列表(长按列表中的项仅移除用，内容需打开rpcResquest.json文件配置)", new LinkedHashSet<>(), AlipayrpcRequest::getList,"长按删除RPC列表项用");
     @Getter
     private static final BooleanModelField batteryPerm = new BooleanModelField("batteryPerm", "为支付宝申请后台运行权限", true);
-    @Getter
     private static final BooleanModelField recordLog = new BooleanModelField("recordLog", "记录日志", true);
 
     public static BooleanModelField getRecordLog() {
