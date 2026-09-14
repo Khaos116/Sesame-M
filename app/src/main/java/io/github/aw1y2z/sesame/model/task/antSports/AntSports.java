@@ -961,9 +961,13 @@ public class AntSports extends ModelTask {
             if (theme == null) {
                 return pathId;
             }
-            JSONArray cityList = theme.getJSONArray("cityList");
-            for (int i = 0; i < cityList.length(); i++) {
-                String cityId = cityList.getJSONObject(i).getString("cityId");
+            JSONArray cityList = theme.optJSONArray("cityList");
+            for (int i = 0; cityList != null && i < cityList.length(); i++) {
+                JSONObject cityObj = cityList.optJSONObject(i);
+                if (cityObj == null) {
+                    continue;
+                }
+                String cityId = cityObj.optString("cityId");
                 if (cityId.equals("000000") || cityId.equals("232700") || cityId.equals("620900") || cityId.equals("653100") || cityId.equals("710100")) {
                     continue;
                 }
@@ -971,10 +975,13 @@ public class AntSports extends ModelTask {
                 if (city == null) {
                     continue;
                 }
-                JSONArray cityPathList = city.getJSONArray("cityPathList");
-                for (int j = 0; j < cityPathList.length(); j++) {
-                    JSONObject cityPath = cityPathList.getJSONObject(j);
-                    pathId = cityPath.getString("pathId");
+                JSONArray cityPathList = city.optJSONArray("cityPathList");
+                for (int j = 0; cityPathList != null && j < cityPathList.length(); j++) {
+                    JSONObject cityPath = cityPathList.optJSONObject(j);
+                    if (cityPath == null) {
+                        continue;
+                    }
+                    pathId = cityPath.optString("pathId");
                     String pathCompleteStatus = cityPath.optString("pathCompleteStatus");
                     if (!PathCompleteStatus.COMPLETED.name().equals(pathCompleteStatus)) {
                         return pathId;
@@ -991,12 +998,15 @@ public class AntSports extends ModelTask {
     public static Boolean checkJoinPathId(String joinPathId) {
         try {
             JSONObject jo = queryPath(joinPathId);
+            if (jo == null) {
+                return false;
+            }
             String goingPathId = jo.optString("goingPathId");
             if (Objects.equals(goingPathId, joinPathId)) {
                 return false;
             }
-            jo = jo.getJSONObject("userPathStep");
-            return !jo.optBoolean("dayLimit");
+            jo = jo.optJSONObject("userPathStep");
+            return jo != null && !jo.optBoolean("dayLimit");
         } catch (Throwable t) {
             Log.i(TAG, "checkJoinPathId err:");
             Log.printStackTrace(TAG, t);
@@ -1013,7 +1023,8 @@ public class AntSports extends ModelTask {
             JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.joinPath(pathId));
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 JSONObject pathData = queryPath(pathId);
-                String pathName = pathData.getJSONObject("path").getString("name");
+                JSONObject pathObj = pathData != null ? pathData.optJSONObject("path") : null;
+                String pathName = pathObj != null ? pathObj.optString("name") : "";
                 Log.other("行走路线🚶🏻‍♂️加入[" + pathName + "]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                 return true;
             }
@@ -1036,13 +1047,16 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            JSONArray footballFieldLongModel = jo.getJSONArray("footballFieldLongModel");
-            if (footballFieldLongModel.length() == 0) {
+            JSONArray footballFieldLongModel = jo.optJSONArray("footballFieldLongModel");
+            if (footballFieldLongModel == null || footballFieldLongModel.length() == 0) {
                 return true;
             }
-            jo = footballFieldLongModel.getJSONObject(0);
-            jo = jo.getJSONObject("personStatModel");
-            long lastDonationTime = jo.getLong("lastDonationTime");
+            jo = footballFieldLongModel.optJSONObject(0);
+            jo = jo != null ? jo.optJSONObject("personStatModel") : null;
+            if (jo == null) {
+                return false;
+            }
+            long lastDonationTime = jo.optLong("lastDonationTime");
             if (TimeUtil.isLessThanNowOfDays(lastDonationTime)) {
                 return true;
             }
@@ -1063,23 +1077,28 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            int charityCoinCount = jo.getInt("charityCoinCount");
+            int charityCoinCount = jo.optInt("charityCoinCount");
             int donateCharityCoin = donateCharityCoinAmount.getValue();
             if (charityCoinCount < donateCharityCoin) {
                 return;
             }
-            JSONArray ja = jo.getJSONObject("projectPage").getJSONArray("data");
-            for (int i = 0; i < ja.length(); i++) {
-                jo = ja.getJSONObject(i).getJSONObject("basicModel");
+            JSONObject projectPage = jo.optJSONObject("projectPage");
+            JSONArray ja = projectPage != null ? projectPage.optJSONArray("data") : null;
+            for (int i = 0; ja != null && i < ja.length(); i++) {
+                JSONObject item = ja.optJSONObject(i);
+                jo = item != null ? item.optJSONObject("basicModel") : null;
+                if (jo == null) {
+                    continue;
+                }
                 if (jo.optInt("acwProjectStatus") == 0) {
                     // acwProjectStatus: 0 1
                     continue;
                 }
                 // footballFieldStatus: OPENING_DONATE DONATE_COMPLETED
-                if ("DONATE_COMPLETED".equals(jo.getString("footballFieldStatus"))) {
+                if ("DONATE_COMPLETED".equals(jo.optString("footballFieldStatus"))) {
                     break;
                 }
-                if (donate(donateCharityCoin, jo.getString("projectId"), jo.getString("title"))) {
+                if (donate(donateCharityCoin, jo.optString("projectId"), jo.optString("title"))) {
                     charityCoinCount -= donateCharityCoin;
                     if (donateCharityCoinType.getValue() != DonateCharityCoinType.ALL) {
                         break;
