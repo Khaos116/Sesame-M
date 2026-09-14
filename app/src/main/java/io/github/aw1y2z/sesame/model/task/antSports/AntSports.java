@@ -1776,15 +1776,15 @@ public class AntSports extends ModelTask {
             return false;
         }
         try {
-            String currentBossId = member.getString("currentBossId");
+            String currentBossId = member.optString("currentBossId");
             String currentBossShowName = UserIdMap.getShowName(currentBossId) != null ? UserIdMap.getShowName(currentBossId) : currentBossId;
-            String memberId = member.getString("memberId");
-            String originBossId = member.getString("originBossId");
-            JSONObject priceInfo = member.getJSONObject("priceInfo");
+            String memberId = member.optString("memberId");
+            String originBossId = member.optString("originBossId");
+            JSONObject priceInfo = member.optJSONObject("priceInfo");
             JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.buyMember(currentBossId, memberId, originBossId, priceInfo, roomId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 String userName = UserIdMap.getShowName(originBossId);
-                int price = member.getInt("price");
+                int price = member.optInt("price");
                 Log.other("好友大战🉐抢购[" + userName + "]来自[" + currentBossShowName + "]花费[" + price + "健康能量]" + "#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                 Toast.show("好友大战🉐抢购[" + userName + "]来自[" + currentBossShowName + "]花费[" + price + "健康能量]");
                 return true;
@@ -1804,19 +1804,22 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
-            jo = jo.getJSONObject("data");
-            if (!"OK".equals(jo.optString("exchangeBtnStatus"))) {
+            jo = jo.optJSONObject("data");
+            if (jo == null || !"OK".equals(jo.optString("exchangeBtnStatus"))) {
                 return;
             }
-            jo = jo.getJSONObject("itemBaseInfo");
-            String itemTitle = jo.getString("itemTitle");
-            int valueCoinCount = jo.getInt("valueCoinCount");
+            jo = jo.optJSONObject("itemBaseInfo");
+            if (jo == null) {
+                return;
+            }
+            String itemTitle = jo.optString("itemTitle");
+            int valueCoinCount = jo.optInt("valueCoinCount");
             jo = MyUtils.newJSONObject(AntSportsRpcCall.exchangeItem(itemId, valueCoinCount));
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
-            jo = jo.getJSONObject("data");
-            if (jo.optBoolean("exgSuccess")) {
+            jo = jo.optJSONObject("data");
+            if (jo != null && jo.optBoolean("exgSuccess")) {
                 Log.other("运动好礼🎐兑换[" + itemTitle + "]花费" + valueCoinCount + "运动币");
             }
         } catch (Throwable t) {
@@ -1835,8 +1838,8 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.receiveSpecialPrize(sceneType));
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
-                JSONObject data = jsonResult.getJSONObject("data");
-                int energy = data.getInt("modifyCount");
+                JSONObject data = jsonResult.optJSONObject("data");
+                int energy = data != null ? data.optInt("modifyCount") : 0;
                 if (energy > 0) {
                     Log.other("悦动健康🚑️领取奖励[" + rewardName + "]#获得[" + energy + "g健康能量]");
                 }
@@ -1856,9 +1859,11 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.takeSign());
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
-                JSONObject data = jsonResult.getJSONObject("data");
-                int continuousDay = data.getJSONObject("continuousSignInfo").getInt("continuitySignedDayCount");
-                int reward = data.getJSONObject("continuousDoSignInVO").getInt("rewardAmount");
+                JSONObject data = jsonResult.optJSONObject("data");
+                JSONObject continuousSignInfo = data != null ? data.optJSONObject("continuousSignInfo") : null;
+                JSONObject continuousDoSignInVO = data != null ? data.optJSONObject("continuousDoSignInVO") : null;
+                int continuousDay = continuousSignInfo != null ? continuousSignInfo.optInt("continuitySignedDayCount") : 0;
+                int reward = continuousDoSignInVO != null ? continuousDoSignInVO.optInt("rewardAmount") : 0;
                 Log.other("悦动健康🚑️连续签到[第" + continuousDay + "天]#获得[" + reward + "g健康能量]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                 return true;
             }
@@ -1882,10 +1887,10 @@ public class AntSports extends ModelTask {
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.neverlandtaskReceive(arg));
 
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
-                String taskName = task.getString("title");
-                JSONObject data = jsonResult.getJSONObject("data");
-                JSONArray rewards = data.getJSONArray("userItems");
-                ArrayList<String> rewardList = parseRewards(rewards);
+                String taskName = task.optString("title");
+                JSONObject data = jsonResult.optJSONObject("data");
+                JSONArray rewards = data != null ? data.optJSONArray("userItems") : null;
+                ArrayList<String> rewardList = rewards != null ? parseRewards(rewards) : new ArrayList<>();
                 Log.other("悦动健康🚑️领取奖励[" + taskName + "]#获得" + rewardList);
                 return true;
             }
@@ -1908,7 +1913,7 @@ public class AntSports extends ModelTask {
             String arg = "[" + task.toString() + "]";
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.neverlandtaskSend(arg));
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
-                String taskName = task.getString("title");
+                String taskName = task.optString("title");
                 Log.other("悦动健康🚑️完成任务[" + taskName + "]");
                 TimeUtil.sleep(1000);
                 return true;
