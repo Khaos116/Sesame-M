@@ -1489,38 +1489,46 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, joBubble)) {
                 return;
             }
-            JSONObject mainRoom = joBubble.getJSONObject("mainRoom");
-            if (mainRoom.has("bubbleList")) {
-                JSONArray bubbleList = mainRoom.getJSONArray("bubbleList");
-                for (int k = 0; k < bubbleList.length(); k++) {
-                    String bubbleId = bubbleList.getJSONObject(k).getString("bubbleId");
-                    collectBubble(bubbleId, "[买卖]");
-                    TimeUtil.sleep(200);
+            JSONObject mainRoom = joBubble.optJSONObject("mainRoom");
+            JSONArray bubbleList = mainRoom != null ? mainRoom.optJSONArray("bubbleList") : null;
+            for (int k = 0; bubbleList != null && k < bubbleList.length(); k++) {
+                JSONObject bubbleItem = bubbleList.optJSONObject(k);
+                if (bubbleItem == null) {
+                    continue;
                 }
+                String bubbleId = bubbleItem.optString("bubbleId");
+                collectBubble(bubbleId, "[买卖]");
+                TimeUtil.sleep(200);
             }
 
             JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryClubHome());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray roomList = jo.getJSONArray("roomList");
-            for (int i = 0; i < roomList.length(); i++) {
+            JSONArray roomList = jo.optJSONArray("roomList");
+            for (int i = 0; roomList != null && i < roomList.length(); i++) {
                 // 检查可以购买好友的房号i
-                JSONObject room = roomList.getJSONObject(i);
-                String roomId = room.getString("roomId");
+                JSONObject room = roomList.optJSONObject(i);
+                if (room == null) {
+                    continue;
+                }
+                String roomId = room.optString("roomId");
 
                 // 收取训练好友能量
-                if (room.has("bubbleList")) {
-                    JSONArray roombubbleList = room.getJSONArray("bubbleList");
-                    for (int l = 0; l < roombubbleList.length(); l++) {
-                        String bubbleId = roombubbleList.getJSONObject(l).getString("bubbleId");
-                        // 收取第i号房间需要收取训练好友的第l个能量球
-                        collectBubble(bubbleId, "[训练]");
-                        TimeUtil.sleep(200);
+                JSONArray roombubbleList = room.optJSONArray("bubbleList");
+                for (int l = 0; roombubbleList != null && l < roombubbleList.length(); l++) {
+                    JSONObject roomBubbleItem = roombubbleList.optJSONObject(l);
+                    if (roomBubbleItem == null) {
+                        continue;
                     }
+                    String bubbleId = roomBubbleItem.optString("bubbleId");
+                    // 收取第i号房间需要收取训练好友的第l个能量球
+                    collectBubble(bubbleId, "[训练]");
+                    TimeUtil.sleep(200);
                 }
 
-                if (room.getJSONArray("memberList").length() != 0) {
+                JSONArray memberList0 = room.optJSONArray("memberList");
+                if (memberList0 != null && memberList0.length() != 0) {
                     continue;
                 }
 
@@ -1537,13 +1545,16 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, joTrain)) {
                 return;
             }
-            JSONArray roomListTrain = joTrain.getJSONArray("roomList");
-            for (int j = 0; j < roomListTrain.length(); j++) {
-                JSONObject roomTrain = roomListTrain.getJSONObject(j);
-                if (roomTrain.getJSONArray("memberList").length() != 0) {
-                    JSONObject member = roomTrain.getJSONArray("memberList").getJSONObject(0);
-                    trainMember(member);
-                    TimeUtil.sleep(1000);
+            JSONArray roomListTrain = joTrain.optJSONArray("roomList");
+            for (int j = 0; roomListTrain != null && j < roomListTrain.length(); j++) {
+                JSONObject roomTrain = roomListTrain.optJSONObject(j);
+                JSONArray memberList = roomTrain != null ? roomTrain.optJSONArray("memberList") : null;
+                if (memberList != null && memberList.length() != 0) {
+                    JSONObject member = memberList.optJSONObject(0);
+                    if (member != null) {
+                        trainMember(member);
+                        TimeUtil.sleep(1000);
+                    }
                 }
             }
 
@@ -1552,15 +1563,22 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, autoTrain)) {
                 return;
             }
-            roomListTrain = autoTrain.getJSONArray("roomList");
-            for (int j = 0; j < roomListTrain.length(); j++) {
-                JSONObject roomTrain = roomListTrain.getJSONObject(j);
-                String roomId = roomTrain.getString("roomId");
-                if (roomTrain.getJSONArray("memberList").length() != 0) {
-                    JSONObject member = roomTrain.getJSONArray("memberList").getJSONObject(0);
-                    JSONObject trainInfo = member.getJSONObject("trainInfo");
+            roomListTrain = autoTrain.optJSONArray("roomList");
+            for (int j = 0; roomListTrain != null && j < roomListTrain.length(); j++) {
+                JSONObject roomTrain = roomListTrain.optJSONObject(j);
+                if (roomTrain == null) {
+                    continue;
+                }
+                String roomId = roomTrain.optString("roomId");
+                JSONArray memberList = roomTrain.optJSONArray("memberList");
+                if (memberList != null && memberList.length() != 0) {
+                    JSONObject member = memberList.optJSONObject(0);
+                    JSONObject trainInfo = member != null ? member.optJSONObject("trainInfo") : null;
+                    if (trainInfo == null) {
+                        continue;
+                    }
                     if (trainInfo.has("gmtEnd")) {
-                        Long gmtEnd = trainInfo.getLong("gmtEnd");
+                        Long gmtEnd = trainInfo.optLong("gmtEnd");
                         long updateTime = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(10);
                         addChildTask(new ChildModelTask(roomId, "", () -> {
                             autoTrainMember(roomId, gmtEnd);
