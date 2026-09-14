@@ -4455,11 +4455,15 @@ public class AntForestV2 extends ModelTask {
         JSONObject dressDetail = new JSONObject();
         try {
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryHomePage());
-            JSONArray ja = jo.getJSONObject("indexDressVO").getJSONArray("dressDetailList");
-            for (int i = 0; i < ja.length(); i++) {
-                jo = ja.getJSONObject(i);
-                String position = jo.getString("position");
-                String batchType = jo.getString("batchType");
+            JSONObject indexDressVO = jo.optJSONObject("indexDressVO");
+            JSONArray ja = indexDressVO != null ? indexDressVO.optJSONArray("dressDetailList") : null;
+            for (int i = 0; ja != null && i < ja.length(); i++) {
+                jo = ja.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
+                String position = jo.optString("position");
+                String batchType = jo.optString("batchType");
                 dressDetail.put(position, batchType);
             }
         } catch (Throwable th) {
@@ -4490,7 +4494,7 @@ public class AntForestV2 extends ModelTask {
             for (String position : positions) {
                 String batchType = "";
                 if (jo.has(position)) {
-                    batchType = jo.getString(position);
+                    batchType = jo.optString(position);
                 }
                 if (queryUserDressForBackpack(dressMap.get(position), batchType)) {
                     isDressExchanged = true;
@@ -4511,18 +4515,25 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            JSONArray userHoldDressVOList = jo.getJSONArray("userHoldDressVOList");
+            JSONArray userHoldDressVOList = jo.optJSONArray("userHoldDressVOList");
             boolean isTakeOff = false;
-            for (int i = 0; i < userHoldDressVOList.length(); i++) {
-                jo = userHoldDressVOList.getJSONObject(i);
+            for (int i = 0; userHoldDressVOList != null && i < userHoldDressVOList.length(); i++) {
+                jo = userHoldDressVOList.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
                 if (jo.optInt("remainNum", 1) == 0) {
-                    if (batchType.equals(jo.getString("batchType"))) {
+                    if (batchType.equals(jo.optString("batchType"))) {
                         return false;
                     }
-                    String position = jo.getJSONArray("posList").getString(0);
-                    isTakeOff = takeOffDress(jo.getString("dressType"), position);
-                } else if (batchType.equals(jo.getString("batchType"))) {
-                    return wearDress(jo.getString("dressType"));
+                    JSONArray posList = jo.optJSONArray("posList");
+                    if (posList == null || posList.length() == 0) {
+                        continue;
+                    }
+                    String position = posList.optString(0);
+                    isTakeOff = takeOffDress(jo.optString("dressType"), position);
+                } else if (batchType.equals(jo.optString("batchType"))) {
+                    return wearDress(jo.optString("dressType"));
                 }
             }
 
