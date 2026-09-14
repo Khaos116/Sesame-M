@@ -1671,23 +1671,31 @@ public class AntFarm extends ModelTask {
             }
             JSONArray ja = jo.getJSONArray("farmTaskList");
             for (int i = 0; i < ja.length(); i++) {
-                jo = ja.getJSONObject(i);
-                TaskStatus taskStatus = TaskStatus.valueOf(jo.getString("taskStatus"));
-                String title = jo.getString("title");
+                JSONObject taskJo = ja.getJSONObject(i);
+                TaskStatus taskStatus;
+                try {
+                    taskStatus = TaskStatus.valueOf(taskJo.getString("taskStatus"));
+                } catch (IllegalArgumentException e) {
+                    // 服务端返回了枚举里没有的未知状态：只跳过这一项，不要让 valueOf 抛异常
+                    // 被外层 catch 吞掉，导致本轮剩余任务全部不处理（XU 自己也记录过这个坑）
+                    Log.record("庄园任务🥕未知状态[" + taskJo.optString("taskStatus") + "]#跳过[" + taskJo.optString("title") + "]");
+                    continue;
+                }
+                String title = taskJo.getString("title");
                 //黑名单任务跳过
                 if (AntFarmDoFarmTaskList.getValue().contains(title)) {
                     if (taskStatus == TaskStatus.FINISHED) {
-                        receiveFarmTaskAward(jo);
+                        receiveFarmTaskAward(taskJo);
                     }
                     continue;
                 }
                 if (taskStatus == TaskStatus.RECEIVED || taskStatus != Mode) {
                     continue;
                 }
-                if (taskStatus == TaskStatus.TODO && !doFarmTask(jo)) {
+                if (taskStatus == TaskStatus.TODO && !doFarmTask(taskJo)) {
                     continue;
                 }
-                if (taskStatus == TaskStatus.FINISHED && !receiveFarmTaskAward(jo)) {
+                if (taskStatus == TaskStatus.FINISHED && !receiveFarmTaskAward(taskJo)) {
                     continue;
                 }
                 TimeUtil.sleep(1000);

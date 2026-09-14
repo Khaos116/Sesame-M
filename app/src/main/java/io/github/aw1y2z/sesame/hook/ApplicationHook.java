@@ -196,9 +196,39 @@ public class ApplicationHook extends XposedModule {
     public void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         XC_LoadPackage.LoadPackageParam lpparam = new XC_LoadPackage.LoadPackageParam();
         lpparam.packageName = param.getPackageName();
-        lpparam.processName = param.getPackageName();
+        // libxposed 102 的 PackageReadyParam 不直接暴露真实进程名，之前用包名冒充进程名会破坏
+        // handleLoadPackage 里"主进程跑业务、子进程只装抓包"的分流判断——同一目标包的 :xxx 子进程
+        // 触发这个回调时，判断收到的也是主包名，无法区分。改用真实进程名，取不到时才退回包名兜底。
+        lpparam.processName = getRealProcessName(param.getPackageName());
         lpparam.classLoader = param.getClassLoader();
         handleLoadPackage(lpparam);
+    }
+
+    /**
+     * 取当前进程的真实进程名。优先 ActivityThread.currentProcessName()（API 28+ 标准做法），
+     * 取不到时退回读 /proc/self/cmdline（覆盖 minSdk 26-27），两条路都失败才用包名兜底。
+     */
+    private static String getRealProcessName(String fallbackPackageName) {
+        try {
+            Object name = Class.forName("android.app.ActivityThread")
+                    .getMethod("currentProcessName")
+                    .invoke(null);
+            if (name instanceof String && !((String) name).isEmpty()) {
+                return (String) name;
+            }
+        } catch (Throwable ignored) {}
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.FileReader("/proc/self/cmdline"))) {
+            String cmdline = reader.readLine();
+            if (cmdline != null) {
+                int nul = cmdline.indexOf('\0');
+                String trimmed = (nul >= 0 ? cmdline.substring(0, nul) : cmdline).trim();
+                if (!trimmed.isEmpty()) {
+                    return trimmed;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return fallbackPackageName;
     }
 
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {

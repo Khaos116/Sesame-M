@@ -463,7 +463,9 @@ public class AntForestV2 extends ModelTask {
                                 String friendShowName = UserIdMap.getShowName(wateringBubble.getString("userId"));
                                 switch (bizType) {
                                     case "jiaoshui": {
-                                        JSONObject joEnergy = new JSONObject(AntForestRpcCall.collectEnergy(bizType, selfId, wateringBubble.getLong("id")));
+                                        // collectEnergy 请求失败/离线时可能返回 null，new JSONObject(null) 会抛异常
+                                        // 被外层 catch 吞掉、中断本轮剩余金球收取，改用 MyUtils.newJSONObject 容错
+                                        JSONObject joEnergy = MyUtils.newJSONObject(AntForestRpcCall.collectEnergy(bizType, selfId, wateringBubble.getLong("id")));
                                         if (MessageUtil.checkResultCode("收取[我]的浇水金球", joEnergy)) {
                                             JSONArray bubbles = joEnergy.getJSONArray("bubbles");
                                             for (int j = 0; j < bubbles.length(); j++) {
@@ -498,7 +500,7 @@ public class AntForestV2 extends ModelTask {
                                         break;
                                     }
                                     case "baohuhuizeng": {
-                                        JSONObject joEnergy = new JSONObject(AntForestRpcCall.collectEnergy(bizType, selfId, wateringBubble.getLong("id")));
+                                        JSONObject joEnergy = MyUtils.newJSONObject(AntForestRpcCall.collectEnergy(bizType, selfId, wateringBubble.getLong("id")));
                                         if (MessageUtil.checkResultCodeString("收取[" + friendShowName + "]的复活回赠金球", joEnergy)) {
                                             JSONArray bubbles = joEnergy.getJSONArray("bubbles");
                                             for (int j = 0; j < bubbles.length(); j++) {
