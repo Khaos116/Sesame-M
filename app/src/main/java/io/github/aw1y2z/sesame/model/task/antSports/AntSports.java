@@ -1611,12 +1611,15 @@ public class AntSports extends ModelTask {
     // 抢好友大战-训练好友
     private void trainMember(JSONObject member) {
         try {
-            String memberId = member.getString("memberId");
-            String originBossId = member.getString("originBossId");
-            JSONObject trainInfo = member.getJSONObject("trainInfo");
+            String memberId = member.optString("memberId");
+            String originBossId = member.optString("originBossId");
+            JSONObject trainInfo = member.optJSONObject("trainInfo");
+            if (trainInfo == null) {
+                return;
+            }
 
             String userName = UserIdMap.getShowName(originBossId);
-            if (!trainInfo.getBoolean("training")) {
+            if (!trainInfo.optBoolean("training")) {
                 String itemType = TrainItemType.itemTypes[clubTrainItemType.getValue()];
                 if (StringUtil.isEmpty(itemType)) {
                     return;
@@ -1630,10 +1633,10 @@ public class AntSports extends ModelTask {
 
                 // 可以翻倍训练
                 if (queryTrainItemjo.has("bizId")) {
-                    String bizId = queryTrainItemjo.getString("bizId");
+                    String bizId = queryTrainItemjo.optString("bizId");
                     String taskAction = "SHOW_AD";
-                    queryTrainItemjo = queryTrainItemjo.getJSONObject("taskDetail");
-                    String taskId = queryTrainItemjo.getString("taskId");
+                    queryTrainItemjo = queryTrainItemjo.optJSONObject("taskDetail");
+                    String taskId = queryTrainItemjo != null ? queryTrainItemjo.optString("taskId") : "";
                     JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.DoubletrainMember(itemType, bizId, memberId, originBossId));
                     Log.other("好友大战💪训练[" + userName + "]" + name + "[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                     if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -1680,24 +1683,27 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo1)) {
                 return;
             }
-            JSONObject assetsInfo = jo1.getJSONObject("assetsInfo");
-            energyBalance = assetsInfo.getInt("energyBalance");
+            JSONObject assetsInfo = jo1.optJSONObject("assetsInfo");
+            energyBalance = assetsInfo != null ? assetsInfo.optInt("energyBalance") : 0;
             TimeUtil.sleep(200);
             JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryMemberPriceRankingEnergy(energyBalance));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            energyBalance = jo.getInt("energyBalance");
-            jo = jo.getJSONObject("rank");
-            JSONArray ja = jo.getJSONArray("data");
-            for (int i = 0; i < ja.length(); i++) {
-                jo = ja.getJSONObject(i);
-                int price = jo.getInt("price");
+            energyBalance = jo.optInt("energyBalance");
+            jo = jo.optJSONObject("rank");
+            JSONArray ja = jo != null ? jo.optJSONArray("data") : null;
+            for (int i = 0; ja != null && i < ja.length(); i++) {
+                jo = ja.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
+                int price = jo.optInt("price");
                 if (price > energyBalance) {
                     continue;
                 }
-                String originBossId = jo.getString("originBossId");
-                String currentBossId = jo.getString("currentBossId");
+                String originBossId = jo.optString("originBossId");
+                String currentBossId = jo.optString("currentBossId");
 
                 // 判断如果老板是当前账号则查找下一个
                 if (currentBossId.equals(UserIdMap.getCurrentUid())) {
@@ -1720,12 +1726,13 @@ public class AntSports extends ModelTask {
                 if (!MessageUtil.checkResultCode(TAG, joTrain)) {
                     return;
                 }
-                JSONArray roomListTrain = joTrain.getJSONArray("roomList");
-                for (int j = 0; j < roomListTrain.length(); j++) {
-                    JSONObject roomTrain = roomListTrain.getJSONObject(j);
-                    if (roomTrain.getJSONArray("memberList").length() != 0) {
-                        JSONObject member = roomTrain.getJSONArray("memberList").getJSONObject(0);
-                        if (originBossId.equals(member.getString("originBossId"))) {
+                JSONArray roomListTrain = joTrain.optJSONArray("roomList");
+                for (int j = 0; roomListTrain != null && j < roomListTrain.length(); j++) {
+                    JSONObject roomTrain = roomListTrain.optJSONObject(j);
+                    JSONArray memberList = roomTrain != null ? roomTrain.optJSONArray("memberList") : null;
+                    if (memberList != null && memberList.length() != 0) {
+                        JSONObject member = memberList.optJSONObject(0);
+                        if (member != null && originBossId.equals(member.optString("originBossId"))) {
                             canbuyMember = false;
                         }
                     }
@@ -1745,12 +1752,15 @@ public class AntSports extends ModelTask {
 
     private JSONObject queryClubMember(JSONObject member) {
         try {
-            String memberId = member.getString("memberId");
-            String originBossId = member.getString("originBossId");
+            String memberId = member.optString("memberId");
+            String originBossId = member.optString("originBossId");
             JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryClubMember(memberId, originBossId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                JSONObject priceInfo = jo.getJSONObject("member").getJSONObject("priceInfo");
-                member.put("priceInfo", priceInfo);
+                JSONObject memberObj = jo.optJSONObject("member");
+                JSONObject priceInfo = memberObj != null ? memberObj.optJSONObject("priceInfo") : null;
+                if (priceInfo != null) {
+                    member.put("priceInfo", priceInfo);
+                }
 
                 return member;
             }
