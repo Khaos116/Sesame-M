@@ -91,20 +91,30 @@ public class OmegakoiTown extends ModelTask {
             String s = OmegakoiTownRpcCall.getUserTasks();
             JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
-                JSONObject result = jo.getJSONObject("result");
-                JSONArray tasks = result.getJSONArray("tasks");
-                for (int i = 0; i < tasks.length(); i++) {
-                    jo = tasks.getJSONObject(i);
-                    boolean done = jo.getBoolean("done");
-                    boolean hasRewarded = jo.getBoolean("hasRewarded");
+                JSONObject result = jo.optJSONObject("result");
+                JSONArray tasks = result != null ? result.optJSONArray("tasks") : null;
+                for (int i = 0; tasks != null && i < tasks.length(); i++) {
+                    jo = tasks.optJSONObject(i);
+                    if (jo == null) {
+                        continue;
+                    }
+                    boolean done = jo.optBoolean("done");
+                    boolean hasRewarded = jo.optBoolean("hasRewarded");
                     if (done && !hasRewarded) {
-                        JSONObject task = jo.getJSONObject("task");
-                        String name = task.getString("name");
-                        String taskId = task.getString("taskId");
+                        JSONObject task = jo.optJSONObject("task");
+                        if (task == null) {
+                            continue;
+                        }
+                        String name = task.optString("name");
+                        String taskId = task.optString("taskId");
                         if ("dailyBuild".equals(taskId))
                             continue;
-                        int amount = task.getJSONObject("reward").getInt("amount");
-                        String itemId = task.getJSONObject("reward").getString("itemId");
+                        JSONObject reward = task.optJSONObject("reward");
+                        if (reward == null) {
+                            continue;
+                        }
+                        int amount = reward.optInt("amount");
+                        String itemId = reward.optString("itemId");
                         try {
                             RewardType rewardType = RewardType.valueOf(itemId);
                             jo = MyUtils.newJSONObject(OmegakoiTownRpcCall.triggerTaskReward(taskId));
@@ -117,7 +127,7 @@ public class OmegakoiTown extends ModelTask {
                     }
                 }
             } else {
-                Log.record(jo.getString("resultDesc"));
+                Log.record(jo.optString("resultDesc"));
                 Log.i(s);
             }
         } catch (Throwable t) {
@@ -131,12 +141,18 @@ public class OmegakoiTown extends ModelTask {
             String s = OmegakoiTownRpcCall.getSignInStatus();
             JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
-                boolean signed = jo.getJSONObject("result").getBoolean("signed");
+                JSONObject result = jo.optJSONObject("result");
+                boolean signed = result != null && result.optBoolean("signed");
                 if (!signed) {
                     jo = MyUtils.newJSONObject(OmegakoiTownRpcCall.signIn());
-                    JSONObject diffItem = jo.getJSONObject("result").getJSONArray("diffItems").getJSONObject(0);
-                    int amount = diffItem.getInt("amount");
-                    String itemId = diffItem.getString("itemId");
+                    JSONObject signResult = jo.optJSONObject("result");
+                    JSONArray diffItems = signResult != null ? signResult.optJSONArray("diffItems") : null;
+                    JSONObject diffItem = diffItems != null ? diffItems.optJSONObject(0) : null;
+                    if (diffItem == null) {
+                        return;
+                    }
+                    int amount = diffItem.optInt("amount");
+                    String itemId = diffItem.optString("itemId");
                     RewardType rewardType = RewardType.valueOf(itemId);
                     Log.other("小镇签到[" + rewardType.rewardName() + "]#" + amount);
                 }
@@ -152,25 +168,31 @@ public class OmegakoiTown extends ModelTask {
             String s = OmegakoiTownRpcCall.houseProduct();
             JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
-                JSONObject result = jo.getJSONObject("result");
-                JSONArray userHouses = result.getJSONArray("userHouses");
-                for (int i = 0; i < userHouses.length(); i++) {
-                    jo = userHouses.getJSONObject(i);
-                    JSONObject extraInfo = jo.getJSONObject("extraInfo");
-                    if (!extraInfo.has("toBeCollected"))
+                JSONObject result = jo.optJSONObject("result");
+                JSONArray userHouses = result != null ? result.optJSONArray("userHouses") : null;
+                for (int i = 0; userHouses != null && i < userHouses.length(); i++) {
+                    jo = userHouses.optJSONObject(i);
+                    if (jo == null) {
+                        continue;
+                    }
+                    JSONObject extraInfo = jo.optJSONObject("extraInfo");
+                    if (extraInfo == null || !extraInfo.has("toBeCollected"))
                         continue;
                     JSONArray toBeCollected = extraInfo.optJSONArray("toBeCollected");
                     if (toBeCollected != null && toBeCollected.length() > 0) {
-                        double amount = toBeCollected.getJSONObject(0).getDouble("amount");
+                        JSONObject firstCollect = toBeCollected.optJSONObject(0);
+                        double amount = firstCollect != null ? firstCollect.optDouble("amount") : 0;
                         if (amount < 500)
                             continue;
-                        String houseId = jo.getString("houseId");
-                        long id = jo.getLong("id");
+                        String houseId = jo.optString("houseId");
+                        long id = jo.optLong("id");
                         jo = MyUtils.newJSONObject(OmegakoiTownRpcCall.collect(houseId, id));
                         if (jo.optBoolean("success")) {
                             HouseType houseType = HouseType.valueOf(houseId);
-                            String itemId = jo.getJSONObject("result").getJSONArray("rewards").getJSONObject(0)
-                                    .getString("itemId");
+                            JSONObject collectResult = jo.optJSONObject("result");
+                            JSONArray rewards = collectResult != null ? collectResult.optJSONArray("rewards") : null;
+                            JSONObject firstReward = rewards != null ? rewards.optJSONObject(0) : null;
+                            String itemId = firstReward != null ? firstReward.optString("itemId") : "";
                             RewardType rewardType = RewardType.valueOf(itemId);
                             Log.other("小镇收金🌇[" + houseType.houseName() + "]#" + String.format("%.2f", amount)
                                     + rewardType.rewardName());
@@ -178,7 +200,7 @@ public class OmegakoiTown extends ModelTask {
                     }
                 }
             } else {
-                Log.record(jo.getString("resultDesc"));
+                Log.record(jo.optString("resultDesc"));
                 Log.i(s);
             }
         } catch (Throwable t) {
