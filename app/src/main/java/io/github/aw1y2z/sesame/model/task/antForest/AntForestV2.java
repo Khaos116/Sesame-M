@@ -3113,16 +3113,19 @@ public class AntForestV2 extends ModelTask {
             }
             long now = System.currentTimeMillis();
             JSONObject combineHandlerVOMap = joMiscHomes.optJSONObject("combineHandlerVOMap");
-            if (!combineHandlerVOMap.has("usingProp")) {
+            if (combineHandlerVOMap == null || !combineHandlerVOMap.has("usingProp")) {
                 return -1;
             }
             JSONObject usingProp = combineHandlerVOMap.optJSONObject("usingProp");
-            if (!usingProp.has("userPropVOS")) {
+            if (usingProp == null || !usingProp.has("userPropVOS")) {
                 return -1;
             }
-            JSONArray userPropVOS = usingProp.getJSONArray("userPropVOS");
-            for (int i = 0; i < userPropVOS.length(); i++) {
-                JSONObject userPropVO = userPropVOS.getJSONObject(i);
+            JSONArray userPropVOS = usingProp.optJSONArray("userPropVOS");
+            for (int i = 0; userPropVOS != null && i < userPropVOS.length(); i++) {
+                JSONObject userPropVO = userPropVOS.optJSONObject(i);
+                if (userPropVO == null) {
+                    continue;
+                }
                 String propGroup = userPropVO.optString("propGroup");
                 if (propGroup.equals(propGroupType)) {
                     long endTime = userPropVO.optLong("endTime");
@@ -3183,22 +3186,26 @@ public class AntForestV2 extends ModelTask {
             }
             long now = System.currentTimeMillis();
             JSONObject combineHandlerVOMap = joMiscHomes.optJSONObject("combineHandlerVOMap");
-            if (!combineHandlerVOMap.has("usingProp")) {
+            if (combineHandlerVOMap == null || !combineHandlerVOMap.has("usingProp")) {
                 return null;
             }
             JSONObject usingProp = combineHandlerVOMap.optJSONObject("usingProp");
-            if (!usingProp.has("userPropVOS")) {
+            if (usingProp == null || !usingProp.has("userPropVOS")) {
                 return null;
             }
-            JSONArray userPropVOS = usingProp.getJSONArray("userPropVOS");
-            for (int i = 0; i < userPropVOS.length(); i++) {
-                JSONObject userPropVO = userPropVOS.getJSONObject(i);
+            JSONArray userPropVOS = usingProp.optJSONArray("userPropVOS");
+            for (int i = 0; userPropVOS != null && i < userPropVOS.length(); i++) {
+                JSONObject userPropVO = userPropVOS.optJSONObject(i);
+                if (userPropVO == null) {
+                    continue;
+                }
                 String propGroup = userPropVO.optString("propGroup");
                 if (propGroup.equals("robExpandCard")) {
                     if (!userPropVO.has("detail")) {
                         return null;
                     }
-                    return userPropVO.optJSONObject("detail").optString("factor");
+                    JSONObject detail = userPropVO.optJSONObject("detail");
+                    return detail != null ? detail.optString("factor") : null;
                 }
             }
             return null;
@@ -3217,7 +3224,10 @@ public class AntForestV2 extends ModelTask {
             JSONObject rightCard = null;
             String useFactor = useRobExpandCardFactor();
             for (int i = 0; i < forestPropVOList.length(); i++) {
-                JSONObject forestBagProp = forestPropVOList.getJSONObject(i);
+                JSONObject forestBagProp = forestPropVOList.optJSONObject(i);
+                if (forestBagProp == null) {
+                    continue;
+                }
                 String propGroup = forestBagProp.optString("propGroup");
                 if (forestBagProp.has("recentExpireTime") && propGroup.equals(propGroupType)) {
                     switch (propGroup) {
