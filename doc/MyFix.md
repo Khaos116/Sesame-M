@@ -4,6 +4,12 @@
 
 ## 变更记录
 
+### 2026-09-14：`AntStall.java` `.get*()` → `.opt*()` + 空指针防护，第四个文件全部完成
+
+按调用点数量排序的第四个文件（1280 行，原~134 处调用点）。覆盖 `querySelfHome`/`selfHomeHandler`/`initAntStallTaskListMap`/`settleReceivable`（新村主页解析与结算入口）、`sendBack`（4参与 seatsMap 重载，请走小摊）/`inviteOpenShop`/`settle`（经营所得结算）、`closeShop`（两个重载）/`openShop`（两个重载）/`rankCoinDonate`/`friendHomeOpenShop`（收摊、摆摊、邀请好友摆摊全流程）、`taskList`/`doStallTask`（新村任务列表与各类型任务执行分支）、`signToday`/`receiveTaskAward`/`inviteRegister`/`shareP2P`/`assistFriend`（签到、领奖、邀请注册、人传人助力）、`projectList`/`projectDetail`/`projectDonate`/`canDonateToday`/`unlockNewVillage`/`canUnlockNewVillage`（公益捐赠与解锁下一村）、`collectManure`/`throwManure`（两个重载）/`pasteTicket`（两个重载）（收肥料、丢肥料反击、贴罚单）。
+
+`grep` 确认代码里已无可执行的裸 `.get*()` 调用（全部转完，无残留注释死代码）。每批改完都跑 `./gradlew compileNormalDebugJavaWithJavac -q` 验证，全部编译通过；仅做了编译期验证，未做设备/运行时测试。下一步按调用点数量排序转到 `AntMember.java`（约 131 处调用点）。
+
 ### 2026-09-14：`AntSports.java` `.get*()` → `.opt*()` + 空指针防护，第三个文件全部完成
 
 按调用点数量排序的第三个文件（2551 行，原~302 处调用点）。分多轮覆盖：`initSportsTaskListMap`/`sportsTasks`/`signInCoinTask`/`receiveCoinAsset`（运动任务与签到）、`getWalkPathMinCompleteCount`（世界地图/城市/路线三层嵌套查询）、`isNeedJoinNewPath`/`hasTreasureBox`/`walkGo`（两个重载）/`parseRewardsByJSONObjectData`（行走核心逻辑）、`queryWorldMap`/`queryCityPath`/`queryPath`/`openTreasureBox`/`receiveEvent`/`parseRewardsByJSONArrayRewards`/`queryGoingPathId`（路线查询与奖励解析）、`queryJoinPathId`/`checkJoinPathId`/`joinPath`（加入新路线）、`canDonateCharityCoinToday`/`queryProjectList`/`donate`（公益捐赠）、`canDonateWalkExchangeToday`/`queryWalkStep`（捐步做公益）、`userTaskGroupQuery`/`participate`/`userTaskRightsReceive`（文体中心日常任务/走路挑战赛）、`pathFeatureQuery`/`pathMapHomepage`/`tiyubizGo`（体育线路宝箱）、`queryClubHome`（抢好友大战：收能量球/购买好友/训练好友/蹲点训练四段逻辑）、`trainMember`/`queryMemberPriceRanking`/`queryClubMember`/`buyMember`（训练与抢购好友）、`coinExchangeItem`/`receiveSpecialPrize`/`signIn`/`receiveTaskReward`/`completeTask`（悦动健康任务体系）、`walkGrid`/`build`（能量泵前进/建造）、`receiveBrowseReward`/`receiveOfflineReward`/`parseRewards`/`receiveBubbleReward`（浏览/离线/气泡奖励）、`queryBaseInfoAndProcess`（能量泵主流程，普通岛+活动岛两条分支+活动岛奖励领取）、`queryAndProcessBubbleTasks`（气泡任务状态机）、`exchangeBenefits`（悦动健康权益商店兑换）、`canWalkGrid`/`canBuild`/`processSignIn`/`processTaskCenter`/`processBrowseTasks`/`queryUserEnergy`/`collectBubble`/`queryMapListSwitch`/`checkAuth`（收尾的能量泵前置检查、签到、任务中心、地图切换、权限检查）。

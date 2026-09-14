@@ -1158,9 +1158,9 @@ public class AntStall extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONObject astManureInfoVO = jo.getJSONObject("astManureInfoVO");
-            if (astManureInfoVO.optBoolean("hasManure")) {
-                int manure = astManureInfoVO.getInt("manure");
+            JSONObject astManureInfoVO = jo.optJSONObject("astManureInfoVO");
+            if (astManureInfoVO != null && astManureInfoVO.optBoolean("hasManure")) {
+                int manure = astManureInfoVO.optInt("manure");
                 jo = MyUtils.newJSONObject(AntStallRpcCall.collectManure());
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     Log.farm("蚂蚁新村⛪收取[" + manure + "g肥料]");
@@ -1177,7 +1177,7 @@ public class AntStall extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.throwManure(dynamicList));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                int income = jo.getInt("income");
+                int income = jo.optInt("income");
                 Log.farm("蚂蚁新村⛪一键丢肥料#讨回[" + income + "木兰币]");
                 return true;
             }
@@ -1204,14 +1204,14 @@ public class AntStall extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray astLossDynamicVOS = jo.getJSONArray("astLossDynamicVOS");
+            JSONArray astLossDynamicVOS = jo.optJSONArray("astLossDynamicVOS");
             JSONArray dynamicList = new JSONArray();
-            for (int i = 0; i < astLossDynamicVOS.length(); i++) {
-                JSONObject lossDynamic = astLossDynamicVOS.getJSONObject(i);
-                if (lossDynamic.has("specialEmojiVO")) {
+            for (int i = 0; astLossDynamicVOS != null && i < astLossDynamicVOS.length(); i++) {
+                JSONObject lossDynamic = astLossDynamicVOS.optJSONObject(i);
+                if (lossDynamic == null || lossDynamic.has("specialEmojiVO")) {
                     continue;
                 }
-                String objectId = lossDynamic.getString("objectId");
+                String objectId = lossDynamic.optString("objectId");
                 boolean isThrowManure = throwManureList.getValue().contains(objectId);
                 if (throwManureType.getValue() != ThrowManureType.THROW) {
                     isThrowManure = !isThrowManure;
@@ -1220,8 +1220,8 @@ public class AntStall extends ModelTask {
                     continue;
                 }
                 JSONObject dynamic = new JSONObject();
-                dynamic.put("bizId", lossDynamic.getString("bizId"));
-                dynamic.put("bizType", lossDynamic.getString("bizType"));
+                dynamic.put("bizId", lossDynamic.optString("bizId"));
+                dynamic.put("bizType", lossDynamic.optString("bizType"));
                 dynamicList.put(dynamic);
                 if (dynamicList.length() == 5) {
                     if (!throwManure(dynamicList)) {
@@ -1253,7 +1253,7 @@ public class AntStall extends ModelTask {
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
-                if (jo.getInt("canPasteTicketCount") == 0) {
+                if (jo.optInt("canPasteTicketCount") == 0) {
                     Log.record("蚂蚁新村👍今日罚单已贴完");
                     Status.flagToday("stall::pasteTicketLimit");
                     return;
@@ -1261,7 +1261,7 @@ public class AntStall extends ModelTask {
                 if (!jo.has("friendUserId")) {
                     return;
                 }
-                pasteTicket(jo.getString("friendUserId"));
+                pasteTicket(jo.optString("friendUserId"));
             }
         }
         catch (Throwable th) {
@@ -1283,15 +1283,19 @@ public class AntStall extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONObject seatsMap = jo.getJSONObject("seatsMap");
+            JSONObject seatsMap = jo.optJSONObject("seatsMap");
+            if (seatsMap == null) {
+                return;
+            }
             for (int i = 1; i <= 2; i++) {
-                jo = seatsMap.getJSONObject("GUEST_0" + i);
-                if (jo.getBoolean("canOpenShop") || !jo.getBoolean("overTicketProtection")) {
+                jo = seatsMap.optJSONObject("GUEST_0" + i);
+                if (jo == null || jo.optBoolean("canOpenShop") || !jo.optBoolean("overTicketProtection")) {
                     continue;
                 }
-                jo = MyUtils.newJSONObject(AntStallRpcCall.pasteTicket(jo.getString("rentLastBill"), jo.getString("seatId"), jo.getString("rentLastShop"), jo.getString("rentLastUser"), jo.getString("userId")));
+                jo = MyUtils.newJSONObject(AntStallRpcCall.pasteTicket(jo.optString("rentLastBill"), jo.optString("seatId"), jo.optString("rentLastShop"), jo.optString("rentLastUser"), jo.optString("userId")));
                 if (MessageUtil.checkResultCode(TAG, jo)) {
-                    double amount = jo.getJSONObject("pasteIncome").getDouble("amount");
+                    JSONObject pasteIncome = jo.optJSONObject("pasteIncome");
+                    double amount = pasteIncome != null ? pasteIncome.optDouble("amount") : 0;
                     Log.farm("蚂蚁新村🚫在[" + UserIdMap.getMaskName(friendUserId) + "]的新村贴罚单#获得[" + amount + "木兰币]");
                 }
                 TimeUtil.sleep(1000);
