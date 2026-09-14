@@ -1269,12 +1269,12 @@ public class AntMember extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONObject entrance = jo.getJSONObject("entrance");
-            if (!entrance.optBoolean("openApp")) {
+            JSONObject entrance = jo.optJSONObject("entrance");
+            if (entrance == null || !entrance.optBoolean("openApp")) {
                 Log.other("芝麻信用💌未开通");
                 return;
             }
-            
+
             jo = MyUtils.newJSONObject(AntMemberRpcCall.CreditAccumulateStrategyRpcManager());
             TimeUtil.sleep(300);
             if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -1283,14 +1283,17 @@ public class AntMember extends ModelTask {
             if (!jo.has("data")) {
                 return;
             }
-            JSONObject data = jo.getJSONObject("data");
-            if (!data.has("toCompleteVOS")) {
+            JSONObject data = jo.optJSONObject("data");
+            if (data == null || !data.has("toCompleteVOS")) {
                 return;
             }
-            JSONArray toCompleteVOS = data.getJSONArray("toCompleteVOS");
-            for (int i = 0; i < toCompleteVOS.length(); i++) {
-                JSONObject toCompleteVO = toCompleteVOS.getJSONObject(i);
-                String taskTitle = toCompleteVO.has("title") ? toCompleteVO.getString("title") : "未知任务";
+            JSONArray toCompleteVOS = data.optJSONArray("toCompleteVOS");
+            for (int i = 0; toCompleteVOS != null && i < toCompleteVOS.length(); i++) {
+                JSONObject toCompleteVO = toCompleteVOS.optJSONObject(i);
+                if (toCompleteVO == null) {
+                    continue;
+                }
+                String taskTitle = toCompleteVO.has("title") ? toCompleteVO.optString("title") : "未知任务";
                 //黑名单任务跳过
                 if (MemberCreditSesameTaskList.getValue().contains(taskTitle)) {
                     continue;
@@ -1308,8 +1311,8 @@ public class AntMember extends ModelTask {
                     continue;
                 }
                 
-                String taskTemplateId = toCompleteVO.getString("templateId");
-                int needCompleteNum = toCompleteVO.has("needCompleteNum") ? toCompleteVO.getInt("needCompleteNum") : 1;
+                String taskTemplateId = toCompleteVO.optString("templateId");
+                int needCompleteNum = toCompleteVO.has("needCompleteNum") ? toCompleteVO.optInt("needCompleteNum") : 1;
                 int completedNum = toCompleteVO.optInt("completedNum", 0);
                 String s = null;
                 String recordId = null;
@@ -1326,14 +1329,18 @@ public class AntMember extends ModelTask {
                         Log.error(TAG + "芝麻信用💳领取任务[" + taskTitle + "]失败#" + s);
                         continue;
                     }
-                    recordId = responseObj.getJSONObject("data").getString("recordId");
+                    JSONObject responseData = responseObj.optJSONObject("data");
+                    recordId = responseData != null ? responseData.optString("recordId") : null;
+                    if (recordId == null) {
+                        continue;
+                    }
                 }
                 else {
                     if (!toCompleteVO.has("recordId")) {
                         Log.error(TAG + "芝麻信用💳任务[" + taskTitle + "未获取到]recordId#" + toCompleteVO);
                         continue;
                     }
-                    recordId = toCompleteVO.getString("recordId");
+                    recordId = toCompleteVO.optString("recordId");
                 }
                 
                 // 完成任务
@@ -1357,15 +1364,15 @@ public class AntMember extends ModelTask {
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
-                JSONArray ja = jo.getJSONArray("creditFeedbackVOS");
-                for (int j = 0; j < ja.length(); j++) {
-                    jo = ja.getJSONObject(j);
-                    if (!"UNCLAIMED".equals(jo.getString("status"))) {
+                JSONArray ja = jo.optJSONArray("creditFeedbackVOS");
+                for (int j = 0; ja != null && j < ja.length(); j++) {
+                    jo = ja.optJSONObject(j);
+                    if (jo == null || !"UNCLAIMED".equals(jo.optString("status"))) {
                         continue;
                     }
                     //String title = jo.getString("title");
-                    String creditFeedbackId = jo.getString("creditFeedbackId");
-                    String potentialSize = jo.getString("potentialSize");
+                    String creditFeedbackId = jo.optString("creditFeedbackId");
+                    String potentialSize = jo.optString("potentialSize");
                     jo = MyUtils.newJSONObject(AntMemberRpcCall.collectCreditFeedback(creditFeedbackId));
                     TimeUtil.sleep(300);
                     if (MessageUtil.checkResultCode(TAG, jo)) {
@@ -1378,8 +1385,8 @@ public class AntMember extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray creditFeedbackVOS = jo.getJSONArray("creditFeedbackVOS");
-            if (creditFeedbackVOS.length() != 0) {
+            JSONArray creditFeedbackVOS = jo.optJSONArray("creditFeedbackVOS");
+            if (creditFeedbackVOS != null && creditFeedbackVOS.length() != 0) {
                 jo = MyUtils.newJSONObject(AntMemberRpcCall.collectAllCreditFeedback());
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     String resultCode = jo.optString("resultCode");
