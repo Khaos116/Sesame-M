@@ -2110,17 +2110,21 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkSuccess(TAG, jsonResult)) {
                 return;
             }
-            JSONObject data = jsonResult.getJSONObject("data");
+            JSONObject data = jsonResult.optJSONObject("data");
+            if (data == null) {
+                return;
+            }
             // 处理离线奖励
-            if (data.getJSONArray("offlineAwards").length() > 0) {
+            JSONArray offlineAwards = data.optJSONArray("offlineAwards");
+            if (offlineAwards != null && offlineAwards.length() > 0) {
                 receiveOfflineReward();
             }
 
             // 处理普通岛能量泵任务
             if (!data.optBoolean("newGame") && WALK_GRID.getValue()) {
-                String branchId = data.getString("branchId");
-                String mapId = data.getString("mapId");
-                String mapName = data.getString("mapName");
+                String branchId = data.optString("branchId");
+                String mapId = data.optString("mapId");
+                String mapName = data.optString("mapName");
                 int walkGridcount = 0;
                 if (canWalkGrid(branchId, mapId) && queryUserEnergy() >= 5 && queryUserEnergy() >= WALK_GRID_LIMIT.getValue()) {
                     while (walkGrid(branchId, mapId, mapName)) {
@@ -2137,9 +2141,9 @@ public class AntSports extends ModelTask {
             }
             // 处理活动岛能量泵任务
             if (data.optBoolean("newGame") && WALK_GRID.getValue()) {
-                String branchId = data.getString("branchId");
-                String mapId = data.getString("mapId");
-                String mapName = data.getString("mapName");
+                String branchId = data.optString("branchId");
+                String mapId = data.optString("mapId");
+                String mapName = data.optString("mapName");
                 int buildcount = 0;
                 if (canBuild(mapId) && queryUserEnergy() >= 5 && queryUserEnergy() >= WALK_GRID_LIMIT.getValue()) {
                     int remainBuildingEnergyProcess = build(branchId, mapId, mapName, 1);
@@ -2171,25 +2175,28 @@ public class AntSports extends ModelTask {
             if (awardspecialActivityReceive.getValue()) {
                 //领取活动岛奖励
                 if (data.optBoolean("newGame")) {
-                    String branchId = data.getString("branchId");
-                    String mapId = data.getString("mapId");
-                    String mapName = data.getString("mapName");
+                    String branchId = data.optString("branchId");
+                    String mapId = data.optString("mapId");
+                    String mapName = data.optString("mapName");
                     jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.queryMapDetail(mapId));
                     if (MessageUtil.checkSuccess(TAG, jsonResult)) {
-                        JSONObject dataMapDetail = jsonResult.getJSONObject("data");
-                        JSONObject baseMapInfo = dataMapDetail.getJSONObject("baseMapInfo");
-                        if (baseMapInfo.getInt("currentPercent") == 100 && baseMapInfo.optString("status").equals("FINISH_NOT_REWARD")) {
-                            JSONArray rewards = baseMapInfo.getJSONArray("rewards");
-                            for (int i = 0; i < rewards.length(); i++) {
-                                JSONObject reward = rewards.getJSONObject(i);
-                                if (reward.optString("prizeStatus").equals("待领取")) {
+                        JSONObject dataMapDetail = jsonResult.optJSONObject("data");
+                        JSONObject baseMapInfo = dataMapDetail != null ? dataMapDetail.optJSONObject("baseMapInfo") : null;
+                        if (baseMapInfo != null && baseMapInfo.optInt("currentPercent") == 100 && baseMapInfo.optString("status").equals("FINISH_NOT_REWARD")) {
+                            JSONArray rewards = baseMapInfo.optJSONArray("rewards");
+                            for (int i = 0; rewards != null && i < rewards.length(); i++) {
+                                JSONObject reward = rewards.optJSONObject(i);
+                                if (reward != null && reward.optString("prizeStatus").equals("待领取")) {
                                     String itemId = reward.optString("itemId");
                                     JSONObject mapChooseRewardjo = MyUtils.newJSONObject(AntSportsRpcCall.mapChooseReward(branchId, mapId, itemId));
                                     if (MessageUtil.checkSuccess(TAG, mapChooseRewardjo)) {
-                                        data = mapChooseRewardjo.getJSONObject("data");
-                                        JSONObject specialActivityReceiveResult = data.getJSONObject("specialActivityReceiveResult");
-                                        JSONArray prizes = specialActivityReceiveResult.getJSONArray("prizes");
-                                        JSONObject prize = prizes.getJSONObject(0);
+                                        data = mapChooseRewardjo.optJSONObject("data");
+                                        JSONObject specialActivityReceiveResult = data != null ? data.optJSONObject("specialActivityReceiveResult") : null;
+                                        JSONArray prizes = specialActivityReceiveResult != null ? specialActivityReceiveResult.optJSONArray("prizes") : null;
+                                        JSONObject prize = prizes != null ? prizes.optJSONObject(0) : null;
+                                        if (prize == null) {
+                                            continue;
+                                        }
                                         String subTitle = prize.optString("subTitle");
                                         String title = prize.optString("title");
                                         Log.other("悦动健康🚑️领取奖励[" + subTitle + "]#获得[" + title + "]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
@@ -2215,35 +2222,35 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkSuccess(TAG, jsonResult)) {
                 return;
             }
-            JSONObject data = jsonResult.getJSONObject("data");
-            JSONArray tasks = data.getJSONArray("bubbleTaskVOS");
+            JSONObject data = jsonResult.optJSONObject("data");
+            JSONArray tasks = data != null ? data.optJSONArray("bubbleTaskVOS") : null;
             boolean needRetry = false;
 
-            for (int i = 0; i < tasks.length(); i++) {
-                JSONObject task = tasks.getJSONObject(i);
-                if (!task.has("bubbleTaskStatus")) {
+            for (int i = 0; tasks != null && i < tasks.length(); i++) {
+                JSONObject task = tasks.optJSONObject(i);
+                if (task == null || !task.has("bubbleTaskStatus")) {
                     continue;
                 }
-                String title = task.getString("title");
-                String bubbleTaskStatus = task.getString("bubbleTaskStatus");
+                String title = task.optString("title");
+                String bubbleTaskStatus = task.optString("bubbleTaskStatus");
 
                 if (bubbleTaskStatus.equals("INIT")) {
-                    if ("AD_BALL".equals(task.getString("taskId"))) {
+                    if ("AD_BALL".equals(task.optString("taskId"))) {
                         task.put("lightTaskId", "adBubble");
                         if (receiveBrowseReward(task)) {
                             TimeUtil.sleep(1000);
                             needRetry = true;
                         }
-                    } else if ("STRATEGY_BALL".equals(task.getString("taskId"))) {
-                        receiveSpecialPrize(task.getString("taskId") + "_ACTIVITY", title);
-                    } else if ("SIGN_BALL".equals(task.getString("taskId"))) {
+                    } else if ("STRATEGY_BALL".equals(task.optString("taskId"))) {
+                        receiveSpecialPrize(task.optString("taskId") + "_ACTIVITY", title);
+                    } else if ("SIGN_BALL".equals(task.optString("taskId"))) {
                         signIn();
                     }
                     break;
                 }
                 if (bubbleTaskStatus.equals("TO_RECEIVE")) {
                     // 已完成任务，领取奖励
-                    receiveBubbleReward(task.getString("medEnergyBallInfoRecordId"), title);
+                    receiveBubbleReward(task.optString("medEnergyBallInfoRecordId"), title);
                     break;
                 }
             }
