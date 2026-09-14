@@ -671,10 +671,11 @@ public class AntStall extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONObject income = jo.getJSONObject("astPreviewShopSettleVO").getJSONObject("income");
+            JSONObject astPreviewShopSettleVO = jo.optJSONObject("astPreviewShopSettleVO");
+            JSONObject income = astPreviewShopSettleVO != null ? astPreviewShopSettleVO.optJSONObject("income") : null;
             jo = MyUtils.newJSONObject(AntStallRpcCall.shopClose(shopId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                double amount = income.getDouble("amount");
+                double amount = income != null ? income.optDouble("amount") : 0;
                 Log.farm("蚂蚁新村⛪在[" + UserIdMap.getMaskName(userId) + "]的新村收摊#获得[" + amount + "木兰币]");
             }
         }
@@ -701,21 +702,24 @@ public class AntStall extends ModelTask {
                 }
                 return;
             }
-            JSONObject signListModel = jo.getJSONObject("signListModel");
-            if (!signListModel.getBoolean("currentKeySigned")) {
+            JSONObject signListModel = jo.optJSONObject("signListModel");
+            if (signListModel != null && !signListModel.optBoolean("currentKeySigned")) {
                 signToday();
             }
-            
-            JSONArray taskModels = jo.getJSONArray("taskModels");
-            for (int i = 0; i < taskModels.length(); i++) {
-                JSONObject task = taskModels.getJSONObject(i);
-                String taskStatus = task.getString("taskStatus");
+
+            JSONArray taskModels = jo.optJSONArray("taskModels");
+            for (int i = 0; taskModels != null && i < taskModels.length(); i++) {
+                JSONObject task = taskModels.optJSONObject(i);
+                if (task == null) {
+                    continue;
+                }
+                String taskStatus = task.optString("taskStatus");
                 if (Objects.equals(TaskStatus.RECEIVED.name(), taskStatus)) {
                     continue;
                 }
-                String taskType = task.getString("taskType");
-                JSONObject bizInfo = MyUtils.newJSONObject(task.getString("bizInfo"));
-                String title = bizInfo.getString("title");
+                String taskType = task.optString("taskType");
+                JSONObject bizInfo = MyUtils.newJSONObject(task.optString("bizInfo"));
+                String title = bizInfo.optString("title");
                 //黑名单任务跳过
                 if (AntStallTaskList.getValue().contains(title)) {
                     continue;
@@ -743,9 +747,9 @@ public class AntStall extends ModelTask {
     
     private Boolean doStallTask(JSONObject task, String title) {
         try {
-            String taskType = task.getString("taskType");
-            JSONObject bizInfo = MyUtils.newJSONObject(task.getString("bizInfo"));
-            if (Objects.equals("VISIT_AUTO_FINISH", bizInfo.getString("actionType")) || taskTypeList.contains(taskType)) {
+            String taskType = task.optString("taskType");
+            JSONObject bizInfo = MyUtils.newJSONObject(task.optString("bizInfo"));
+            if (Objects.equals("VISIT_AUTO_FINISH", bizInfo.optString("actionType")) || taskTypeList.contains(taskType)) {
                 return finishTask(taskType, title);
             }
             switch (taskType) {
@@ -779,8 +783,11 @@ public class AntStall extends ModelTask {
                         Log.i(TAG, "taskList.xlightPlugin err:" + jo.optString("resultDesc"));
                         return false;
                     }
-                    jo = jo.getJSONObject("playingResult");
-                    String pid = jo.getString("playingBizId");
+                    jo = jo.optJSONObject("playingResult");
+                    if (jo == null) {
+                        return false;
+                    }
+                    String pid = jo.optString("playingBizId");
                     JSONArray jsonArray = (JSONArray) JsonUtil.getValueByPathObject(jo, "eventRewardDetail.eventRewardInfoList");
                     if (jsonArray == null || jsonArray.length() == 0) {
                         return false;
@@ -788,7 +795,10 @@ public class AntStall extends ModelTask {
                     TimeUtil.sleep(5000);
                     for (int j = 0; j < jsonArray.length(); j++) {
                         try {
-                            JSONObject jsonObject = jsonArray.getJSONObject(j);
+                            JSONObject jsonObject = jsonArray.optJSONObject(j);
+                            if (jsonObject == null) {
+                                continue;
+                            }
                             TimeUtil.sleep(5000);
                             jo = MyUtils.newJSONObject(AntStallRpcCall.finish(pid, jsonObject));
                             if (!jo.optBoolean("success")) {
