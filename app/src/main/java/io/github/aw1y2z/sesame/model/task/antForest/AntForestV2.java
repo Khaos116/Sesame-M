@@ -3563,7 +3563,7 @@ public class AntForestV2 extends ModelTask {
                     TokenConfig.saveDishImage(dishImage);
                 }
             }
-            if (Objects.equals("SUCCESS", jo.getJSONObject("data").getString("status"))) {
+            if (data != null && Objects.equals("SUCCESS", data.optString("status"))) {
                 // Log.forest("光盘行动💿今日打卡已完成");
                 return;
             }
@@ -3588,7 +3588,8 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            String toastMsg = jo.getJSONObject("data").getString("toastMsg");
+            JSONObject data2 = jo.optJSONObject("data");
+            String toastMsg = data2 != null ? data2.optString("toastMsg") : "";
             Toast.show("光盘行动💿打卡完成#" + toastMsg);
             Log.forest("光盘行动💿打卡完成#" + toastMsg + "[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
         } catch (Throwable t) {
@@ -3609,14 +3610,17 @@ public class AntForestV2 extends ModelTask {
                 JSONObject resData = MyUtils.newJSONObject(AntForestRpcCall.queryMyPatrolRecord());
                 TimeUtil.sleep(500);
                 if (resData.optBoolean("canSwitch")) {
-                    JSONArray records = resData.getJSONArray("records");
-                    for (int i = 0; i < records.length(); i++) {
-                        JSONObject record = records.getJSONObject(i);
-                        JSONObject userPatrol = record.getJSONObject("userPatrol");
-                        if (userPatrol.getInt("unreachedNodeCount") > 0) {
-                            if ("silent".equals(userPatrol.getString("mode"))) {
-                                JSONObject patrolConfig = record.getJSONObject("patrolConfig");
-                                String patrolId = patrolConfig.getString("patrolId");
+                    JSONArray records = resData.optJSONArray("records");
+                    for (int i = 0; records != null && i < records.length(); i++) {
+                        JSONObject record = records.optJSONObject(i);
+                        JSONObject userPatrol = record != null ? record.optJSONObject("userPatrol") : null;
+                        if (userPatrol == null) {
+                            continue;
+                        }
+                        if (userPatrol.optInt("unreachedNodeCount") > 0) {
+                            if ("silent".equals(userPatrol.optString("mode"))) {
+                                JSONObject patrolConfig = record.optJSONObject("patrolConfig");
+                                String patrolId = patrolConfig != null ? patrolConfig.optString("patrolId") : "";
                                 resData = MyUtils.newJSONObject(AntForestRpcCall.switchUserPatrol(patrolId));
                                 TimeUtil.sleep(500);
                                 if (MessageUtil.checkResultCode(TAG, resData)) {
@@ -3629,14 +3633,20 @@ public class AntForestV2 extends ModelTask {
                     }
                 }
 
-                JSONObject userPatrol = jo.getJSONObject("userPatrol");
-                int currentNode = userPatrol.getInt("currentNode");
-                String currentStatus = userPatrol.getString("currentStatus");
-                int patrolId = userPatrol.getInt("patrolId");
-                JSONObject chance = userPatrol.getJSONObject("chance");
-                int leftChance = chance.getInt("leftChance");
-                int leftStep = chance.getInt("leftStep");
-                int usedStep = chance.getInt("usedStep");
+                JSONObject userPatrol = jo.optJSONObject("userPatrol");
+                if (userPatrol == null) {
+                    return;
+                }
+                int currentNode = userPatrol.optInt("currentNode");
+                String currentStatus = userPatrol.optString("currentStatus");
+                int patrolId = userPatrol.optInt("patrolId");
+                JSONObject chance = userPatrol.optJSONObject("chance");
+                if (chance == null) {
+                    return;
+                }
+                int leftChance = chance.optInt("leftChance");
+                int leftStep = chance.optInt("leftStep");
+                int usedStep = chance.optInt("usedStep");
                 if ("STANDING".equals(currentStatus)) {
                     if (leftChance > 0) {
                         jo = MyUtils.newJSONObject(AntForestRpcCall.patrolGo(currentNode, patrolId));
@@ -3677,24 +3687,27 @@ public class AntForestV2 extends ModelTask {
                 if (jaEvents == null || jaEvents.length() == 0) {
                     return;
                 }
-                JSONObject userPatrol = jo.getJSONObject("userPatrol");
-                int currentNode = userPatrol.getInt("currentNode");
-                JSONObject events = jo.getJSONArray("events").getJSONObject(0);
+                JSONObject userPatrol = jo.optJSONObject("userPatrol");
+                int currentNode = userPatrol != null ? userPatrol.optInt("currentNode") : nodeIndex;
+                JSONObject events = jaEvents.optJSONObject(0);
+                if (events == null) {
+                    return;
+                }
                 JSONObject rewardInfo = events.optJSONObject("rewardInfo");
                 if (rewardInfo != null) {
                     JSONObject animalProp = rewardInfo.optJSONObject("animalProp");
                     if (animalProp != null) {
                         JSONObject animal = animalProp.optJSONObject("animal");
                         if (animal != null) {
-                            Log.forest("巡护森林🏇🏻[" + animal.getString("name") + "碎片]");
+                            Log.forest("巡护森林🏇🏻[" + animal.optString("name") + "碎片]");
                         }
                     }
                 }
-                if (!"GOING".equals(jo.getString("currentStatus"))) {
+                if (!"GOING".equals(jo.optString("currentStatus"))) {
                     return;
                 }
-                JSONObject materialInfo = events.getJSONObject("materialInfo");
-                String materialType = materialInfo.optString("materialType", "image");
+                JSONObject materialInfo = events.optJSONObject("materialInfo");
+                String materialType = materialInfo != null ? materialInfo.optString("materialType", "image") : "image";
                 s = AntForestRpcCall.patrolKeepGoing(currentNode, patrolId, materialType);
                 TimeUtil.sleep(100);
             } while (true);
@@ -3711,17 +3724,26 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray animalProps = jo.getJSONArray("animalProps");
+            JSONArray animalProps = jo.optJSONArray("animalProps");
             JSONObject animalProp = null;
-            for (int i = 0; i < animalProps.length(); i++) {
-                jo = animalProps.getJSONObject(i);
+            for (int i = 0; animalProps != null && i < animalProps.length(); i++) {
+                jo = animalProps.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
                 if (animalProp == null) {
                     animalProp = jo;
                     if (consumeAnimalPropType.getValue() == ConsumeAnimalPropType.SEQUENCE) {
                         break;
                     }
-                } else if (jo.getJSONObject("main").getInt("holdsNum") > animalProp.getJSONObject("main").getInt("holdsNum")) {
-                    animalProp = jo;
+                } else {
+                    JSONObject joMain = jo.optJSONObject("main");
+                    JSONObject animalPropMain = animalProp.optJSONObject("main");
+                    int joHolds = joMain != null ? joMain.optInt("holdsNum") : 0;
+                    int animalPropHolds = animalPropMain != null ? animalPropMain.optInt("holdsNum") : 0;
+                    if (joHolds > animalPropHolds) {
+                        animalProp = jo;
+                    }
                 }
             }
             consumeAnimalProp(animalProp);
@@ -3737,9 +3759,14 @@ public class AntForestV2 extends ModelTask {
             return;
         }
         try {
-            String propGroup = animalProp.getJSONObject("main").getString("propGroup");
-            String propType = animalProp.getJSONObject("main").getString("propType");
-            String name = animalProp.getJSONObject("partner").getString("name");
+            JSONObject main = animalProp.optJSONObject("main");
+            JSONObject partner = animalProp.optJSONObject("partner");
+            if (main == null || partner == null) {
+                return;
+            }
+            String propGroup = main.optString("propGroup");
+            String propType = main.optString("propType");
+            String name = partner.optString("name");
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.consumeProp(propGroup, propType, false));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Log.forest("巡护派遣🐆[" + name + "]");
@@ -3756,12 +3783,19 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray animalProps = jo.getJSONArray("animalProps");
-            for (int i = 0; i < animalProps.length(); i++) {
+            JSONArray animalProps = jo.optJSONArray("animalProps");
+            for (int i = 0; animalProps != null && i < animalProps.length(); i++) {
                 boolean canCombineAnimalPiece = true;
-                jo = animalProps.getJSONObject(i);
-                JSONArray pieces = jo.getJSONArray("pieces");
-                int id = jo.getJSONObject("animal").getInt("id");
+                jo = animalProps.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
+                JSONArray pieces = jo.optJSONArray("pieces");
+                JSONObject animalObj = jo.optJSONObject("animal");
+                if (pieces == null || animalObj == null) {
+                    continue;
+                }
+                int id = animalObj.optInt("id");
                 for (int j = 0; j < pieces.length(); j++) {
                     jo = pieces.optJSONObject(j);
                     if (jo == null || jo.optInt("holdsNum", 0) <= 0) {
@@ -3786,21 +3820,31 @@ public class AntForestV2 extends ModelTask {
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
-                JSONArray animalProps = jo.getJSONArray("animalProps");
-                jo = animalProps.getJSONObject(0);
-                JSONObject animal = jo.getJSONObject("animal");
-                int id = animal.getInt("id");
-                String name = animal.getString("name");
-                JSONArray pieces = jo.getJSONArray("pieces");
+                JSONArray animalProps = jo.optJSONArray("animalProps");
+                jo = animalProps != null ? animalProps.optJSONObject(0) : null;
+                if (jo == null) {
+                    return;
+                }
+                JSONObject animal = jo.optJSONObject("animal");
+                if (animal == null) {
+                    return;
+                }
+                int id = animal.optInt("id");
+                String name = animal.optString("name");
+                JSONArray pieces = jo.optJSONArray("pieces");
+                if (pieces == null) {
+                    return;
+                }
                 boolean canCombineAnimalPiece = true;
                 JSONArray piecePropIds = new JSONArray();
                 for (int j = 0; j < pieces.length(); j++) {
                     jo = pieces.optJSONObject(j);
-                    if (jo == null || jo.optInt("holdsNum", 0) <= 0) {
+                    JSONArray propIdList = jo != null ? jo.optJSONArray("propIdList") : null;
+                    if (jo == null || jo.optInt("holdsNum", 0) <= 0 || propIdList == null || propIdList.length() == 0) {
                         canCombineAnimalPiece = false;
                         break;
                     } else {
-                        piecePropIds.put(jo.getJSONArray("propIdList").getString(0));
+                        piecePropIds.put(propIdList.optString(0));
                     }
                 }
                 if (canCombineAnimalPiece) {
