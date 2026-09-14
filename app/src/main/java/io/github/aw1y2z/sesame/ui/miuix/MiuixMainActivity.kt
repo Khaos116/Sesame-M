@@ -684,6 +684,10 @@ fun SettingsTab(activity: MiuixMainActivity) {
             title = "扩展功能",
             onClick = { context.startActivity(Intent(context, MiuixExtensionsActivity::class.java)) }
         )
+        ArrowPreference(
+            title = "账号轮询",
+            onClick = { io.github.aw1y2z.sesame.ui.AccountSwitchSettingsDialog.show(context) }
+        )
     }
     Spacer(Modifier.height(16.dp))
 

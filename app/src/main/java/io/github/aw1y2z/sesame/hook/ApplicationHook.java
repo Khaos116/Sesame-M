@@ -373,6 +373,10 @@ public class ApplicationHook extends XposedModule {
                                 if (!init) {
                                     return;
                                 }
+                                if (AccountSwitchController.isBusy()) {
+                                    execDelayedHandler(BaseModel.getCheckInterval().getValue());
+                                    return;
+                                }
                                 if (VersionHook.isVersionHookEnabled()) {
                                     Log.record("应用版本：" + getEffectiveVersion() + "（实际 " + realAlipayVersion + "，已伪装）");
                                 } else {
@@ -463,6 +467,30 @@ public class ApplicationHook extends XposedModule {
                         dayCalendar = MyUtils.getInstance();
                         Statistics.load();
                         FriendWatch.load();
+                        AccountSwitchController.configure(new AccountSwitchController.Host() {
+                            @Override
+                            public String readiness() {
+                                BaseModel base = Model.getModel(BaseModel.class);
+                                if (service == null || base == null) return "WAIT_HOST";
+                                if (!ConfigV2.INSTANCE.isInit()) return "WAIT_HOST";
+                                if (!base.isEnable()) return "READY";
+                                if (!init) return "WAIT_HOST";
+                                return offline ? "WAIT_HOST" : "READY";
+                            }
+
+                            @Override
+                            public String currentUid() { return getUserId(); }
+
+                            @Override
+                            public boolean initialize(String expectedUid) {
+                                if (!Objects.equals(expectedUid, getUserId())) return false;
+                                init = initHandler(true);
+                                BaseModel base = Model.getModel(BaseModel.class);
+                                return base != null && (init || !base.isEnable())
+                                        && Objects.equals(expectedUid, UserIdMap.getCurrentUid());
+                            }
+                        });
+                        AccountSwitchController.hostReady();
                         if (initHandler(true)) {
                             init = true;
                         }

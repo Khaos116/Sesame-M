@@ -217,6 +217,22 @@ public abstract class ModelTask extends Model {
         }
     }
 
+    /**
+     * 是否所有模型都空闲（没有主任务在跑，也没有子任务排队/执行）。
+     * 给自动切号用：切号前必须确认当前没有正在跑的业务，不然中途换账号会把请求打到错账号上。
+     */
+    public static boolean isAllTaskIdle() {
+        if (!MAIN_TASK_MAP.isEmpty()) {
+            return false;
+        }
+        for (Model model : getModelArray()) {
+            if (model != null && ModelType.TASK == model.getType() && ((ModelTask) model).countChildTask() > 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public static void stopAllTask() {
         for (Model model : getModelArray()) {
             if (model != null) {
