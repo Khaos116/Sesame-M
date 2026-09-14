@@ -1937,19 +1937,25 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.neverlandwalkGrid(branchId, mapId));
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
-                JSONObject data = jsonResult.getJSONObject("data");
-                int step = data.getJSONArray("mapAwards").getJSONObject(0).getInt("step");
-                int leftCount = data.getInt("leftCount");
+                JSONObject data = jsonResult.optJSONObject("data");
+                if (data == null) {
+                    return false;
+                }
+                JSONArray mapAwards = data.optJSONArray("mapAwards");
+                JSONObject firstAward = mapAwards != null ? mapAwards.optJSONObject(0) : null;
+                int step = firstAward != null ? firstAward.optInt("step") : 0;
+                int leftCount = data.optInt("leftCount");
                 Log.other("悦动健康🚑️能量泵[" + mapName + "]#前进[" + step + "步]");
 
-                JSONArray rewards = data.getJSONArray("userItems");
-                ArrayList<String> rewardList = parseRewards(rewards);
+                JSONArray rewards = data.optJSONArray("userItems");
+                ArrayList<String> rewardList = rewards != null ? parseRewards(rewards) : new ArrayList<>();
                 if (!rewardList.isEmpty()) {
                     Log.other("悦动健康🚑️能量泵[" + mapName + "]#获得" + rewardList);
                 }
 
-                int currentStar = data.getJSONObject("starData").getInt("curr");
-                int totalStar = data.getJSONObject("starData").getInt("count");
+                JSONObject starData = data.optJSONObject("starData");
+                int currentStar = starData != null ? starData.optInt("curr") : 0;
+                int totalStar = starData != null ? starData.optInt("count") : 0;
                 return leftCount >= 5 && currentStar < totalStar;
             }
         } catch (Exception e) {
@@ -1963,15 +1969,16 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.build(branchId, mapId, multiNum));
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
-                JSONObject data = jsonResult.getJSONObject("data");
+                JSONObject data = jsonResult.optJSONObject("data");
+                if (data == null) return 0;
                 JSONObject endStageInfo = data.optJSONObject("endStageInfo");
                 if (endStageInfo == null) return 0;
                 int buildingEnergyFinal = endStageInfo.optInt("buildingEnergyFinal");
                 String buildingId = endStageInfo.optString("buildingId");
                 int endbuildingEnergyProcess = endStageInfo.optInt("buildingEnergyProcess");
                 Log.other("悦动健康🚑️能量泵[" + mapName + "]建造[" + buildingId + "]进度(" + endbuildingEnergyProcess + "/" + buildingEnergyFinal + ")#消耗" + multiNum * 5 + "g能量");
-                JSONArray rewards = data.getJSONArray("rewards");
-                ArrayList<String> rewardList = parseRewards(rewards);
+                JSONArray rewards = data.optJSONArray("rewards");
+                ArrayList<String> rewardList = rewards != null ? parseRewards(rewards) : new ArrayList<>();
                 if (!rewardList.isEmpty()) {
                     Log.other("悦动健康🚑️能量泵[" + mapName + "]#获得" + rewardList);
                 }
@@ -2001,11 +2008,14 @@ public class AntSports extends ModelTask {
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.neverlandenergyReceive(arg));
 
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
-                JSONObject data = jsonResult.getJSONObject("data");
-                JSONArray prizes = data.getJSONArray("prizes");
+                JSONObject data = jsonResult.optJSONObject("data");
+                JSONArray prizes = data != null ? data.optJSONArray("prizes") : null;
                 int totalEnergy = 0;
-                for (int i = 0; i < prizes.length(); i++) {
-                    totalEnergy += prizes.getJSONObject(i).getInt("prizeCount");
+                for (int i = 0; prizes != null && i < prizes.length(); i++) {
+                    JSONObject prize = prizes.optJSONObject(i);
+                    if (prize != null) {
+                        totalEnergy += prize.optInt("prizeCount");
+                    }
                 }
 
                 String taskName = task.optString("title", "浏览商品15s得健康能量");
@@ -2026,9 +2036,9 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.offlineAward());
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
-                JSONObject data = jsonResult.getJSONObject("data");
-                JSONArray rewards = data.getJSONArray("userItems");
-                ArrayList<String> rewardList = parseRewards(rewards);
+                JSONObject data = jsonResult.optJSONObject("data");
+                JSONArray rewards = data != null ? data.optJSONArray("userItems") : null;
+                ArrayList<String> rewardList = rewards != null ? parseRewards(rewards) : new ArrayList<>();
 
                 if (!rewardList.isEmpty()) {
                     Log.other("悦动健康🚑️领取奖励[离线奖励]#获得" + rewardList);
@@ -2050,7 +2060,10 @@ public class AntSports extends ModelTask {
         ArrayList<String> rewardList = new ArrayList<>();
         try {
             for (int i = 0; i < rewards.length(); i++) {
-                JSONObject reward = rewards.getJSONObject(i);
+                JSONObject reward = rewards.optJSONObject(i);
+                if (reward == null) {
+                    continue;
+                }
                 int count = reward.optInt("modifyCount");
                 if (count <= 0) {
                     continue;
@@ -2078,8 +2091,8 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.neverlandpickBubbleTaskEnergy(recordId));
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
-                JSONObject data = jsonResult.getJSONObject("data");
-                String energy = data.getString("changeAmount");
+                JSONObject data = jsonResult.optJSONObject("data");
+                String energy = data != null ? data.optString("changeAmount") : "";
                 Log.other("悦动健康🚑️领取奖励[" + rewardName + "]#获得[" + energy + "g健康能量]");
             }
         } catch (Exception e) {
