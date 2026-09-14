@@ -4,6 +4,12 @@
 
 ## 变更记录
 
+### 2026-09-14：`AntBookRead.java` `.get*()` → `.opt*()` + 空指针防护，第十个文件全部完成
+
+第十个文件（220 行，原~30 余处调用点，小文件一次性全部转完）。覆盖 `queryTaskCenterPage`（听书阅读能量，含 `dynamicCardList[0].data.bookList` 这种多层嵌套取值链，每层加了 null 判断和空数组判断）、`queryTask`（任务列表，含 `READ_MULTISTAGE` 子任务遍历）、`collectTaskPrize`/`queryTreasureBox`（领奖与开宝箱）。
+
+`grep` 确认代码里已无可执行的裸 `.get*()`（`org.json` 相关）调用，唯一剩余匹配是 `RuntimeInfo.getInstance().getLong(...)`——`RuntimeInfo` 是完全不同的一套 API，不是 `org.json.JSONObject`，不在本次任务范围内，故意不动。编译通过；仅做了编译期验证，未做设备/运行时测试。下一步按调用点数量排序转到 `OmegakoiTown.java`（约 34 处调用点）。
+
 ### 2026-09-14：`ProtectEcology.java` `.get*()` → `.opt*()` + 空指针防护，第九个文件全部完成
 
 按调用点数量排序的第九个文件（778 行，原~98 处调用点）。覆盖 `initForest`/`initOcean`/`cooperateWater`/`queryCooperatePlant`/`cooperateWater(4参)`（森林/海洋项目列表同步、合种浇水）、`getEnergySummation`/`queryTreeItemsForExchange`/`queryTreeForExchange`/`exchangeTree`/`applyGoldAnimalCert`（树木兑换核心：证书数量与能量前置检查）、`protectCarbon`/`marathonQueryActivity`/`carbonQueryActivity`/`carbonCharityActivity`/`queryCultivationList`（碳中和马拉松/古树医生助力）、`protectReserveMinNum`/`protectBeachMinNum`/`protectBeach`/`queryCultivationDetail`/`oceanExchangeTree`（保护地/海滩最低数量保底兑换与海洋兑换收尾）。

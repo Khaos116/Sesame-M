@@ -59,29 +59,42 @@ public class AntBookRead extends ModelTask {
             String s = AntBookReadRpcCall.queryTaskCenterPage();
             JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
-                JSONObject data = jo.getJSONObject("data");
-                String todayPlayDurationText = data.getJSONObject("benefitAggBlock").getString("todayPlayDurationText");
+                JSONObject data = jo.optJSONObject("data");
+                JSONObject benefitAggBlock = data != null ? data.optJSONObject("benefitAggBlock") : null;
+                String todayPlayDurationText = benefitAggBlock != null ? benefitAggBlock.optString("todayPlayDurationText") : "";
                 int PlayDuration = Integer.parseInt(StringUtil.getSubString(todayPlayDurationText, "今日听读时长", "分钟"));
                 if (PlayDuration < 450) {
                     jo = MyUtils.newJSONObject(AntBookReadRpcCall.queryHomePage());
                     if (jo.optBoolean("success")) {
-                        JSONArray bookList = jo.getJSONObject("data").getJSONArray("dynamicCardList").getJSONObject(0)
-                                .getJSONObject("data").getJSONArray("bookList");
+                        JSONObject homeData = jo.optJSONObject("data");
+                        JSONArray dynamicCardList = homeData != null ? homeData.optJSONArray("dynamicCardList") : null;
+                        JSONObject firstCard = dynamicCardList != null ? dynamicCardList.optJSONObject(0) : null;
+                        JSONObject cardData = firstCard != null ? firstCard.optJSONObject("data") : null;
+                        JSONArray bookList = cardData != null ? cardData.optJSONArray("bookList") : null;
+                        if (bookList == null || bookList.length() == 0) {
+                            return;
+                        }
                         int bookListLength = bookList.length();
                         int postion = RandomUtil.nextInt(0, bookListLength - 1);
-                        JSONObject book = bookList.getJSONObject(postion);
-                        String bookId = book.getString("bookId");
+                        JSONObject book = bookList.optJSONObject(postion);
+                        String bookId = book != null ? book.optString("bookId") : null;
+                        if (bookId == null) {
+                            return;
+                        }
                         jo = MyUtils.newJSONObject(AntBookReadRpcCall.queryReaderContent(bookId));
                         if (jo.optBoolean("success")) {
-                            String nextChapterId = jo.getJSONObject("data").getString("nextChapterId");
-                            String name = jo.getJSONObject("data").getJSONObject("readerHomePageVO").getString("name");
+                            JSONObject contentData = jo.optJSONObject("data");
+                            String nextChapterId = contentData != null ? contentData.optString("nextChapterId") : "";
+                            JSONObject readerHomePageVO = contentData != null ? contentData.optJSONObject("readerHomePageVO") : null;
+                            String name = readerHomePageVO != null ? readerHomePageVO.optString("name") : "";
                             for (int i = 0; i < 17; i++) {
                                 int energy = 0;
                                 jo = MyUtils.newJSONObject(AntBookReadRpcCall.syncUserReadInfo(bookId, nextChapterId));
                                 if (jo.optBoolean("success")) {
                                     jo = MyUtils.newJSONObject(AntBookReadRpcCall.queryReaderForestEnergyInfo(bookId));
                                     if (jo.optBoolean("success")) {
-                                        String tips = jo.getJSONObject("data").getString("tips");
+                                        JSONObject energyData = jo.optJSONObject("data");
+                                        String tips = energyData != null ? energyData.optString("tips") : "";
                                         if (tips.contains("已得")) {
                                             energy = Integer.parseInt(StringUtil.getSubString(tips, "已得", "g"));
                                         }
@@ -98,7 +111,7 @@ public class AntBookRead extends ModelTask {
                     }
                 }
             } else {
-                Log.record(jo.getString("resultDesc"));
+                Log.record(jo.optString("resultDesc"));
                 Log.i(s);
             }
         } catch (Throwable t) {
@@ -113,35 +126,44 @@ public class AntBookRead extends ModelTask {
             String s = AntBookReadRpcCall.queryTaskCenterPage();
             JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
-                JSONObject data = jo.getJSONObject("data");
-                JSONArray userTaskGroupList = data.getJSONObject("userTaskListModuleVO")
-                        .getJSONArray("userTaskGroupList");
-                for (int i = 0; i < userTaskGroupList.length(); i++) {
-                    jo = userTaskGroupList.getJSONObject(i);
-                    JSONArray userTaskList = jo.getJSONArray("userTaskList");
-                    for (int j = 0; j < userTaskList.length(); j++) {
-                        JSONObject taskInfo = userTaskList.getJSONObject(j);
-                        String taskStatus = taskInfo.getString("taskStatus");
-                        String taskType = taskInfo.getString("taskType");
-                        String title = taskInfo.getString("title");
+                JSONObject data = jo.optJSONObject("data");
+                JSONObject userTaskListModuleVO = data != null ? data.optJSONObject("userTaskListModuleVO") : null;
+                JSONArray userTaskGroupList = userTaskListModuleVO != null ? userTaskListModuleVO.optJSONArray("userTaskGroupList") : null;
+                for (int i = 0; userTaskGroupList != null && i < userTaskGroupList.length(); i++) {
+                    jo = userTaskGroupList.optJSONObject(i);
+                    if (jo == null) {
+                        continue;
+                    }
+                    JSONArray userTaskList = jo.optJSONArray("userTaskList");
+                    for (int j = 0; userTaskList != null && j < userTaskList.length(); j++) {
+                        JSONObject taskInfo = userTaskList.optJSONObject(j);
+                        if (taskInfo == null) {
+                            continue;
+                        }
+                        String taskStatus = taskInfo.optString("taskStatus");
+                        String taskType = taskInfo.optString("taskType");
+                        String title = taskInfo.optString("title");
                         if ("TO_RECEIVE".equals(taskStatus)) {
                             if ("READ_MULTISTAGE".equals(taskType)) {
-                                JSONArray multiSubTaskList = taskInfo.getJSONArray("multiSubTaskList");
-                                for (int k = 0; k < multiSubTaskList.length(); k++) {
-                                    taskInfo = multiSubTaskList.getJSONObject(k);
-                                    taskStatus = taskInfo.getString("taskStatus");
+                                JSONArray multiSubTaskList = taskInfo.optJSONArray("multiSubTaskList");
+                                for (int k = 0; multiSubTaskList != null && k < multiSubTaskList.length(); k++) {
+                                    taskInfo = multiSubTaskList.optJSONObject(k);
+                                    if (taskInfo == null) {
+                                        continue;
+                                    }
+                                    taskStatus = taskInfo.optString("taskStatus");
                                     if ("TO_RECEIVE".equals(taskStatus)) {
-                                        String taskId = taskInfo.getString("taskId");
+                                        String taskId = taskInfo.optString("taskId");
                                         collectTaskPrize(taskId, taskType, title);
                                     }
                                 }
                             } else {
-                                String taskId = taskInfo.getString("taskId");
+                                String taskId = taskInfo.optString("taskId");
                                 collectTaskPrize(taskId, taskType, title);
                             }
                         } else if ("NOT_DONE".equals(taskStatus)) {
                             if ("AD_VIDEO_TASK".equals(taskType)) {
-                                String taskId = taskInfo.getString("taskId");
+                                String taskId = taskInfo.optString("taskId");
                                 for (int m = 0; m < 5; m++) {
                                     taskFinish(taskId, taskType);
                                     Thread.sleep(1500L);
@@ -149,7 +171,7 @@ public class AntBookRead extends ModelTask {
                                     Thread.sleep(1500L);
                                 }
                             } else if ("FOLLOW_UP".equals(taskType) || "JUMP".equals(taskType)) {
-                                String taskId = taskInfo.getString("taskId");
+                                String taskId = taskInfo.optString("taskId");
                                 taskFinish(taskId, taskType);
                                 doubleCheck = true;
                             }
@@ -159,7 +181,7 @@ public class AntBookRead extends ModelTask {
                 if (doubleCheck)
                     queryTask();
             } else {
-                Log.record(jo.getString("resultDesc"));
+                Log.record(jo.optString("resultDesc"));
                 Log.i(s);
             }
         } catch (Throwable t) {
@@ -173,7 +195,8 @@ public class AntBookRead extends ModelTask {
             String s = AntBookReadRpcCall.collectTaskPrize(taskId, taskType);
             JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
-                int coinNum = jo.getJSONObject("data").getInt("coinNum");
+                JSONObject data = jo.optJSONObject("data");
+                int coinNum = data != null ? data.optInt("coinNum") : 0;
                 Log.other("阅读任务📖[" + name + "]#" + coinNum);
             }
         } catch (Throwable t) {
@@ -200,14 +223,16 @@ public class AntBookRead extends ModelTask {
             String s = AntBookReadRpcCall.queryTreasureBox();
             JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
-                JSONObject treasureBoxVo = jo.getJSONObject("data").getJSONObject("treasureBoxVo");
-                if (treasureBoxVo.has("countdown"))
+                JSONObject data = jo.optJSONObject("data");
+                JSONObject treasureBoxVo = data != null ? data.optJSONObject("treasureBoxVo") : null;
+                if (treasureBoxVo == null || treasureBoxVo.has("countdown"))
                     return;
-                String status = treasureBoxVo.getString("status");
+                String status = treasureBoxVo.optString("status");
                 if ("CAN_OPEN".equals(status)) {
                     jo = MyUtils.newJSONObject(AntBookReadRpcCall.openTreasureBox());
                     if (jo.optBoolean("success")) {
-                        int coinNum = jo.getJSONObject("data").getInt("coinNum");
+                        JSONObject openData = jo.optJSONObject("data");
+                        int coinNum = openData != null ? openData.optInt("coinNum") : 0;
                         Log.other("阅读任务📖[打开宝箱]#" + coinNum);
                     }
                 }
