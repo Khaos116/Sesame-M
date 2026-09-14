@@ -376,13 +376,13 @@ public class AntOrchard extends ModelTask {
 
     public static void initPlantScene(JSONObject jo) {
         try {
-            JSONArray sceneArray = jo.getJSONArray("enableSwitchSceneList");
+            JSONArray sceneArray = jo.optJSONArray("enableSwitchSceneList");
             if (sceneArray == null) {
                 return;
             }
             PlantSceneIdMap.load();
             for (int i = 0; i < sceneArray.length(); i++) {
-                String scene = sceneArray.getString(i);
+                String scene = sceneArray.optString(i);
                 PlantSceneIdMap.add(scene, scene);
             }
             PlantSceneIdMap.save();
@@ -395,15 +395,15 @@ public class AntOrchard extends ModelTask {
     private void handleEnableScenes(JSONObject jo) {
         try {
 
-            JSONArray sceneArray = jo.getJSONArray("enableSwitchSceneList");
+            JSONArray sceneArray = jo.optJSONArray("enableSwitchSceneList");
             enableSceneList.clear();
-            for (int i = 0; i < sceneArray.length(); i++) {
-                String scene = sceneArray.getString(i);
+            for (int i = 0; sceneArray != null && i < sceneArray.length(); i++) {
+                String scene = sceneArray.optString(i);
                 enableSceneList.add(scene);
 
                 // 主场景处理
                 if ("main".equals(scene)) {
-                    if (jo.getString("currentPlantScene").equals(scene) || switchPlantScene(PlantScene.main)) {
+                    if (jo.optString("currentPlantScene").equals(scene) || switchPlantScene(PlantScene.main)) {
                         // 处理限时挑战活动
                         //limitedTimeChallenge();
                         //querySubplotsActivity("WISH");
@@ -413,8 +413,11 @@ public class AntOrchard extends ModelTask {
 
                 // 余额宝场景处理
                 if ("yeb".equals(scene)) {
-                    JSONObject yebInfo = jo.getJSONObject("yebSceneActivityInfo");
-                    if ("NOT_PLANTED".equals(yebInfo.getString("yebSceneStatus"))) {
+                    JSONObject yebInfo = jo.optJSONObject("yebSceneActivityInfo");
+                    if (yebInfo == null) {
+                        continue;
+                    }
+                    if ("NOT_PLANTED".equals(yebInfo.optString("yebSceneStatus"))) {
                         enableSceneList.remove(scene);
                     } else if (yebInfo.optBoolean("revenueNotReceived")) {
                         queryYebRevenueDetail();
@@ -433,17 +436,21 @@ public class AntOrchard extends ModelTask {
     private void handleTaobaoData(String taobaoData) {
         try {
             JSONObject jo = MyUtils.newJSONObject(taobaoData);
-            JSONObject plantInfo = jo.getJSONObject("gameInfo").getJSONObject("plantInfo");
-            JSONObject seedStage = plantInfo.getJSONObject("seedStage");
+            JSONObject gameInfo = jo.optJSONObject("gameInfo");
+            JSONObject plantInfo = gameInfo != null ? gameInfo.optJSONObject("plantInfo") : null;
+            JSONObject seedStage = plantInfo != null ? plantInfo.optJSONObject("seedStage") : null;
+            if (plantInfo == null || seedStage == null) {
+                return;
+            }
 
             // 检查是否可兑换
-            if (plantInfo.getBoolean("canExchange")) {
+            if (plantInfo.optBoolean("canExchange")) {
                 Log.farm("农场果树似乎可以兑换了！");
                 Toast.show("芭芭农场果树似乎可以兑换了！");
             }
             // 更新施肥进度
             if (seedStage.has("totalValue")) {
-                fertilizerProgress = seedStage.getInt("totalValue");
+                fertilizerProgress = seedStage.optInt("totalValue");
             }
         } catch (Throwable t) {
             Log.i(TAG, "handleTaoBaoData err:");
