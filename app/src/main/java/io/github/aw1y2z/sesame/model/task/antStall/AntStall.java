@@ -501,16 +501,16 @@ public class AntStall extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray astUserShopList = jo.getJSONArray("astUserShopList");
-            for (int i = 0; i < astUserShopList.length(); i++) {
-                JSONObject shop = astUserShopList.getJSONObject(i);
-                if (Objects.equals("OPEN", shop.getString("status"))) {
-                    JSONObject rentLastEnv = shop.getJSONObject("rentLastEnv");
-                    long gmtLastRent = rentLastEnv.getLong("gmtLastRent");
+            JSONArray astUserShopList = jo.optJSONArray("astUserShopList");
+            for (int i = 0; astUserShopList != null && i < astUserShopList.length(); i++) {
+                JSONObject shop = astUserShopList.optJSONObject(i);
+                if (shop != null && Objects.equals("OPEN", shop.optString("status"))) {
+                    JSONObject rentLastEnv = shop.optJSONObject("rentLastEnv");
+                    long gmtLastRent = rentLastEnv != null ? rentLastEnv.optLong("gmtLastRent") : 0;
                     long shopTime = gmtLastRent + TimeUnit.MINUTES.toMillis(closeShopTime.getValue());
-                    String shopId = shop.getString("shopId");
-                    String rentLastBill = shop.getString("rentLastBill");
-                    String rentLastUser = shop.getString("rentLastUser");
+                    String shopId = shop.optString("shopId");
+                    String rentLastBill = shop.optString("rentLastBill");
+                    String rentLastUser = shop.optString("rentLastUser");
                     if (System.currentTimeMillis() > shopTime) {
                         closeShop(shopId, rentLastBill, rentLastUser);
                     }
@@ -548,12 +548,12 @@ public class AntStall extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray astUserShopList = jo.getJSONArray("astUserShopList");
+            JSONArray astUserShopList = jo.optJSONArray("astUserShopList");
             Queue<String> shopIds = new LinkedList<>();
-            for (int i = 0; i < astUserShopList.length(); i++) {
-                JSONObject astUserShop = astUserShopList.getJSONObject(i);
-                if ("FREE".equals(astUserShop.getString("status"))) {
-                    shopIds.add(astUserShop.getString("shopId"));
+            for (int i = 0; astUserShopList != null && i < astUserShopList.length(); i++) {
+                JSONObject astUserShop = astUserShopList.optJSONObject(i);
+                if (astUserShop != null && "FREE".equals(astUserShop.optString("status"))) {
+                    shopIds.add(astUserShop.optString("shopId"));
                 }
             }
             rankCoinDonate(shopIds);
@@ -570,12 +570,12 @@ public class AntStall extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONArray friendRankList = jo.getJSONArray("friendRankList");
+            JSONArray friendRankList = jo.optJSONArray("friendRankList");
             List<Seat> seats = new ArrayList<>();
-            for (int i = 0; i < friendRankList.length(); i++) {
-                JSONObject friendRank = friendRankList.getJSONObject(i);
-                if (friendRank.getBoolean("canOpenShop")) {
-                    String userId = friendRank.getString("userId");
+            for (int i = 0; friendRankList != null && i < friendRankList.length(); i++) {
+                JSONObject friendRank = friendRankList.optJSONObject(i);
+                if (friendRank != null && friendRank.optBoolean("canOpenShop")) {
+                    String userId = friendRank.optString("userId");
                     boolean isStallOpen = openShopList.getValue().contains(userId);
                     if (openShopType.getValue() != OpenShopType.OPEN) {
                         isStallOpen = !isStallOpen;
@@ -583,7 +583,7 @@ public class AntStall extends ModelTask {
                     if (!isStallOpen) {
                         continue;
                     }
-                    int hot = friendRank.getInt("hot");
+                    int hot = friendRank.optInt("hot");
                     seats.add(new Seat(userId, hot));
                 }
             }
@@ -627,23 +627,30 @@ public class AntStall extends ModelTask {
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
                 }
-                JSONObject seatsMap = jo.getJSONObject("seatsMap");
+                JSONObject seatsMap = jo.optJSONObject("seatsMap");
+                if (seatsMap == null) {
+                    return;
+                }
                 String seatId = null;
                 boolean canOpenShop = true;
-                
-                jo = seatsMap.getJSONObject("GUEST_02");
-                if (jo.getBoolean("canOpenShop")) {
-                    seatId = jo.getString("seatId");
+
+                jo = seatsMap.optJSONObject("GUEST_02");
+                if (jo != null) {
+                    if (jo.optBoolean("canOpenShop")) {
+                        seatId = jo.optString("seatId");
+                    }
+                    else if (Objects.equals(selfId, jo.optString("rentLastUser"))) {
+                        canOpenShop = false;
+                    }
                 }
-                else if (Objects.equals(selfId, jo.getString("rentLastUser"))) {
-                    canOpenShop = false;
-                }
-                jo = seatsMap.getJSONObject("GUEST_01");
-                if (jo.getBoolean("canOpenShop")) {
-                    seatId = jo.getString("seatId");
-                }
-                else if (Objects.equals(selfId, jo.getString("rentLastUser"))) {
-                    canOpenShop = false;
+                jo = seatsMap.optJSONObject("GUEST_01");
+                if (jo != null) {
+                    if (jo.optBoolean("canOpenShop")) {
+                        seatId = jo.optString("seatId");
+                    }
+                    else if (Objects.equals(selfId, jo.optString("rentLastUser"))) {
+                        canOpenShop = false;
+                    }
                 }
                 if (canOpenShop && seatId != null) {
                     if (openShop(seatId, userId, shopId)) {
