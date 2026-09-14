@@ -169,8 +169,9 @@ public class AntSportsRpcCall {
         try {
             JSONObject jo = MyUtils.newJSONObject(queryPath(Log.getFormatDate(), pathId));
             if (MessageUtil.checkSuccess("queryPathName", jo)) {
-                jo = jo.getJSONObject("data").getJSONObject("path");
-                return jo.getString("name");
+                JSONObject data = jo.optJSONObject("data");
+                jo = data != null ? data.optJSONObject("path") : null;
+                return jo != null ? jo.optString("name") : null;
             }
         }
         catch (Throwable t) {

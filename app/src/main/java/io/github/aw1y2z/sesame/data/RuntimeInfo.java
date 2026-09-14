@@ -46,11 +46,8 @@ public class RuntimeInfo {
             }
         } catch (Exception ignored) {
         }
-        try {
-            joCurrent = joAll.getJSONObject(userId);
-        } catch (Exception ignored) {
-            joCurrent = new JSONObject();
-        }
+        JSONObject current = joAll.optJSONObject(userId);
+        joCurrent = current != null ? current : new JSONObject();
     }
 
     public void save() {

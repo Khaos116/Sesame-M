@@ -25,8 +25,8 @@ public class MessageUtil {
     public static void printErrorMessage(String tag, JSONObject jo, String errorMessageField) {
         try {
             String errMsg = tag + " error:";
-            Log.record(errMsg + jo.getString(errorMessageField));
-            Log.i(jo.getString(errorMessageField), jo.toString());
+            Log.record(errMsg + jo.optString(errorMessageField));
+            Log.i(jo.optString(errorMessageField), jo.toString());
         } catch (Throwable t) {
             Log.i(TAG, "printErrorMessage err:");
             Log.printStackTrace(TAG, t);

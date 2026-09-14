@@ -44,8 +44,11 @@ public class AreaCode extends IdAndName {
             list = new ArrayList<>();
             try {
                 for (int i = 0; i < ja.length(); i++) {
-                    JSONObject jo = ja.getJSONObject(i);
-                    list.add(new AreaCode(jo.getString("cityCode"), jo.getString("cityName")));
+                    JSONObject jo = ja.optJSONObject(i);
+                    if (jo == null) {
+                        continue;
+                    }
+                    list.add(new AreaCode(jo.optString("cityCode"), jo.optString("cityName")));
                 }
             } catch (Throwable th) {
                 Log.printStackTrace(TAG, th);

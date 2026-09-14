@@ -331,12 +331,7 @@ public class JsonUtil {
     public static List<String> jsonArrayToList(JSONArray jsonArray) {
         List<String> list = new ArrayList<>();
         for (int i = 0, len = jsonArray.length(); i < len; i++) {
-            try {
-                list.add(jsonArray.getString(i));
-            } catch (Exception e) {
-                Log.printStackTrace(e);
-                list.add("");
-            }
+            list.add(jsonArray.optString(i, ""));
         }
         return list;
     }

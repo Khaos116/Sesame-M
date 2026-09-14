@@ -163,8 +163,11 @@ public class WhackMole {
             List<Long> allMoleIds = new ArrayList<>();
             List<Long> bubbleMoleIds = new ArrayList<>();
             for (int i = 0; i < moleInfoArray.length(); i++) {
-                JSONObject mole = moleInfoArray.getJSONObject(i);
-                long moleId = mole.getLong("id");
+                JSONObject mole = moleInfoArray.optJSONObject(i);
+                if (mole == null) {
+                    continue;
+                }
+                long moleId = mole.optLong("id");
                 allMoleIds.add(moleId);
                 if (mole.has("bubbleId")) {
                     bubbleMoleIds.add(moleId);

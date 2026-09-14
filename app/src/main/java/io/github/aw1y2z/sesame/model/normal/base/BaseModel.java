@@ -1,7 +1,6 @@
 package io.github.aw1y2z.sesame.model.normal.base;
 
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.LinkedHashMap;
@@ -216,17 +215,16 @@ public class BaseModel extends Model {
                 }
                 taskRpcJo = MyUtils.newJSONObject(taskRpcRequestMethodAndData);
                 // 【可选】这里添加解析后的业务逻辑，比如获取JSON中的字段
-                String methodName = taskRpcJo.getString("methodName"); // 假设JSON中有method字段
-                String requestData = taskRpcJo.getString("requestData");     // 假设JSON中有data字段
+                String methodName = taskRpcJo.optString("methodName"); // 假设JSON中有method字段
+                String requestData = taskRpcJo.optString("requestData");     // 假设JSON中有data字段
                 Log.debug("自主调用🈸RPC["+taskRpcName+"]第" + (taskRpcNameTodayCount+1)+"["+taskRpcCount+"]次\n方法：" + methodName + "\n参数：" + requestData);
                 //调用接口执行请求
                 String taskRpcResult = ApplicationHook.requestString(methodName, requestData);
                 Log.debug("自主调用🈸RPC["+taskRpcName+"]返回\n数据：" + taskRpcResult);
             }
-            catch (JSONException e) {
-                // 捕获JSON解析异常，打印日志而不是崩溃
-                e.printStackTrace();
-                // 可选：记录错误日志，或跳过当前无效的JSON字符串
+            catch (Throwable e) {
+                // 捕获异常，打印日志而不是崩溃
+                Log.printStackTrace(e);
                 Log.debug("JSON解析失败，字符串内容：" + taskRpcRequestMethodAndData);
             }
         }
