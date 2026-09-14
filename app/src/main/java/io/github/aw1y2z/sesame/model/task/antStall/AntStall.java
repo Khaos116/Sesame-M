@@ -189,12 +189,17 @@ public class AntStall extends ModelTask {
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return null;
             }
-            if (!jo.getBoolean("hasRegister") || jo.getBoolean("hasQuit")) {
+            if (!jo.optBoolean("hasRegister") || jo.optBoolean("hasQuit")) {
                 Log.farm("蚂蚁新村⛪请先开启蚂蚁新村");
                 return null;
             }
-            String currentVillageType = jo.getJSONObject("userInfo").getString("currentVillageType");
-            String villageType = jo.getJSONObject("currentVillage").getString("villageType");
+            JSONObject userInfo = jo.optJSONObject("userInfo");
+            JSONObject currentVillageObj = jo.optJSONObject("currentVillage");
+            if (userInfo == null || currentVillageObj == null) {
+                return null;
+            }
+            String currentVillageType = userInfo.optString("currentVillageType");
+            String villageType = currentVillageObj.optString("villageType");
             if (!Objects.equals(currentVillageType, villageType)) {
                 TimeUtil.sleep(2000);
                 jo = MyUtils.newJSONObject(AntStallRpcCall.selfHome(currentVillageType));
@@ -213,7 +218,10 @@ public class AntStall extends ModelTask {
     
     private void selfHomeHandler(JSONObject selfHome) {
         try {
-            JSONObject currentVillage = selfHome.getJSONObject("currentVillage");
+            JSONObject currentVillage = selfHome.optJSONObject("currentVillage");
+            if (currentVillage == null) {
+                return;
+            }
             if (!canUnlockNewVillage(currentVillage)) {
                 if (donate.getValue()) {
                     projectList();
@@ -224,13 +232,17 @@ public class AntStall extends ModelTask {
                     unlockNewVillage();
                 }
             }
-            
-            JSONObject astReceivableCoinVO = selfHome.getJSONObject("astReceivableCoinVO");
-            settleReceivable(astReceivableCoinVO);
-            
-            JSONObject seatsMap = selfHome.getJSONObject("seatsMap");
-            settle(seatsMap);
-            sendBack(seatsMap);
+
+            JSONObject astReceivableCoinVO = selfHome.optJSONObject("astReceivableCoinVO");
+            if (astReceivableCoinVO != null) {
+                settleReceivable(astReceivableCoinVO);
+            }
+
+            JSONObject seatsMap = selfHome.optJSONObject("seatsMap");
+            if (seatsMap != null) {
+                settle(seatsMap);
+                sendBack(seatsMap);
+            }
         }
         catch (Throwable t) {
             Log.i(TAG, "selfHomeHandler err:");
@@ -257,11 +269,14 @@ public class AntStall extends ModelTask {
                 }
                 JSONObject jo = MyUtils.newJSONObject(jostr);
                 if (MessageUtil.checkResultCode(TAG, jo)) {
-                    JSONArray taskModels = jo.getJSONArray("taskModels");
-                    for (int i = 0; i < taskModels.length(); i++) {
-                        JSONObject task = taskModels.getJSONObject(i);
-                        JSONObject bizInfo = MyUtils.newJSONObject(task.getString("bizInfo"));
-                        String title = bizInfo.getString("title");
+                    JSONArray taskModels = jo.optJSONArray("taskModels");
+                    for (int i = 0; taskModels != null && i < taskModels.length(); i++) {
+                        JSONObject task = taskModels.optJSONObject(i);
+                        if (task == null) {
+                            continue;
+                        }
+                        JSONObject bizInfo = MyUtils.newJSONObject(task.optString("bizInfo"));
+                        String title = bizInfo.optString("title");
                         AntStallTaskListMap.add(title, title);
                     }
                 }
@@ -315,10 +330,11 @@ public class AntStall extends ModelTask {
     
     private void settleReceivable(JSONObject astReceivableCoinVO) {
         try {
-            if (!astReceivableCoinVO.getBoolean("hasCoin")) {
+            if (!astReceivableCoinVO.optBoolean("hasCoin")) {
                 return;
             }
-            double amount = astReceivableCoinVO.getJSONObject("receivableCoin").getDouble("amount");
+            JSONObject receivableCoin = astReceivableCoinVO.optJSONObject("receivableCoin");
+            double amount = receivableCoin != null ? receivableCoin.optDouble("amount") : 0;
             JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.settleReceivable());
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Log.farm("蚂蚁新村⛪收取小摊结余#获得[" + amount + "木兰币]");
@@ -336,9 +352,9 @@ public class AntStall extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONObject astPreviewShopSettleVO = jo.getJSONObject("astPreviewShopSettleVO");
-            JSONObject income = astPreviewShopSettleVO.getJSONObject("income");
-            double amount = income.getDouble("amount");
+            JSONObject astPreviewShopSettleVO = jo.optJSONObject("astPreviewShopSettleVO");
+            JSONObject income = astPreviewShopSettleVO != null ? astPreviewShopSettleVO.optJSONObject("income") : null;
+            double amount = income != null ? income.optDouble("amount") : 0;
             jo = MyUtils.newJSONObject(AntStallRpcCall.shopSendBack(seatId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Log.farm("蚂蚁新村⛪请走[" + UserIdMap.getMaskName(shopUserId) + "]的小摊" + (amount > 0 ? "#获得[" + amount + "木兰币]" : ""));
@@ -361,10 +377,13 @@ public class AntStall extends ModelTask {
                 return;
             }
             
-            JSONArray friendRankList = jo.getJSONArray("friendRankList");
-            for (int i = 0; i < friendRankList.length(); i++) {
-                JSONObject friend = friendRankList.getJSONObject(i);
-                String friendUserId = friend.getString("userId");
+            JSONArray friendRankList = jo.optJSONArray("friendRankList");
+            for (int i = 0; friendRankList != null && i < friendRankList.length(); i++) {
+                JSONObject friend = friendRankList.optJSONObject(i);
+                if (friend == null) {
+                    continue;
+                }
+                String friendUserId = friend.optString("userId");
                 boolean isInviteShop = inviteOpenShopList.getValue().contains(friendUserId);
                 if (inviteOpenShopType.getValue() != InviteOpenShopType.INVITE) {
                     isInviteShop = !isInviteShop;
@@ -372,7 +391,7 @@ public class AntStall extends ModelTask {
                 if (!isInviteShop) {
                     continue;
                 }
-                if (friend.getBoolean("canOneKeyInviteOpenShop")) {
+                if (friend.optBoolean("canOneKeyInviteOpenShop")) {
                     jo = MyUtils.newJSONObject(AntStallRpcCall.oneKeyInviteOpenShop(friendUserId, seatId));
                     if (MessageUtil.checkResultCode(TAG, jo)) {
                         Log.farm("蚂蚁新村⛪邀请[" + UserIdMap.getMaskName(friendUserId) + "]来新村摆摊");
@@ -390,9 +409,12 @@ public class AntStall extends ModelTask {
     private void sendBack(JSONObject seatsMap) {
         try {
             for (int i = 1; i <= 2; i++) {
-                JSONObject seat = seatsMap.getJSONObject("GUEST_0" + i);
-                String seatId = seat.getString("seatId");
-                if ("FREE".equals(seat.getString("status"))) {
+                JSONObject seat = seatsMap.optJSONObject("GUEST_0" + i);
+                if (seat == null) {
+                    continue;
+                }
+                String seatId = seat.optString("seatId");
+                if ("FREE".equals(seat.optString("status"))) {
                     inviteOpenShop(seatId);
                     continue;
                 }
@@ -408,14 +430,14 @@ public class AntStall extends ModelTask {
                 if (sendBackShopWhiteList.getValue().contains(rentLastUser)) {
                     continue;
                 }
-                String rentLastBill = seat.getString("rentLastBill");
-                String rentLastShop = seat.getString("rentLastShop");
+                String rentLastBill = seat.optString("rentLastBill");
+                String rentLastShop = seat.optString("rentLastShop");
                 // 黑名单直接赶走
                 if (sendBackShopBlackList.getValue().contains(rentLastUser)) {
                     sendBack(rentLastBill, seatId, rentLastShop, rentLastUser);
                     continue;
                 }
-                long bizStartTime = seat.getLong("bizStartTime");
+                long bizStartTime = seat.optLong("bizStartTime");
                 long endTime = bizStartTime + TimeUnit.MINUTES.toMillis(sendBackShopTime.getValue());
                 if (System.currentTimeMillis() > endTime) {
                     sendBack(rentLastBill, seatId, rentLastShop, rentLastUser);
@@ -447,13 +469,17 @@ public class AntStall extends ModelTask {
     
     private void settle(JSONObject seatsMap) {
         try {
-            JSONObject seat = seatsMap.getJSONObject("MASTER");
-            if (seat.has("coinsMap")) {
-                JSONObject coinsMap = seat.getJSONObject("coinsMap");
-                JSONObject master = coinsMap.getJSONObject("MASTER");
-                String assetId = master.getString("assetId");
-                double settleCoin = master.getJSONObject("money").getDouble("amount");
-                boolean fullShow = master.getBoolean("fullShow");
+            JSONObject seat = seatsMap.optJSONObject("MASTER");
+            if (seat != null && seat.has("coinsMap")) {
+                JSONObject coinsMap = seat.optJSONObject("coinsMap");
+                JSONObject master = coinsMap != null ? coinsMap.optJSONObject("MASTER") : null;
+                if (master == null) {
+                    return;
+                }
+                String assetId = master.optString("assetId");
+                JSONObject money = master.optJSONObject("money");
+                double settleCoin = money != null ? money.optDouble("amount") : 0;
+                boolean fullShow = master.optBoolean("fullShow");
                 if (fullShow || settleCoin > 100) {
                     JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.settle(assetId, settleCoin));
                     if (MessageUtil.checkResultCode(TAG, jo)) {
