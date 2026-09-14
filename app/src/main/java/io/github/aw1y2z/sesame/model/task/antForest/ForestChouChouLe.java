@@ -33,14 +33,17 @@ public class ForestChouChouLe {
                 return;
             }
             // 提取drawSceneGroups数组
-            JSONArray drawSceneGroups = resData.getJSONArray("drawSceneGroups");
-            for (int i = 0; i < drawSceneGroups.length(); i++) {
-                JSONObject drawScene = drawSceneGroups.getJSONObject(i);
-                JSONObject drawActivity = drawScene.getJSONObject("drawActivity");
+            JSONArray drawSceneGroups = resData.optJSONArray("drawSceneGroups");
+            for (int i = 0; drawSceneGroups != null && i < drawSceneGroups.length(); i++) {
+                JSONObject drawScene = drawSceneGroups.optJSONObject(i);
+                JSONObject drawActivity = drawScene != null ? drawScene.optJSONObject("drawActivity") : null;
+                if (drawActivity == null) {
+                    continue;
+                }
 
-                String activityId = drawActivity.getString("activityId");
-                String drawScenename = drawActivity.getString("name");
-                String sceneCode = drawActivity.getString("sceneCode");
+                String activityId = drawActivity.optString("activityId");
+                String drawScenename = drawActivity.optString("name");
+                String sceneCode = drawActivity.optString("sceneCode");
 
                 chouChouLescene(ForestHuntDraw, activityId, drawScenename, sceneCode, ForestHuntHelp, shareIds, NORMALForestHuntHelp, ACTIVITYForestHuntHelp, AntForestHuntTaskList);
             }
@@ -79,28 +82,31 @@ public class ForestChouChouLe {
                 doublecheck = false;
                 JSONObject listTaskopengreen = MyUtils.newJSONObject(AntForestRpcCall.listTaskopengreen(sceneCode + "_TASK", "task_entry"));
                 if (MessageUtil.checkSuccess(TAG, listTaskopengreen)) {
-                    JSONArray taskList = listTaskopengreen.getJSONArray("taskInfoList");
-                    for (int i = 0; i < taskList.length(); i++) {
-                        JSONObject taskInfo = taskList.getJSONObject(i);
-                        JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                        JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.getString("bizInfo"));
-                        String taskName = bizInfo.getString("title");
-                        String desc = bizInfo.getString("desc");
+                    JSONArray taskList = listTaskopengreen.optJSONArray("taskInfoList");
+                    for (int i = 0; taskList != null && i < taskList.length(); i++) {
+                        JSONObject taskInfo = taskList.optJSONObject(i);
+                        JSONObject taskBaseInfo = taskInfo != null ? taskInfo.optJSONObject("taskBaseInfo") : null;
+                        if (taskBaseInfo == null) {
+                            continue;
+                        }
+                        JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.optString("bizInfo"));
+                        String taskName = bizInfo.optString("title");
+                        String desc = bizInfo.optString("desc");
 
-                        String taskSceneCode = taskBaseInfo.getString("sceneCode");
-                        String taskStatus = taskBaseInfo.getString("taskStatus");
-                        String taskType = taskBaseInfo.getString("taskType");
+                        String taskSceneCode = taskBaseInfo.optString("sceneCode");
+                        String taskStatus = taskBaseInfo.optString("taskStatus");
+                        String taskType = taskBaseInfo.optString("taskType");
 
-                        JSONObject taskRights = taskInfo.getJSONObject("taskRights");
-                        int rightsTimes = taskRights.getInt("rightsTimes");
-                        int rightsTimesLimit = taskRights.getInt("rightsTimesLimit");
+                        JSONObject taskRights = taskInfo.optJSONObject("taskRights");
+                        int rightsTimes = taskRights != null ? taskRights.optInt("rightsTimes") : 0;
+                        int rightsTimesLimit = taskRights != null ? taskRights.optInt("rightsTimesLimit") : 0;
 
                         // 已完成任务领取奖励
                         if (taskStatus.equals("FINISHED")) {
                             TimeUtil.sleep(2000);
                             JSONObject sginRes = MyUtils.newJSONObject(AntForestRpcCall.receiveTaskAwardopengreen("task_entry", taskSceneCode, taskType));
                             if (MessageUtil.checkSuccess(TAG, sginRes)) {
-                                int incAwardCount = sginRes.getInt("incAwardCount");
+                                int incAwardCount = sginRes.optInt("incAwardCount");
                                 Log.forest("森林寻宝🎖️[" + taskName + "]获得抽奖*" + incAwardCount);
                                 if (rightsTimesLimit - rightsTimes > 0) {
                                     doublecheck = true;
@@ -118,8 +124,8 @@ public class ForestChouChouLe {
                             // if (!Status.hasFlagToday("Forest::" + sceneCode)) {
                             int forestHuntHelpTodayCount = Status.getforestHuntHelpToday(taskType);
                             if (forestHuntHelpTodayCount < shareIds.size()) {
-                                JSONObject prodPlayParam = MyUtils.newJSONObject(taskBaseInfo.getString("prodPlayParam"));
-                                String p2pSceneCode = prodPlayParam.getString("p2pSceneCode");
+                                JSONObject prodPlayParam = MyUtils.newJSONObject(taskBaseInfo.optString("prodPlayParam"));
+                                String p2pSceneCode = prodPlayParam.optString("p2pSceneCode");
                                 Log.forest("森林寻宝🎰️执行[" + drawScenename + "]助力好友[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
                                 DoForestHuntHelp(shareIds, activityId, p2pSceneCode, taskType);
                                 // Status.flagToday("Forest::" + sceneCode,taskUid);
