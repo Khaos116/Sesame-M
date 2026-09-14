@@ -471,18 +471,21 @@ public class ProtectEcology extends ModelTask {
                 return;
             }
             for (int i = 0; i < treeItems.length(); i++) {
-                JSONObject jo = treeItems.getJSONObject(i);
-                jo = jo.getJSONObject("extendInfo");
+                JSONObject jo = treeItems.optJSONObject(i);
+                jo = jo != null ? jo.optJSONObject("extendInfo") : null;
+                if (jo == null) {
+                    continue;
+                }
                 String activityName = jo.optString("activityName");
                 if (Objects.equals("marathon", jo.optString("activityType"))) {
-                    String activityId = StringUtil.getSubString(jo.getString("actionUrl"), "activityId%3D", "%26");
+                    String activityId = StringUtil.getSubString(jo.optString("actionUrl"), "activityId%3D", "%26");
                     MarathonIdMap.add(activityId, activityName);
                     if (protectMarathonType.getValue() != ProtectType.NONE) {
                         marathonQueryActivity(activityId);
                     }
                 }
                 else if (activityName.contains("古树医生")) {
-                    String activityId = StringUtil.getSubString(jo.getString("actionUrl"), "activityId%3D", "%26");
+                    String activityId = StringUtil.getSubString(jo.optString("actionUrl"), "activityId%3D", "%26");
                     NewAncientTreeIdMap.add(activityId, activityName);
                     if (protectNewAncientTreeType.getValue() != ProtectType.NONE) {
                         carbonQueryActivity(activityId);
@@ -506,12 +509,16 @@ public class ProtectEcology extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            jo = jo.getJSONObject("resultData");
-            int currentEnergy = jo.getInt("currentEnergy");
+            jo = jo.optJSONObject("resultData");
+            if (jo == null) {
+                return;
+            }
+            int currentEnergy = jo.optInt("currentEnergy");
             // 如果未曾助力:助力一次
             Integer donateNumber = protectMarathonList.getValue().get(activityId);
+            JSONObject donateConfigVO = jo.optJSONObject("donateConfigVO");
             if (!jo.optBoolean("certLockStatus", true)) {
-                int donateNum = jo.getJSONObject("donateConfigVO").getInt("donateNum");
+                int donateNum = donateConfigVO != null ? donateConfigVO.optInt("donateNum") : 0;
                 if (protectMarathonType.getValue() == ProtectType.SELECT) {
                     if (donateNumber == null || donateNumber < donateNum) {
                         return;
@@ -525,9 +532,10 @@ public class ProtectEcology extends ModelTask {
                 // 集邮模式:不再助力
                 return;
             }
-            int energy = jo.getJSONObject("activityCertVO").getInt("energy");
+            JSONObject activityCertVO = jo.optJSONObject("activityCertVO");
+            int energy = activityCertVO != null ? activityCertVO.optInt("energy") : 0;
             donateNumber = donateNumber == null ? 0 : donateNumber - energy;
-            int secondDonateMinNum = jo.getJSONObject("donateConfigVO").getInt("secondDonateMinNum");
+            int secondDonateMinNum = donateConfigVO != null ? donateConfigVO.optInt("secondDonateMinNum") : 0;
             if (donateNumber >= secondDonateMinNum && currentEnergy >= donateNumber) {
                 carbonCharityActivity("marathonWater", activityId, donateNumber);
             }
@@ -546,12 +554,16 @@ public class ProtectEcology extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            jo = jo.getJSONObject("resultData");
-            int currentEnergy = jo.getInt("currentEnergy");
+            jo = jo.optJSONObject("resultData");
+            if (jo == null) {
+                return;
+            }
+            int currentEnergy = jo.optInt("currentEnergy");
             // 如果未曾助力:助力一次
             Integer donateNumber = protectNewAncientTreeList.getValue().get(activityId);
+            JSONObject donateConfigVO = jo.optJSONObject("donateConfigVO");
             if (!jo.optBoolean("certLockStatus", true)) {
-                int donateNum = jo.getJSONObject("donateConfigVO").getInt("donateNum");
+                int donateNum = donateConfigVO != null ? donateConfigVO.optInt("donateNum") : 0;
                 if (protectNewAncientTreeType.getValue() == ProtectType.SELECT) {
                     if (donateNumber == null || donateNumber < donateNum) {
                         return;
@@ -565,9 +577,10 @@ public class ProtectEcology extends ModelTask {
                 // 集邮模式:不再助力
                 return;
             }
-            int energy = jo.getJSONObject("activityCertVO").getInt("energy");
+            JSONObject activityCertVO = jo.optJSONObject("activityCertVO");
+            int energy = activityCertVO != null ? activityCertVO.optInt("energy") : 0;
             donateNumber = donateNumber == null ? 0 : donateNumber - energy;
-            int secondDonateMinNum = jo.getJSONObject("donateConfigVO").getInt("secondDonateMinNum");
+            int secondDonateMinNum = donateConfigVO != null ? donateConfigVO.optInt("secondDonateMinNum") : 0;
             if (donateNumber >= secondDonateMinNum && currentEnergy >= donateNumber) {
                 carbonCharityActivity("carbonWater", activityId, donateNumber);
             }
@@ -587,9 +600,13 @@ public class ProtectEcology extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            jo = jo.getJSONObject("resultData").getJSONObject("activityCertVO");
-            String name = jo.getString("name");
-            int energy = jo.getInt("energy");
+            JSONObject resultData = jo.optJSONObject("resultData");
+            jo = resultData != null ? resultData.optJSONObject("activityCertVO") : null;
+            if (jo == null) {
+                return false;
+            }
+            String name = jo.optString("name");
+            int energy = jo.optInt("energy");
             Log.forest("生态保护🏕️助力[" + name + "]#累计[" + energy + "g能量]");
             return true;
         }
@@ -604,7 +621,7 @@ public class ProtectEcology extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(ProtectOceanRpcCall.queryCultivationList());
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                return jo.getJSONArray("cultivationItemVOList");
+                return jo.optJSONArray("cultivationItemVOList");
             }
         }
         catch (Throwable t) {
