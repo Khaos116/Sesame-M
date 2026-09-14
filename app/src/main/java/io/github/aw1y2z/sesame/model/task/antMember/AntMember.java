@@ -1109,8 +1109,9 @@ public class AntMember extends ModelTask {
             String response = ApplicationHook.requestString("com.alipay.gamecenteruprod.biz.rpc.v3.queryPointBallList", "[{}]");
             JSONObject jsonObject = MyUtils.newJSONObject(response);
             if (MessageUtil.checkSuccess(TAG, jsonObject)) {
-                JSONArray pointBallList = jsonObject.getJSONObject("data").getJSONArray("pointBallList");
-                if (pointBallList.length() > 0) {
+                JSONObject data = jsonObject.optJSONObject("data");
+                JSONArray pointBallList = data != null ? data.optJSONArray("pointBallList") : null;
+                if (pointBallList != null && pointBallList.length() > 0) {
                     batchReceivePointBall();
                 }
             }
@@ -1132,10 +1133,10 @@ public class AntMember extends ModelTask {
         try {
             JSONObject jsonObject = MyUtils.newJSONObject(AntMemberRpcCall.queryPointBallList());
             if (MessageUtil.checkSuccess(TAG, jsonObject)) {
-                JSONObject dataObj = jsonObject.getJSONObject("data");
-                if (dataObj.has("signInBallModule")) {
-                    JSONObject signInModule = dataObj.getJSONObject("signInBallModule");
-                    if (!signInModule.getBoolean("signInStatus")) {
+                JSONObject dataObj = jsonObject.optJSONObject("data");
+                if (dataObj != null && dataObj.has("signInBallModule")) {
+                    JSONObject signInModule = dataObj.optJSONObject("signInBallModule");
+                    if (signInModule != null && !signInModule.optBoolean("signInStatus")) {
                         if (dailySignIn()) {
                             Status.flagToday("gameCenterSignIn");
                         }
@@ -1219,23 +1220,23 @@ public class AntMember extends ModelTask {
                 Log.record("会员积分[未实名账号无可兑换权益]");
                 return;
             }
-            JSONArray entityInfoList = jo.getJSONArray("entityInfoList");
-            for (int i = 0; i < entityInfoList.length(); i++) {
-                JSONObject entityInfo = entityInfoList.getJSONObject(i);
-                JSONObject benefitInfo = entityInfo.getJSONObject("benefitInfo");
-                JSONObject pricePresentation = benefitInfo.getJSONObject("pricePresentation");
-                if (!"POINT_PAY".equals(pricePresentation.optString("strategyType"))) {
+            JSONArray entityInfoList = jo.optJSONArray("entityInfoList");
+            for (int i = 0; entityInfoList != null && i < entityInfoList.length(); i++) {
+                JSONObject entityInfo = entityInfoList.optJSONObject(i);
+                JSONObject benefitInfo = entityInfo != null ? entityInfo.optJSONObject("benefitInfo") : null;
+                JSONObject pricePresentation = benefitInfo != null ? benefitInfo.optJSONObject("pricePresentation") : null;
+                if (benefitInfo == null || pricePresentation == null || !"POINT_PAY".equals(pricePresentation.optString("strategyType"))) {
                     continue;
                 }
-                String name = benefitInfo.getString("name");
-                String benefitId = benefitInfo.getString("benefitId");
+                String name = benefitInfo.optString("name");
+                String benefitId = benefitInfo.optString("benefitId");
                 MemberBenefitIdMap.add(benefitId, name);
                 if (!Status.canMemberPointExchangeBenefitToday(benefitId) || !memberPointExchangeBenefitList.getValue().contains(benefitId)) {
                     continue;
                 }
-                String itemId = benefitInfo.getString("itemId");
+                String itemId = benefitInfo.optString("itemId");
                 if (exchangeBenefit(benefitId, itemId)) {
-                    String point = pricePresentation.getString("point");
+                    String point = pricePresentation.optString("point");
                     Log.other("会员积分🎐兑换[" + name + "]#花费[" + point + "积分]");
                 }
             }
