@@ -801,7 +801,7 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryWorldMap(themeId));
             if (MessageUtil.checkSuccess(TAG, jo)) {
-                theme = jo.getJSONObject("data");
+                theme = jo.optJSONObject("data");
             }
         } catch (Throwable t) {
             Log.i(TAG, "queryWorldMap err:");
@@ -815,7 +815,7 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryCityPath(cityId));
             if (MessageUtil.checkSuccess(TAG, jo)) {
-                city = jo.getJSONObject("data");
+                city = jo.optJSONObject("data");
             }
         } catch (Throwable t) {
             Log.i(TAG, "queryCityPath err:");
@@ -830,7 +830,7 @@ public class AntSports extends ModelTask {
             String date = Log.getFormatDate();
             JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryPath(date, pathId));
             if (MessageUtil.checkSuccess(TAG, jo)) {
-                path = jo.getJSONObject("data");
+                path = jo.optJSONObject("data");
                 parseRewardsByJSONObjectData(path);
             }
         } catch (Throwable t) {
@@ -843,8 +843,11 @@ public class AntSports extends ModelTask {
     private static void openTreasureBox(JSONArray treasureBoxList) {
         try {
             for (int i = 0; i < treasureBoxList.length(); i++) {
-                JSONObject treasureBox = treasureBoxList.getJSONObject(i);
-                receiveEvent(treasureBox.getString("boxNo"));
+                JSONObject treasureBox = treasureBoxList.optJSONObject(i);
+                if (treasureBox == null) {
+                    continue;
+                }
+                receiveEvent(treasureBox.optString("boxNo"));
                 TimeUtil.sleep(1000);
             }
         } catch (Throwable t) {
@@ -857,8 +860,11 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.receiveEvent(eventBillNo));
             if (MessageUtil.checkSuccess(TAG, jo)) {
-                jo = jo.getJSONObject("data");
-                parseRewardsByJSONArrayRewards(jo.getJSONArray("rewards"), 0);
+                jo = jo.optJSONObject("data");
+                JSONArray rewards = jo != null ? jo.optJSONArray("rewards") : null;
+                if (rewards != null) {
+                    parseRewardsByJSONArrayRewards(rewards, 0);
+                }
             }
         } catch (Throwable t) {
             Log.i(TAG, "receiveEvent err:");
@@ -884,12 +890,15 @@ public class AntSports extends ModelTask {
         }
         try {
             for (int i = 0; i < rewards.length(); i++) {
-                JSONObject jo = rewards.getJSONObject(i);
-                if (jo.has("rewardStatus") && !"SUCCESS".equals(jo.getString("rewardStatus"))) {
+                JSONObject jo = rewards.optJSONObject(i);
+                if (jo == null) {
+                    continue;
+                }
+                if (jo.has("rewardStatus") && !"SUCCESS".equals(jo.optString("rewardStatus"))) {
                     // rewardStatus : SUCCESS NOT_HIT
                     continue;
                 }
-                Log.other("行走路线🚶🏻‍♂️收获" + rewardsTypeName + "[" + jo.getString("rewardName") + "*" + jo.getInt("count") + "]");
+                Log.other("行走路线🚶🏻‍♂️收获" + rewardsTypeName + "[" + jo.optString("rewardName") + "*" + jo.optInt("count") + "]");
             }
         } catch (Throwable t) {
             Log.i(TAG, "parseRewardsByJSONArrayRewards err:");
@@ -929,8 +938,8 @@ public class AntSports extends ModelTask {
             String date = Log.getFormatDate();
             JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryPath(date, ""));
             if (MessageUtil.checkSuccess(TAG, jo)) {
-                jo = jo.getJSONObject("data");
-                goingPathId = jo.optString("goingPathId");
+                jo = jo.optJSONObject("data");
+                goingPathId = jo != null ? jo.optString("goingPathId") : "";
             }
         } catch (Throwable t) {
             Log.i(TAG, "queryGoingPathId err:");
