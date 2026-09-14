@@ -943,14 +943,17 @@ public class AntMember extends ModelTask {
                 Log.i(TAG + ".goldBillCollect.goldBillCollect", jsonObject.optString("resultDesc"));
                 return;
             }
-            JSONObject object = jsonObject.getJSONObject("result");
-            JSONArray jsonArray = object.getJSONArray("collectedList");
+            JSONObject object = jsonObject.optJSONObject("result");
+            JSONArray jsonArray = object != null ? object.optJSONArray("collectedList") : null;
+            if (jsonArray == null) {
+                return;
+            }
             int length = jsonArray.length();
             if (length == 0) {
                 return;
             }
             for (int i = 0; i < length; i++) {
-                Log.other("黄金票🙈[" + jsonArray.getString(i) + "]");
+                Log.other("黄金票🙈[" + jsonArray.optString(i) + "]");
             }
             Log.other("黄金票🏦本次总共获得[" + JsonUtil.getValueByPath(object, "collectedCamp.amount") + "]");
         }
@@ -968,8 +971,8 @@ public class AntMember extends ModelTask {
         try {
             JSONObject jsonObject = MyUtils.newJSONObject(AntMemberRpcCall.batchReceivePointBall());
             if (MessageUtil.checkSuccess(TAG, jsonObject)) {
-                JSONObject dataObj = jsonObject.getJSONObject("data");
-                String totalAmount = dataObj.getString("totalAmount");
+                JSONObject dataObj = jsonObject.optJSONObject("data");
+                String totalAmount = dataObj != null ? dataObj.optString("totalAmount") : "";
                 Log.other("游戏中心🎮批量领取#获得[" + totalAmount + "玩乐豆]");
             }
         }
@@ -988,8 +991,12 @@ public class AntMember extends ModelTask {
         try {
             JSONObject jsonObject = MyUtils.newJSONObject(AntMemberRpcCall.continueSignIn());
             if (MessageUtil.checkSuccess(TAG, jsonObject)) {
-                JSONObject toastModule = jsonObject.getJSONObject("data").getJSONObject("autoSignInToastModule");
-                String desc = toastModule.getString("desc");
+                JSONObject data = jsonObject.optJSONObject("data");
+                JSONObject toastModule = data != null ? data.optJSONObject("autoSignInToastModule") : null;
+                if (toastModule == null) {
+                    return false;
+                }
+                String desc = toastModule.optString("desc");
                 String beanNum = desc.substring(desc.indexOf("玩乐豆+") + 4);
                 Log.other("游戏中心🎮每日签到#获得[" + beanNum + "玩乐豆]");
                 return true;
@@ -1009,17 +1016,17 @@ public class AntMember extends ModelTask {
      */
     public static void processTask(JSONObject taskObj) {
         try {
-            if (!"VIEW".equals(taskObj.getString("actionType"))) {
+            if (!"VIEW".equals(taskObj.optString("actionType"))) {
                 return;
             }
-            
-            String taskId = taskObj.getString("taskId");
-            String subTitle = taskObj.getString("subTitle");
-            String taskStatus = taskObj.getString("taskStatus");
-            int prizeAmount = taskObj.getInt("prizeAmount");
-            
+
+            String taskId = taskObj.optString("taskId");
+            String subTitle = taskObj.optString("subTitle");
+            String taskStatus = taskObj.optString("taskStatus");
+            int prizeAmount = taskObj.optInt("prizeAmount");
+
             // 任务未完成且需要报名
-            if ("NOT_DONE".equals(taskStatus) && taskObj.getBoolean("needSignUp")) {
+            if ("NOT_DONE".equals(taskStatus) && taskObj.optBoolean("needSignUp")) {
                 JSONObject jsonObject = MyUtils.newJSONObject(AntMemberRpcCall.doTaskSignup(taskId));
                 if (!MessageUtil.checkSuccess(TAG, jsonObject)) {
                     return;
@@ -1050,12 +1057,16 @@ public class AntMember extends ModelTask {
             if (!jsonObject.has("data")) {
                 return;
             }
-            JSONArray taskModuleList = jsonObject.getJSONObject("data").getJSONArray("taskModuleList");
-            for (int i = 0; i < taskModuleList.length(); i++) {
-                JSONObject moduleObj = taskModuleList.getJSONObject(i);
-                JSONArray taskList = moduleObj.getJSONArray("taskList");
-                for (int j = 0; j < taskList.length(); j++) {
-                    processTask(taskList.getJSONObject(j));
+            JSONObject data = jsonObject.optJSONObject("data");
+            JSONArray taskModuleList = data != null ? data.optJSONArray("taskModuleList") : null;
+            for (int i = 0; taskModuleList != null && i < taskModuleList.length(); i++) {
+                JSONObject moduleObj = taskModuleList.optJSONObject(i);
+                JSONArray taskList = moduleObj != null ? moduleObj.optJSONArray("taskList") : null;
+                for (int j = 0; taskList != null && j < taskList.length(); j++) {
+                    JSONObject taskItem = taskList.optJSONObject(j);
+                    if (taskItem != null) {
+                        processTask(taskItem);
+                    }
                 }
             }
         }
@@ -1074,9 +1085,14 @@ public class AntMember extends ModelTask {
             if (!jsonObject.has("data")) {
                 return;
             }
-            JSONArray gameTaskList = jsonObject.getJSONObject("data").optJSONObject("gameTaskModule").optJSONArray("gameTaskList");
-            for (int i = 0; i < gameTaskList.length(); i++) {
-                processTask(gameTaskList.getJSONObject(i));
+            JSONObject data = jsonObject.optJSONObject("data");
+            JSONObject gameTaskModule = data != null ? data.optJSONObject("gameTaskModule") : null;
+            JSONArray gameTaskList = gameTaskModule != null ? gameTaskModule.optJSONArray("gameTaskList") : null;
+            for (int i = 0; gameTaskList != null && i < gameTaskList.length(); i++) {
+                JSONObject taskItem = gameTaskList.optJSONObject(i);
+                if (taskItem != null) {
+                    processTask(taskItem);
+                }
             }
         }
         catch (Throwable t) {
