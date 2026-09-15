@@ -25,6 +25,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public abstract class ModelTask extends Model {
 
     private static final Map<ModelTask, Thread> MAIN_TASK_MAP = new ConcurrentHashMap<>();
+    private static Thread completionWatcher;
+    private static long completionGeneration;
 
     private static final ThreadPoolExecutor MAIN_THREAD_POOL = new ThreadPoolExecutor(getModelArray().length, Integer.MAX_VALUE, 30L, TimeUnit.SECONDS, new SynchronousQueue<>(), new ThreadPoolExecutor.CallerRunsPolicy());
 
@@ -214,7 +216,66 @@ public abstract class ModelTask extends Model {
     public static void startAllTask(Boolean force) {
         try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
             if (work == null) return;
-            dispatchAllTask(force);
+            watchCompletion();
+            boolean dispatched = false;
+            try {
+                dispatchAllTask(force);
+                dispatched = !Thread.currentThread().isInterrupted();
+            } finally {
+                if (!dispatched) cancelCompletion();
+            }
+        }
+    }
+
+    private static void watchCompletion() {
+        synchronized (TaskLifecycle.class) {
+            long generation = TaskLifecycle.generation();
+            if (completionWatcher != null && !completionWatcher.isInterrupted()
+                    && completionGeneration == generation) return;
+            completionGeneration = generation;
+            completionWatcher = new Thread(() -> {
+                try {
+                    while (!Thread.currentThread().isInterrupted()) {
+                        synchronized (TaskLifecycle.class) {
+                            if (completionWatcher != Thread.currentThread()
+                                    || TaskLifecycle.generation() != generation) return;
+                            if (TaskLifecycle.isIdle() && !hasPendingChildren()) {
+                                Log.record("🏁全部任务已执行完成");
+                                completionWatcher = null;
+                                return;
+                            }
+                        }
+                        // ponytail: 单个监听器最多延迟 500ms；需要即时通知时改为完成回调。
+                        Thread.sleep(500);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    synchronized (TaskLifecycle.class) {
+                        if (completionWatcher == Thread.currentThread()) completionWatcher = null;
+                    }
+                }
+            }, "TaskCompletionWatcher");
+            completionWatcher.setDaemon(true);
+            completionWatcher.start();
+        }
+    }
+
+    private static boolean hasPendingChildren() {
+        for (Model model : getModelArray()) {
+            if (model instanceof ModelTask) {
+                for (ChildModelTask child : ((ModelTask) model).childTaskMap.values()) {
+                    if (!child.isCancel) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static void cancelCompletion() {
+        synchronized (TaskLifecycle.class) {
+            if (completionWatcher != null) completionWatcher.interrupt();
+            completionWatcher = null;
         }
     }
 
@@ -255,6 +316,7 @@ public abstract class ModelTask extends Model {
     }
 
     public static void stopAllTask() {
+        cancelCompletion();
         for (Model model : getModelArray()) {
             if (model != null) {
                 try {

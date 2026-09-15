@@ -4476,7 +4476,7 @@ public class AntForestV2 extends ModelTask {
     private void setDressDetail(String dressDetail) {
         dressDetailList.setValue(dressDetail);
         if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
-            Log.forest("装扮保护🔐皮肤保存,芝麻粒将为你持续保护!");
+            Log.forest("装扮保护🔐皮肤保存,芝麻粒-M将为你持续保护!");
         }
     }
 
@@ -4501,7 +4501,7 @@ public class AntForestV2 extends ModelTask {
                 }
             }
             if (isDressExchanged) {
-                Log.forest("装扮保护🔐皮肤修改,芝麻粒已为你自动恢复!");
+                Log.forest("装扮保护🔐皮肤修改,芝麻粒-M已为你自动恢复!");
             }
         } catch (Throwable th) {
             Log.i(TAG, "checkDressDetail err:");
@@ -4539,7 +4539,7 @@ public class AntForestV2 extends ModelTask {
 
             if (!batchType.isEmpty()) {
                 removeDressDetail(dressMap.get(positionType));
-                Log.forest("装扮保护🔐皮肤过期,芝麻粒已为你恢复默认!");
+                Log.forest("装扮保护🔐皮肤过期,芝麻粒-M已为你恢复默认!");
             }
             return isTakeOff;
         } catch (Throwable th) {

@@ -34,7 +34,7 @@ public class NotificationUtil {
             PendingIntent pi = PendingIntent.getActivity(context, 0, it,
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                NotificationChannel notificationChannel = new NotificationChannel(CHANNEL_ID, "芝麻粒能量提醒",
+                NotificationChannel notificationChannel = new NotificationChannel(CHANNEL_ID, "芝麻粒-M能量提醒",
                         NotificationManager.IMPORTANCE_LOW);
                 notificationChannel.enableLights(false);
                 notificationChannel.enableVibration(false);
@@ -50,7 +50,7 @@ public class NotificationUtil {
             builder
                     .setSmallIcon(android.R.drawable.sym_def_app_icon)
                     .setLargeIcon(BitmapFactory.decodeResource(context.getResources(), android.R.drawable.sym_def_app_icon))
-                    .setSubText("芝麻粒")
+                    .setSubText("芝麻粒-M")
                     .setAutoCancel(false)
                     .setContentIntent(pi);
             if (BaseModel.getEnableOnGoing().getValue()) {

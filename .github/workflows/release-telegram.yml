@@ -14,5 +14,5 @@ jobs:
         run: |
           curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
           -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-          -d "text=🎉 芝麻粒 [${{ github.event.release.tag_name }}](${{ github.event.release.html_url }}) 已发布🚀%0A%0A${{ github.event.release.body }}" \
+          -d "text=🎉 芝麻粒-M [${{ github.event.release.tag_name }}](${{ github.event.release.html_url }}) 已发布🚀%0A%0A${{ github.event.release.body }}" \
           -d "parse_mode=Markdown"

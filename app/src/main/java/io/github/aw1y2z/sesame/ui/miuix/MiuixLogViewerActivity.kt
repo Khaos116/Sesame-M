@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -124,14 +125,21 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
         }
     }
     var entries by remember(logType) { mutableStateOf(loadLogEntries(file)) }
+    val listState = rememberLazyListState()
+    fun updateEntries(updated: List<LogEntry>, reset: Boolean = false) {
+        // 在替换数据前读取位置；反向布局的 index 0 就是日志底部。
+        val followBottom = reset || entries.isEmpty() || !listState.canScrollBackward
+        entries = updated
+        if (followBottom) listState.requestScrollToItem(0)
+    }
     // 实时刷新：文件被写入时重新加载尾部，做到打开日志页能看到正在执行的过程，
     // 不用手动关闭重开。参照 Sesame-AG 的 FileObserver + debounce 思路，
     // 但沿用本页已有的"整段重读"逻辑，不引入它那套 ViewModel/多日志分类体系。
     val fileUpdateChannel = remember(logType) { Channel<Unit>(Channel.CONFLATED) }
     LaunchedEffect(fileUpdateChannel, file) {
-        entries = withContext(Dispatchers.IO) { loadLogEntries(file) }
+        updateEntries(withContext(Dispatchers.IO) { loadLogEntries(file) }, reset = true)
         fileUpdateChannel.receiveAsFlow().collect {
-            entries = withContext(Dispatchers.IO) { loadLogEntries(file) }
+            updateEntries(withContext(Dispatchers.IO) { loadLogEntries(file) })
             delay(300)
         }
     }
@@ -166,7 +174,7 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                 },
                 onClear = {
                     if (FileUtil.clearFile(file)) {
-                        entries = loadLogEntries(file)
+                        updateEntries(loadLogEntries(file), reset = true)
                         ToastUtil.show(context, "已清空")
                     }
                 }
@@ -189,20 +197,17 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                 )
             }
         } else {
-            val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-            LaunchedEffect(entries.size) {
-                if (entries.isNotEmpty()) listState.animateScrollToItem(entries.size - 1)
-            }
             LazyColumn(
                 state = listState,
+                reverseLayout = true,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
                     .padding(horizontal = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
-                itemsIndexed(entries, key = { _, e -> "${e.lineNumber}-${e.hashCode()}" }) { _, entry ->
+                itemsIndexed(entries.asReversed(), key = { _, e -> "${e.lineNumber}-${e.hashCode()}" }) { _, entry ->
                     LogEntryCard(entry)
                 }
             }

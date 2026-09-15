@@ -18,7 +18,9 @@ class ModelFields {}
 enum ModelType { TASK }
 class BaseModel { static void taskRpcRequest() {} static Value getTimedTaskModel() { return new Value(); }
  static class Value { int getValue() { return 1; } } static class TimedTaskModel { static int SYSTEM=0, PROGRAM=1; } }
-class Log { static void record(String s) {} static void startModuleLogCount() {} static int stopModuleLogCount() { return 1; }
+class Log { static final java.util.concurrent.atomic.AtomicInteger completions = new java.util.concurrent.atomic.AtomicInteger();
+ static void record(String s) { if (s.equals("🏁全部任务已执行完成")) completions.incrementAndGet(); }
+ static void startModuleLogCount() {} static int stopModuleLogCount() { return 1; }
  static void printStackTrace(Throwable t) { throw new AssertionError(t); } }
 class ThreadUtil { static void shutdownAndWait(Thread t, long n, java.util.concurrent.TimeUnit u) {
  if(t != null) { t.interrupt(); if(n >= 0) try { t.join(u.toMillis(n)); } catch(InterruptedException e) { Thread.currentThread().interrupt(); } } } }
@@ -57,5 +59,7 @@ with tempfile.TemporaryDirectory(prefix="sesame-account-check-") as directory:
         (out / f"{name}.java").write_text(source, encoding="utf-8")
     (out / "Stubs.java").write_text(STUBS, encoding="utf-8")
     shutil.copy(Path(__file__).with_name("AccountLifecycleCheck.java"), out)
+    shutil.copy(Path(__file__).with_name("TaskCompletionCheck.java"), out)
     subprocess.run(["javac", "-encoding", "UTF-8", "-d", str(out), *map(str, out.glob("*.java"))], check=True)
     subprocess.run(["java", "-cp", str(out), "io.github.aw1y2z.sesame.data.task.AccountLifecycleCheck"], check=True, timeout=30)
+    subprocess.run(["java", "-cp", str(out), "io.github.aw1y2z.sesame.data.task.TaskCompletionCheck"], check=True, timeout=30)

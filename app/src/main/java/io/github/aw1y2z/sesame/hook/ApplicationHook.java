@@ -704,8 +704,8 @@ public class ApplicationHook extends XposedModule {
 
                 boolean enableModule = Model.getModel(BaseModel.class).getEnableField().getValue();
                 if (!enableModule) {
-                    Log.record("芝麻粒已禁用");
-                    Toast.show("芝麻粒已禁用");
+                    Log.record("芝麻粒-M已禁用");
+                    Toast.show("芝麻粒-M已禁用");
                     return false;
                 }
                 if (BaseModel.getBatteryPerm().getValue() && !init && !PermissionUtil.checkBatteryPermissions()) {
@@ -794,7 +794,7 @@ public class ApplicationHook extends XposedModule {
                 updateDay();
                 BaseModel.initRpcRequest();
                 Log.record("加载完成");
-                Toast.show("芝麻粒加载成功:" + modelVersion);
+                Toast.show("芝麻粒-M加载成功:" + modelVersion);
             }
             offline = false;
             init = true;
@@ -803,7 +803,7 @@ public class ApplicationHook extends XposedModule {
         } catch (Throwable th) {
             Log.i(TAG, "startHandler err:");
             Log.printStackTrace(TAG, th);
-            Toast.show("芝麻粒加载失败");
+            Toast.show("芝麻粒-M加载失败");
             return false;
         }
     }
