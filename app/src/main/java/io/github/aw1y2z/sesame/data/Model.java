@@ -1,6 +1,5 @@
 package io.github.aw1y2z.sesame.data;
 
-import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -112,8 +111,7 @@ public abstract class Model {
         for (int i = 0, len = modelClazzList.size(); i < len; i++) {
             Class<? extends Model> modelClazz = modelClazzList.get(i);
             try {
-                Constructor<? extends Model> constructor = modelClazz.getConstructor();
-                Model model = constructor.newInstance();
+                Model model = modelClazz.getDeclaredConstructor().newInstance();
                 ModelConfig modelConfig = new ModelConfig(model);
                 modelArray[i] = model;
                 modelMap.put(modelClazz, model);

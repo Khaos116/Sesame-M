@@ -307,9 +307,15 @@ public class ApplicationHook extends XposedModule {
                         String currentUid = UserIdMap.getCurrentUid();
                         if (!targetUid.equals(currentUid)) {
                             if (currentUid != null) {
-                                initHandler(true);
-                                Log.record("用户已切换");
-                                Toast.show("用户已切换");
+                                long switchGeneration = TaskLifecycle.generation();
+                                ApplicationHook.getMainHandler().postDelayed(() -> {
+                                    try (TaskLifecycle.Work delayedWork = TaskLifecycle.enter(switchGeneration)) {
+                                        if (delayedWork == null) return;
+                                        Log.record("用户已切换");
+                                        Toast.show("用户已切换");
+                                        initHandler(true);
+                                    }
+                                }, 1000);
                                 return;
                             }
                             UserIdMap.initUser(targetUid);

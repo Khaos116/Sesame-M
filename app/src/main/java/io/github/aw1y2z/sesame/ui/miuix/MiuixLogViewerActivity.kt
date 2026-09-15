@@ -23,7 +23,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.runtime.Composable
@@ -112,6 +112,10 @@ class MiuixLogViewerActivity : MiuixBaseActivity() {
 /**
  * 日志详情页:展示指定类目的全部条目卡片。
  * 仿 LSPosed 日志界面:每条目一张卡(标签 + 时间 + 正文)。
+ *
+ * 列表从底部开始排(reverseLayout),而列表初始位置就是最新一条,
+ * 所以一打开页面看到的就是最新日志;文件被写入时(FileObserver)重新加载尾部并跟到最新;
+ * 上滑翻历史时暂停跟随(不会被新日志顶跑),滑回最新后自动恢复。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -165,7 +169,7 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                 title = logType.displayName,
                 onBack = { activity.finish() },
                 onExport = {
-                    val exported = FileUtil.exportFile(file)
+                    val exported = FileUtil.exportFile(logType.file)
                     if (exported != null) {
                         ToastUtil.show(context, "已导出: " + exported.path)
                     } else {
@@ -281,7 +285,7 @@ fun LogTopBar(
         ) {
             IconButton(onClick = onBack) {
                 Icon(
-                    imageVector = Icons.Filled.ArrowBack,
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "返回",
                     tint = MiuixTheme.colorScheme.onBackground
                 )

@@ -17,6 +17,7 @@ import io.github.aw1y2z.sesame.entity.MemberBenefit;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.model.extensions.ExtensionsHandle;
+import io.github.aw1y2z.sesame.model.task.antOrchard.AntOrchard;
 import io.github.aw1y2z.sesame.model.task.antOrchard.AntOrchardRpcCall;
 import io.github.aw1y2z.sesame.util.*;
 import io.github.aw1y2z.sesame.util.idMap.AntFarmDoFarmTaskListMap;
@@ -810,7 +811,7 @@ public class AntMember extends ModelTask {
                 if ("babanongchang_7d".equals(behaviorId) && "wait_doing".equals(status)) {
                     
                     // 获取WUA
-                    String wua = getWuaByReflection();
+                    String wua = new AntOrchard().getWua();
                     String source = "DNHZ_NC_zhimajingnangSF";
                     
                     JSONObject spreadManureData = MyUtils.newJSONObject(AntOrchardRpcCall.orchardSpreadManure(false, wua));
@@ -846,32 +847,7 @@ public class AntMember extends ModelTask {
             Log.printStackTrace(TAG + ".handleGrowthGuideTasks", e);
         }
     }
-    
-    // 在antMember任意类中添加反射调用方法
-    private String getWuaByReflection() {
-        try {
-            // 1. 获取AntOrchard类
-            Class<?> antOrchardClass = Class.forName("io.github.aw1y2z.sesame.model.task.antOrchard.AntOrchard");
-            // 2. 实例化类（若方法是静态的，无需实例化）
-            Object antOrchardInstance = antOrchardClass.newInstance();
-            // 3. 获取私有方法getWua()
-            java.lang.reflect.Method getWuaMethod = antOrchardClass.getDeclaredMethod("getWua");
-            // 4. 取消访问检查
-            getWuaMethod.setAccessible(true);
-            // 5. 调用方法并返回结果
-            return (String) getWuaMethod.invoke(antOrchardInstance);
-        }
-        catch (ClassNotFoundException e) {
-            Log.error("未找到AntOrchard类" + e);
-        }
-        catch (NoSuchMethodException e) {
-            Log.error("未找到getWua方法" + e);
-        }
-        catch (IllegalAccessException | InstantiationException | java.lang.reflect.InvocationTargetException e) {
-            Log.error("调用getWua方法失败" + e);
-        }
-        return "";
-    }
+
     
     public static void queryAndCollect() {
         try {

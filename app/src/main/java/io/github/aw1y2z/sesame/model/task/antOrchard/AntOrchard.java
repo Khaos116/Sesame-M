@@ -539,7 +539,7 @@ public class AntOrchard extends ModelTask {
     }
 
 
-    private String getWua() {
+    public String getWua() {
         if (wuaList == null) {
             try {
                 String content = FileUtil.readFromFile(FileUtil.getWuaFile());

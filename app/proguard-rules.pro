@@ -20,12 +20,14 @@
 -keep,allowoptimization,allowobfuscation public class io.github.aw1y2z.sesame.hook.ApplicationHook extends io.github.libxposed.api.XposedModule {
     public <init>();
 }
+-keep class * implements io.github.libxposed.api.XposedModule { *; }
 
 # Model.initAllModel() 用反射调无参构造函数实例化每个任务模块，简单类名对应配置 key
 -keep class io.github.aw1y2z.sesame.model.** extends io.github.aw1y2z.sesame.data.Model {
     public <init>();
 }
-# AntMember 用反射跨类调用 AntOrchard 的私有方法 getWua()
+# AntOrchard.getWua() 现在是 public 直接调用（不再是 AntMember 反射跨类调的私有方法，
+# 见 Model 系统改造记录），但 Jackson 仍可能按名反射，保留这条不算浪费
 -keepclassmembers class io.github.aw1y2z.sesame.model.task.antOrchard.AntOrchard {
     *** getWua(...);
 }
