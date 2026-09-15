@@ -43,6 +43,19 @@ public class ConfigV2 {
                     try {
                         if (modelField != null) {
                             Object value = modelField.getValue();
+                            // 兼容曾保存为“场景列表 + 统一次数”的版本；旧 Map 原样保留。
+                            if ("AntOrchard".equals(modelCode)
+                                    && "orchardSpreadManureSceneList".equals(configModelField.getCode())
+                                    && value instanceof java.util.Collection<?>) {
+                                ModelField<?> countField = modelFields.get("orchardSpreadManureCount");
+                                Object count = countField == null ? 3 : countField.getValue();
+                                Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+                                for (Object scene : (java.util.Collection<?>) value) {
+                                    if (scene instanceof String) counts.put((String) scene,
+                                            count instanceof Number ? ((Number) count).intValue() : 3);
+                                }
+                                value = counts;
+                            }
                             if (value != null) {
                                 configModelField.setObjectValue(value);
                             }
@@ -56,6 +69,10 @@ public class ConfigV2 {
                 for (ModelField<?> configModelField : configModelFields.values()) {
                     newModelFields.addField(configModelField);
                 }
+            }
+            // 全局权限开关未设置时仍需读取旧账号值，保存配置不能丢弃它。
+            if ("BaseModel".equals(modelCode) && modelFields != null && modelFields.containsKey("batteryPerm")) {
+                newModelFields.put("batteryPerm", modelFields.get("batteryPerm"));
             }
             modelFieldsMap.put(modelCode, newModelFields);
         }

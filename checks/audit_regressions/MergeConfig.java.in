@@ -1,0 +1,127 @@
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
+import io.github.aw1y2z.sesame.data.ModelField;
+import io.github.aw1y2z.sesame.data.ModelFields;
+import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField;
+import io.github.aw1y2z.sesame.data.modelFieldExt.SelectAndCountModelField;
+import io.github.aw1y2z.sesame.entity.IdAndName;
+import io.github.aw1y2z.sesame.util.JsonUtil;
+
+public class MergeConfigCheck {
+    final Map<String, ModelFields> modelFieldsMap = new HashMap<>();
+    static final MergeConfigCheck INSTANCE = new MergeConfigCheck();
+    Boolean batteryPerm;
+    record ModelConfig(String code, ModelFields fields) {
+        String getCode() { return code; }
+        ModelFields getFields() { return fields; }
+    }
+    static class ModelTask {
+        static Map<String, ModelConfig> configs = new HashMap<>();
+        static Map<String, ModelConfig> getModelConfigMap() { return configs; }
+    }
+    static class Log {
+        static void printStackTrace(Throwable t) { throw new AssertionError(t); }
+        static void record(String s) { }
+    }
+    static class Toast { static void show(String s) { } }
+    static class FileUtil {
+        static Path root;
+        static String uid = "active";
+        static File getRuntimeLogFile() { return root.resolve(uid).resolve("runtime.log").toFile(); }
+        static File getDefaultConfigV2File() { return root.resolve("default.json").toFile(); }
+        static File getConfigV2File(String uid) { return root.resolve(uid + ".json").toFile(); }
+        static String readFromFile(File file) throws IOException { return Files.readString(file.toPath()); }
+    }
+    static class TimeUtil {
+        static Calendar now = Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));
+        static Calendar getNow() { return now; }
+    }
+    static class Handler {
+        final List<Runnable> queued = new ArrayList<>();
+        void removeCallbacks(Runnable r) { queued.removeIf(item -> item == r); }
+        void postDelayed(Runnable r, long delay) { queued.add(r); }
+        void tick() { queued.remove(0).run(); }
+    }
+    static Handler mainHandler = new Handler();
+    static Runnable pendingAccountReload;
+    static String targetUid = "B";
+    static class UserIdMap { static String current = "A"; static String getCurrentUid() { return current; } }
+    static String getUserId() { return targetUid; }
+    int reloads;
+    boolean initHandler(Boolean force) { reloads++; UserIdMap.current = targetUid; return true; }
+    @@LIFECYCLE@@
+    @@CONFIG@@
+    @@BATTERY@@
+    @@RANK@@
+    @@RELOAD@@
+
+    static ModelField<Object> field(String code, Object value) {
+        return new ModelField<Object>(code, code, value) { };
+    }
+    public static void main(String[] args) throws Exception {
+        var test = INSTANCE;
+        var scenes = new SelectAndCountModelField("orchardSpreadManureSceneList", "scenes",
+                new LinkedHashMap<>(), Collections.<IdAndName>emptyList());
+        var orchard = new ModelFields(); orchard.addField(scenes);
+        ModelTask.configs.put("AntOrchard", new ModelConfig("AntOrchard", orchard));
+        ModelTask.configs.put("BaseModel", new ModelConfig("BaseModel", new ModelFields()));
+        var old = new ModelFields();
+        old.addField(field("orchardSpreadManureSceneList", Map.of("main", 10, "yeb", 3)));
+        var base = new ModelFields(); base.addField(field("batteryPerm", false));
+        test.setModelFieldsMap(Map.of("AntOrchard", old, "BaseModel", base));
+        assert scenes.getValue().equals(Map.of("main", 10, "yeb", 3));
+        assert Boolean.FALSE.equals(test.modelFieldsMap.get("BaseModel").get("batteryPerm").getValue());
+        old.put("orchardSpreadManureSceneList", field("orchardSpreadManureSceneList", List.of("main", "yeb")));
+        old.addField(field("orchardSpreadManureCount", 7));
+        test.setModelFieldsMap(Map.of("AntOrchard", old));
+        assert scenes.getValue().equals(Map.of("main", 7, "yeb", 7));
+        old.remove("orchardSpreadManureCount"); test.setModelFieldsMap(Map.of("AntOrchard", old));
+        assert scenes.get("main") == 3;
+        test.setModelFieldsMap(Map.of("AntOrchard", test.modelFieldsMap.get("AntOrchard")));
+        assert scenes.get("main") == 3 : "migration is not idempotent";
+
+        var minutes = new IntegerModelField.MultiplyIntegerModelField("interval", "minutes", 50, 1, 720, 60000);
+        assert minutes.getConfigValue().equals("50");
+        minutes.setConfigValue("60"); assert minutes.getValue() == 3600000;
+        minutes.setConfigValue("720"); assert minutes.getValue() == 43200000;
+        minutes.setConfigValue("1"); assert minutes.getValue() == 60000;
+
+        TimeUtil.now.set(Calendar.HOUR_OF_DAY, 9); TimeUtil.now.set(Calendar.MINUTE, 0);
+        assert test.isStealRankTime(0) && !test.isStealRankTime(30);
+        TimeUtil.now.set(Calendar.HOUR_OF_DAY, 19); TimeUtil.now.set(Calendar.MINUTE, 30);
+        assert test.isStealRankTime(30);
+        TimeUtil.now.set(Calendar.HOUR_OF_DAY, 20); TimeUtil.now.set(Calendar.MINUTE, 0);
+        assert !test.isStealRankTime(0) && !test.isStealRankTime(30);
+
+        test.scheduleAccountReload(); test.scheduleAccountReload();
+        assert mainHandler.queued.size() == 1;
+        mainHandler.tick(); assert test.reloads == 1;
+        test.scheduleAccountReload(); mainHandler.tick(); assert test.reloads == 1;
+        targetUid = "C"; test.scheduleAccountReload();
+        var freeze = TaskLifecycle.freezeIfIdle(); TaskLifecycle.thaw(freeze);
+        mainHandler.tick(); assert test.reloads == 1;
+        test.scheduleAccountReload(); targetUid = null;
+        mainHandler.tick(); assert test.reloads == 1;
+
+        FileUtil.root = Files.createTempDirectory("sesame-battery-check");
+        try {
+            Files.writeString(FileUtil.getConfigV2File("active").toPath(),
+                    "{\"modelFieldsMap\":{\"BaseModel\":{\"batteryPerm\":{\"value\":false}}}}");
+            assert !shouldRequestBatteryPermission();
+            INSTANCE.batteryPerm = true; assert shouldRequestBatteryPermission();
+            INSTANCE.batteryPerm = false; assert !shouldRequestBatteryPermission();
+            INSTANCE.batteryPerm = null; FileUtil.uid = "new-account";
+            assert shouldRequestBatteryPermission();
+            FileUtil.uid = "default";
+            Files.writeString(FileUtil.getDefaultConfigV2File().toPath(), "{}");
+            assert shouldRequestBatteryPermission();
+        } finally {
+            try (var paths = Files.list(FileUtil.root)) {
+                for (Path path : paths.toList()) Files.delete(path);
+            }
+            Files.delete(FileUtil.root);
+        }
+        System.out.println("PASS merge regressions: config migration, minute units, all-day ranking, account reload and battery preference");
+    }
+}

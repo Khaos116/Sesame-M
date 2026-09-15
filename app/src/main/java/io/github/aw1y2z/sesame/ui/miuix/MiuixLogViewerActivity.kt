@@ -113,9 +113,9 @@ class MiuixLogViewerActivity : MiuixBaseActivity() {
  * 日志详情页:展示指定类目的全部条目卡片。
  * 仿 LSPosed 日志界面:每条目一张卡(标签 + 时间 + 正文)。
  *
- * 列表从底部开始排(reverseLayout),而列表初始位置就是最新一条,
- * 所以一打开页面看到的就是最新日志;文件被写入时(FileObserver)重新加载尾部并跟到最新;
- * 上滑翻历史时暂停跟随(不会被新日志顶跑),滑回最新后自动恢复。
+ * 最新一条排在列表最前面(顶部),打开页面不用滚动就能看到最新日志;
+ * 文件被写入时(FileObserver)重新加载尾部并跟回顶部;下滑翻历史时暂停跟随
+ * (不会被新日志顶跑),滑回顶部后自动恢复。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -131,10 +131,10 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     var entries by remember(logType) { mutableStateOf(loadLogEntries(file)) }
     val listState = rememberLazyListState()
     fun updateEntries(updated: List<LogEntry>, reset: Boolean = false) {
-        // 在替换数据前读取位置；反向布局的 index 0 就是日志底部。
-        val followBottom = reset || entries.isEmpty() || !listState.canScrollBackward
+        // 在替换数据前读取位置；index 0 是最新一条，排在列表顶部。
+        val followTop = reset || entries.isEmpty() || !listState.canScrollBackward
         entries = updated
-        if (followBottom) listState.requestScrollToItem(0)
+        if (followTop) listState.requestScrollToItem(0)
     }
     // 实时刷新：文件被写入时重新加载尾部，做到打开日志页能看到正在执行的过程，
     // 不用手动关闭重开。参照 Sesame-AG 的 FileObserver + debounce 思路，
@@ -203,12 +203,11 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
         } else {
             LazyColumn(
                 state = listState,
-                reverseLayout = true,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
                     .padding(horizontal = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
                 itemsIndexed(entries.asReversed(), key = { _, e -> "${e.lineNumber}-${e.hashCode()}" }) { _, entry ->

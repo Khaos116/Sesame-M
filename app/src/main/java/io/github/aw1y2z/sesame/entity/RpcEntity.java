@@ -44,12 +44,20 @@ public class RpcEntity {
     }
 
     public void setResponseObject(Object result, String resultStr) {
-        this.hasResult = true;
         this.responseObject = result;
         this.responseString = resultStr;
+        this.hasError = false;
+        this.hasResult = true;
     }
 
     public void setError() {
         this.hasError = true;
+    }
+
+    public void resetResponse() {
+        this.hasResult = false;
+        this.hasError = false;
+        this.responseObject = null;
+        this.responseString = null;
     }
 }

@@ -19,8 +19,8 @@ import io.github.aw1y2z.sesame.data.ViewAppInfo;
 /**
  * 对齐 GR2026 {@code util/MyUtils.java} 中可迁移的通用部分：方法名与其保持一致，
  * 便于后续合并 fork 代码时按名字直接映射调用点。GR 侧的硬编码风控开关改为读取
- * {@link AppConfig} 的可配置项；GR 品牌相关（getAppTitleExt）及版本/账号特定的硬编码
- * 任务 ID 黑名单（_不是有效的入参 等）未移植。取舍依据见 doc/MyFix.md。
+ * {@link AppConfig} 的可配置项；GR 已知异常任务过滤和按账号的异常暂停统一由
+ * {@link io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard} 处理。
  */
 public class MyUtils {
 

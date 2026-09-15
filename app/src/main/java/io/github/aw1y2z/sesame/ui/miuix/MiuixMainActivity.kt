@@ -734,10 +734,11 @@ fun SettingsTab(activity: MiuixMainActivity) {
             followSystem = it
             activity.recreate()
         }
-        var batteryPerm by remember { mutableStateOf(AppConfig.INSTANCE.batteryPerm ?: true) }
+        var batteryPerm by remember { mutableStateOf(AppConfig.shouldRequestBatteryPermission()) }
         BooleanSwitch("为支付宝申请后台运行权限", batteryPerm) {
             AppConfig.INSTANCE.batteryPerm = it
             AppConfig.save()
+            activity.broadcastReloadConfig()
             batteryPerm = it
         }
         if (batteryPerm) {

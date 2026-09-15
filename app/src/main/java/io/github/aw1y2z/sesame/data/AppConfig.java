@@ -35,7 +35,8 @@ public class AppConfig {
     private Boolean enableDebugLog = false;
     private Boolean enableViewErrorLog = true;
     private Boolean enableViewRuntimeLog = true;
-    private Boolean batteryPerm = true;
+    // null 表示尚未选择全局开关，沿用当前账号的旧设置。
+    private Boolean batteryPerm;
 
     // 对齐 GR2026 MyUtils 的恒真风控跳过函数，这里改为可配置项而非硬编码 true，见 doc/MyFix.md
     private Boolean closeVerification = true;
@@ -98,6 +99,21 @@ public class AppConfig {
 
     public Boolean getBatteryPerm() { return batteryPerm; }
     public void setBatteryPerm(Boolean value) { batteryPerm = value; }
+
+    public static boolean shouldRequestBatteryPermission() {
+        if (INSTANCE.batteryPerm != null) return INSTANCE.batteryPerm;
+        try {
+            String userId = FileUtil.getRuntimeLogFile().getParentFile().getName();
+            File config = "default".equals(userId) ? FileUtil.getDefaultConfigV2File() : FileUtil.getConfigV2File(userId);
+            if (config.isFile()) {
+                return JsonUtil.copyMapper().readTree(FileUtil.readFromFile(config))
+                        .path("modelFieldsMap").path("BaseModel").path("batteryPerm").path("value").asBoolean(true);
+            }
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+        }
+        return true;
+    }
 
     public static Boolean save() {
         return FileUtil.write2File(toSaveStr(), new File(APP_CONFIG_DIRECTORY_FILE, "appConfig.json"));

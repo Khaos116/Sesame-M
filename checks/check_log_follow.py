@@ -92,7 +92,7 @@ fun main() {
     } finally { file.delete() }
 }
 '''.replace("@@UPDATE@@", method(source_path, "    fun updateEntries("))
-assert "reverseLayout = true" in source and "itemsIndexed(entries.asReversed()" in source
+assert "reverseLayout" not in source and "itemsIndexed(entries.asReversed()" in source
 assert "LaunchedEffect(entries.size)" not in source
 with tempfile.TemporaryDirectory(prefix="sesame-log-check-") as temporary:
     work = Path(temporary)

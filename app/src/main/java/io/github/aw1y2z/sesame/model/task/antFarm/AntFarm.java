@@ -116,9 +116,9 @@ public class AntFarm extends ModelTask {
     private IntegerModelField competitionLeadEggs;      // 领先第一名的蛋数
     private IntegerModelField competitionDailyLimit;    // 每日捐蛋上限
     private BooleanModelField competitionStealRank;     // 霸榜开关
-    private IntegerModelField competitionStealMinutes;  // 霸榜提前分钟数(0不霸榜)
+    private IntegerModelField competitionStealMinutes;  // 霸榜提前分钟数(0=整天)
     private BooleanModelField stealRankEnable;          // 偷榜开关
-    private IntegerModelField stealRankMinutes;         // 偷榜提前分钟数(0不偷榜)
+    private IntegerModelField stealRankMinutes;         // 偷榜提前分钟数(0=20:00准时)
     private BooleanModelField useBigEaterTool;
     //private ChoiceModelField getFeedType;
     private SelectModelField getFeedList;
@@ -164,9 +164,9 @@ public class AntFarm extends ModelTask {
         modelFields.addField(competitionDailyLimit = new IntegerModelField("competitionDailyLimit", "自动捐蛋 | 每日捐蛋上限(0不限)", 10, 0, 1000));
         modelFields.addField(competitionLeadEggs = new IntegerModelField("competitionLeadEggs", "激进模式 | 捐至榜首领先蛋数", 1, 0, 1000));
         modelFields.addField(competitionStealRank = new BooleanModelField("competitionStealRank", "激进模式 | 霸榜", false));
-        modelFields.addField(competitionStealMinutes = new IntegerModelField("competitionStealMinutes", "激进模式 | 霸榜提前分钟数", 30, 0, 240));
+        modelFields.addField(competitionStealMinutes = new IntegerModelField("competitionStealMinutes", "激进模式 | 霸榜提前分钟数(0=整天)", 0, 0, 1200));
         modelFields.addField(stealRankEnable = new BooleanModelField("stealRankEnable", "激进模式 | 偷榜", false));
-        modelFields.addField(stealRankMinutes = new IntegerModelField("stealRankMinutes", "激进模式 | 偷榜提前分钟数", 0, 0, 240));
+        modelFields.addField(stealRankMinutes = new IntegerModelField("stealRankMinutes", "激进模式 | 偷榜提前分钟数(0=20:00准时)", 0, 0, 1200));
         modelFields.addField(family = new BooleanModelField("family", "亲密家庭 | 开启", false));
         modelFields.addField(familyOptions = new SelectModelField("familyOptions", "亲密家庭 | 选项", new LinkedHashSet<>(), CustomOption::getAntFarmFamilyOptions));
         modelFields.addField(notInviteList = new SelectModelField("notInviteList", "亲密家庭 | 不邀请列表", new LinkedHashSet<>(), AlipayUser::getList));
@@ -1312,7 +1312,7 @@ public class AntFarm extends ModelTask {
             if (competitionStealRank.getValue()) {
                 int stealMinutes = competitionStealMinutes.getValue();
                 if (isStealRankTime(stealMinutes)) {
-                    stealRank(stealMinutes, "霸榜");
+                    stealRank(stealMinutes > 0 ? stealMinutes : 1200, "霸榜");
                 }
             }
 
@@ -1502,7 +1502,7 @@ public class AntFarm extends ModelTask {
         int minute = calendar.get(java.util.Calendar.MINUTE);
         int totalMinutes = hour * 60 + minute;
         int targetTime = 20 * 60;
-        int startTime = targetTime - stealMinutes;
+        int startTime = stealMinutes > 0 ? targetTime - stealMinutes : 0;
         return totalMinutes >= startTime && totalMinutes < targetTime;
     }
 

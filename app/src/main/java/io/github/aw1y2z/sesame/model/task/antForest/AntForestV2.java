@@ -69,6 +69,7 @@ import io.github.aw1y2z.sesame.util.ListUtil;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 import io.github.aw1y2z.sesame.util.NotificationUtil;
 import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.Statistics;
@@ -876,7 +877,7 @@ public class AntForestV2 extends ModelTask {
         try {
             JSONObject pkObject = MyUtils.newJSONObject(AntForestRpcCall.queryTopEnergyChallengeRanking());
             if (!MessageUtil.checkResultCode(TAG + "获取PK排行榜失败:", pkObject)) {
-                Log.error("获取PK排行榜失败: " + pkObject.optString("resultDesc"));
+                Log.error("获取PK排行榜失败: " + RpcRequestGuard.errorMessage(pkObject));
             } else {
                 if (!"JOIN".equals(pkObject.optString("rankMemberStatus"))) {
                     Log.record("未加入PK排行榜");
@@ -1416,8 +1417,10 @@ public class AntForestV2 extends ModelTask {
                 if (balanceNetworkDelay.getValue()) {
                     delayTimeMath.nextInteger((int) (spendTime / 3));
                 }
-                if (rpcEntity.getHasError()) {
-                    String errorCode = (String) XHelpers.callMethod(rpcEntity.getResponseObject(), "getString", "error");
+                JSONObject jo = MyUtils.newJSONObject(rpcEntity.getResponseString());
+                String errorCode = jo.optString("error");
+                if ("RPC_SKIPPED".equals(errorCode)) return;
+                if (rpcEntity.getHasError() && !errorCode.isEmpty()) {
                     if (Objects.equals("1004", errorCode)) {
                         if (BaseModel.getWaitWhenException().getValue() > 0) {
                             long waitTime = System.currentTimeMillis() + BaseModel.getWaitWhenException().getValue();
@@ -1435,7 +1438,6 @@ public class AntForestV2 extends ModelTask {
                     }
                     return;
                 }
-                JSONObject jo = MyUtils.newJSONObject(rpcEntity.getResponseString());
                 String resultCode = jo.optString("resultCode");
                 if (!"SUCCESS".equalsIgnoreCase(resultCode)) {
                     if ("PARAM_ILLEGAL2".equals(resultCode)) {

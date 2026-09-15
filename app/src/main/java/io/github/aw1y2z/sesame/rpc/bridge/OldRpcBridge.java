@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.rpc.bridge;
 
+import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 import org.json.JSONException;
 import org.json.JSONObject;
 import io.github.aw1y2z.sesame.data.RuntimeInfo;
@@ -78,9 +79,12 @@ public class OldRpcBridge implements RpcBridge {
 
     @Override
     public RpcEntity requestObject(RpcEntity rpcEntity, int tryCount, int retryInterval) {
+        rpcEntity.resetResponse();
         if (ApplicationHook.isOffline()) {
             return null;
         }
+        RpcRequestGuard guard = new RpcRequestGuard(rpcEntity);
+        if (guard.shouldSkip()) return rpcEntity;
         int id = rpcEntity.hashCode();
         String method = rpcEntity.getRequestMethod();
         String args = rpcEntity.getRequestData();
@@ -91,6 +95,7 @@ public class OldRpcBridge implements RpcBridge {
                 Object resp;
                 try {
                     RpcIntervalLimit.enterIntervalLimit(method);
+                    if (guard.shouldSkip()) return rpcEntity;
                     if (rpcCallMethod.getParameterTypes().length == 12) {
                         resp = rpcCallMethod.invoke(
                                 null, method, args, "", true, null, null, false, curH5PageImpl, 0, "", false, -1);
@@ -99,6 +104,7 @@ public class OldRpcBridge implements RpcBridge {
                                 null, method, args, "", true, null, null, false, curH5PageImpl, 0, "", false, -1, "");
                     }
                 } catch (Throwable t) {
+                    guard.recordTransportFailure(t);
                     rpcEntity.setError();
                     Log.error("old rpc request | id: " + id + " | method: " + method + " err:");
                     Log.printStackTrace(t);
@@ -150,16 +156,16 @@ public class OldRpcBridge implements RpcBridge {
                     String resultStr = (String) getResponseMethod.invoke(resp);
                     JSONObject resultObject = MyUtils.newJSONObject(resultStr);
                     rpcEntity.setResponseObject(resultObject, resultStr);
+                    guard.record(resultObject);
                     if (resultObject.optString("memo", "").contains("系统繁忙")) {
                         ApplicationHook.setOffline(true);
                         NotificationUtil.updateStatusText("系统繁忙，可能需要滑动验证");
                         Log.record("系统繁忙，可能需要滑动验证");
                         return null;
                     }
-                    if (!resultObject.optBoolean("success")
-                            && !resultObject.optBoolean("isSuccess")) {
+                    if (RpcRequestGuard.isFailure(resultObject)) {
                         rpcEntity.setError();
-                        Log.error("old rpc response | id: " + id + " | method: " + method + " args: " + args + " | data:" + rpcEntity.getResponseString());
+                        Log.error("old rpc response | id: " + id + " | method: " + method + " args: " + RpcLog.requestData(rpcEntity) + " | data:" + RpcLog.responseData(rpcEntity));
                     }
                     return rpcEntity;
                 } catch (Throwable t) {
@@ -168,7 +174,7 @@ public class OldRpcBridge implements RpcBridge {
                 return null;
             } while (count < tryCount);
         } finally {
-            Log.debug("Old RPC\n方法: " + method + "\n参数: " + args + "\n数据: " + rpcEntity.getResponseString() + "\n");
+            Log.debug("Old RPC\n方法: " + method + "\n参数: " + RpcLog.requestData(rpcEntity) + "\n数据: " + RpcLog.responseData(rpcEntity) + "\n");
         }
     }
 

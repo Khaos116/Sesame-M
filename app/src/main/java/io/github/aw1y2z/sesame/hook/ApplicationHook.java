@@ -140,6 +140,7 @@ public class ApplicationHook extends XposedModule {
 
     @Getter
     private static Handler mainHandler;
+    private static Runnable pendingAccountReload;
 
     private static BaseTask mainTask;
 
@@ -307,15 +308,7 @@ public class ApplicationHook extends XposedModule {
                         String currentUid = UserIdMap.getCurrentUid();
                         if (!targetUid.equals(currentUid)) {
                             if (currentUid != null) {
-                                long switchGeneration = TaskLifecycle.generation();
-                                ApplicationHook.getMainHandler().postDelayed(() -> {
-                                    try (TaskLifecycle.Work delayedWork = TaskLifecycle.enter(switchGeneration)) {
-                                        if (delayedWork == null) return;
-                                        Log.record("用户已切换");
-                                        Toast.show("用户已切换");
-                                        initHandler(true);
-                                    }
-                                }, 1000);
+                                scheduleAccountReload();
                                 return;
                             }
                             UserIdMap.initUser(targetUid);
@@ -714,7 +707,7 @@ public class ApplicationHook extends XposedModule {
                     Toast.show("芝麻粒-M已禁用");
                     return false;
                 }
-                if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getBatteryPerm() && !init && !PermissionUtil.checkBatteryPermissions()) {
+                if (AppConfig.shouldRequestBatteryPermission() && !init && !PermissionUtil.checkBatteryPermissions()) {
                     Log.record("支付宝无始终在后台运行权限");
                     mainHandler.postDelayed(() -> {
                         if (!PermissionUtil.checkOrRequestBatteryPermissions(context)) {
@@ -859,6 +852,25 @@ public class ApplicationHook extends XposedModule {
         }
     }
 
+    private void scheduleAccountReload() {
+        if (mainHandler == null) return;
+        if (pendingAccountReload != null) mainHandler.removeCallbacks(pendingAccountReload);
+        long generation = TaskLifecycle.generation();
+        pendingAccountReload = () -> {
+            pendingAccountReload = null;
+            try (TaskLifecycle.Work work = TaskLifecycle.enter(generation)) {
+                if (work == null) return;
+                String targetUid = getUserId();
+                if (targetUid == null || targetUid.equals(UserIdMap.getCurrentUid())) return;
+                if (initHandler(true)) {
+                    Log.record("用户已切换");
+                    Toast.show("用户已切换");
+                }
+            }
+        };
+        mainHandler.postDelayed(pendingAccountReload, 1000);
+    }
+
     private static void execHandler() {
         if (init && mainTask != null && !AccountSwitchController.isBusy()) mainTask.startTask(false);
     }
@@ -909,6 +921,8 @@ public class ApplicationHook extends XposedModule {
     };
 
     private static void stopHandler() {
+        if (pendingAccountReload != null && mainHandler != null) mainHandler.removeCallbacks(pendingAccountReload);
+        pendingAccountReload = null;
         mainTask.stopTask();
         ModelTask.stopAllTask();
     }
