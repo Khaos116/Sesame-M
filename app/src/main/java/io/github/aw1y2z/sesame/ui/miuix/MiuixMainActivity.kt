@@ -750,6 +750,12 @@ fun SettingsTab(activity: MiuixMainActivity, currentAccount: String) {
         }
         BooleanSwitch("跟随系统设置", followSystem) {
             AppConfig.INSTANCE.followSystem = it
+            // 跟深色模式开关互斥：开了跟随系统，深色模式这个手动选择就没意义了，关掉它，
+            // 免得用户以为两个开关都生效、实际只有先设置优先级更高的那个说了算。
+            if (it && darkMode) {
+                AppConfig.INSTANCE.darkMode = false
+                darkMode = false
+            }
             AppConfig.save()
             followSystem = it
             activity.recreate()
