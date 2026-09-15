@@ -5,8 +5,23 @@
 
 ## 2026-09-15
 
-- 未提交 style: 顶栏/配置列表账号显示格式调整（`C176: 账号` 改 `C176(账号)`；配置列表 UID
-  一行改用 `ArrowPreference` 的 `summary` 小字副标题，不再跟标题同号大小挤在一起）。
+- `dc009afe` fix: 深色模式/跟随系统开关最终效果没变时不再 `recreate()`，不闪页面（切换前后
+  各算一次 `effectiveDark`，一样就跳过重建）。
+- `4eed8650` fix: 深色模式和跟随系统设置改成双向互斥（开一个自动关另一个）。
+- `c7aa63f3` fix: 深色模式开关本身不生效——`followSystem` 判断优先级比 `darkMode` 高，默认
+  跟随系统开着时单独点深色模式没有效果，只会白白 `recreate()` 一次；开深色模式时顺手关闭
+  跟随系统。
+- `1f6ec478` fix: 电量权限按钮真正的闪退原因——`PermissionUtil.checkBatteryPermissions()`
+  在独立 App 进程里引用了只有真被 LSPosed 注入进支付宝进程才存在的 `ApplicationHook`
+  （其父类 `XposedModule` 是 compileOnly 依赖），触发 `NoClassDefFoundError`（`Error` 不是
+  `Exception`，两层 `catch(Exception)` 都包不住）；加个接收 `Context` 的重载绕开。
+- `56cc9a38` fix（诊断方向错误，已被 `1f6ec478` 取代真正修复，规则本身不算错保留未撤）：
+  怀疑是 R8 混淆导致的崩溃，把 hook 包从只 keep `ApplicationHook` 一个类改成整包 `-keep`；
+  重装后同样的崩溃复现，说明根因不在这里，见上一条真正的修复。
+- `330c746d` docs: 补全 2026-09-15 三轮合并/修复记录到 `doc/MyFix.md`/`CHANGELOG.md`；新增
+  `AGENTS.md`（Claude Code 和 Codex 都会读的项目须知）；顶栏/配置列表账号显示格式调整
+  （`C176: 账号` 改 `C176(账号)`；配置列表 UID 一行改用 `ArrowPreference` 的 `summary`
+  小字副标题，不再跟标题同号大小挤在一起）。
 - `c12a7be2` fix: 电量权限申请崩溃（缺 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` manifest 声明）、
   切深色模式跳回首页（`selectedTab` 未跨 `recreate()` 存活）、切 tab 顶部账号名闪烁（轮询状态
   提到 `MainScreen` 一级共享）。

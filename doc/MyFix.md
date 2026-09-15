@@ -8,8 +8,18 @@
 
 1. **时间必须按 GMT+8，不能用裸 `Calendar.getInstance()` / 系统默认时区**。用 `MyUtils.getInstance()` 替代 `Calendar.getInstance()`。背景：GR 自己的代码里也反复出现这个 bug（用户不在 GMT+8 时区跑设备时，跨天判断、定时任务会全部错位），Sesame-M 这边已经排查修过好几处（`FriendWatch.needUpdateAll()`、`ApplicationHook` 的 `dayCalendar`/`setWakenAtTimeAlarm`/`updateDay` 等，见下方 2026-09-12 记录）。已知例外：`TimeUtil` 里大部分方法本身还是系统默认时区（历史遗留，范围大，未整体改造），新代码如果要用其中方法做时间比较，先确认语义是否会跟 GMT+8 的另一侧对不上，不要只改一半引入新的隐蔽错位。
 2. **JSON 读取禁止裸 `.get*()`（`getString`/`getInt`/`getLong`/`getDouble`/`getBoolean`/`getJSONObject`/`getJSONArray`/不带类型后缀的 `get`），一律用对应的 `.opt*()` + 空指针防护**。背景：全仓库约 1986 处调用点的转换任务已在 2026-09-14 完成（见下方记录），裸 `get*()` 在字段缺失/服务端返回结构变化时会直接抛异常导致任务崩掉，`opt*()` 返回 null/默认值后自己判空更稳。新写的代码、从 GR/AG/Sure-Xu 合并进来的代码，只要有 `org.json.JSONObject`/`JSONArray` 取值，一律按这个规范来，不要重新引入裸 `get*()`。
+3. **独立 App 进程（`MiuixMainActivity`/`MiuixSettingsActivity` 等 `ui/` 包下的代码，以及它们能直接调用到的 `util/` 工具方法）绝对不能引用 `ApplicationHook`（或任何继承 `io.github.libxposed.api.XposedModule` 的类）**。背景：`XposedModule` 是 `compileOnly` 依赖，运行时类只有真被 LSPosed 注入进支付宝进程后宿主框架才提供；独立 App 自己的进程里这个类根本不存在，一碰就在类校验阶段抛 `NoClassDefFoundError`——这是 `Error` 不是 `Exception`，`catch(Exception e)` 包不住，直接崩溃闪退（见下方 2026-09-15 `PermissionUtil.checkBatteryPermissions()` 那次踩坑记录）。独立 App 需要的任何数据/状态，走 `AppConfig`（跨进程共享配置）、直接读账号目录下的文件，或者广播/`Handler`，不要图省事直接调 `ApplicationHook.getXxx()`。
 
 ## 变更记录
+
+### 2026-09-15（续）：电量权限崩溃真根因 + 深色模式/跟随系统开关体验修复
+
+**电量权限崩溃排查了两轮**：第一轮看到崩溃堆栈里全是短名字的类（`bb1`/`nx0`/`p9`/`ip`/`v31`/`ff0`/`xo`/`n5`），误判成是支付宝那边被 R8 混淆坏了引用，把 `hook.**` 包从只精细 keep `ApplicationHook` 一个类改成整包 `-keep`（commit `56cc9a38`）——事后验证 `mapping.txt` 确认 `hook` 包一直就没被重命名过，这次"修复"方向从一开始就错了，重装后同样崩溃复现证明了这点。第二轮才找对地方：这个崩溃堆栈其实全程发生在**独立 App 自己的进程**里（那些短名字是本 App 自己被 R8 混淆后的 Compose 内部调用链，不是支付宝的类），根因是 `PermissionUtil.checkBatteryPermissions()`（无参版本）内部调用了 `ApplicationHook.isHooked()`/`getContext()`——已经写进上面「硬性规则」第 3 条。修法（commit `1f6ec478`）：给 `checkBatteryPermissions` 加一个接收 `Context` 的重载，独立 App 这条路径（`checkOrRequestBatteryPermissions` 已经有调用方传入的 `Context`）直接用新重载，完全不碰 `ApplicationHook`；原来的无参版本保留给唯一另一处调用方（`ApplicationHook.java` 内部、真实注入进程里的调用），内部改成先拿 `ApplicationHook.getContext()` 再委托给新重载，行为不变。新增 `checks/check_standalone_no_xposed_class.py` 静态守住这条路径不会再引用 `ApplicationHook`。
+
+**深色模式/跟随系统设置体验问题**（用户连续反馈了三轮，逐层修）：
+1. `c7aa63f3`：`MiuixBaseActivity.setAppContent()` 判断主题时 `followSystem`（默认开）优先级比 `darkMode` 高，单独点"深色模式"开关不会有任何效果，只会 `activity.recreate()` 一次让页面闪一下——改成点深色模式时如果跟随系统还开着就顺手关掉。
+2. `4eed8650`：上一条只处理了单向联动，补上反方向——开"跟随系统设置"时也顺手关掉"深色模式"，两个开关做成真正的双向互斥，开关显示状态跟实际生效的优先级逻辑保持一致。
+3. `dc009afe`：即使联动关系理顺了，仍然存在"最终效果没变也无条件重建"的情况（比如系统当前就是浅色、跟随系统开着，这时候切换不会改变任何视觉效果）。加了 `effectiveDark(follow, dark)` 帮助函数，用 `isSystemInDarkTheme()` 拿系统当前深浅色，切换前后各算一次最终生效的深浅色，只有真的变了才 `activity.recreate()`，两次算出来一样就跳过。
 
 ### 2026-09-15：MIUIX-api102 三轮合并 + 账号切换/日志/RPC 一批修复
 
