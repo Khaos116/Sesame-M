@@ -101,7 +101,7 @@ public class AntStall extends ModelTask {
         modelFields.addField(openShopType = new ChoiceModelField("openShopType", "摆摊 | 动作", OpenShopType.NONE, OpenShopType.nickNames));
         modelFields.addField(openShopList = new SelectModelField("openShopList", "摆摊 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
         modelFields.addField(closeShop = new BooleanModelField("closeShop", "收摊 | 开启", false));
-        modelFields.addField(closeShopTime = new IntegerModelField("closeShopTime", "收摊 | 摆摊时长(分钟)", 120));
+        modelFields.addField(closeShopTime = new IntegerModelField("closeShopTime", "收摊 | 摆摊时长(分钟)", 120, 1, 1440));
         modelFields.addField(pasteTicketType = new ChoiceModelField("pasteTicketType", "贴罚单 | 动作", PasteTicketType.NONE, PasteTicketType.nickNames));
         modelFields.addField(pasteTicketList = new SelectModelField("pasteTicketList", "贴罚单 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
         modelFields.addField(throwManureType = new ChoiceModelField("throwManureType", "丢肥料 | 动作", ThrowManureType.NONE, ThrowManureType.nickNames));
