@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -50,14 +51,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.aw1y2z.sesame.R
 import io.github.aw1y2z.sesame.data.AppConfig
 import io.github.aw1y2z.sesame.data.RunType
 import io.github.aw1y2z.sesame.data.ViewAppInfo
+import io.github.aw1y2z.sesame.entity.UserEntity
 import io.github.aw1y2z.sesame.util.FileUtil
 import io.github.aw1y2z.sesame.util.LanguageUtil
+import io.github.aw1y2z.sesame.util.JsonUtil
 import io.github.aw1y2z.sesame.util.Log
 import io.github.aw1y2z.sesame.util.PermissionUtil
 import io.github.aw1y2z.sesame.util.Statistics
@@ -65,7 +69,9 @@ import io.github.aw1y2z.sesame.util.Statistics.DataType
 import io.github.aw1y2z.sesame.util.Statistics.TimeType
 import io.github.aw1y2z.sesame.util.TimeUtil
 import io.github.aw1y2z.sesame.util.ToastUtil
-import io.github.aw1y2z.sesame.util.idMap.UserIdMap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -638,9 +644,7 @@ fun ConfigTab() {
             dir.listFiles()?.forEach { configDir ->
                 if (configDir.isDirectory) {
                     val userId = configDir.name
-                    UserIdMap.loadSelf(userId)
-                    val userEntity = UserIdMap.get(userId)
-                    val name = userEntity?.let { it.showName + ": " + it.account } ?: userId
+                    val name = accountDisplayName(userId)
                     list.add(userId to name)
                 }
             }
@@ -656,7 +660,7 @@ fun ConfigTab() {
     CardColumn {
         items.forEach { (userId, name) ->
             ArrowPreference(
-                title = name,
+                title = if (userId == null) name else "$name\nUID: $userId",
                 onClick = {
                     val intent = Intent(context, MiuixSettingsActivity::class.java)
                     if (userId != null) intent.putExtra("userId", userId)
@@ -735,9 +739,29 @@ fun BooleanSwitch(title: String, checked: Boolean, onCheckedChange: (Boolean) ->
     )
 }
 
-/** 各 TAB 共用的标题行：标题左对齐，右侧以小字显示版本号与编译时间（北京时间），随每次打包更新 */
+private fun accountDisplayName(userId: String): String {
+    return try {
+        val body = FileUtil.readFromFile(FileUtil.getSelfIdFile(userId))
+        val user = JsonUtil.parseObject(body, UserEntity.UserDto::class.java)?.toEntity()
+        user?.let { "${it.showName}: ${it.account}" } ?: userId
+    } catch (_: Exception) {
+        userId
+    }
+}
+
+/** 各 TAB 共用的标题行，显示版本、编译时间和当前日志账号。 */
 @Composable
 fun TabTitleRow(title: String) {
+    var account by remember { mutableStateOf("未知账号") }
+    LaunchedEffect(Unit) {
+        while (true) {
+            account = withContext(Dispatchers.IO) {
+                val userId = FileUtil.getRuntimeLogFile().parentFile?.name
+                if (userId == null || userId == "default") "未知账号" else accountDisplayName(userId)
+            }
+            delay(1000)
+        }
+    }
     Row(
         Modifier
             .fillMaxWidth()
@@ -752,10 +776,11 @@ fun TabTitleRow(title: String) {
             color = MiuixTheme.colorScheme.onBackground
         )
         Text(
-            text = "${io.github.aw1y2z.sesame.BuildConfig.VERSION_NAME}  ${io.github.aw1y2z.sesame.BuildConfig.BUILD_TIME}",
+            text = "${io.github.aw1y2z.sesame.BuildConfig.VERSION_NAME}  ${io.github.aw1y2z.sesame.BuildConfig.BUILD_TIME}\n当前账号: $account",
             fontSize = 12.sp,
             color = MiuixTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 4.dp)
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f).padding(start = 12.dp, bottom = 4.dp)
         )
     }
 }

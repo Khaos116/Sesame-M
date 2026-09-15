@@ -30,13 +30,36 @@ code = "import java.io.*\n" + model + "\n"
 code += "private const val MAX_TAIL_BYTES = 1024 * 1024L\nprivate const val MAX_LOG_ENTRIES = 500\n"
 code += method(source_path, "private fun readTailText(") + "\n"
 code += method(source_path, "private fun loadLogEntries(") + "\n"
+code += method("ui/miuix/MiuixMainActivity.kt", "private fun accountDisplayName(") + "\n"
 code += '''
+// Account I/O and JSON boundary doubles; run the production label/fallback logic.
+object FileUtil {
+    var profile = "valid"
+    fun getSelfIdFile(uid: String) = File(uid)
+    fun readFromFile(file: File): String = profile
+}
+class UserEntity(val showName: String, val account: String) {
+    class UserDto { fun toEntity() = UserEntity("测试账号", "test@example.com") }
+}
+object JsonUtil {
+    fun parseObject(body: String, type: Class<UserEntity.UserDto>): UserEntity.UserDto? = when (body) {
+        "valid" -> UserEntity.UserDto()
+        "null" -> null
+        else -> throw IllegalArgumentException("Invalid profile")
+    }
+}
 class ListState {
     var canScrollBackward = false
     var requests = 0
     fun requestScrollToItem(index: Int) { check(index == 0); requests++ }
 }
 fun main() {
+    check(accountDisplayName("20880001") == "测试账号: test@example.com")
+    for (profile in listOf("", "broken", "null")) {
+        FileUtil.profile = profile
+        check(accountDisplayName("20880001") == "20880001")
+    }
+    println("PASS: account label and missing/invalid profile UID fallback")
     val file = File.createTempFile("sesame-log-follow", ".log")
     try {
         file.writeText((0..599).joinToString("\\n") { "12:00:00.000 I: entry $it" })
