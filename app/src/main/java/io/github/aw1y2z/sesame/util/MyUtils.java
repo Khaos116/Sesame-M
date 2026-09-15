@@ -11,10 +11,11 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.Calendar;
-import java.util.HashMap;
 
 import io.github.aw1y2z.sesame.data.AppConfig;
 import io.github.aw1y2z.sesame.data.ViewAppInfo;
+import io.github.aw1y2z.sesame.entity.UserEntity;
+import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 /**
  * 对齐 GR2026 {@code util/MyUtils.java} 中可迁移的通用部分：方法名与其保持一致，
@@ -25,7 +26,6 @@ import io.github.aw1y2z.sesame.data.ViewAppInfo;
 public class MyUtils {
 
     private static SharedPreferences mSP = null;
-    private static final HashMap<String, String> mUidMap = new HashMap<>();
 
     private MyUtils() {
     }
@@ -101,20 +101,25 @@ public class MyUtils {
         }
     }
 
-    /** 把日志里的 UID 替换为可读昵称，纯日志可读性用途，无业务风险。 */
-    public static String recordUserName(@Nullable String uid) {
+    public static void cacheUserName(@Nullable String uid, @Nullable String name) {
+        if (TextUtils.isEmpty(uid) || TextUtils.isEmpty(name)) return;
         SharedPreferences sp = getMySp();
-        if (sp == null || TextUtils.isEmpty(uid)) return "";
-        String name = mUidMap.get(uid);
-        if (!TextUtils.isEmpty(name)) {
+        if (sp != null && !name.equals(sp.getString(uid, ""))) {
             sp.edit().putString(uid, name).apply();
+        }
+    }
+
+    /** 用户资料尚未加载时，仍可显示上次缓存的昵称。 */
+    public static String recordUserName(@Nullable String uid) {
+        if (TextUtils.isEmpty(uid)) return "";
+        UserEntity user = UserIdMap.get(uid);
+        String name = user == null ? null : user.getNickName();
+        if (!TextUtils.isEmpty(name)) {
+            cacheUserName(uid, name);
             return ":" + name;
         }
-        String spName = sp.getString(uid, "");
-        if (TextUtils.isEmpty(spName)) {
-            return ":" + uid;
-        }
-        mUidMap.put(uid, spName);
-        return ":" + spName;
+        SharedPreferences sp = getMySp();
+        String cached = sp == null ? "" : sp.getString(uid, "");
+        return ":" + (TextUtils.isEmpty(cached) ? uid : cached);
     }
 }

@@ -9,6 +9,7 @@ import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.util.FileUtil;
 import io.github.aw1y2z.sesame.util.JsonUtil;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.MyUtils;
 
 import java.lang.reflect.Field;
 import java.util.*;
@@ -137,6 +138,7 @@ public class UserIdMap {
             return;
         }
         userMap.put(userId, userEntity);
+        MyUtils.cacheUserName(userId, userEntity.getNickName());
     }
     
     public synchronized static void remove(String userId) {
@@ -151,7 +153,7 @@ public class UserIdMap {
                 Map<String, UserEntity.UserDto> dtoMap = JsonUtil.parseObject(body, new TypeReference<Map<String, UserEntity.UserDto>>() {
                 });
                 for (UserEntity.UserDto dto : dtoMap.values()) {
-                    userMap.put(dto.getUserId(), dto.toEntity());
+                    add(dto.toEntity());
                 }
             }
         } catch (Exception e) {
@@ -174,7 +176,7 @@ public class UserIdMap {
             if (!body.isEmpty()) {
                 UserEntity.UserDto dto = JsonUtil.parseObject(body, new TypeReference<UserEntity.UserDto>() {
                 });
-                userMap.put(dto.getUserId(), dto.toEntity());
+                add(dto.toEntity());
             }
         } catch (Exception e) {
             Log.printStackTrace(e);

@@ -120,6 +120,13 @@ public final class RpcRequestGuard {
         return result.length() == 0;
     }
 
+    public static boolean isNonFriend(String method, JSONObject result) {
+        return "com.alipay.antfarm.enterFarm".equals(method)
+                && "非好友".equals(result.optString("memo"))
+                && "302".equals(result.optString("resultCode"))
+                && "0".equals(result.optString("error", "0"));
+    }
+
     public void recordTransportFailure() {
         record(MyUtils.newJSONObject("{\"error\":\"TRANSPORT_ERROR\",\"errorMessage\":\"RPC请求失败或超时\"}"));
     }

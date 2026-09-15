@@ -148,7 +148,9 @@ public class NewRpcBridge implements RpcBridge {
                                             guard.record(response);
                                             if (RpcRequestGuard.isFailure(response)) {
                                                 rpcEntity.setError();
-                                                Log.error("new rpc response | id: " + rpcEntity.hashCode() + " | method: " + rpcEntity.getRequestMethod() + " args: " + RpcLog.requestData(rpcEntity) + " | data: " + RpcLog.responseData(rpcEntity));
+                                                if (!RpcRequestGuard.isNonFriend(method, response)) {
+                                                    Log.error("new rpc response | id: " + rpcEntity.hashCode() + " | method: " + rpcEntity.getRequestMethod() + " args: " + RpcLog.requestData(rpcEntity) + " | data: " + RpcLog.responseData(rpcEntity));
+                                                }
                                             }
                                         } catch (Exception e) {
                                             rpcEntity.setError();
@@ -261,7 +263,9 @@ public class NewRpcBridge implements RpcBridge {
                                                     guard.record(response);
                                                     if (RpcRequestGuard.isFailure(response)) {
                                                         rpcEntity.setError();
-                                                        Log.error("new rpc response | id: " + rpcEntity.hashCode() + " | method: " + rpcEntity.getRequestMethod() + " args: " + RpcLog.requestData(rpcEntity) + " | data: " + RpcLog.responseData(rpcEntity));
+                                                        if (!RpcRequestGuard.isNonFriend(method, response)) {
+                                                            Log.error("new rpc response | id: " + rpcEntity.hashCode() + " | method: " + rpcEntity.getRequestMethod() + " args: " + RpcLog.requestData(rpcEntity) + " | data: " + RpcLog.responseData(rpcEntity));
+                                                        }
                                                     }
                                                     Thread thread = rpcEntity.getRequestThread();
                                                     if (thread != null) {

@@ -177,6 +177,14 @@ public class GuardCheck {
             if (async) bridge.newAsyncRequest(ad, 3, 0); else bridge.requestObject(ad, 3, 0);
             assert Log.lastError.length() < 1000 && !Log.lastError.contains("secret");
             assert Log.lastError.contains("1009") && Log.lastError.contains("访问被拒绝");
+            reset();
+            payload = "{\"success\":false,\"resultCode\":\"302\",\"memo\":\"非好友\"}";
+            RpcEntity nonFriend = new RpcEntity("com.alipay.antfarm.enterFarm", "[{\"userId\":\"gone\"}]");
+            Log.lastError = null;
+            if (async) bridge.newAsyncRequest(nonFriend, 3, 0); else bridge.requestObject(nonFriend, 3, 0);
+            assert Log.lastError == null && nonFriend.getHasError();
+            assert !guard("com.alipay.antfarm.enterFarm").shouldSkip();
+            assert !RpcRequestGuard.isNonFriend("com.alipay.antfarm.enterFarm", json("{\"error\":48,\"memo\":\"非好友\"}"));
             RpcEntity normal = new RpcEntity("com.alipay.antfarm.feedAnimal", "[{}]");
             normal.setResponseObject(json(payload), payload);
             assert RpcLog.responseData(normal).equals(payload);
@@ -204,6 +212,10 @@ public class GuardCheck {
         payload = "{\"retCode\":\"0\"}";
         old.requestObject(e, 3, 0);
         assert calls == 2 && !e.getHasError();
+        payload = "{\"success\":false,\"resultCode\":\"302\",\"memo\":\"非好友\"}";
+        Log.lastError = null;
+        old.requestObject(new RpcEntity("com.alipay.antfarm.enterFarm", "[{}]"), 3, 0);
+        assert Log.lastError == null;
     }
     static void pauses(String method, String args, long... durations) {
         reset();

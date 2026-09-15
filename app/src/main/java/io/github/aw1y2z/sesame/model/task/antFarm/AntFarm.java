@@ -33,6 +33,7 @@ import io.github.aw1y2z.sesame.rpc.intervallimit.RpcIntervalLimit;
 import io.github.aw1y2z.sesame.util.*;
 import io.github.aw1y2z.sesame.util.idMap.FarmOrnamentsIdMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
+import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -170,9 +171,9 @@ public class AntFarm extends ModelTask {
         modelFields.addField(family = new BooleanModelField("family", "亲密家庭 | 开启", false));
         modelFields.addField(familyOptions = new SelectModelField("familyOptions", "亲密家庭 | 选项", new LinkedHashSet<>(), CustomOption::getAntFarmFamilyOptions));
         modelFields.addField(notInviteList = new SelectModelField("notInviteList", "亲密家庭 | 不邀请列表", new LinkedHashSet<>(), AlipayUser::getList));
-        modelFields.addField(enableSleep = new BooleanModelField("enableSleep", "小鸡睡觉 | 允许睡觉", false));
-        modelFields.addField(sleepTime = new StringModelField("sleepTime", "小鸡睡觉 | 时间", "2001"));
-        modelFields.addField(sleepMinutes = new IntegerModelField("sleepMinutes", "小鸡睡觉 | 时长(分钟)", 10 * 59, 1, 10 * 60));
+        modelFields.addField(enableSleep = new BooleanModelField("enableSleep", "小鸡起床 | 自动起床（自动睡觉已禁用）", false));
+        modelFields.addField(sleepTime = new StringModelField("sleepTime", "小鸡起床 | 入睡参考时间", "2001"));
+        modelFields.addField(sleepMinutes = new IntegerModelField("sleepMinutes", "小鸡起床 | 睡眠时长(分钟)", 10 * 59, 1, 10 * 60));
         modelFields.addField(recordFarmGame = new BooleanModelField("recordFarmGame", "小鸡乐园 | 游戏改分(星星球、登山赛、飞行赛、揍小鸡)", false));
         List<String> farmGameTimeList = new ArrayList<>();
         farmGameTimeList.add("2200-2400");
@@ -581,7 +582,7 @@ public class AntFarm extends ModelTask {
 
     private void animalSleepAndWake() {
         if (!enableSleep.getValue()) {
-            Log.record("小鸡睡觉开关已关闭，跳过睡觉逻辑");
+            Log.record("小鸡自动起床开关已关闭");
             return;
         }
         String sleepTimeStr = sleepTime.getValue();
@@ -599,7 +600,7 @@ public class AntFarm extends ModelTask {
         long animalSleepTime = animalSleepTimeCalendar.getTimeInMillis();
         long animalWakeUpTime = animalWakeUpTimeCalendar.getTimeInMillis();
         if (animalSleepTime > animalWakeUpTime) {
-            Log.record("小鸡睡觉设置有误，请重新设置");
+            Log.record("小鸡起床时间设置有误，请重新设置");
             return;
         }
         Calendar now = TimeUtil.getNow();
@@ -610,14 +611,11 @@ public class AntFarm extends ModelTask {
             if (hasSleepToday()) {
                 return;
             }
-            Log.record("已错过小鸡今日睡觉时间");
+            Log.record("已过小鸡今日起床时间");
             return;
         }
         if (afterSleepTime) {
             // 睡觉时间内
-            if (!hasSleepToday()) {
-                animalSleepNow();
-            }
             animalWakeUpTime(animalWakeUpTime);
             return;
         }
@@ -626,7 +624,6 @@ public class AntFarm extends ModelTask {
         if (now.compareTo(animalWakeUpTimeCalendar) <= 0) {
             animalWakeUpTime(animalWakeUpTimeCalendar.getTimeInMillis());
         }
-        animalSleepTime(animalSleepTime);
         animalWakeUpTime(animalWakeUpTime);
     }
 
@@ -718,13 +715,6 @@ public class AntFarm extends ModelTask {
         Log.record("添加蹲点投喂🥣[" + UserIdMap.getCurrentMaskName() + "]在[" + TimeUtil.getCommonDate(nextFeedTime) + "]执行");
     }
 
-    private void animalSleepTime(long animalSleepTime) {
-        String sleepTaskId = "AS|" + animalSleepTime;
-        if (!hasChildTask(sleepTaskId)) {
-            addChildTask(new ChildModelTask(sleepTaskId, "AS", this::animalSleepNow, animalSleepTime));
-            Log.record("添加定时睡觉🛌[" + UserIdMap.getCurrentMaskName() + "]在[" + TimeUtil.getCommonDate(animalSleepTime) + "]执行");
-        }
-    }
 
     private void animalWakeUpTime(long animalWakeUpTime) {
         String wakeUpTaskId = "AW|" + animalWakeUpTime;
@@ -749,27 +739,6 @@ public class AntFarm extends ModelTask {
         return false;
     }
 
-    private Boolean animalSleepNow() {
-        try {
-            JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.queryLoveCabin(UserIdMap.getCurrentUid()));
-            if (!MessageUtil.checkMemo(TAG, jo)) {
-                return false;
-            }
-            JSONObject sleepNotifyInfo = jo.optJSONObject("sleepNotifyInfo");
-            if (sleepNotifyInfo == null || !sleepNotifyInfo.optBoolean("canSleep", false)) {
-                Log.record("小鸡无需睡觉🛌");
-                return false;
-            }
-            if (family.getValue() && !StringUtil.isEmpty(ownerGroupId)) {
-                return familySleep(ownerGroupId);
-            }
-            return animalSleep();
-        } catch (Throwable t) {
-            Log.i(TAG, "animalSleepNow err:");
-            Log.printStackTrace(t);
-        }
-        return false;
-    }
 
     private Boolean animalWakeUpNow() {
         try {
@@ -800,19 +769,6 @@ public class AntFarm extends ModelTask {
         return false;
     }
 
-    private Boolean animalSleep() {
-        try {
-            JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.sleep());
-            if (MessageUtil.checkMemo(TAG, jo)) {
-                Log.farm("小鸡睡觉🛌");
-                return true;
-            }
-        } catch (Throwable t) {
-            Log.i(TAG, "animalSleep err:");
-            Log.printStackTrace(TAG, t);
-        }
-        return false;
-    }
 
     private Boolean animalWakeUp() {
         try {
@@ -2639,6 +2595,7 @@ public class AntFarm extends ModelTask {
     private void visitFriend(String userId, int countLimit) {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.enterFarm(userId));
+            if (RpcRequestGuard.isNonFriend("com.alipay.antfarm.enterFarm", jo)) return;
             if (!MessageUtil.checkMemo(TAG, jo)) {
                 return;
             }
@@ -4458,20 +4415,6 @@ public class AntFarm extends ModelTask {
         return null;
     }
 
-    private Boolean familySleep(String groupId) {
-        try {
-            JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.familySleep(groupId));
-            if (MessageUtil.checkMemo(TAG, jo)) {
-                Log.farm("亲密家庭🏠小鸡睡觉");
-                syncFamilyStatus(groupId);
-                return true;
-            }
-        } catch (Throwable t) {
-            Log.i(TAG, "familySleep err:");
-            Log.printStackTrace(TAG, t);
-        }
-        return false;
-    }
 
     private Boolean familyWakeUp() {
         try {
