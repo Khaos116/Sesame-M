@@ -690,7 +690,8 @@ fun ConfigTab(currentAccount: String) {
     CardColumn {
         items.forEach { (userId, name) ->
             ArrowPreference(
-                title = if (userId == null) name else "$name\nUID: $userId",
+                title = name,
+                summary = if (userId == null) null else "UID: $userId",
                 onClick = {
                     val intent = Intent(context, MiuixSettingsActivity::class.java)
                     if (userId != null) intent.putExtra("userId", userId)
@@ -800,7 +801,7 @@ private fun accountDisplayName(userId: String): String {
     return try {
         val body = FileUtil.readFromFile(FileUtil.getSelfIdFile(userId))
         val user = JsonUtil.parseObject(body, UserEntity.UserDto::class.java)?.toEntity()
-        user?.let { "${it.showName}: ${it.account}" } ?: userId
+        user?.let { "${it.showName}(${it.account})" } ?: userId
     } catch (_: Exception) {
         userId
     }

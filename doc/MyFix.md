@@ -11,6 +11,60 @@
 
 ## 变更记录
 
+### 2026-09-15：MIUIX-api102 三轮合并 + 账号切换/日志/RPC 一批修复
+
+一整天里 `MIUIX-api102`（原分支/PR 主线）陆续推了新提交，`my_dev` 分三轮 `git merge` 合入，中间穿插自己在这条线上做的功能和 bug 修复。commit 顺序（旧→新）：`2e350ce6` → `81236b9e` → `5268cfcf`（merge）→ `e1a42342`（merge）→ `bf3d67cb` → `ae2b620c` → `92ec28e6` → `3acad3db`（merge）→ `c12a7be2`。
+
+**合并冲突的通用处理原则**：每次冲突都先查 `git show <merge-base commit>` 确认双方各自改了什么，而不是直接二选一。实测下来几乎所有冲突都属于两类：(a) `my_dev` 在 base 之后新加的功能/修复，upstream 那一侧其实是分叉前就没变过的旧代码，纯属改动位置相邻导致的假冲突——直接取 `my_dev` 侧；(b) upstream 做的是真清理（删除死代码/未使用资源），先用 `grep` 确认 `my_dev` 这边也真的没人再用，确认了才跟着删，不盲目信任任何一侧。
+
+**第一轮合并**（`5268cfcf`，合入 upstream `bded0848`"项目清理与优化"+`335047d8`"优化配置及R8压缩启用"）：
+- upstream 删除了水印原生库（`libsesame.so`+JNI 相关）、`AntInsurance`/`AntInsuranceRpcCall`（已废弃保险模块）、一大批旧 Compose 迁移前的 UI 资源（drawable、多语言 strings，从未被新 UI 引用）——确认无引用后全部跟进删除。
+- `BaseModel` 的 `batteryPerm`（后台运行权限）、`recordLog`（记录日志）两个 `ModelField` 被 upstream 删掉；确认这两个字段在 `my_dev` 这边也早就是死代码（`batteryPerm` 的真实读取点是 `AppConfig.INSTANCE.getBatteryPerm()`，跟 `BaseModel` 这份重复申报的字段完全没关系；`recordLog` 全仓库没有任何 getter 调用点）——跟进删除，`closeCaptchaDialogVPN` 字段是这次会话自己加的真实功能，保留。
+- `app/build.gradle` 的 ABI 拆分（只出 arm64-v8a）、`proguard-rules.pro`（精细化 `allowoptimization,allowobfuscation` 版本）两处冲突，保留 `my_dev` 已经用 `assembleNormalRelease` 实测能正常出签名包的版本，没有换成 upstream 那版更粗放的"整包 keep"写法。
+- `AppConfig.java` 的 getter 冲突是双方各自新增了不同配置项（`closeVerification`/`closeErrorFunction`/`closeUnRpc` vs `batteryPerm`/`setBatteryPerm`），两边都保留。
+
+**第二轮合并**（`e1a42342`，合入 upstream `ad353056`"账号切换延迟+日志查看器优化(PR#2)"+`c3bf75da`"R8精简及代码清理"）：
+- `MiuixLogViewerActivity.kt` upstream 独立实现了一套几乎同功能的日志跟随机制（`revision` 计数器+`isScrollInProgress` 判断+前台 `Lifecycle` 门控+`stamp` 轮询），保留 `my_dev` 这边已经用 `checks/check_log_follow.py` 验证过的 `FileObserver` 事件驱动版本（upstream 版本有个潜在时序缝隙：手势进行中新数据到达时 `browsingHistory` 取的是滞后值）。
+- **自动合并里揪出的真回归**：`ApplicationHook.java` 里账号切换那段，upstream 把 `initHandler(true)` 包了一层 `postDelayed(1000ms)`，但这层延迟跑在原来 `TaskLifecycle.Work` 的 try-with-resources 作用域**外**——包着它的 work 在方法 `return` 时就关掉了，1 秒后真正执行时完全脱离本次会话加的账号切换并发保护。补了同代际校验（复用 `execDelayedHandler` 已有的 generation 模式），在回调里重新 `TaskLifecycle.enter(switchGeneration)`。
+- `proguard-rules.pro` upstream 又重写了一版（仍是粗放"章节化 keep everything"风格），继续沿用 `my_dev` 精细化版本。
+- `AntMember.getWuaByReflection()`（25 行反射调 `AntOrchard` 私有方法）被 upstream 删掉改成 `new AntOrchard().getWua()` 直接调用，配合 `AntOrchard.getWua()` 私有改 public——干净的质量改进，跟进。
+- 合并产生了 `import kotlinx.coroutines.{Dispatchers,delay,withContext}` 重复引入（一份来自 `my_dev` 原有位置、一份来自 upstream 新增位置），顺手去重。
+
+**账号切换权限与配置迁移**（`bf3d67cb`，upstream 侧改动，会话内 review 后确认正确性）：
+- `AppConfig.batteryPerm` 默认值从 `true` 改 `null`（区分"未设置"和"显式关闭"）后，`ApplicationHook` 里原来 `if (AppConfig.INSTANCE.getBatteryPerm() && ...)` 对没碰过这个新开关的用户会直接 `Boolean` 拆箱空指针崩溃。新增 `AppConfig.shouldRequestBatteryPermission()`：新开关设过就用新值，没设过回退读旧账号 `BaseModel.batteryPerm` 字段在 `config_v2.json` 里的历史值（哪怕这个 Java 字段本身已经在第一轮合并里删掉，JSON 里的旧值还在），UI 显示和实际权限检测两处都切过去了。
+- `ConfigV2` 保存配置时，`BaseModel` 不再声明 `batteryPerm` 字段这件事本身会导致旧账号 JSON 里的历史值在下次保存时被静默丢弃——加了段兼容逻辑，没被当前模型声明的字段原样保留在保存结果里，配合上一条的读取兜底，不会丢用户历史选择。
+- `AntOrchard` 农场施肥从"全局统一次数"字段改成 `SelectAndCountModelField`（每个场景各自配次数），`ConfigV2` 配了旧数据（纯场景名列表+全局次数）到新数据（场景→次数 Map）的迁移代码。
+- `MiuixSettingsActivity.kt` 整数配置编辑框原来用 `field.value`/`setObjectValue()` 直接读写内部值，绕过了 `toConfigValue`/`fromConfigValue` 转换层——`IntegerModelField.MultiplyIntegerModelField`（比如执行间隔，界面显示分钟、内部按毫秒存）这类字段被这么改过一次后保存值就是错的。换成 `field.configValue`/`setConfigValue(string)` 走完整的字符串往返路径。
+- 偷榜/霸榜"提前分钟数=0"原来等于开关虽开但永远不触发（数学上 `startTime==targetTime` 区间必空），是个不易察觉的死区；改成 0=全天霸榜 / 0=20:00 准时偷榜，范围上限同步从 240 放宽到 1200 分钟。
+- 新增 `RpcRequestGuard`：按账号隔离的请求去重 key（剔除随机 `outBizNo`/时间戳等噪音字段）+ 分级退避（森林/庄园"核心"请求更宽松，其它请求更严格）+ GR 快照里已知异常任务的硬黑名单，新旧两套 `RpcBridge` 统一接入。顺带修了三个既有并发 bug：
+  1. `RpcEntity.setResponseObject` 不清 `hasError`，重试第二次成功后仍会读到第一次失败留下的标记；
+  2. `NewRpcBridge.newAsyncRequest` 用单次 `wait(30_000)` 判断回调，`Object.wait` 超时返回不等于条件真的满足（虚假唤醒），改成 `while(!hasResult) wait(remaining)` 真正的条件循环；
+  3. 任务取消触发的 `InterruptedException` 原来统一走 `catch(Throwable)`，会被当成一次 RPC 失败记录进新加的 guard 里，还会继续 `sleep` 重试而不及时退出——单独识别中断直接 `return`，这条直接关系到本次会话早前加的 `TaskLifecycle` 取消语义会不会被这层新代码破坏。
+  4. `newAsyncRequest` 之前一直没调 `RpcIntervalLimit.enterIntervalLimit`，同步版本有限流、异步版本没有，这次补齐一致。
+- `AntForestV2` 收能量逻辑加了对 guard 跳过时返回的 `RPC_SKIPPED` 哨兵值的识别，避免把"没真的发请求"误判成服务器返回的真实错误去跑等待/拉黑逻辑。
+- 广告类 RPC（`com.alipay.adexchange.*`）的调试日志改用 `RpcLog` 摘要+脱敏，不再整包 payload（可能几十 KB、含 session 信息）落盘。
+- 日志页从"最新在底部"（`reverseLayout` + 滚到底部）改成"最新在顶部"（不反转布局，`entries` 本身倒序），是用户明确要求的调整，不是 bug。
+
+**日志昵称显示 + 小鸡睡觉 + 非好友噪音**（`ae2b620c`）：
+- `MyUtils.recordUserName()` 的内存缓存 `mUidMap` 是个自己写自己读的死代码：只有已经命中缓存才会顺手回写 `SharedPreferences`，但从来没人真正往缓存里塞过昵称，导致运行日志"开始执行:xxx"这类位置的 xxx 从建仓库以来就一直是裸账号 UID，从没显示过好友昵称。改法：`UserIdMap.add()`（账号信息任何来源被加载/更新时都会走这里）顺手把昵称写进 `SharedPreferences` 持久缓存；`recordUserName()` 优先取内存里最新的 `UserIdMap` 记录，没有再退化到持久缓存，都没有才落回裸 UID。空昵称更新不覆盖已缓存的好名字，相同昵称不重复写盘。
+- 小鸡"自动睡觉"整个功能删掉（对应支付宝接口已不可用，不是这次评估要不要保留的重点），只留自动起床，相关字段/日志文案改名去掉"睡觉"歧义。
+- 访问已经解除好友关系的庄园时，`enterFarm` 返回 `memo=非好友,resultCode=302`——这个情况每天必然稳定复现且没法修，之前每次运行都当成普通错误刷一条 error 日志，纯噪音。新增 `RpcRequestGuard.isNonFriend()` 识别后静默跳过，不影响后续对其它好友的正常赠送流程，其它失败原因不受影响仍照常记录。
+
+**第三轮合并**（`3acad3db`，合入 upstream `0651e79a`"修正 IntegerModelField 范围限制"）：
+- `advanceTime` 下限从 `Integer.MIN_VALUE` 改 0、`ornamentsDressUpDays` 加 1-30 天范围、`closeShopTime` 加 1-1440 分钟范围——三处直接干净合并，默认值不变。
+- `AntOrchard.java` 一处冲突：upstream 想把 `orchardSpreadManureCount`（单一全局施肥次数字段）上限从 100 放宽到 200，但这个字段在第二轮合并涉及的功能里已经被拆成按场景各自配次数的 `SelectAndCountModelField`，字段本身不存在了——保留 `my_dev` 侧结构。upstream"上限放宽到 200"这个诉求目前没有对应落点：每场景次数用的是 `MiuixSettingsActivity.kt` 里 `SelectionDialog` 通用组件的滑杆，写死 `0..100f`，这个滑杆是 `rpcRequestList` 等好几个字段共用的，不是 orchard 专属，没有顺带改，只在这里记一笔，以后有需要再单独给 `SelectAndCountModelField` 加个可配置上限参数。
+
+**账号切换电量权限崩溃 + UI 状态丢失**（`c12a7be2`）：
+- `AndroidManifest.xml` 一直没声明 `android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`——设置页"立即申请权限"按钮跳系统电量优化豁免弹窗时直接崩溃，补上声明。
+- 深色模式/跟随系统开关会调 `activity.recreate()` 重建 Activity，`MainScreen` 里的 `selectedTab` 用的是 `remember`（不跨重建存活），一重建就被清零，界面从当前 tab 跳回首页——改用 `rememberSaveable`。
+- 顶栏"当前账号"信息原来是每个 tab 各自的 `TabTitleRow` 内部单独 `remember`+起一个轮询 `LaunchedEffect`，切 tab 相当于该 `TabTitleRow` 实例重新进入组合，状态从"未知账号"重新读起，读到真实昵称前会有一瞬间的闪烁。把轮询提到 `MainScreen` 一级共享一份状态，四个 tab 都吃同一份 `currentAccount`，不再各自归零重来。
+
+**UI 显示格式微调**（会话内做了但截至写这条记录时还没提交，跟着下一次提交走）：
+- 顶栏/配置列表账号显示格式从 `showName: account` 改成 `showName(account)`（如 `C176(17608062578)`）。
+- 配置列表每个账号条目下面的 `UID: xxx` 那一行，从跟标题拼在一起的同号大小文字改成 `ArrowPreference` 自带的 `summary` 参数（小字副标题样式，跟"已选 N 项"那类提示一致）。
+
+**新增的本地回归检查**（这一天累计新增 5 个，加上之前已有的凑成完整一套）：`checks/check_merge_config.py`（配置迁移/电量权限/分钟语义回归，编译产物直接验证）、`checks/check_rpc_guard.py`（编译生产 `RpcRequestGuard`/两套 `RpcBridge`/`RpcEntity` 代码，用字节码级源码替换把 `System.currentTimeMillis()` 换成可控时钟，隔离账号状态跑真实退避/黑名单/跨账号隔离场景）、`checks/check_gr_followups.py`（昵称缓存刷新链路+非好友静默跳过后不影响后续赠送）、`checks/check_manifest_permissions.py`（守住权限声明和实际调用点一致，防止重复踩 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 这类坑）。全部跟已有的 `checks/account_lifecycle`、`checks/check_log_follow.py`、`checks/check_video_rewards.py`、`checks/audit_regressions` 一起构成完整回归套件，每次改动后都跑齐这八套 + 编译 + `:app:assembleNormalRelease`（R8+签名）确认没有回归。
+
 ### 2026-09-14：修复 AG / GR / XU / 新版 GR 快照审查确认的 17 项问题
 
 基于 `e28f3db4` 的只读审查后，按用户要求修复全部 17 项。以下记录补充并更正旧条目中关于“切号只靠 BUSY 足够”“恢复 boot 即可启用 VPN 弹窗开关”的结论；旧记录保留。

@@ -54,7 +54,7 @@ class ListState {
     fun requestScrollToItem(index: Int) { check(index == 0); requests++ }
 }
 fun main() {
-    check(accountDisplayName("20880001") == "测试账号: test@example.com")
+    check(accountDisplayName("20880001") == "测试账号(test@example.com)")
     for (profile in listOf("", "broken", "null")) {
         FileUtil.profile = profile
         check(accountDisplayName("20880001") == "20880001")

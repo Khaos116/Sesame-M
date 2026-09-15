@@ -3,9 +3,39 @@
 简明改动清单，按时间倒序追加，方便快速查看每次改了什么。详细的移植/合并原委、
 取舍理由见 `doc/MyFix.md`；本文件只记一行摘要 + 对应 commit。
 
+## 2026-09-15
+
+- 未提交 style: 顶栏/配置列表账号显示格式调整（`C176: 账号` 改 `C176(账号)`；配置列表 UID
+  一行改用 `ArrowPreference` 的 `summary` 小字副标题，不再跟标题同号大小挤在一起）。
+- `c12a7be2` fix: 电量权限申请崩溃（缺 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` manifest 声明）、
+  切深色模式跳回首页（`selectedTab` 未跨 `recreate()` 存活）、切 tab 顶部账号名闪烁（轮询状态
+  提到 `MainScreen` 一级共享）。
+- `3acad3db` Merge MIUIX-api102：合入上游 `0651e79a`（4 处 `IntegerModelField` 范围收紧/放宽）。
+- `92ec28e6` chore: 本地默认版本号改为 1.0.8。
+- `ae2b620c` fix: 运行日志"开始执行"等位置一直显示裸账号 UID、从未显示过昵称（`recordUserName`
+  内存缓存自己写自己读，从没被真正写入过）；小鸡"自动睡觉"功能（对应接口已失效）整段删除，只留
+  自动起床；访问已取关好友的庄园不再每天稳定刷一条"非好友"错误日志噪音。
+- `bf3d67cb` feat/fix: 日志页最新条目改到列表顶部显示；电量权限开关迁移到 `AppConfig` 后未设置
+  用户会拆箱 NPE 崩溃（新增 `shouldRequestBatteryPermission()` 兜底读旧账号历史值）；配置保存时
+  `BaseModel` 精简掉的字段被静默丢弃、农场施肥场景次数迁移；整数配置编辑框绕过单位换算层导致
+  保存值错误；偷榜/霸榜"0分钟"死区改为有意义的边界值；新增 `RpcRequestGuard` 统一 RPC 失败保护
+  （按账号隔离退避 + GR 已知异常任务黑名单），顺带修了 `RpcEntity`/两套 `RpcBridge` 的三个既有
+  并发 bug（`hasError` 未重置、`wait(30_000)` 虚假唤醒误判超时、线程中断被当 RPC 失败记录）。
+- `e1a42342` Merge MIUIX-api102：合入上游 `ad353056`（账号切换延迟 1 秒执行 + 日志查看器优化）、
+  `c3bf75da`（R8/proguard 精简、`AntMember` 反射调用改直接调用）。自动合并里发现真回归：延迟
+  1 秒的账号切换回调跑在 `TaskLifecycle.Work` 作用域外，完全脱离本次会话加的并发保护，已补同
+  代际校验修掉。
+- `5268cfcf` Merge MIUIX-api102：合入上游 `bded0848`（删水印原生库/`AntInsurance` 模块/旧 UI
+  遗留资源）、`335047d8`（R8 混淆启用、config 保存修复、`AntOrchard.getWua()` 改 public）。
+- `81236b9e` feat: 顶栏版本/编译时间下面加当前账号一行，配置列表每个账号条目加 UID；`accountDisplayName()`
+  改直接读 `self.json`，不再调用会清空全局共享 `userMap` 的 `UserIdMap.loadSelf()`。
+- `2e350ce6` feat: 品牌名"芝麻粒"统一补齐"-M"后缀（4+3 处历史遗漏）；日志页改用
+  `reverseLayout` + `canScrollBackward` 判断是否贴底跟随刷新；全部任务执行完成后运行日志打印
+  "🏁全部任务已执行完成"（按账号世代跟踪，一轮只打一次）。
+
 ## 2026-09-14
 
-- 未提交 fix: 修复移植审查确认的 17 项问题（切号任务隔离、金豆额度与领奖、视频冷却与调度、
+- `c30facbc` fix: 修复移植审查确认的 17 项问题（切号任务隔离、金豆额度与领奖、视频冷却与调度、
   日志兼容与账号同步、分页/捐赠边界、VPN Hook 初始化、鱼塘时区、版本默认值、Gemini 答案和运动币气泡）；
   新增本地 JVM 回归检查，详见 `doc/MyFix.md` 对应记录。
 - `5759d512` feat: 从新版GR快照移植12个独立小额福利任务（dayDaySave/luckCard/factCheck/
