@@ -135,6 +135,16 @@ public class PermissionUtil {
         } catch (Exception e) {
             return false;
         }
+        return checkBatteryPermissions(context);
+    }
+
+    /**
+     * 独立 App 进程调这个重载，不碰 {@link ApplicationHook}——那个类继承 compileOnly 的
+     * {@code XposedModule}，只有真正被 LSPosed 注入进支付宝进程时宿主才提供这个类；独立 App
+     * 自己的进程里引用它会在类校验时抛 NoClassDefFoundError（是 Error 不是 Exception，
+     * try/catch(Exception) 包不住），点一下设置页的电量权限按钮就直接闪退。
+     */
+    public static boolean checkBatteryPermissions(Context context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             //判断是否有始终在后台运行的权限
             PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
@@ -148,7 +158,7 @@ public class PermissionUtil {
 
     public static Boolean checkOrRequestBatteryPermissions(Context context) {
         try {
-            if (checkBatteryPermissions()) {
+            if (checkBatteryPermissions(context)) {
                 return true;
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
