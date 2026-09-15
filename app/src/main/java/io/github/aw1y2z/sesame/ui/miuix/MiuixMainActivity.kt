@@ -734,13 +734,20 @@ fun SettingsTab(activity: MiuixMainActivity, currentAccount: String) {
             iconHidden = activity.isIconHidden()
         }
         var darkMode by remember { mutableStateOf(AppConfig.INSTANCE.darkMode ?: false) }
+        var followSystem by remember { mutableStateOf(AppConfig.INSTANCE.followSystem ?: true) }
         BooleanSwitch("深色模式", darkMode) {
             AppConfig.INSTANCE.darkMode = it
+            // 手动选深/浅色就是明确不想跟随系统了，不然"跟随系统"默认开着，这个开关切了
+            // 也不会生效（MiuixBaseActivity 里 followSystem 优先级更高），只会白白重建一次
+            // Activity 让页面闪一下、视觉上却什么都没变。
+            if (followSystem) {
+                AppConfig.INSTANCE.followSystem = false
+                followSystem = false
+            }
             AppConfig.save()
             darkMode = it
             activity.recreate()
         }
-        var followSystem by remember { mutableStateOf(AppConfig.INSTANCE.followSystem ?: true) }
         BooleanSwitch("跟随系统设置", followSystem) {
             AppConfig.INSTANCE.followSystem = it
             AppConfig.save()
