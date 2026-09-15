@@ -99,6 +99,8 @@ class MiuixMainActivity : MiuixBaseActivity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var isClick = false
+    // 标记是否已通过系统设置页请求过权限，用于 onResume 中检测用户是否已授权
+    var hasRequestedPermission by mutableStateOf(false)
 
     /** 激活探测已重试次数,上限见 MAX_RUN_TYPE_PROBE_TIMES */
     private var runTypeProbeTimes = 0
@@ -206,7 +208,29 @@ class MiuixMainActivity : MiuixBaseActivity() {
             sendQueryBroadcast()
             handler.postDelayed(titleRunner, 3000)
         }
-        refreshStatistics()
+        // 从系统设置页返回后重新检查权限（Android 10+ 通过系统设置页申请会走此路径）
+        if (hasRequestedPermission) {
+            hasRequestedPermission = false
+            if (PermissionUtil.checkFilePermissions(this)) {
+                hasPermission = true
+                refreshStatistics()
+            }
+        } else {
+            refreshStatistics()
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1) {
+            val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            hasPermission = granted
+            if (granted) refreshStatistics()
+        }
     }
 
     /**
@@ -332,15 +356,6 @@ fun MainScreen(activity: MiuixMainActivity) {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    DisposableEffect(Unit) {
-        if (!PermissionUtil.checkOrRequestFilePermissions(activity)) {
-            activity.hasPermission = false
-        } else {
-            activity.hasPermission = true
-        }
-        onDispose { }
-    }
-
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -400,12 +415,15 @@ fun HomeTab(activity: MiuixMainActivity) {
     // 进入首页即确认文件权限并加载统计;不依赖 onResume 与权限检查的时序,
     // 直接进入首页也能正确显示,无需先进入配置再返回
     DisposableEffect(Unit) {
-        if (!PermissionUtil.checkOrRequestFilePermissions(activity)) {
-            activity.hasPermission = false
-        } else {
+        val granted = PermissionUtil.checkFilePermissions(activity)
+        if (granted) {
             activity.hasPermission = true
+            activity.refreshStatistics()
+        } else {
+            activity.hasPermission = false
+            activity.hasRequestedPermission = true
+            PermissionUtil.checkOrRequestFilePermissions(activity)
         }
-        activity.refreshStatistics()
         onDispose { }
     }
 
@@ -715,6 +733,32 @@ fun SettingsTab(activity: MiuixMainActivity) {
             AppConfig.save()
             followSystem = it
             activity.recreate()
+        }
+        var batteryPerm by remember { mutableStateOf(AppConfig.INSTANCE.batteryPerm ?: true) }
+        BooleanSwitch("为支付宝申请后台运行权限", batteryPerm) {
+            AppConfig.INSTANCE.batteryPerm = it
+            AppConfig.save()
+            batteryPerm = it
+        }
+        if (batteryPerm) {
+            val hasPerm = try {
+                val pm = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                pm?.isIgnoringBatteryOptimizations("com.eg.android.AlipayGphone") == true
+            } catch (e: Exception) {
+                false
+            }
+            if (!hasPerm) {
+                ArrowPreference(
+                    title = "立即申请权限",
+                    onClick = {
+                        try {
+                            PermissionUtil.checkOrRequestBatteryPermissions(context)
+                        } catch (e: Exception) {
+                            ToastUtil.show(context, "申请权限失败")
+                        }
+                    }
+                )
+            }
         }
     }
     Spacer(Modifier.height(16.dp))

@@ -708,7 +708,7 @@ public class ApplicationHook extends XposedModule {
                     Toast.show("芝麻粒-M已禁用");
                     return false;
                 }
-                if (BaseModel.getBatteryPerm().getValue() && !init && !PermissionUtil.checkBatteryPermissions()) {
+                if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getBatteryPerm() && !init && !PermissionUtil.checkBatteryPermissions()) {
                     Log.record("支付宝无始终在后台运行权限");
                     mainHandler.postDelayed(() -> {
                         if (!PermissionUtil.checkOrRequestBatteryPermissions(context)) {

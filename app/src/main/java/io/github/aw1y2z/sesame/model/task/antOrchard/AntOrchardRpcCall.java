@@ -165,10 +165,4 @@ public class AntOrchardRpcCall {
         return orchardSyncIndex();
     }
 
-    /*
-     * 适配施肥调用（两个参数）- 已删除，使用统一版本
-     */
-    // public static String orchardSpreadManure(String wua, String source) {
-    //     return orchardSpreadManure(false, wua);
-    // }
 }

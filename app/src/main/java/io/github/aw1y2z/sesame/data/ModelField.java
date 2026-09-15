@@ -17,6 +17,7 @@ import java.util.Objects;
 
 import io.github.aw1y2z.sesame.R;
 import io.github.aw1y2z.sesame.util.JsonUtil;
+import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.ToastUtil;
 import io.github.aw1y2z.sesame.util.TypeUtil;
 import lombok.Data;
@@ -121,15 +122,20 @@ public class ModelField<T> implements Serializable {
 
     @JsonIgnore
     public void setConfigValue(String configValue) {
-        if (configValue == null) {
+        if (configValue == null || configValue.isEmpty()) {
             reset();
             return;
         }
-        Object objectValue = fromConfigValue(configValue);
-        if (Objects.equals(objectValue, configValue)) {
-            value = JsonUtil.parseObject(configValue, valueType);
-        } else {
-            value = JsonUtil.parseObject(objectValue, valueType);
+        try {
+            Object objectValue = fromConfigValue(configValue);
+            if (Objects.equals(objectValue, configValue)) {
+                value = JsonUtil.parseObject(configValue, valueType);
+            } else {
+                value = JsonUtil.parseObject(objectValue, valueType);
+            }
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+            reset();
         }
     }
 

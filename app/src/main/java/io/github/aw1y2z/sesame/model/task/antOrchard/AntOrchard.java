@@ -14,7 +14,6 @@ import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.ChoiceModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField;
-import io.github.aw1y2z.sesame.data.modelFieldExt.SelectAndCountModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.model.task.antFarm.AntFarmRpcCall;
 import io.github.aw1y2z.sesame.model.task.antGame.GameTask;
@@ -80,7 +79,8 @@ public class AntOrchard extends ModelTask {
     private SelectModelField AntOrchardTaskList;
     private BooleanModelField orchardSpreadManure;
     private BooleanModelField useBatchSpread;
-    private SelectAndCountModelField orchardSpreadManureSceneList;
+    private SelectModelField orchardSpreadManureSceneList;
+    private IntegerModelField orchardSpreadManureCount;
 
     private BooleanModelField orchardPlantNew;
     private BooleanModelField drawGameCenterAward;
@@ -113,7 +113,8 @@ public class AntOrchard extends ModelTask {
         modelFields.addField(AntOrchardTaskList = new SelectModelField("AntOrchardTaskList", "农场任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntOrchardTaskList::getList));
         modelFields.addField(orchardSpreadManure = new BooleanModelField("orchardSpreadManure", "农场施肥 | 开启", false));
         modelFields.addField(useBatchSpread = new BooleanModelField("useBatchSpread", "一键施肥5次", false));
-        modelFields.addField(orchardSpreadManureSceneList = new SelectAndCountModelField("orchardSpreadManureSceneList", "农场施肥 | 场景列表", new LinkedHashMap<>(), AlipayPlantScene::getList, "请填写每日施肥次数"));
+        modelFields.addField(orchardSpreadManureSceneList = new SelectModelField("orchardSpreadManureSceneList", "农场施肥 | 场景列表", new LinkedHashSet<>(), AlipayPlantScene::getList));
+        modelFields.addField(orchardSpreadManureCount = new IntegerModelField("orchardSpreadManureCount", "农场施肥 | 每日次数", 3, 1, 100));
         modelFields.addField(drawGameCenterAward = new BooleanModelField("drawGameCenterAward", "农场乐园 | 游戏宝箱", true));
         //modelFields.addField(driveAnimalType = new ChoiceModelField("driveAnimalType", "驱赶小鸡 | 动作", DriveAnimalType.NONE, DriveAnimalType.nickNames));
         //modelFields.addField(driveAnimalList = new SelectModelField("driveAnimalList", "驱赶小鸡 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
@@ -467,7 +468,7 @@ public class AntOrchard extends ModelTask {
                 boolean hasSpread = false;
                 // 遍历可用场景进行施肥
                 for (PlantScene scene : PlantScene.getEntries()) {
-                    if (enableSceneList.contains(scene.name()) && orchardSpreadManureSceneList.contains(scene.name())) {
+                    if (enableSceneList.contains(scene.name()) && orchardSpreadManureSceneList.contains(scene.name()) && orchardSpreadManureCount.getValue() != null && orchardSpreadManureCount.getValue() > 0) {
                         // 切换场景
                         if (!switchPlantScene(scene)) {
                             continue;
@@ -568,8 +569,8 @@ public class AntOrchard extends ModelTask {
             return false;
         }
 
-        Integer limit = orchardSpreadManureSceneList.get(scene.name());
-        if (limit == null) {
+        Integer limit = orchardSpreadManureCount.getValue();
+        if (limit == null || limit <= 0) {
             return false;
         }
 
@@ -1073,7 +1074,7 @@ public class AntOrchard extends ModelTask {
 
             // 未开始则许下承诺
             if ("NOT_STARTED".equals(status)) {
-                Integer mainCount = orchardSpreadManureSceneList.get("main");
+                Integer mainCount = orchardSpreadManureCount.getValue();
                 int targetCount = mainCount != null && mainCount >= 10 ? 10 : (mainCount != null && mainCount >= 3 ? 3 : 0);
 
                 if (targetCount > 0) {

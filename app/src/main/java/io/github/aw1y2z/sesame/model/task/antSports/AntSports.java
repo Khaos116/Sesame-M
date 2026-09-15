@@ -202,6 +202,8 @@ public class AntSports extends ModelTask {
                 addChildTask(new ChildModelTask("syncStep", () -> {
                     int step = tmpStepCount();
                     if (stepCount < step) {
+                        // 支付宝 v10.8.60+ 已移除 RpcManager.a() 方法，改用反射调用防止编译报错
+                        // readDailyStep hook 仍正常工作（篡改步数读取），此主动推送机制已废弃
                         try {
                             ClassLoader classLoader = ApplicationHook.getClassLoader();
                             if (syncStepByRpcManager(classLoader, step)) {

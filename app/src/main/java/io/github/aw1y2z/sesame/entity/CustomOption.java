@@ -63,13 +63,4 @@ public class CustomOption extends IdAndName {
         list.add(new CustomOption("collectHistoryAnimal", "自动收集历史物种"));
         return list;
     }
-
-    public static List<CustomOption> getAntInsuranceOptions() {
-        List<CustomOption> list = new ArrayList<>();
-        list.add(new CustomOption("beanSignIn", "安心豆签到"));
-        list.add(new CustomOption("beanExchangeGoldenTicket", "安心豆兑换黄金票"));
-        list.add(new CustomOption("beanExchangeBubbleBoost", "安心豆兑换时光加速器"));
-        list.add(new CustomOption("gainSumInsured", "保障金领取"));
-        return list;
-    }
 }

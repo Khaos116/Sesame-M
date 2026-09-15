@@ -60,8 +60,6 @@ public class AntMember extends ModelTask {
     private BooleanModelField enableGameCenter;
     private BooleanModelField enableGoldTicket;
     private BooleanModelField KuaiDiFuLiJia;
-    private BooleanModelField antInsurance;
-    private SelectModelField antInsuranceOptions;
 
     @Override
     public ModelFields getFields() {
@@ -80,8 +78,6 @@ public class AntMember extends ModelTask {
         //modelFields.addField(promise = new BooleanModelField("promise", "生活记录 | 坚持做", false));
         //modelFields.addField(promiseList = new SelectModelField("promiseList", "生活记录 | 坚持做列表", new LinkedHashSet<>(), PromiseSimpleTemplate::getList));
         modelFields.addField(KuaiDiFuLiJia = new BooleanModelField("KuaiDiFuLiJia", "我的快递 | 福利加", false));
-        //modelFields.addField(antInsurance = new BooleanModelField("antInsurance", "蚂蚁保 | 开启", false));
-        //modelFields.addField(antInsuranceOptions = new SelectModelField("antInsuranceOptions", "蚂蚁保 | 选项", new LinkedHashSet<>(), CustomOption::getAntInsuranceOptions));
         modelFields.addField(enableGoldTicket = new BooleanModelField("enableGoldTicket", "黄金票 | 签到", false));
         return modelFields;
     }
@@ -124,19 +120,9 @@ public class AntMember extends ModelTask {
             
             //芝麻积攒进度
             if (SesameGrowthBehavior.getValue()) {
-                // if (!Status.hasFlagToday("AntMember::SesameGrowthBehavior")) {
-                //完成攒进度任务
                 handleGrowthGuideTasks();
-                //领取进度球
                 queryAndCollect();
-                //    Status.flagToday("AntMember::SesameGrowthBehavior");
-                //}
-                
             }
-            // 生活记录
-            //if (promise.getValue()) {
-            //    promise();
-            //}
             // 我的快递任务
             if (KuaiDiFuLiJia.getValue()) {
                 RecommendTask();
@@ -145,9 +131,6 @@ public class AntMember extends ModelTask {
             if (enableGoldTicket.getValue()) {
                 goldTicket();
             }
-            //if (antInsurance.getValue()) {
-            //    AntInsurance.executeTask(antInsuranceOptions.getValue());
-            //}
             if (enableGameCenter.getValue()) {
                 //检查并执行签到
                 checkAndDoSignIn();

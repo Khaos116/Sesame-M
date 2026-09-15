@@ -409,17 +409,13 @@ public final class GoldenBeansTasks {
             // 默认黑名单：重试也不会有不同结果的任务（键=服务端taskId，值=展示名）
             // 1) 需要真实付款 / 真实业务动作
             // 2) 需要用户亲自确认
-            // 3) 芝麻炼金入口的外部游戏：缺少可验证的完成闭环
+            // 3) 芝麻炼金游戏任务：暂时从黑名单移除，让 finishTask() 尝试完成
             Map<String, String> defaultBlackList = new LinkedHashMap<>();
             defaultBlackList.put("GOLDEN_BEAN_TASK_XIANSHANGZHIFU", "线上支付");
             defaultBlackList.put("GOLDEN_BEAN_TASK_XIANXIAZHIFU", "到店/线下支付");
             defaultBlackList.put("GOLDEN_BEAN_TASK_YUEBAO", "余额宝真实业务动作");
             defaultBlackList.put("TEST_PUSH_SUBSCRIBE", "订阅消息需真实确认");
-            defaultBlackList.put("ZHIMA_youxi_dageluosi", "芝麻炼金游戏·大格罗斯");
-            defaultBlackList.put("ZHIMA_youxi_zheguanwohenxing", "芝麻炼金游戏·这关我很行");
-            defaultBlackList.put("ZHIMA_youxi_hebuguowoba", "芝麻炼金游戏·喝不过我吧");
-            defaultBlackList.put("ZHIMA_youxi_wodehuayuanshijie", "芝麻炼金游戏·我的花园世界");
-            defaultBlackList.put("ZHIMA_youxi_qingyunjuezhifumo", "芝麻炼金游戏·青云诀之伏魔");
+            // 芝麻炼金游戏任务已移除黑名单，将通过 finishTask() API 尝试自动完成
             Set<String> defaultKeys = new LinkedHashSet<>(defaultBlackList.keySet());
 
             for (Map.Entry<String, String> item : defaultBlackList.entrySet()) {
@@ -449,7 +445,7 @@ public final class GoldenBeansTasks {
                 }
             }
             GoldenBeansTaskListMap.save();
-            Log.goldenBeans("同步任务🉑金豆夺宝任务列表");
+            Log.record("同步任务🉑金豆夺宝任务列表");
 
             if (!autoBlacklist) {
                 return;
@@ -474,9 +470,9 @@ public final class GoldenBeansTasks {
                 }
             }
             if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
-                Log.goldenBeans("黑白名单🈲金豆夺宝任务自动设置: " + taskListField.getValue());
+                Log.record("黑白名单🈲金豆夺宝任务自动设置: " + taskListField.getValue());
             } else {
-                Log.goldenBeans("黑白名单⚠️金豆夺宝任务设置失败");
+                Log.record("黑白名单⚠️金豆夺宝任务设置失败");
             }
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "initTaskListMap err:");

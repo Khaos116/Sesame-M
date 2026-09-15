@@ -101,11 +101,6 @@ public class AntSportsRpcCall {
         return ApplicationHook.requestString("alipay.antsports.walk.charity.donate", args);
     }
     
-    //public static String queryWalkStep() {
-    //    String args = "[{}]";
-    //    return ApplicationHook.requestString("alipay.antsports.walk.user.queryWalkStep", args);
-    //}
-    
     public static String queryWalkStep() {
         String args = "[{\"appId\":\"healthstep\",\"bizId\":\"donation\",\"chInfo\":\"h5_donation_healthstep\",\"timeZone\":\"Asia/Shanghai\"}]";
         return ApplicationHook.requestString("alipay.antsports.steps.query", args);
@@ -314,15 +309,6 @@ public class AntSportsRpcCall {
         String args = "[{\"apiVersion\":\"energy\",\"buyMember\":true,\"chInfo\":\"healthstep\",\"coinBalance\":\"" + coinBalance + "\"}]";
         return ApplicationHook.requestString("alipay.antsports.club.ranking.queryMemberPriceRanking", args);
     }
-    
-    // 方法: alipay.antsports.club.ranking.queryMemberPriceRanking
-    // 参数: [{"apiVersion":"energy","buyMember":true,"chInfo":"healthstep","coinBalance":31662}]}
-    // 数据:
-    // public static String queryMemberPriceRanking() {
-    //   String args = "[{\"apiVersion\":\"energy\",\"buyMember\":true,\"chInfo\":\"healthstep\"}]";
-    //  return ApplicationHook.requestString("alipay.antsports.club.ranking.queryMemberPriceRanking",
-    // args);
-    // }
     
     // alipay.antsports.club.trade.queryClubMember
     // [{"apiVersion":"energy","chInfo":"healthstep","memberId":"cm0000002088842214318540",

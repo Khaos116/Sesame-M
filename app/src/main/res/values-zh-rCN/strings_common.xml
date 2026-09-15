@@ -2,8 +2,6 @@
 <resources>
     <string name="app_name">芝麻粒-M</string>
 
-
-
     <string name="disable">已关闭</string>
     <string name="loading">已加载</string>
     <string name="activated">已激活</string>
@@ -16,26 +14,4 @@
     <string name="watered">浇</string>
     <string name="wateredcount">被水次数</string>
     <string name="wateringcount">浇水次数</string>
-
-    <string name="more">更多</string>
-    <string name="hello_user">你好，用户！</string>
-    <string name="forest_log">森林记录</string>
-    <string name="farm_log">庄园记录</string>
-    <string name="other_log">其他记录</string>
-    <string name="runtime_log">运行日志</string>
-    <string name="unactivated">未激活</string>
-    <string name="tips">提示</string>
-    <string name="btn_understood">我知道了</string>
-    <string name="hide_the_application_icon">隐藏图标</string>
-    <string name="language_simplified_chinese">始终使用中文</string>
-    <string name="view_error_log_file">查看异常日志</string>
-    <string name="export_error_log_file">导出异常日志</string>
-    <string name="view_runtime_log_file">查看运行日志</string>
-    <string name="export_runtime_log_file">导出运行日志</string>
-    <string name="import_the_statistic_file">导入统计</string>
-    <string name="export_the_statistic_file">导出统计</string>
-    <string name="view_debug_file">抓包记录</string>
-    <string name="view_record_file">全部记录</string>
-    <string name="extensions">扩展功能</string>
-    <string name="settings">设  置</string>
 </resources>

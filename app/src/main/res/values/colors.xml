@@ -17,5 +17,7 @@
     <color name="textColorPrimary">#FFFFFF</color>
     <color name="textColorDisable">#333333</color>
     <color name="navigationBarColor">#AA000000</color>
+    <color name="color_alpha">#00000000</color>
+    <color name="color_btn_down">#FFE0E0E0</color>
 
 </resources>

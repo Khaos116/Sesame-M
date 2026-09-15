@@ -496,13 +496,6 @@ public class AntFarmRpcCall {
         return ApplicationHook.requestString("com.alipay.antfarm.syncFamilyStatus", args);
     }
 
-    //    public static String familyListFarmTask() {
-    //        String args = "[{\"bizKey\":\"FAMILY_SIGN_TASK\",\"requestType\":\"NORMAL\",
-    //        \"sceneCode\":\"familySign\",\"signSceneCode\":\"\",\"source\":\"H5\",
-    //        \"taskSceneCode\":\"ANTFARM_FAMILY_TASK\"}]";
-    //        return ApplicationHook.requestString("com.alipay.antfarm.listFarmTask", args);
-    //    }
-
     public static String familyReceiveFarmTaskAward(String taskId) {
         String args = "[{\"awardType\":\"FAMILY_INTIMACY\",\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\"," + "\"source\":\"H5\",\"taskId\":\"" + taskId + "\",\"taskSceneCode\":\"ANTFARM_FAMILY_TASK\"}]";
         return ApplicationHook.requestString("com.alipay.antfarm.receiveFarmTaskAward", args);

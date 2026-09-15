@@ -184,6 +184,7 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
                 .padding(padding)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
+            // ============ 配置分组目录 ============
             SmallTitle(text = "配置分组")
             CardColumn {
                 ModelGroup.values().forEach { g ->
@@ -241,15 +242,18 @@ fun GroupFieldsPage(activity: MiuixSettingsActivity, userId: String?, group: Mod
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
             modelConfigs.forEachIndexed { mcIdx, mc ->
-                item(key = "group-title-$mcIdx") {
+                item(key = "title-$mcIdx") {
                     SmallTitle(text = mc.name ?: "")
                 }
                 mc.fields.values.toList().forEachIndexed { fIdx, field ->
                     item(key = "field-$mcIdx-$fIdx") {
-                        FieldItem(field = field, onSave = { ConfigV2.save(userId, false) })
+                        FieldItem(field = field, onSave = {
+                            val success = ConfigV2.save(userId, false)
+                            if (!success) ToastUtil.show(activity, "保存失败")
+                        })
                     }
                 }
-                item(key = "group-spacer-$mcIdx") {
+                item(key = "spacer-$mcIdx") {
                     Spacer(Modifier.height(12.dp))
                 }
             }
@@ -259,6 +263,7 @@ fun GroupFieldsPage(activity: MiuixSettingsActivity, userId: String?, group: Mod
 
 @Composable
 fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
+    var showDialog by remember { mutableStateOf(false) }
     when (field.type) {
         "BOOLEAN" -> {
             var checked by remember { mutableStateOf(field.value as? Boolean ?: false) }
@@ -275,69 +280,49 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
         }
 
         "INTEGER", "MULTIPLY_INTEGER" -> {
+            val context = LocalContext.current
             val imf = field as? IntegerModelField
             val maxLimit = imf?.maxLimit
             val lowerLimit = imf?.minLimit
-            // 未指定上限，或范围过大（滑块无法精确取值）时，使用文本输入
-            val rangeSpan = if (maxLimit != null) {
-                maxLimit.toLong() - (lowerLimit ?: 0).toLong()
-            } else {
-                Long.MAX_VALUE
+            val current = field.value as? Int ?: 0
+            val limitHint = when {
+                lowerLimit == null && maxLimit == null -> ""
+                lowerLimit != null && lowerLimit < 0 -> "（-1 表示按最大额度）"
+                lowerLimit != null && maxLimit != null -> "（${lowerLimit}~${maxLimit}）"
+                maxLimit != null -> "（上限 ${maxLimit}）"
+                else -> "（下限 ${lowerLimit}）"
             }
-            if (rangeSpan > 200L) {
-                val context = LocalContext.current
-                val current = field.value as? Int ?: 0
-                var showDialog by remember { mutableStateOf(false) }
-                ArrowPreference(
+            ArrowPreference(
+                title = field.name ?: "",
+                summary = if (limitHint.isEmpty()) current.toString() else "$current$limitHint",
+                onClick = { showDialog = true }
+            )
+            if (showDialog) {
+                EditDialog(
                     title = field.name ?: "",
-                    summary = if (lowerLimit != null && lowerLimit < 0) {
-                        "$current（-1 表示按最大额度）"
-                    } else {
-                        current.toString()
+                    initial = current.toString(),
+                    multiline = false,
+                    onConfirm = { text ->
+                        val parsed = text.trim().toIntOrNull()
+                        if (parsed == null) {
+                            ToastUtil.show(context, "请输入有效整数")
+                        } else if (lowerLimit != null && parsed < lowerLimit) {
+                            ToastUtil.show(context, "最小值为 $lowerLimit")
+                        } else if (maxLimit != null && parsed > maxLimit) {
+                            ToastUtil.show(context, "最大值为 $maxLimit")
+                        } else {
+                            field.setObjectValue(parsed)
+                            onSave()
+                        }
+                        showDialog = false
                     },
-                    onClick = { showDialog = true }
-                )
-                if (showDialog) {
-                    EditDialog(
-                        title = field.name ?: "",
-                        initial = current.toString(),
-                        multiline = false,
-                        onConfirm = { text ->
-                            val parsed = text.trim().toIntOrNull()
-                            if (parsed == null || (lowerLimit != null && parsed < lowerLimit)) {
-                                ToastUtil.show(context, "请输入不小于 ${lowerLimit ?: Int.MIN_VALUE} 的整数")
-                            } else {
-                                field.setObjectValue(parsed)
-                                onSave()
-                            }
-                            showDialog = false
-                        },
-                        onDismiss = { showDialog = false }
-                    )
-                }
-            } else {
-                val rawMin = (lowerLimit ?: 0).toFloat()
-                val rawMax = maxLimit!!.toFloat()
-                val min = minOf(rawMin, rawMax)
-                val max = if (maxOf(rawMin, rawMax) <= min) min + 1f else maxOf(rawMin, rawMax)
-                var value by remember { mutableFloatStateOf((field.value as? Int ?: 0).toFloat().coerceIn(min, max)) }
-                SliderPreference(
-                    title = field.name ?: "",
-                    summary = field.description,
-                    value = value.coerceIn(min, max),
-                    valueRange = min..max,
-                    valueText = value.roundToInt().toString(),
-                    onValueChange = { value = it.coerceIn(min, max) },
-                    onValueChangeFinished = {
-                        field.setObjectValue(value.roundToInt())
-                        onSave()
-                    }
+                    onDismiss = { showDialog = false }
                 )
             }
         }
 
         "STRING", "TEXT" -> {
-            var showDialog by remember { mutableStateOf(false) }
+            val context = LocalContext.current
             ArrowPreference(
                 title = field.name ?: "",
                 summary = field.configValue,
@@ -348,8 +333,8 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
                     title = field.name ?: "",
                     initial = field.configValue ?: "",
                     multiline = false,
-                    onConfirm = {
-                        field.setObjectValue(it)
+                    onConfirm = { text ->
+                        field.setObjectValue(text)
                         onSave()
                         showDialog = false
                     },
@@ -369,7 +354,6 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
             val smf = field as? SelectOneModelField
             val options = smf?.expandValue ?: emptyList()
             val current = field.value as? String
-            var showDialog by remember { mutableStateOf(false) }
             ArrowPreference(
                 title = field.name ?: "",
                 summary = options.firstOrNull { it.id == current }?.name,
@@ -396,7 +380,6 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
             val smf = field as? SelectModelField
             val options = smf?.expandValue ?: emptyList()
             val current = (field.value as? Set<*>)?.mapNotNull { it?.toString() }?.toSet() ?: emptySet()
-            var showDialog by remember { mutableStateOf(false) }
             ArrowPreference(
                 title = field.name ?: "",
                 summary = "已选 ${current.size} 项",
@@ -424,7 +407,7 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
             val options = smf?.expandValue ?: emptyList()
             val kv = field.value as? KVNode<*, *>
             val current = kv?.key?.toString()
-            var showDialog by remember { mutableStateOf(false) }
+            val currentCount = kv?.value as? Int ?: 1
             ArrowPreference(
                 title = field.name ?: "",
                 summary = options.firstOrNull { it.id == current }?.name,
@@ -437,6 +420,7 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
                     withCount = true,
                     options = options,
                     selectedIds = if (current != null) setOf(current) else emptySet(),
+                    initialCounts = if (current != null) mapOf(current to currentCount) else emptyMap(),
                     onConfirm = { ids, counts ->
                         smf?.clear()
                         ids.firstOrNull()?.let { smf?.add(it, counts[it] ?: 1) }
@@ -453,7 +437,8 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
             val options = smf?.expandValue ?: emptyList()
             val currentMap = field.value as? Map<*, *>
             val current = currentMap?.keys?.mapNotNull { it?.toString() }?.toSet() ?: emptySet()
-            var showDialog by remember { mutableStateOf(false) }
+            // 把已有次数传给 dialog，防止初始化时丢失
+            val currentCounts = currentMap?.mapValues { (_, v) -> (v as? Int) ?: 1 }?.mapKeys { (k, _) -> k as? String ?: "" }?.filterKeys { it in current } ?: emptyMap()
             ArrowPreference(
                 title = field.name ?: "",
                 summary = "已选 ${current.size} 项",
@@ -466,6 +451,7 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
                     withCount = true,
                     options = options,
                     selectedIds = current,
+                    initialCounts = currentCounts,
                     onConfirm = { ids, counts ->
                         smf?.clear()
                         ids.forEach { smf?.add(it, counts[it] ?: 1) }
@@ -479,7 +465,6 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
 
         "LIST" -> {
             val list = (field.value as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
-            var showDialog by remember { mutableStateOf(false) }
             ArrowPreference(
                 title = field.name ?: "",
                 summary = list.joinToString(","),
@@ -505,7 +490,6 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
             val cmf = field as? ChoiceModelField
             val choiceArray = cmf?.expandKey ?: emptyArray()
             val current = field.value as? Int ?: 0
-            var showDialog by remember { mutableStateOf(false) }
             ArrowPreference(
                 title = field.name ?: "",
                 summary = choiceArray.getOrNull(current),
@@ -586,11 +570,19 @@ fun SelectionDialog(
     withCount: Boolean,
     options: List<IdAndName>,
     selectedIds: Set<String>,
+    initialCounts: Map<String, Int> = emptyMap(),
     onConfirm: (Set<String>, Map<String, Int>) -> Unit,
     onDismiss: () -> Unit
 ) {
     var sel by remember { mutableStateOf(selectedIds) }
-    var counts by remember { mutableStateOf(selectedIds.associateWith { 1 }) }
+    // 将 counts 提升到顶层，避免为每个选项创建独立的 remember(opt.id) scope
+    // 防止 Dialog recomposition 与 LazyColumn prefetch 调度器冲突导致 crash
+    var counts by remember(selectedIds) {
+        mutableStateOf(
+            if (initialCounts.isNotEmpty()) initialCounts.filterKeys { it in selectedIds }
+            else selectedIds.associateWith { 1 }
+        )
+    }
     Dialog(onDismissRequest = onDismiss) {
         Box(
             Modifier
@@ -615,10 +607,14 @@ fun SelectionDialog(
                             checked = checked,
                             onCheckedChange = { c ->
                                 sel = if (c) sel + opt.id else sel - opt.id
+                                // 选中时初始化次数
+                                if (c && !counts.containsKey(opt.id)) {
+                                    counts = counts + (opt.id to (initialCounts[opt.id] ?: 1))
+                                }
                             }
                         )
                         if (withCount && checked) {
-                            var c by remember(opt.id) { mutableFloatStateOf((counts[opt.id] ?: 1).toFloat()) }
+                            var c by remember { mutableFloatStateOf((counts[opt.id] ?: 1).toFloat()) }
                             SliderPreference(
                                 title = "数量",
                                 value = c,

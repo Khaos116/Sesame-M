@@ -8,6 +8,7 @@ import java.io.File;
 import java.util.Calendar;
 
 import io.github.aw1y2z.sesame.R;
+import androidx.annotation.Keep;
 import lombok.Data;
 
 @Data
@@ -206,6 +207,7 @@ public class Statistics {
     }
     
     @Data
+    @Keep
     public static class TimeStatistics {
         int time;
         int collected, helped, watered, wateredcount, wateringcount;

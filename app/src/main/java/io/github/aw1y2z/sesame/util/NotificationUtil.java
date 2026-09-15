@@ -129,7 +129,7 @@ public class NotificationUtil {
     }
 
     public static void setStatusTextExec() {
-        updateStatusText("执行中");
+        updateStatusText("Sesane-M执行中");
     }
 
     private static void sendText() {

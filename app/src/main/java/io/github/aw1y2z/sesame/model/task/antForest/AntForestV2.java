@@ -3104,7 +3104,6 @@ public class AntForestV2 extends ModelTask {
     private long continuousUseCardCheak(String propGroupType) {
         try {
             JSONObject joMiscHomes = MyUtils.newJSONObject(AntForestRpcCall.queryMiscInfo());
-            System.out.println(joMiscHomes);
             if (!MessageUtil.checkResultCode(TAG, joMiscHomes)) {
                 return -1;
             }
@@ -3177,7 +3176,6 @@ public class AntForestV2 extends ModelTask {
     private String useRobExpandCardFactor() {
         try {
             JSONObject joMiscHomes = MyUtils.newJSONObject(AntForestRpcCall.queryMiscInfo());
-            System.out.println(joMiscHomes);
             if (!MessageUtil.checkResultCode(TAG, joMiscHomes)) {
                 return null;
             }

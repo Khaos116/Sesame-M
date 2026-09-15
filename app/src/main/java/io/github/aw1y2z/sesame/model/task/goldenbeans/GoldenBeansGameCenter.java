@@ -39,6 +39,7 @@ public final class GoldenBeansGameCenter {
                     Log.goldenBeans("金豆乐园⚠️列表查询失败[" + GoldenBeansSupport.describe(snapshot) + "]");
                     return false;
                 }
+                Log.goldenBeans("金豆乐园🎮游戏列表");
 
                 JSONObject drawRights = GoldenBeansSupport.findObject(snapshot, "gameCenterDrawRights");
                 int quotaCanUse = drawRights != null ? Math.max(drawRights.optInt("quotaCanUse", 0), 0) : 0;
