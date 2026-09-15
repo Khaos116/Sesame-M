@@ -12,6 +12,14 @@
 
 ## 变更记录
 
+### 2026-09-15（续）：修复森林/庄园/金豆/其他日志仍按时间正序显示
+
+**根因**：四类分类日志在 `Log.java` 中写成 `HH:mm:ss.SSS 正文`，而 `MiuixLogViewerActivity.loadLogEntries()` 只识别带 `TAG:` 的格式。分类日志因此被当成续行合并进同一卡片，列表的 `asReversed()` 无法反转卡片内部的记录；运行/异常/抓包日志带标签，所以不受影响。此前仅检查列表反转便判断七类都倒序，遗漏了写入格式与解析格式的差异。
+
+**修复**：共用解析器将标签前缀改为可选，无标签时保留 `null`，由已有卡片标题回退为「日志」。旧文件也能直接按时间戳拆分，继续用现有倒序列表展示；真正无时间戳的续行仍合并到上一条。不改日志写入格式。
+
+**验证**：`checks/check_log_follow.py` 新增四类无标签日志的两条记录及续行场景，修复前因记录未拆分失败，修复后通过；原有带标签日志、500 条上限、实时刷新和滚动跟随检查保持通过。其余七项本地回归检查全部通过，`:app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin` 编译通过。未安装到真机验证。
+
 ### 2026-09-15（续）：电量权限崩溃真根因 + 深色模式/跟随系统开关体验修复
 
 **电量权限崩溃排查了两轮**：第一轮看到崩溃堆栈里全是短名字的类（`bb1`/`nx0`/`p9`/`ip`/`v31`/`ff0`/`xo`/`n5`），误判成是支付宝那边被 R8 混淆坏了引用，把 `hook.**` 包从只精细 keep `ApplicationHook` 一个类改成整包 `-keep`（commit `56cc9a38`）——事后验证 `mapping.txt` 确认 `hook` 包一直就没被重命名过，这次"修复"方向从一开始就错了，重装后同样崩溃复现证明了这点。第二轮才找对地方：这个崩溃堆栈其实全程发生在**独立 App 自己的进程**里（那些短名字是本 App 自己被 R8 混淆后的 Compose 内部调用链，不是支付宝的类），根因是 `PermissionUtil.checkBatteryPermissions()`（无参版本）内部调用了 `ApplicationHook.isHooked()`/`getContext()`——已经写进上面「硬性规则」第 3 条。修法（commit `1f6ec478`）：给 `checkBatteryPermissions` 加一个接收 `Context` 的重载，独立 App 这条路径（`checkOrRequestBatteryPermissions` 已经有调用方传入的 `Context`）直接用新重载，完全不碰 `ApplicationHook`；原来的无参版本保留给唯一另一处调用方（`ApplicationHook.java` 内部、真实注入进程里的调用），内部改成先拿 `ApplicationHook.getContext()` 再委托给新重载，行为不变。新增 `checks/check_standalone_no_xposed_class.py` 静态守住这条路径不会再引用 `ApplicationHook`。

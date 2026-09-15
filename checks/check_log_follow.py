@@ -62,6 +62,15 @@ fun main() {
     println("PASS: account label and missing/invalid profile UID fallback")
     val file = File.createTempFile("sesame-log-follow", ".log")
     try {
+        for (category in listOf("森林", "庄园", "金豆", "其他")) {
+            file.writeText("20:00:00.000 $category 旧记录\\n20:00:01.000 $category 新记录\\n续行")
+            val displayed = loadLogEntries(file).asReversed()
+            check(displayed.size == 2) { "$category records must remain separate" }
+            check(displayed[0].time == "20:00:01.000" && displayed[0].tag == null)
+            check(displayed[0].body == "$category 新记录\\n续行")
+            check(displayed[1].body == "$category 旧记录")
+        }
+        println("PASS: four untagged categories display newest first and preserve continuation lines")
         file.writeText((0..599).joinToString("\\n") { "12:00:00.000 I: entry $it" })
         var entries = emptyList<LogEntry>()
         val listState = ListState()

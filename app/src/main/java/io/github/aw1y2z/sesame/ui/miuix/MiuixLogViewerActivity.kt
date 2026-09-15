@@ -369,7 +369,8 @@ private fun loadLogEntries(file: File?): List<LogEntry> {
     if (file == null || !file.exists()) {
         return emptyList()
     }
-    val timeRegex = Regex("^(\\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+(\\w+):\\s*(.*)$")
+    // 分类日志只有时间和正文；运行/异常/抓包日志另有 TAG: 前缀。
+    val timeRegex = Regex("^(\\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+(?:(\\w+):\\s*)?(.*)$")
     val entries = ArrayDeque<LogEntry>()
     return try {
         val text = readTailText(file, MAX_TAIL_BYTES)
@@ -382,7 +383,7 @@ private fun loadLogEntries(file: File?): List<LogEntry> {
                     LogEntry(
                         lineNumber = lineNumber,
                         time = match.groupValues[1],
-                        tag = match.groupValues[2],
+                        tag = match.groups[2]?.value,
                         body = match.groupValues[3]
                     )
                 )
