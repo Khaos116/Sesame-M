@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -354,7 +355,18 @@ class MiuixMainActivity : MiuixBaseActivity() {
 @Composable
 fun MainScreen(activity: MiuixMainActivity) {
     val context = LocalContext.current
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    // 提到 MainScreen 一级,跨 tab 共享,切 tab 不会因为重新进入组合而闪回"未知账号"
+    var currentAccount by remember { mutableStateOf("未知账号") }
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentAccount = withContext(Dispatchers.IO) {
+                val userId = FileUtil.getRuntimeLogFile().parentFile?.name
+                if (userId == null || userId == "default") "未知账号" else accountDisplayName(userId)
+            }
+            delay(1000)
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -395,17 +407,17 @@ fun MainScreen(activity: MiuixMainActivity) {
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             when (selectedTab) {
-                0 -> HomeTab(activity)
-                1 -> LogsTab(activity)
-                2 -> ConfigTab()
-                3 -> SettingsTab(activity)
+                0 -> HomeTab(activity, currentAccount)
+                1 -> LogsTab(activity, currentAccount)
+                2 -> ConfigTab(currentAccount)
+                3 -> SettingsTab(activity, currentAccount)
             }
         }
     }
 }
 
 @Composable
-fun HomeTab(activity: MiuixMainActivity) {
+fun HomeTab(activity: MiuixMainActivity, currentAccount: String) {
     val context = LocalContext.current
     // 订阅 Compose state：onServiceBind / 状态广播到达时会自动重组刷新首页状态
     val activated = activity.uiRunType == RunType.MODEL
@@ -427,7 +439,7 @@ fun HomeTab(activity: MiuixMainActivity) {
         onDispose { }
     }
 
-    TabTitleRow(title = "Sesame-M")
+    TabTitleRow(title = "Sesame-M", account = currentAccount)
     Spacer(Modifier.height(16.dp))
 
     Box(
@@ -549,8 +561,8 @@ fun StatisticsTable(activity: MiuixMainActivity) {
 }
 
 @Composable
-fun LogsTab(activity: MiuixMainActivity) {
-    TabTitleRow(title = "日志")
+fun LogsTab(activity: MiuixMainActivity, currentAccount: String) {
+    TabTitleRow(title = "日志", account = currentAccount)
 
     SmallTitle(text = "分类记录")
     CardColumn {
@@ -652,7 +664,7 @@ fun openLog(activity: MiuixMainActivity, logType: LogType) {
 }
 
 @Composable
-fun ConfigTab() {
+fun ConfigTab(currentAccount: String) {
     val context = LocalContext.current
     val items = remember {
         val list = ArrayList<Pair<String?, String>>()
@@ -672,7 +684,7 @@ fun ConfigTab() {
         list
     }
 
-    TabTitleRow(title = "配置")
+    TabTitleRow(title = "配置", account = currentAccount)
 
     SmallTitle(text = "配置管理")
     CardColumn {
@@ -691,10 +703,10 @@ fun ConfigTab() {
 }
 
 @Composable
-fun SettingsTab(activity: MiuixMainActivity) {
+fun SettingsTab(activity: MiuixMainActivity, currentAccount: String) {
     val context = LocalContext.current
 
-    TabTitleRow(title = "设置")
+    TabTitleRow(title = "设置", account = currentAccount)
 
     SmallTitle(text = "功能设置")
     CardColumn {
@@ -794,19 +806,10 @@ private fun accountDisplayName(userId: String): String {
     }
 }
 
-/** 各 TAB 共用的标题行，显示版本、编译时间和当前日志账号。 */
+/** 各 TAB 共用的标题行，显示版本、编译时间和当前日志账号。account 由 MainScreen 统一轮询下发，
+ *  切 tab 时不会重新从"未知账号"开始，避免闪烁。 */
 @Composable
-fun TabTitleRow(title: String) {
-    var account by remember { mutableStateOf("未知账号") }
-    LaunchedEffect(Unit) {
-        while (true) {
-            account = withContext(Dispatchers.IO) {
-                val userId = FileUtil.getRuntimeLogFile().parentFile?.name
-                if (userId == null || userId == "default") "未知账号" else accountDisplayName(userId)
-            }
-            delay(1000)
-        }
-    }
+fun TabTitleRow(title: String, account: String) {
     Row(
         Modifier
             .fillMaxWidth()
