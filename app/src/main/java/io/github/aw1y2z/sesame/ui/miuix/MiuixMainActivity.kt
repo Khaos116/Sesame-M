@@ -18,6 +18,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -735,20 +736,25 @@ fun SettingsTab(activity: MiuixMainActivity, currentAccount: String) {
         }
         var darkMode by remember { mutableStateOf(AppConfig.INSTANCE.darkMode ?: false) }
         var followSystem by remember { mutableStateOf(AppConfig.INSTANCE.followSystem ?: true) }
+        val systemDark = isSystemInDarkTheme()
+        // 跟随系统开着时实际生效的是系统当前深浅色，不是 darkMode 那个值；只有这个"最终效果"
+        // 变了才值得 recreate()，两个开关状态对不上导致效果没变时不闪页面。
+        fun effectiveDark(follow: Boolean, dark: Boolean) = if (follow) systemDark else dark
         BooleanSwitch("深色模式", darkMode) {
+            val before = effectiveDark(followSystem, darkMode)
             AppConfig.INSTANCE.darkMode = it
             // 手动选深/浅色就是明确不想跟随系统了，不然"跟随系统"默认开着，这个开关切了
-            // 也不会生效（MiuixBaseActivity 里 followSystem 优先级更高），只会白白重建一次
-            // Activity 让页面闪一下、视觉上却什么都没变。
+            // 也不会生效（MiuixBaseActivity 里 followSystem 优先级更高）。
             if (followSystem) {
                 AppConfig.INSTANCE.followSystem = false
                 followSystem = false
             }
             AppConfig.save()
             darkMode = it
-            activity.recreate()
+            if (effectiveDark(followSystem, darkMode) != before) activity.recreate()
         }
         BooleanSwitch("跟随系统设置", followSystem) {
+            val before = effectiveDark(followSystem, darkMode)
             AppConfig.INSTANCE.followSystem = it
             // 跟深色模式开关互斥：开了跟随系统，深色模式这个手动选择就没意义了，关掉它，
             // 免得用户以为两个开关都生效、实际只有先设置优先级更高的那个说了算。
@@ -758,7 +764,7 @@ fun SettingsTab(activity: MiuixMainActivity, currentAccount: String) {
             }
             AppConfig.save()
             followSystem = it
-            activity.recreate()
+            if (effectiveDark(followSystem, darkMode) != before) activity.recreate()
         }
         var batteryPerm by remember { mutableStateOf(AppConfig.shouldRequestBatteryPermission()) }
         BooleanSwitch("为支付宝申请后台运行权限", batteryPerm) {
