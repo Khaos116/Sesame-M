@@ -13,13 +13,14 @@
 # Jackson/TypeReference/ModelField<T> 依赖的反射元数据
 -keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*
 
-# Xposed 模块入口：META-INF/xposed/java_init.list 里按字符串加载，类本身和无参构造函数必须
-# 保留可发现/可实例化，其余成员仍允许被 R8 优化/混淆（对齐 Sesame-AG 官方推荐写法，
-# 比简单粗暴 keep 整个类更精细）
+# Xposed 模块入口：META-INF/xposed/java_init.list 里按字符串加载。之前只 keep ApplicationHook
+# 一个类、allowobfuscation 让它可改名，hook 包下其余类（各种 XC_MethodHook 匿名回调、
+# AccountSwitchController、NewRpcBridge 里的 Proxy.newProxyInstance 动态代理等）完全暴露给
+# R8 混淆——真机上出现过点击触发某个 hook 回调时 NoClassDefFoundError（跨类引用没跟着改名
+# 正确同步，ART 懒加载验证到用的时候才炸，不是启动期）。hook 包整体不是性能热点，混淆增益
+# 换不回这种概率性崩溃，改成整包保留，只精细混淆业务逻辑（model/util 等）。
 -adaptresourcefilecontents META-INF/xposed/java_init.list
--keep,allowoptimization,allowobfuscation public class io.github.aw1y2z.sesame.hook.ApplicationHook extends io.github.libxposed.api.XposedModule {
-    public <init>();
-}
+-keep class io.github.aw1y2z.sesame.hook.** { *; }
 -keep class * implements io.github.libxposed.api.XposedModule { *; }
 
 # Model.initAllModel() 用反射调无参构造函数实例化每个任务模块，简单类名对应配置 key
@@ -40,7 +41,6 @@
 -keep class io.github.aw1y2z.sesame.data.* { *; }
 -keep class io.github.aw1y2z.sesame.data.modelFieldExt.** { *; }
 -keep class io.github.aw1y2z.sesame.entity.** { *; }
--keep class io.github.aw1y2z.sesame.hook.RpcRequest { *; }
 -keep class io.github.aw1y2z.sesame.util.Status { *; }
 -keep class io.github.aw1y2z.sesame.util.Statistics { *; }
 -keep class io.github.aw1y2z.sesame.util.Statistics$* { *; }
