@@ -11,6 +11,8 @@ import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.entity.RpcEntity;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.util.FileUtil;
+import io.github.aw1y2z.sesame.util.diagnostics.RpcFailureJournal;
 
 /** Shared by all RPC transports; state belongs to the account that sent the request. */
 public final class RpcRequestGuard {
@@ -21,6 +23,7 @@ public final class RpcRequestGuard {
             "2026012058542176083", "2026012058543269012", "2026012058542511985"));
 
     private final RpcEntity request;
+    private final java.io.File reportDirectory;
     private final RuntimeInfo state;
     private final String key;
     private final boolean core;
@@ -28,6 +31,7 @@ public final class RpcRequestGuard {
 
     public RpcRequestGuard(RpcEntity request) {
         this.request = request;
+        reportDirectory = FileUtil.getCurrentUserLogDirectory();
         state = RuntimeInfo.getInstance();
         String method = request.getRequestMethod();
         JSONObject args;
@@ -149,6 +153,12 @@ public final class RpcRequestGuard {
     public void record(JSONObject result) {
         synchronized (RpcRequestGuard.class) {
             long now = System.currentTimeMillis();
+            try {
+                RpcFailureJournal.record(reportDirectory, request.getRequestMethod(),
+                        request.getRequestData(), result, now);
+            } catch (Exception e) {
+                Log.i("异常请求统计写入失败：" + e.getClass().getSimpleName());
+            }
             JSONObject saved = MyUtils.newJSONObject(state.getString(key));
             // An older in-flight success must not cancel a pause imposed by a newer failure.
             if (saved.optLong("until") > now) return;

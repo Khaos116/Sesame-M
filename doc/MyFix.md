@@ -14,6 +14,22 @@
 
 ## 变更记录
 
+### 2026-09-16（续）：新增按账号每日异常请求统计文件
+
+在新旧 RPC 桥共用的 `RpcRequestGuard.record()` 接入 `RpcFailureJournal`，在冷却和核心任务豁免返回之前记录真实失败，包含庄园 `resultCode=102` 等未触发退避的失败。成功响应及 `RPC_SKIPPED` 不计数，不修改现有退避、不自动新增黑名单。请求发出时捕获账号日志目录，避免迟到响应记入切换后的账号。统计独立于运行/异常日志显示开关，从新版运行后开始采集，不回填旧日志。
+
+每账号每天生成 `log/<账号>/rpc-failures.yyyy-MM-dd.<账号>.json`，按接口、任务定位字段、各错误码及提示合并，记录次数与首次/最近时间。只保留 sceneCode、taskSceneCode、taskId、taskType、bizKey、recordId、activityId 等白名单字段，不保存完整参数/响应；常见 UID 在字段文本中遮蔽，文件名保留账号标识便于区分。复用 `AtomicConfigFile` 原子替换写入，重启后继续累计；每天最多 1000 类错误，额外未列出的错误计入 `unlistedFailureCount`。I/O 失败只写提示，不中断 RPC 处理。
+
+“查看异常日志”页新增“导出统计”，导出当前账号当天报告到 `Download/sesame-M/`；原始逐条日志导出仍保留。用户每天提供该 JSON，后续按任务 ID 人工确认跳过规则。历史日期报告可从账号日志目录取出。
+
+三项检查：报告日期与时间显式 GMT+8；JSONObject 解析使用 MyUtils；字段读取用 opt 并判空，JSONArray 输入解析保留异常防护。九项回归及 Java/Kotlin 编译通过，新回归覆盖聚合、任务区分、隐去非定位参数、成功/跳过排除、跨天、账号归属及写入失败隔离。Windows 测试替换 rename 操作以模拟 Android 已有原子覆盖语义。未真机验证、未打包、未提交。
+
+### 2026-09-16（续）：日志卡片支持长按自由选择复制
+
+共用 `LogEntryCard` 使用 Compose 原生 `SelectionContainer` 包含标签、时间及正文，全部七类日志支持在单条卡片内长按、拖动选择范围并复制，无新增依赖。九项本地回归和 Java/Kotlin 编译通过，未做真机手势验证，未打包、未提交。本次没有时间或 JSON 代码变更。
+
+同时核对用户截图：前三条完整错误均为 `com.alipay.antfarm.receiveFarmTaskAward`，三个不同 taskId 的抽奖次数奖励请求返回 `success=false`、`resultCode=102`，memo 为“服务器正在开小差，请稍后再试”。当前 guard 将此视为未分类的庄园失败而不暂停；并非 RPC_SKIPPED，也不是截图证明同一个 taskId 重试三次。截图底部果园响应不完整，不能推断同一错误码。本次仅定位，未更改 RPC 退避。
+
 ### 2026-09-16（续）：将合并三项必查写入 AI 必读规则
 
 `AGENTS.md` 明确每次合并必须核对 GMT+8、MyUtils JSON 创建、`.opt*()` 读取及判空，覆盖自动合并文件；保留严格解析失败语义和协议时间语义，并要求记录处理结果、例外及遗留项。同步更新本页长期约束，纠正 TimeUtil 仍未统一时区的过时描述。本次仅修改文档，未宣称已修复全部历史代码问题；检查 `git diff --check`，不运行代码回归。

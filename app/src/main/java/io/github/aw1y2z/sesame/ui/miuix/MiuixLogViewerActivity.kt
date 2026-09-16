@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -47,6 +48,8 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
+import io.github.aw1y2z.sesame.util.diagnostics.RpcFailureJournal
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
@@ -168,6 +171,15 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
             LogTopBar(
                 title = logType.displayName,
                 onBack = { activity.finish() },
+                onExportSummary = if (logType == LogType.ERROR) ({
+                    val report = RpcFailureJournal.fileFor(logType.file.parentFile, System.currentTimeMillis())
+                    if (!report.isFile) {
+                        ToastUtil.show(context, "当前账号今日暂无异常请求统计")
+                    } else {
+                        val exported = FileUtil.exportFile(report)
+                        ToastUtil.show(context, if (exported != null) "已导出: ${exported.path}" else "导出失败")
+                    }
+                }) else null,
                 onExport = {
                     val exported = FileUtil.exportFile(logType.file)
                     if (exported != null) {
@@ -221,37 +233,39 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
 /** 单条日志卡片:标题(TAG)+ 右上时间戳 + 下方正文 */
 @Composable
 fun LogEntryCard(entry: LogEntry) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MiuixTheme.colorScheme.surfaceContainer)
-            .padding(12.dp)
-    ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    SelectionContainer {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(MiuixTheme.colorScheme.surfaceContainer)
+                .padding(12.dp)
         ) {
-            Text(
-                text = entry.tag ?: "日志",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MiuixTheme.colorScheme.primary
-            )
-            Text(
-                text = entry.time ?: "",
-                fontSize = 12.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
-            )
-        }
-        if (entry.body.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = entry.body,
-                fontSize = 13.sp,
-                color = MiuixTheme.colorScheme.onBackground
-            )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = entry.tag ?: "日志",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MiuixTheme.colorScheme.primary
+                )
+                Text(
+                    text = entry.time ?: "",
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                )
+            }
+            if (entry.body.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = entry.body,
+                    fontSize = 13.sp,
+                    color = MiuixTheme.colorScheme.onBackground
+                )
+            }
         }
     }
 }
@@ -267,7 +281,8 @@ fun LogTopBar(
     onBack: () -> Unit,
     onImport: (() -> Unit)? = null,
     onExport: (() -> Unit)? = null,
-    onClear: (() -> Unit)? = null
+    onClear: (() -> Unit)? = null,
+    onExportSummary: (() -> Unit)? = null
 ) {
     Column(
         Modifier
@@ -309,6 +324,9 @@ fun LogTopBar(
                         modifier = Modifier.rotate(180f)
                     )
                 }
+            }
+            if (onExportSummary != null) {
+                TextButton(text = "导出统计", onClick = onExportSummary)
             }
             if (onExport != null) {
                 IconButton(onClick = onExport) {

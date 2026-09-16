@@ -23,8 +23,13 @@ with tempfile.TemporaryDirectory(prefix="sesame-rpc-guard-") as tmp:
         path.write_text(code, encoding="utf-8")
 
     for name in ("rpc/intervallimit/RpcRequestGuard.java", "rpc/intervallimit/RpcFailurePolicy.java", "entity/RpcEntity.java", "util/RpcLog.java",
+                 "util/diagnostics/RpcFailureJournal.java", "util/AtomicConfigFile.java",
                  "rpc/bridge/NewRpcBridge.java", "rpc/bridge/OldRpcBridge.java", "rpc/bridge/RpcBridge.java", "rpc/bridge/RpcVersion.java"):
         code = (SOURCE / name).read_text(encoding="utf-8")
+        if name == "util/AtomicConfigFile.java":
+            # Android rename replaces an existing file; Windows File.renameTo does not.
+            code = code.replace("public boolean replace(File temporary, File target) { return temporary.renameTo(target); }",
+                                "public boolean replace(File temporary, File target) throws IOException { java.nio.file.Files.move(temporary.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING); return true; }")
         write(name, code.replace("System.currentTimeMillis()", "io.github.aw1y2z.sesame.rpc.intervallimit.GuardCheck.now"))
     write("model/task/antMember/AntMemberRpcCall.java", """
 package io.github.aw1y2z.sesame.model.task.antMember;
@@ -106,6 +111,15 @@ public class RuntimeInfo {
     public String getString(String key) { return values.getOrDefault(key, ""); }
     public void put(String key, Object value) { values.put(key, String.valueOf(value)); }
     public void put(RuntimeInfoKey key, Object value) { put(key.name(), value); }
+}
+""")
+    write("util/FileUtil.java", """
+package io.github.aw1y2z.sesame.util;
+public class FileUtil {
+    public static java.io.File root = new java.io.File(System.getProperty("rpc.report.root"));
+    public static java.io.File getCurrentUserLogDirectory() {
+        return new java.io.File(root, io.github.aw1y2z.sesame.data.RuntimeInfo.account);
+    }
 }
 """)
     write("util/MyUtils.java", """
@@ -441,11 +455,14 @@ public class GuardCheck {
     }
 }
 ''')
+    write("rpc/intervallimit/RpcFailureJournalCheck.java", (ROOT / "checks/RpcFailureJournalCheck.java").read_text(encoding="utf-8"))
     cp = os.pathsep.join((str(JSON), str(LOMBOK)))
     subprocess.run(["javac", "-encoding", "UTF-8", "-cp", cp, "-processorpath", str(LOMBOK),
                     "-d", tmp, *map(str, out.rglob("*.java"))], check=True)
-    subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + cp,
+    subprocess.run(["java", "-ea", "-Drpc.report.root=" + str(out / "reports"), "-cp", tmp + os.pathsep + cp,
                     "io.github.aw1y2z.sesame.rpc.intervallimit.GuardCheck"], check=True, timeout=30)
+    subprocess.run(["java", "-ea", "-Drpc.report.root=" + str(out / "reports"), "-cp", tmp + os.pathsep + cp,
+                    "io.github.aw1y2z.sesame.rpc.intervallimit.RpcFailureJournalCheck"], check=True, timeout=30)
     subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + cp,
                     "io.github.aw1y2z.sesame.hook.PreflightCheck"], check=True, timeout=15)
 
