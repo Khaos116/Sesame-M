@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,12 +25,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -577,63 +580,137 @@ fun SelectionDialog(
     var sel by remember { mutableStateOf(selectedIds) }
     // 将 counts 提升到顶层，避免为每个选项创建独立的 remember(opt.id) scope
     // 防止 Dialog recomposition 与 LazyColumn prefetch 调度器冲突导致 crash
-    var counts by remember(selectedIds) {
-        mutableStateOf(
-            if (initialCounts.isNotEmpty()) initialCounts.filterKeys { it in selectedIds }
-            else selectedIds.associateWith { 1 }
-        )
+    var counts by remember {
+        mutableStateOf(selectedIds.associateWith { initialCounts[it] ?: 1 })
     }
+    var searchQuery by remember { mutableStateOf("") }
+    // 过滤后的列表
+    val filteredOptions = remember(options, searchQuery) {
+        if (searchQuery.isBlank()) options
+        else options.filter { it.name.contains(searchQuery, ignoreCase = true) || it.id.contains(searchQuery) }
+    }
+
     Dialog(onDismissRequest = onDismiss) {
+        val maxDialogHeight = LocalConfiguration.current.screenHeightDp.dp * 0.8f
+
         Box(
-            Modifier
+            modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = maxDialogHeight)
                 .background(MiuixTheme.colorScheme.surface, RoundedCornerShape(16.dp))
                 .padding(16.dp)
         ) {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(title, color = MiuixTheme.colorScheme.onBackground)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // ── 顶部固定 ──
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        title,
+                        color = MiuixTheme.colorScheme.onBackground,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (!single) {
+                        Spacer(Modifier.width(8.dp))
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            label = "",
+                            modifier = Modifier.width(128.dp)
+                        )
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
-                options.forEach { opt ->
-                    if (single) {
-                        RadioButtonPreference(
-                            title = opt.name,
-                            selected = sel.contains(opt.id),
-                            onClick = { sel = setOf(opt.id) }
-                        )
-                    } else {
-                        val checked = sel.contains(opt.id)
-                        CheckboxPreference(
-                            title = opt.name,
-                            checked = checked,
-                            onCheckedChange = { c ->
-                                sel = if (c) sel + opt.id else sel - opt.id
-                                // 选中时初始化次数
-                                if (c && !counts.containsKey(opt.id)) {
-                                    counts = counts + (opt.id to (initialCounts[opt.id] ?: 1))
+
+                // ── 中间：weight(fill = false) + verticalScroll ──
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    filteredOptions.forEach { opt ->
+                        key(opt.id) {
+                            OptionRow(
+                                opt = opt,
+                                single = single,
+                                withCount = withCount,
+                                checked = sel.contains(opt.id),
+                                count = counts[opt.id] ?: 1,
+                                onCheckChange = { checked ->
+                                    if (checked) {
+                                        sel = if (single) setOf(opt.id) else sel + opt.id
+                                        if (!counts.containsKey(opt.id)) {
+                                            counts = counts + (opt.id to (initialCounts[opt.id] ?: 1))
+                                        }
+                                    } else {
+                                        sel = sel - opt.id
+                                    }
+                                },
+                                onCountChange = { newCount ->
+                                    counts = counts + (opt.id to newCount)
                                 }
-                            }
-                        )
-                        if (withCount && checked) {
-                            var c by remember { mutableFloatStateOf((counts[opt.id] ?: 1).toFloat()) }
-                            SliderPreference(
-                                title = "数量",
-                                value = c,
-                                valueRange = 0f..100f,
-                                valueText = c.roundToInt().toString(),
-                                onValueChange = { c = it },
-                                onValueChangeFinished = { counts = counts + (opt.id to c.roundToInt()) }
                             )
                         }
                     }
                 }
+
                 Spacer(Modifier.height(8.dp))
+
+                // ── 底部固定 ──
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(text = "取消", onClick = onDismiss)
                     Spacer(Modifier.width(8.dp))
-                    TextButton(text = "保存", onClick = { onConfirm(sel, counts) })
+                    TextButton(
+                        text = "保存",
+                        onClick = { onConfirm(sel, counts.filterKeys { it in sel }) }
+                    )
                 }
             }
         }
+    }
+}
+
+/**
+ * 每个选项独立成 Composable，本地状态随 id 一起生灭，不会错位。
+ */
+@Composable
+private fun OptionRow(
+    opt: IdAndName,
+    single: Boolean,
+    withCount: Boolean,
+    checked: Boolean,
+    count: Int,
+    onCheckChange: (Boolean) -> Unit,
+    onCountChange: (Int) -> Unit
+) {
+    if (single) {
+        RadioButtonPreference(
+            title = opt.name,
+            selected = checked,
+            onClick = { onCheckChange(true) }
+        )
+        return
+    }
+
+    CheckboxPreference(
+        title = opt.name,
+        checked = checked,
+        onCheckedChange = onCheckChange
+    )
+
+    if (withCount && checked) {
+        var sliderValue by remember(count) { mutableFloatStateOf(count.toFloat()) }
+        SliderPreference(
+            title = "数量",
+            value = sliderValue,
+            valueRange = 0f..100f,
+            valueText = sliderValue.roundToInt().toString(),
+            onValueChange = { sliderValue = it },
+            onValueChangeFinished = { onCountChange(sliderValue.roundToInt()) }
+        )
     }
 }
 

@@ -24,7 +24,6 @@ open class MiuixBaseActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        AppConfig.load()
         ViewAppInfo.init(applicationContext)
         setupSystemBars()
     }

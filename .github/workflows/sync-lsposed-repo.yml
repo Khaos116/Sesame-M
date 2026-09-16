@@ -80,13 +80,32 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ steps.ver.outputs.code }}-${{ steps.ver.outputs.name }}"
+
+          # 1. 获取主仓库对应 Tag 的原始提交日期
+          ORIGINAL_DATE=$(gh api repos/$MAIN_REPO/commits/${{ steps.rel.outputs.tag }} \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            --jq '.commit.committer.date')
+
+          # 2. 判断模块仓库中是否已存在该 Release
           if gh release view "$TAG" --repo "$XPOSED_REPO" >/dev/null 2>&1; then
             echo "release $TAG already exists, uploading assets"
             gh release upload "$TAG" apks/*.apk --repo "$XPOSED_REPO" --clobber
           else
             echo "creating release $TAG"
-            gh release create "$TAG" apks/*.apk \
+            # 3. 克隆模块仓库
+            git clone https://x-access-token:${GH_TOKEN}@github.com/${XPOSED_REPO}.git xposed_repo
+            cd xposed_repo
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+
+            # 4. 强制创建附注标签，并推送到远程（关键：加上了 -f 参数）
+            GIT_COMMITTER_DATE="$ORIGINAL_DATE" git tag -f -a "$TAG" -m "Release $TAG"
+            git push -f origin "$TAG"
+
+            # 5. 使用 --verify-tag 验证刚才推送的标签，并创建 Release
+            gh release create "$TAG" ../apks/*.apk \
               --repo "$XPOSED_REPO" \
+              --verify-tag \
               --title "${{ steps.ver.outputs.name }}" \
-              --notes-file notes.md
+              --notes-file ../notes.md
           fi
