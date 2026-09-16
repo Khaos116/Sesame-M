@@ -29,6 +29,8 @@
 三项必查：本次未新增时区计算，沿用单调时钟与毫秒计时；无裸 JSON get；设置保存继续沿用现有原子文件与安全解析。
 验证：新增 `checks/check_account_switch.py`，完整覆盖起始锚点、轮内 15 秒切换、整轮 2 小时冷却、关闭清空状态、状态文案与输入限制；十项本地回归与 Java/Kotlin 编译全部通过。
 
+**复核**：对照用户诉求（开哪个号即首轮起点、轮内15秒、整轮2小时冷却、手动关闭立即清空冷却）逐项核对代码与 `checks/check_account_switch.py`，均一致，跑测试确认 PASS。唯一发现 `AccountSwitchState.waitPhase()` 里一处 if/else 两分支返回值完全相同（`roundEnd ? "ROUND_COOLDOWN" : "COUNTDOWN"`），属死代码非功能性 bug；已删除冗余分支与未使用的 `required` 变量，重新编译该文件替换类并重跑 `checks/check_account_switch.py` 仍 PASS，行为不变。commit `47f099f3`。
+
 ### 2026-09-16（续）：根据每日异常报告补齐庄园领奖繁忙退避
 
 报告共 10 次失败、9 类记录，集中在约一分钟内。三个庄园抽奖领奖任务 `cclyx_3bei_xjcmx_2`、`cclyx_sgbhsd_1c_zm3c`、`IP_chouchoule_juankuan` 返回 `102` 和“服务器正在开小差”。对照 M/GR 调用及 GR MyUtils，未找到这三个 ID 的明确失效规则；单次繁忙也不足以永久拉黑。
