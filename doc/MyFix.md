@@ -4,13 +4,19 @@
 
 ## 硬性规则：每次改代码、合并代码、写新代码都要检查
 
-以下两条不是某一次的修复记录，是长期约束——不管是合并上游代码、修 bug 还是写全新功能，touch 到的代码只要沾这两类问题就必须顺手处理，不能只管当次任务范围：
+以下规则是长期约束，合并上游代码、修 bug 或新增功能时都必须执行。每次合并必查 GMT+8、JSON 创建、JSON 读取三项，覆盖自动合并成功的新增/修改文件，逐项处理并记录结果；具体检查要求见 [AGENTS.md](../AGENTS.md) 的「每次合并必查」章节。
 
-1. **时间必须按 GMT+8，不能用裸 `Calendar.getInstance()` / 系统默认时区**。用 `MyUtils.getInstance()` 替代 `Calendar.getInstance()`。背景：GR 自己的代码里也反复出现这个 bug（用户不在 GMT+8 时区跑设备时，跨天判断、定时任务会全部错位），Sesame-M 这边已经排查修过好几处（`FriendWatch.needUpdateAll()`、`ApplicationHook` 的 `dayCalendar`/`setWakenAtTimeAlarm`/`updateDay` 等，见下方 2026-09-12 记录）。已知例外：`TimeUtil` 里大部分方法本身还是系统默认时区（历史遗留，范围大，未整体改造），新代码如果要用其中方法做时间比较，先确认语义是否会跟 GMT+8 的另一侧对不上，不要只改一半引入新的隐蔽错位。
+1. **时间必须按 GMT+8，不能用裸 `Calendar.getInstance()` / 系统默认时区**。用 `MyUtils.getInstance()` 替代 `Calendar.getInstance()`。背景：GR 自己的代码里也反复出现这个 bug（用户不在 GMT+8 时区跑设备时，跨天判断、定时任务会全部错位），Sesame-M 这边已经排查修过好几处（`FriendWatch.needUpdateAll()`、`ApplicationHook` 的 `dayCalendar`/`setWakenAtTimeAlarm`/`updateDay` 等，见下方 2026-09-12 记录）。当前 `TimeUtil` 的日历已显式使用 GMT+8；历史记录中的未统一描述不代表当前状态。仍需检查调用链中的日期格式化、解析与跨天判断，服务端 UTC/带偏移时间须按协议解析，不能机械改成 GMT+8。
 2. **JSON 读取禁止裸 `.get*()`（`getString`/`getInt`/`getLong`/`getDouble`/`getBoolean`/`getJSONObject`/`getJSONArray`/不带类型后缀的 `get`），一律用对应的 `.opt*()` + 空指针防护**。背景：全仓库约 1986 处调用点的转换任务已在 2026-09-14 完成（见下方记录），裸 `get*()` 在字段缺失/服务端返回结构变化时会直接抛异常导致任务崩掉，`opt*()` 返回 null/默认值后自己判空更稳。新写的代码、从 GR/AG/Sure-Xu 合并进来的代码，只要有 `org.json.JSONObject`/`JSONArray` 取值，一律按这个规范来，不要重新引入裸 `get*()`。
-3. **独立 App 进程（`MiuixMainActivity`/`MiuixSettingsActivity` 等 `ui/` 包下的代码，以及它们能直接调用到的 `util/` 工具方法）绝对不能引用 `ApplicationHook`（或任何继承 `io.github.libxposed.api.XposedModule` 的类）**。背景：`XposedModule` 是 `compileOnly` 依赖，运行时类只有真被 LSPosed 注入进支付宝进程后宿主框架才提供；独立 App 自己的进程里这个类根本不存在，一碰就在类校验阶段抛 `NoClassDefFoundError`——这是 `Error` 不是 `Exception`，`catch(Exception e)` 包不住，直接崩溃闪退（见下方 2026-09-15 `PermissionUtil.checkBatteryPermissions()` 那次踩坑记录）。独立 App 需要的任何数据/状态，走 `AppConfig`（跨进程共享配置）、直接读账号目录下的文件，或者广播/`Handler`，不要图省事直接调 `ApplicationHook.getXxx()`。
+3. **JSON 创建统一按 MyUtils 处理**。业务字符串转对象使用 `MyUtils.newJSONObject(raw)`，并验证必要字段和成功状态；无效输入返回空对象不能视为成功。严格解析路径迁移时必须保留失败语义，确需直接构造时记录位置和理由。数组解析保留异常防护，不机械替换集合/空数组构造。此处指 `org.json`，不是 Gson。
+
+4. **独立 App 进程（`MiuixMainActivity`/`MiuixSettingsActivity` 等 `ui/` 包下的代码，以及它们能直接调用到的 `util/` 工具方法）绝对不能引用 `ApplicationHook`（或任何继承 `io.github.libxposed.api.XposedModule` 的类）**。背景：`XposedModule` 是 `compileOnly` 依赖，运行时类只有真被 LSPosed 注入进支付宝进程后宿主框架才提供；独立 App 自己的进程里这个类根本不存在，一碰就在类校验阶段抛 `NoClassDefFoundError`——这是 `Error` 不是 `Exception`，`catch(Exception e)` 包不住，直接崩溃闪退（见下方 2026-09-15 `PermissionUtil.checkBatteryPermissions()` 那次踩坑记录）。独立 App 需要的任何数据/状态，走 `AppConfig`（跨进程共享配置）、直接读账号目录下的文件，或者广播/`Handler`，不要图省事直接调 `ApplicationHook.getXxx()`。
 
 ## 变更记录
+
+### 2026-09-16（续）：将合并三项必查写入 AI 必读规则
+
+`AGENTS.md` 明确每次合并必须核对 GMT+8、MyUtils JSON 创建、`.opt*()` 读取及判空，覆盖自动合并文件；保留严格解析失败语义和协议时间语义，并要求记录处理结果、例外及遗留项。同步更新本页长期约束，纠正 TimeUtil 仍未统一时区的过时描述。本次仅修改文档，未宣称已修复全部历史代码问题；检查 `git diff --check`，不运行代码回归。
 
 ### 2026-09-16（续）：合并 MIUIX-api102 至 ea6dd5e8
 
