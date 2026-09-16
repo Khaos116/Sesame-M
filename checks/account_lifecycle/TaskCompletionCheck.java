@@ -29,6 +29,9 @@ public class TaskCompletionCheck {
             };
             task.prepare();
             Model.models = new Model[] { task };
+            var future = new ModelTask.ChildModelTask("future", "timer", () -> { },
+                    System.currentTimeMillis() + 3_600_000L);
+            task.addChildTask(future);
             var delayed = new ModelTask.ChildModelTask("delayed", () -> { });
             task.addChildTask(delayed);
             ModelTask.startAllTask();
@@ -45,6 +48,8 @@ public class TaskCompletionCheck {
             }
             finished(first);
             require(Log.completions.get() == 1, "completion must be emitted exactly once");
+            require(task.hasChildTask("future") && !future.getIsCancel(),
+                    "completion must preserve future timers");
 
             try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
                 ModelTask.startAllTask();
@@ -69,7 +74,7 @@ public class TaskCompletionCheck {
             finished(first);
             require(Log.completions.get() == 2, "old account emitted completion");
             ModelTask.stopAllTask();
-            System.out.println("PASS: delayed/running children, one completion per overlapping round, stop and account switch");
+            System.out.println("PASS: future timers do not block completion; ready/running children, overlapping rounds, stop and account switch");
         } finally {
             ModelTask.stopAllTask();
             var pool = ModelTask.class.getDeclaredField("MAIN_THREAD_POOL");

@@ -4,6 +4,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.math.BigDecimal;
 import io.github.aw1y2z.sesame.data.ModelFields;
+import io.github.aw1y2z.sesame.data.ModelGroup;
 import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
@@ -16,6 +17,7 @@ public final class WeeklyWelfare extends IsolatedRewardTask {
     private BooleanModelField weeklyPrize;
 
     @Override public String getName() { return "黄金票每周福利"; }
+    @Override public ModelGroup getGroup() { return ModelGroup.MEMBER; }
     @Override protected void addFields(ModelFields fields) {
         fields.addField(signIn = new BooleanModelField("signIn", "每日签到", false));
         fields.addField(weeklyPrize = new BooleanModelField("weeklyPrize", "第七日签到后领取周奖励", false));

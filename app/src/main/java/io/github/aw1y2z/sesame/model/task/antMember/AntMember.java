@@ -59,7 +59,6 @@ public class AntMember extends ModelTask {
     private BooleanModelField promise;
     private SelectModelField promiseList;
     private BooleanModelField enableGameCenter;
-    private BooleanModelField enableGoldTicket;
     private BooleanModelField KuaiDiFuLiJia;
 
     @Override
@@ -79,7 +78,6 @@ public class AntMember extends ModelTask {
         //modelFields.addField(promise = new BooleanModelField("promise", "生活记录 | 坚持做", false));
         //modelFields.addField(promiseList = new SelectModelField("promiseList", "生活记录 | 坚持做列表", new LinkedHashSet<>(), PromiseSimpleTemplate::getList));
         modelFields.addField(KuaiDiFuLiJia = new BooleanModelField("KuaiDiFuLiJia", "我的快递 | 福利加", false));
-        modelFields.addField(enableGoldTicket = new BooleanModelField("enableGoldTicket", "黄金票 | 签到", false));
         return modelFields;
     }
     
@@ -128,9 +126,6 @@ public class AntMember extends ModelTask {
             if (KuaiDiFuLiJia.getValue()) {
                 RecommendTask();
                 OrdinaryTask();
-            }
-            if (enableGoldTicket.getValue()) {
-                goldTicket();
             }
             if (enableGameCenter.getValue()) {
                 //检查并执行签到
@@ -694,18 +689,7 @@ public class AntMember extends ModelTask {
         return doubleCheck;
     }
     
-    private void goldTicket() {
-        try {
-            // 签到
-            //已失效
-            //goldBillCollect("\"campId\":\"CP1417744\",\"directModeDisableCollect\":true,\"from\":\"antfarm\",");
-            // 收取其他
-            //goldBillCollect("");
-        }
-        catch (Throwable t) {
-            Log.printStackTrace(TAG, t);
-        }
-    }
+
     
     /**
      * 芝麻分任务处理（每日问答、公益任务、芭芭农场施肥等）
@@ -891,36 +875,6 @@ public class AntMember extends ModelTask {
         }
     }
     
-    /**
-     * 收取黄金票
-     */
-    private void goldBillCollect(String signInfo) {
-        try {
-            String str = AntMemberRpcCall.goldBillCollect(signInfo);
-            JSONObject jsonObject = MyUtils.newJSONObject(str);
-            if (!jsonObject.optBoolean("success")) {
-                Log.i(TAG + ".goldBillCollect.goldBillCollect", jsonObject.optString("resultDesc"));
-                return;
-            }
-            JSONObject object = jsonObject.optJSONObject("result");
-            JSONArray jsonArray = object != null ? object.optJSONArray("collectedList") : null;
-            if (jsonArray == null) {
-                return;
-            }
-            int length = jsonArray.length();
-            if (length == 0) {
-                return;
-            }
-            for (int i = 0; i < length; i++) {
-                Log.other("黄金票🙈[" + jsonArray.optString(i) + "]");
-            }
-            Log.other("黄金票🏦本次总共获得[" + JsonUtil.getValueByPath(object, "collectedCamp.amount") + "]");
-        }
-        catch (Throwable th) {
-            Log.i(TAG, "signIn err:");
-            Log.printStackTrace(TAG, th);
-        }
-    }
     //游戏中心任务
     
     /**

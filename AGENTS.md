@@ -14,7 +14,7 @@
 ```text
 python checks/account_lifecycle/run.py
 python checks/audit_regressions/run.py
-python checks/check_video_rewards.py
+python checks/check_reward_cooldown.py
 python checks/check_log_follow.py
 python checks/check_merge_config.py
 python checks/check_rpc_guard.py

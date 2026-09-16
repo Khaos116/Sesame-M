@@ -239,7 +239,7 @@ public abstract class ModelTask extends Model {
                         synchronized (TaskLifecycle.class) {
                             if (completionWatcher != Thread.currentThread()
                                     || TaskLifecycle.generation() != generation) return;
-                            if (TaskLifecycle.isIdle() && !hasPendingChildren()) {
+                            if (TaskLifecycle.isIdle() && !hasReadyChildren()) {
                                 Log.record("🏁全部任务已执行完成");
                                 completionWatcher = null;
                                 return;
@@ -261,11 +261,13 @@ public abstract class ModelTask extends Model {
         }
     }
 
-    private static boolean hasPendingChildren() {
+    private static boolean hasReadyChildren() {
+        long now = System.currentTimeMillis();
         for (Model model : getModelArray()) {
             if (model instanceof ModelTask) {
                 for (ChildModelTask child : ((ModelTask) model).childTaskMap.values()) {
-                    if (!child.isCancel) return true;
+                    // 本轮等待已到期子任务，未来的蹲点/定时任务留待后续执行。
+                    if (!child.isCancel && child.getExecTime() <= now) return true;
                 }
             }
         }
