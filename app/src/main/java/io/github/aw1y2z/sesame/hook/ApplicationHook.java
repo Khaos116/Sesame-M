@@ -31,7 +31,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -416,8 +415,8 @@ public class ApplicationHook extends XposedModule {
                                         return;
                                     }
                                     lastExecTime = System.currentTimeMillis();
+                                    FutureTask<Boolean> checkTask = new FutureTask<>(AntMemberRpcCall::check);
                                     try {
-                                        FutureTask<Boolean> checkTask = new FutureTask<>(AntMemberRpcCall::check);
                                         TaskLifecycle.Work checkWork = TaskLifecycle.enter();
                                         if (checkWork == null) return;
                                         Thread checkThread = new Thread(() -> {
@@ -427,25 +426,26 @@ public class ApplicationHook extends XposedModule {
                                         try { checkThread.start(); }
                                         catch (Throwable failed) { checkWork.close(); throw failed; }
                                         if (!checkTask.get(30, TimeUnit.SECONDS)) {
-                                            long waitTime = 10000 - System.currentTimeMillis() + lastExecTime;
-                                            if (waitTime > 0) {
-                                                Thread.sleep(waitTime);
-                                            }
-                                            Log.record("执行失败：检查超时");
-                                            reLogin();
+                                            Log.record("执行暂停：检查未通过，等待下次执行");
+                                            execDelayedHandler(checkInterval);
                                             return;
                                         }
                                         reLoginCount.set(0);
-                                    } catch (InterruptedException | ExecutionException |
-                                             TimeoutException e) {
-                                        Log.record("执行失败：检查中断");
-                                        reLogin();
+                                    } catch (InterruptedException e) {
+                                        Thread.currentThread().interrupt();
+                                        Log.record("执行取消：检查中断");
+                                        return;
+                                    } catch (TimeoutException e) {
+                                        Log.record("执行暂停：检查超时，等待下次执行");
+                                        execDelayedHandler(checkInterval);
                                         return;
                                     } catch (Exception e) {
-                                        Log.record("执行失败：检查异常");
-                                        reLogin();
+                                        Log.record("执行暂停：检查异常，等待下次执行");
+                                        execDelayedHandler(checkInterval);
                                         Log.printStackTrace(TAG, e);
                                         return;
+                                    } finally {
+                                        checkTask.cancel(true);
                                     }
                                     TaskCommon.update();
                                     ModelTask.startAllTask(false);

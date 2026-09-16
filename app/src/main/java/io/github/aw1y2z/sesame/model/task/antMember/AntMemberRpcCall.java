@@ -15,7 +15,19 @@ public class AntMemberRpcCall {
 
     public static Boolean check() {
         RpcEntity rpcEntity = ApplicationHook.requestObject("alipay.antmember.biz.rpc.member.h5.queryPointCert", "[{\"page\":" + 1 + ",\"pageSize\":" + 8 + "}]", 1, 0);
-        return rpcEntity != null && !rpcEntity.getHasError();
+        if (rpcEntity == null || !rpcEntity.getHasResult() || ApplicationHook.isOffline()) return false;
+        try {
+            JSONObject response = new JSONObject(rpcEntity.getResponseString());
+            String error = response.optString("error");
+            // 单接口冷却只限制会员任务，不能阻断其它模块或触发重新登录。
+            if ("RPC_SKIPPED".equals(error)) return true;
+            if (!error.isEmpty() && !"0".equals(error)) return false;
+            // 未实名等业务拒绝仍是有效响应；hasError 同时包含业务失败，不能当作掉线标志。
+            return response.length() > 0 && (response.has("success") || response.has("isSuccess")
+                    || response.has("resultCode") || response.has("retCode") || !rpcEntity.getHasError());
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /* ant member point */

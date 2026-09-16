@@ -3,6 +3,10 @@ from pathlib import Path
 import os
 import subprocess
 import tempfile
+import sys
+
+sys.dont_write_bytecode = True
+from audit_regressions.run import method
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "app/src/main/java/io/github/aw1y2z/sesame"
@@ -22,6 +26,74 @@ with tempfile.TemporaryDirectory(prefix="sesame-rpc-guard-") as tmp:
                  "rpc/bridge/NewRpcBridge.java", "rpc/bridge/OldRpcBridge.java", "rpc/bridge/RpcBridge.java", "rpc/bridge/RpcVersion.java"):
         code = (SOURCE / name).read_text(encoding="utf-8")
         write(name, code.replace("System.currentTimeMillis()", "io.github.aw1y2z.sesame.rpc.intervallimit.GuardCheck.now"))
+    write("model/task/antMember/AntMemberRpcCall.java", """
+package io.github.aw1y2z.sesame.model.task.antMember;
+import org.json.*;
+import io.github.aw1y2z.sesame.entity.RpcEntity;
+import io.github.aw1y2z.sesame.hook.ApplicationHook;
+public class AntMemberRpcCall {
+""" + method("model/task/antMember/AntMemberRpcCall.java", "    public static Boolean check()") + "\n}")
+    write("data/task/TaskLifecycle.java", (SOURCE / "data/task/TaskLifecycle.java").read_text(encoding="utf-8"))
+    hook = (SOURCE / "hook/ApplicationHook.java").read_text(encoding="utf-8")
+    end = hook.index("                                    TaskCommon.update();")
+    start = hook.rindex("                                    lastExecTime = System.currentTimeMillis();", 0, end)
+    # Only shorten the production wait constants; execute the real branches and lifecycle accounting.
+    preflight = hook[start:end].replace("get(30, TimeUnit.SECONDS)", "get(50, TimeUnit.MILLISECONDS)")
+    preflight = preflight.replace("10000 - System.currentTimeMillis()", "0 - System.currentTimeMillis()")
+    write("hook/PreflightCheck.java", """
+package io.github.aw1y2z.sesame.hook;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
+import io.github.aw1y2z.sesame.util.Log;
+public class PreflightCheck {
+    static final String TAG = "test";
+    static final int checkInterval = 60_000;
+    static long lastExecTime;
+    static int retries, logins, dispatched;
+    static AtomicInteger reLoginCount = new AtomicInteger();
+    static void execDelayedHandler(long delay) { assert delay == checkInterval; retries++; }
+    static void reLogin() { logins++; }
+    static class AntMemberRpcCall {
+        static int mode;
+        static volatile boolean interrupted;
+        static Boolean check() throws Exception {
+            if (mode == 1) return false;
+            if (mode == 2) throw new IllegalStateException("check failed");
+            if (mode == 3) {
+                try { Thread.sleep(5000); }
+                catch (InterruptedException e) { interrupted = true; throw e; }
+            }
+            return true;
+        }
+    }
+    static void dispatch() throws Exception {
+""" + preflight + """
+        dispatched++;
+    }
+    public static void main(String[] args) throws Exception {
+        for (int mode = 0; mode <= 3; mode++) {
+            retries = logins = dispatched = 0;
+            AntMemberRpcCall.mode = mode;
+            dispatch();
+            assert logins == 0 : "ordinary check failure must not open/close login Activity";
+            assert dispatched == (mode == 0 ? 1 : 0);
+            assert retries == (mode == 0 ? 0 : 1);
+            long deadline = System.nanoTime() + 1_000_000_000L;
+            while (!TaskLifecycle.isIdle() && System.nanoTime() < deadline) Thread.yield();
+            assert TaskLifecycle.isIdle() : "timed-out check still holds account lifecycle work";
+        }
+        assert AntMemberRpcCall.interrupted : "timed-out check was not cancelled";
+        retries = logins = dispatched = 0;
+        AntMemberRpcCall.mode = 3;
+        Thread.currentThread().interrupt();
+        dispatch();
+        assert Thread.interrupted() : "dispatcher swallowed interruption";
+        assert retries == 0 && logins == 0 && dispatched == 0;
+        System.out.println("Login preflight: retry without Activity launch, timeout cancellation and interrupt passed");
+    }
+}
+""")
     write("data/RuntimeInfo.java", """
 package io.github.aw1y2z.sesame.data;
 import java.util.*;
@@ -64,10 +136,15 @@ public class Log {
     write("hook/ApplicationHook.java", """
 package io.github.aw1y2z.sesame.hook;
 public class ApplicationHook {
+    public static io.github.aw1y2z.sesame.rpc.bridge.RpcBridge bridge;
+    public static io.github.aw1y2z.sesame.entity.RpcEntity requestObject(String m, String d, int c, int i) {
+        return bridge.requestObject(m, d, c, i);
+    }
     public static boolean offline;
     public static boolean isOffline() { return offline; }
     public static void setOffline(boolean v) { offline = v; }
-    public static void reLoginByBroadcast() { }
+    public static int loginBroadcasts;
+    public static void reLoginByBroadcast() { loginBroadcasts++; }
     public static ClassLoader getClassLoader() { return ApplicationHook.class.getClassLoader(); }
 }
 """)
@@ -75,7 +152,8 @@ public class ApplicationHook {
 package io.github.aw1y2z.sesame.model.normal.base;
 public class BaseModel {
     public record Value<T>(T getValue) { }
-    public static Value<Boolean> getTimeoutRestart() { return new Value<>(false); }
+    public static boolean timeoutRestart;
+    public static Value<Boolean> getTimeoutRestart() { return new Value<>(timeoutRestart); }
     public static Value<Long> getWaitWhenException() { return new Value<>(0L); }
 }
 """)
@@ -115,6 +193,8 @@ import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.RpcLog;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.rpc.bridge.*;
+import io.github.aw1y2z.sesame.hook.ApplicationHook;
+import io.github.aw1y2z.sesame.model.task.antMember.AntMemberRpcCall;
 
 public class GuardCheck {
     public static long now = 1_800_000_000_000L;
@@ -216,6 +296,39 @@ public class GuardCheck {
         Log.lastError = null;
         old.requestObject(new RpcEntity("com.alipay.antfarm.enterFarm", "[{}]"), 3, 0);
         assert Log.lastError == null;
+        for (RpcBridge transport : new RpcBridge[]{bridge, old}) {
+            ApplicationHook.bridge = transport;
+            reset(); calls = 0;
+            payload = "{\"success\":false,\"resultCode\":\"NOT_CERTIFIED\",\"memo\":\"请先实名认证\"}";
+            for (int n = 0; n < 4; n++) {
+                assert AntMemberRpcCall.check() : "member business denial/cooldown must not mean offline";
+            }
+            assert calls == 3 : "member cooldown must remain effective";
+            ApplicationHook.offline = true;
+            assert !AntMemberRpcCall.check() : "offline account must not pass";
+            ApplicationHook.offline = false;
+            for (String response : new String[]{"{\"success\":true}", "{\"isSuccess\":false}",
+                    "{\"error\":0,\"success\":false,\"resultCode\":\"DENIED\"}"}) {
+                reset(); payload = response;
+                assert AntMemberRpcCall.check() : response;
+            }
+            for (String response : new String[]{"{\"error\":1009}", "{\"error\":48}",
+                    "{\"error\":2000}", "{}", "not-json"}) {
+                reset(); payload = response;
+                assert !AntMemberRpcCall.check() : response;
+                ApplicationHook.offline = false;
+            }
+        }
+        ApplicationHook.bridge = bridge;
+        for (boolean restart : new boolean[]{false, true}) {
+            reset(); payload = "{\"error\":2000}";
+            io.github.aw1y2z.sesame.model.normal.base.BaseModel.timeoutRestart = restart;
+            ApplicationHook.loginBroadcasts = 0;
+            assert !AntMemberRpcCall.check();
+            assert ApplicationHook.offline : "real login expiry must still mark offline";
+            assert ApplicationHook.loginBroadcasts == (restart ? 1 : 0) : "timeout restart preference ignored";
+            ApplicationHook.offline = false;
+        }
     }
     static void pauses(String method, String args, long... durations) {
         reset();
@@ -232,6 +345,26 @@ public class GuardCheck {
     }
     public static void main(String[] ignored) throws Exception {
         bridges();
+        for (String method : new String[]{"other.fallback", "alipay.antforest.forest.h5.queryHomePage"}) {
+            for (String code : new String[]{"1009", "SYSTEM_ERROR", "3000", "48", "2000", "RPC_SKIPPED"}) {
+                for (Object error : new Object[]{"", JSONObject.NULL}) {
+                    reset();
+                    JSONObject missing = new JSONObject().put("success", false).put("resultCode", code);
+                    guard(method).record(missing);
+                    var expected = new java.util.HashMap<>(RuntimeInfo.getInstance().values);
+                    reset();
+                    guard(method).record(new JSONObject(missing.toString()).put("error", error));
+                    assert RuntimeInfo.getInstance().values.equals(expected)
+                            : "empty/null error must use resultCode: " + method + " / " + code;
+                }
+            }
+        }
+        reset();
+        guard("other.precedence").record(json("{\"success\":false,\"error\":\"1009\",\"resultCode\":\"SYSTEM_ERROR\"}"));
+        now += DAY - 1;
+        assert guard("other.precedence").shouldSkip() : "non-empty error must keep precedence";
+        now++;
+        assert !guard("other.precedence").shouldSkip();
         String farm = "com.alipay.antfarm.feedAnimal";
         String forest = "alipay.antmember.forest.h5.collectEnergy";
         String other = "com.alipay.antiep.receiveTaskAward";
@@ -313,6 +446,8 @@ public class GuardCheck {
                     "-d", tmp, *map(str, out.rglob("*.java"))], check=True)
     subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + cp,
                     "io.github.aw1y2z.sesame.rpc.intervallimit.GuardCheck"], check=True, timeout=30)
+    subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + cp,
+                    "io.github.aw1y2z.sesame.hook.PreflightCheck"], check=True, timeout=15)
 
 # Verify every transport goes through the shared guard before invoking the host RPC.
 for path, calls in (("rpc/bridge/NewRpcBridge.java", 2), ("rpc/bridge/OldRpcBridge.java", 1)):

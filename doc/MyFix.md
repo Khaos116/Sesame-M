@@ -12,6 +12,24 @@
 
 ## 变更记录
 
+### 2026-09-16（续）：RPC guard 空错误码回退修复
+
+审查确认 `record()` 的 `optString("error", resultCode)` 在 `error` 显式为空串时不回退，导致 `resultCode` 中的风控/系统错误等代码丢失。改为先读 `error`，为空再读 `resultCode`，非空 `error` 保持优先。未更改退避档位；guard 原本没有单独处理 `BUSINESS_REJECTED`，不能将这一策略缺口误称为空码回退已经解决。
+
+`checks/check_rpc_guard.py` 增加普通/核心请求中 error 缺失、空串、JSON null 的状态一致性检查，覆盖 `1009`、`SYSTEM_ERROR`、`3000`、`48`、`2000`、`RPC_SKIPPED`，并检查非空 error 优先级与暂停到期。修复前在空串 + 1009 场景按预期失败。上一条关于会员冷却与主调度重登的修复仍保留在当前未提交工作区，并非仅修改底层 guard。
+
+验证：修复后九项本地回归及 Java/Kotlin 编译全部通过，未做设备验证。
+
+### 2026-09-16：修复会员业务拒绝/冷却被误判为全局掉线、反复拉起登录页
+
+**反馈**：未开启自动切号，未认证小号仍反复提示“执行失败：检查超时”，并出现卡死/关闭 App；GR、AG 无同样表现。尚无设备日志，不能据此确认真实响应码或 ANR/崩溃原因。
+
+**代码根因与 fork 对照**：`MAIN_TASK` 每轮都调用会员 `queryPointCert` 做全局检查，与自动切号开关无关。GR 的新 RPC 桥只要响应包含 `success`/`isSuccess` 就不置 `hasError`，M 在 `bf3d67cb` 引入 `RpcRequestGuard.isFailure` 后，`success:false` 的业务拒绝也会置错；但 `AntMemberRpcCall.check()` 仍用 `!hasError` 判断能否运行，导致会员资格/认证等业务失败中断全部任务。累计失败触发的 `RPC_SKIPPED` 也继续被当成检查失败。主分发将所有 false 都写成“检查超时”，随后无条件 `reLogin()`；该方法拉起登录 Activity，恢复回调又 `finish()`，形成反复打开/关闭页面的路径。AG 当前 `runMainTaskLogic()` 核对 UID 后分发任务，没有这条会员接口前置检查。
+
+**修复**：保留现有前置检查，但区分 RPC 错误与有效的业务拒绝；会员接口本地冷却只限制会员请求，不阻断其它模块。无响应、错误 JSON、真实 RPC 错误或已离线仍不通过。检查不通过/异常/真实超时只按执行间隔重试，不再据此强制打开登录页；RPC 层对明确登录过期的处理及“超时重启”开关不变。分开记录中断与超时，保留线程中断标记，并在退出检查时取消 FutureTask，避免可中断的超时检查线程继续持有账号生命周期准入。
+
+**回归**：扩展 `checks/check_rpc_guard.py`，通过生产新旧 RPC 桥、guard 和实际 `check()` 方法构造业务拒绝与连续三次失败后的冷却，旧实现按预期失败、修复后通过（`NOT_CERTIFIED` 仅是模拟测试码，非设备抓包结果）。抽取生产主分发检查代码验证普通失败/异常/超时不会拉起 Activity、超时取消并释放准入、中断不重试。原八套本地检查及独立 App 无 Xposed 引用检查均通过；`:app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin` 编译通过（仅既有弃用/unchecked 警告）。另验证真实 `error=2000` 仍标记离线，重登广播遵守“超时重启”开关。未做支付宝实机回归，实际卡死/闪退仍需设备日志验证。
+
 ### 2026-09-15（续）：修复森林/庄园/金豆/其他日志仍按时间正序显示
 
 **根因**：四类分类日志在 `Log.java` 中写成 `HH:mm:ss.SSS 正文`，而 `MiuixLogViewerActivity.loadLogEntries()` 只识别带 `TAG:` 的格式。分类日志因此被当成续行合并进同一卡片，列表的 `asReversed()` 无法反转卡片内部的记录；运行/异常/抓包日志带标签，所以不受影响。此前仅检查列表反转便判断七类都倒序，遗漏了写入格式与解析格式的差异。

@@ -157,7 +157,8 @@ public final class RpcRequestGuard {
                         || result.has("retCode") || result.has("resultCode"))) state.put(key, "{}");
                 return;
             }
-            String code = result.optString("error", result.optString("resultCode"));
+            String code = result.optString("error");
+            if (code.isEmpty()) code = result.optString("resultCode");
             if ("2000".equals(code) || "RPC_SKIPPED".equals(code)) return;
             String message = errorMessage(result);
             int failures = now - saved.optLong("last") < DAY ? saved.optInt("failures") + 1 : 1;
