@@ -266,12 +266,12 @@ public class AntMemberRpcCall {
      *                 特色："14"、出行："1"、美食："11"、日用："12"、上新：""
      * @return 分类下商品列表
      */
-    public static String queryIndexNaviBenefitFlowV2(String userId, String naviCode) {
+    public static String queryIndexNaviBenefitFlowV2(String userId, String naviCode, int pageNum) {
         String sortStrategy = "INTELLIGENT_SORT";
         String upperPoint = "99999999";
         String uniqueId = System.currentTimeMillis() + naviCode + "0and" + upperPoint + sortStrategy + userId;
         String args =
-                "[\n" + "        {\n" + "            \"adCopyId\": \"\",\n" + "            \"benefitFlowSource\": \"REC\",\n" + "            \"cityCode\": \"\",\n" + "            \"excludeIds\": \"\",\n" + "            \"exposeChannel\": \"antmember\",\n" + "            \"fastTag\": \"\"," + "\n" + "            \"lowerPoint\": 0,\n" + "            \"naviCode\": \"" + naviCode + "\",\n" + "            \"pageNum\": 1,\n" + "            \"pageSize\": 50,\n" + "            \"requestSourceInfo\": \"-|feeds\",\n" + "            \"sortStrategy\": \"" + sortStrategy + "\",\n" + "            \"sourcePassMap\": {\n" + "                \"innerSource\": \"\",\n" + "                \"source\": \"myTab\",\n" + "                \"unid\": \"\"\n" + "            },\n" + "            \"stickyIdList\": [],\n" + "            \"tagCodeIdx\": -1,\n" + "            \"uniqueId\": \"" + uniqueId + "\",\n" + "            \"upperPoint\": " + upperPoint + ",\n" + "            \"withPointRange\": false\n" + "        }\n" + "    ]";
+                "[\n" + "        {\n" + "            \"adCopyId\": \"\",\n" + "            \"benefitFlowSource\": \"REC\",\n" + "            \"cityCode\": \"\",\n" + "            \"excludeIds\": \"\",\n" + "            \"exposeChannel\": \"antmember\",\n" + "            \"fastTag\": \"\"," + "\n" + "            \"lowerPoint\": 0,\n" + "            \"naviCode\": \"" + naviCode + "\",\n" + "            \"pageNum\": " + pageNum + ",\n" + "            \"pageSize\": 50,\n" + "            \"requestSourceInfo\": \"-|feeds\",\n" + "            \"sortStrategy\": \"" + sortStrategy + "\",\n" + "            \"sourcePassMap\": {\n" + "                \"innerSource\": \"\",\n" + "                \"source\": \"myTab\",\n" + "                \"unid\": \"\"\n" + "            },\n" + "            \"stickyIdList\": [],\n" + "            \"tagCodeIdx\": -1,\n" + "            \"uniqueId\": \"" + uniqueId + "\",\n" + "            \"upperPoint\": " + upperPoint + ",\n" + "            \"withPointRange\": false\n" + "        }\n" + "    ]";
         return ApplicationHook.requestString("com.alipay.alipaymember.biz.rpc.config.h5.queryIndexNaviBenefitFlowV2", args);
     }
 

@@ -94,6 +94,10 @@ public class MessageUtil {
         try {
             String resultCode = jo.optString("resultCode");
             if (!resultCode.equalsIgnoreCase("SUCCESS") && !resultCode.equals("100")) {
+                // CONFIG_NOT_EXIST 是正常响应（用户未配置权益），不打印错误日志
+                if ("CONFIG_NOT_EXIST".equals(resultCode)) {
+                    return false;
+                }
                 if (jo.has("resultDesc")) {
                     printErrorMessage(tag, jo, "resultDesc");
                 } else if (jo.has("resultView")) {
