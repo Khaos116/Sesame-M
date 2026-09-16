@@ -14,6 +14,18 @@
 
 ## 变更记录
 
+### 2026-09-16（续）：合并 MIUIX-api102 至 fab57956
+
+从 `47f099f3`（自动切号轮内15秒/整轮2小时冷却）执行 `git merge origin/MIUIX-api102`，合入 `3c516ddc`"会员积分兑换：获取列表不受开关限制，仅兑换用户勾选的权益"、`fab57956`"设置页添加文件权限引导并修复闪退"两个提交。四个文件冲突：
+
+- `AntMember.java` 三处小冲突是纯风格差异（upstream 沿用未转换前的裸 `get*()`/`new JSONObject()`），保留 my_dev 侧 `MyUtils.newJSONObject` + `opt*()` 写法。`memberPointExchangeBenefit()` 是真实功能冲突：upstream 新增多 deliveryId 依次尝试 + 导航分类码备用接口 `fetchBenefitsFromNavi`、权益列表无条件保存（不再受开关限制）；my_dev 侧已经独立做了"仅兑换用户勾选的权益"（`memberPointExchangeBenefitList` 选择集）但列表刷新仍被开关挡住（调用方 `if (memberPointExchangeBenefit.getValue())` 才调用整个方法）——这正是 upstream commit message 要修的问题。采纳 upstream 的完整结构（多 deliveryId、导航备用、调用方去掉开关前置判断，方法内部先无条件刷新列表、只在开关关闭时提前返回不兑换），按硬性规则把其中裸 `get*()`/`new JSONObject()` 全部换成 `opt*()` + 空指针防护 + `MyUtils.newJSONObject`，包括自动合并未标冲突但同样违规的 `fetchBenefitsFromNavi()`。
+- `AntOcean.java` 一处冲突同属风格差异（`seaAreaExtraCollectVO`/`ExtrafishVOs` 取值），保留 my_dev 侧空指针防护写法。
+- `MiuixMainActivity.kt`、`PermissionUtil.java` 的冲突是 upstream 把电量权限申请路径回退到了 2026-09-15 已经定位修复的旧版本（独立 App 进程直接构造 `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 跳转、无异常兜底；`checkBatteryPermissions()` 无参版本内部会碰 `ApplicationHook` 导致独立进程 `NoClassDefFoundError` 崩溃，见上方硬性规则第 4 条背景）。保留 my_dev 侧 `checkOrRequestBatteryPermissions(context)` 全套异常兜底 + `openBatterySettings` 回退。
+
+三项必查：合并未引入新的时间/日历逻辑；JSON 创建统一改为 `MyUtils.newJSONObject`；JSON 读取统一改为 `opt*()` + 判空，包括自动合并未标冲突但违规的代码。
+
+验证：`:app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin` 编译通过；现有 8 套本地回归检查（`check_account_switch`、`check_gr_followups`、`check_log_follow`、`check_manifest_permissions`、`check_merge_config`、`check_reward_cooldown`、`check_rpc_guard`、`check_standalone_no_xposed_class`）全部通过。未真机验证，未打包，未推送。commit `8eb74ad2`。
+
 ### 2026-09-16（续）：自动切号支持轮内15秒快速切换与整轮冷却机制
 
 原切号机制将每次切号间隔硬限制为最低 2 小时，导致多账号轮询时每个账号执行完后都要在当前账号空闲硬等 2 小时才切换下一个账号，体感完全没有切号效果。
