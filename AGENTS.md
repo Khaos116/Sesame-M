@@ -30,6 +30,7 @@ python checks/check_merge_config.py
 python checks/check_rpc_guard.py
 python checks/check_gr_followups.py
 python checks/check_manifest_permissions.py
+python checks/check_account_switch.py
 java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin --console=plain
 ```
 

@@ -41,16 +41,16 @@ public final class AccountSwitchSettingsDialog {
         switchStatus.setText(AccountSwitchStatus.label());
         content.addView(switchStatus);
         TextView description = new TextView(context);
-        description.setText("对本机全部历史登录账号生效，无需逐账号开启。间隔到期后等待任务和验证码处理结束再切换。切换失败后暂停，可关闭并保存，再重新开启。");
+        description.setText("开启时以当前账号为首个账号。每个账号执行完成后间隔15秒切换下一个；一轮全部账号执行完成后冷却设定的间隔（默认2小时），再切回首个账号开启下一轮。关闭开关可立即清空冷却。");
         description.setPadding(0, padding / 2, 0, padding);
         content.addView(description);
         TextView label = new TextView(context);
-        label.setText("切换间隔（秒，7200–86400，至少2小时）");
+        label.setText("整轮冷却间隔（秒，15–86400，默认7200秒/2小时）");
         content.addView(label);
         EditText seconds = new EditText(context);
         seconds.setInputType(InputType.TYPE_CLASS_NUMBER);
         seconds.setSingleLine(true);
-        seconds.setHint("开启时留空默认7200秒（2小时）");
+        seconds.setHint("留空默认7200秒（2小时）");
         seconds.setText(Integer.toString(saved.seconds));
         content.addView(seconds);
         enabled.setOnCheckedChangeListener((button, checked) -> {
@@ -75,7 +75,7 @@ public final class AccountSwitchSettingsDialog {
                             return;
                         }
                     } catch (NumberFormatException invalid) {
-                        seconds.setError("请输入7200–86400之间的整数秒数");
+                        seconds.setError("请输入15–86400之间的整数秒数");
                         seconds.requestFocus();
                         return;
                     }

@@ -40,6 +40,7 @@ public final class AccountSwitchController {
     private static boolean previouslyEnabled;
     private static long lastActivation = -1;
     private static String armedAccount;
+    private static volatile List<String> cachedAccountUids = new ArrayList<>();
     private static long nextHistoryCheck;
     private static long nextCountCheck;
     private static String lastStatus;
@@ -63,6 +64,9 @@ public final class AccountSwitchController {
             try {
                 List<HostAccountSwitchBridge.Account> accounts = BRIDGE.accounts();
                 AccountSwitchAccountCount.publish(accounts.size());
+                List<String> ids = new ArrayList<>();
+                for (HostAccountSwitchBridge.Account acc : accounts) ids.add(acc.uid);
+                cachedAccountUids = ids;
                 nextCountCheck = SystemClock.elapsedRealtime() + 30000;
                 BRIDGE.probe();
                 Log.record("自动切号只读检查：接口已就绪，本机历史登录账号数=" + accounts.size());
@@ -98,9 +102,15 @@ public final class AccountSwitchController {
             if (flight != null) { phase("CONFIRMING"); advanceFlight(); return; }
             if (isBusy()) { phase("PAUSED"); return; }
             long countNow = SystemClock.elapsedRealtime();
-            if (countNow >= nextCountCheck) {
+            if (countNow >= nextCountCheck || cachedAccountUids.isEmpty()) {
                 nextCountCheck = countNow + 30000;
-                try { AccountSwitchAccountCount.publish(BRIDGE.accounts().size()); }
+                try {
+                    List<HostAccountSwitchBridge.Account> accounts = BRIDGE.accounts();
+                    AccountSwitchAccountCount.publish(accounts.size());
+                    List<String> ids = new ArrayList<>();
+                    for (HostAccountSwitchBridge.Account acc : accounts) ids.add(acc.uid);
+                    cachedAccountUids = ids;
+                }
                 catch (Throwable unavailable) { AccountSwitchAccountCount.publish(-1); }
             }
             if (!settings.enabled) { phase("DISABLED"); return; }
@@ -111,17 +121,40 @@ public final class AccountSwitchController {
                 phase("WAIT_IDENTITY");
                 return;
             }
-            if (!previouslyEnabled || lastActivation != settings.activation || !Objects.equals(armedAccount, current)) {
-                if (lastActivation != settings.activation) STATE.disabled();
-                STATE.onRound(current);
+            if (!previouslyEnabled || lastActivation != settings.activation) {
+                STATE.onActivate(current);
                 armedAccount = current;
                 previouslyEnabled = true;
                 lastActivation = settings.activation;
+                status("已开启轮询，本轮起始账号设置为 " + current);
+            } else if (!Objects.equals(armedAccount, current)) {
+                STATE.onRound(current);
+                armedAccount = current;
             }
             long now = SystemClock.elapsedRealtime();
             boolean idle = ModelTask.isAllTaskIdle();
-            if (!STATE.ready(current, true, idle, false, now, settings.seconds)) {
-                phase(STATE.waitPhase(now, settings.seconds, idle));
+            String next = AccountSwitchState.next(cachedAccountUids, current);
+            if (next == null) {
+                if (now >= nextHistoryCheck) {
+                    try {
+                        List<HostAccountSwitchBridge.Account> live = BRIDGE.accounts();
+                        AccountSwitchAccountCount.publish(live.size());
+                        List<String> ids = new ArrayList<>();
+                        for (HostAccountSwitchBridge.Account a : live) ids.add(a.uid);
+                        cachedAccountUids = ids;
+                        next = AccountSwitchState.next(cachedAccountUids, current);
+                    } catch (Throwable ignored) { }
+                    nextHistoryCheck = now + 30000;
+                }
+                if (next == null) {
+                    phase("WAIT_HISTORY");
+                    status("历史登录账号不足两个，保持当前账号");
+                    STATE.defer();
+                    return;
+                }
+            }
+            if (!STATE.ready(current, true, idle, false, now, settings.seconds, next)) {
+                phase(STATE.waitPhase(now, settings.seconds, idle, next));
                 return;
             }
             if (captchaPending()) { phase("WAIT_CAPTCHA"); STATE.defer(); return; }
@@ -131,7 +164,8 @@ public final class AccountSwitchController {
             nextCountCheck = now + 30000;
             List<String> ids = new ArrayList<>();
             for (HostAccountSwitchBridge.Account account : accounts) ids.add(account.uid);
-            String next = AccountSwitchState.next(ids, current);
+            cachedAccountUids = ids;
+            next = AccountSwitchState.next(ids, current);
             if (next == null) {
                 phase("WAIT_HISTORY");
                 status("历史登录账号不足两个，保持当前账号");
@@ -163,8 +197,9 @@ public final class AccountSwitchController {
             AccountSwitchFlight started = new AccountSwitchFlight(current, next, SystemClock.elapsedRealtime(), AccountSwitchState.timeoutMillis(30));
             flight = started;
             HostAccountSwitchBridge.Account selected = target;
+            boolean roundEnd = STATE.isRoundEnd(next);
             phase("SWITCHING");
-            status("正在切换到下一个本机账号");
+            status(roundEnd ? "整轮冷却结束，正在切换回首个账号开启新一轮" : "本账号任务已完成，正在切换到下一个账号");
             Thread login = new Thread(() -> {
                 try { started.accepted = BRIDGE.switchTo(selected); }
                 catch (Throwable rejected) { started.accepted = false; }
@@ -202,7 +237,8 @@ public final class AccountSwitchController {
             releaseFreeze();
         }
         if (success && initialized) {
-            status("切换成功，新账号配置已加载");
+            boolean isStart = auth.equals(STATE.getRoundStartAccount());
+            status(isStart ? "新一轮已开始，首个账号配置已加载" : "切换成功，新账号配置已加载");
             STATE.onRound(auth);
             armedAccount = auth;
         } else {

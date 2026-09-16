@@ -5,10 +5,13 @@ package io.github.aw1y2z.sesame.hook;
  * 关闭时永远不会因为输入框内容非法而保存失败。移植自 GR 分支，见 doc/MyFix.md。
  */
 public final class AccountSwitchIntervalDraft {
-    /** 切号后至少间隔 2 小时才允许下一轮自动切换，避免频繁切号触发风控。 */
-    public static final int MIN_SECONDS = 7200;
+    /** 账号之间固定切换缓冲（秒）。 */
+    public static final int ACCOUNT_INTERVAL_SECONDS = 15;
+    /** 整轮冷却间隔下限（秒），允许短时间用于测试。 */
+    public static final int MIN_SECONDS = 15;
     public static final int MAX_SECONDS = 86400;
-    public static final int DEFAULT_SECONDS = MIN_SECONDS;
+    /** 默认整轮冷却间隔为 2 小时（7200秒）。 */
+    public static final int DEFAULT_SECONDS = 7200;
     private AccountSwitchIntervalDraft() { }
 
     public static int resolve(boolean enabled, String input, int previousSeconds) {

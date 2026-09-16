@@ -57,8 +57,9 @@ public final class AccountSwitchStatus {
             case "DISABLED": return "已关闭";
             case "WAIT_HOST": return "等待支付宝服务就绪";
             case "WAIT_IDENTITY": return "等待账号信息同步";
-            case "COUNTDOWN": return "等待设定的切换间隔";
-            case "WAIT_TASKS": return "间隔已到，等待当前业务任务结束";
+            case "COUNTDOWN": return "本账号任务已完成，等待切换下一个账号（15秒）";
+            case "ROUND_COOLDOWN": return "本轮全部账号已完成，正在整轮冷却";
+            case "WAIT_TASKS": return "等待当前业务任务结束";
             case "WAIT_CAPTCHA": return "等待验证码或登录页面处理完成";
             case "WAIT_HISTORY": return "等待至少两个有效账号";
             case "PAUSED": return "切换异常已暂停，请关闭保存后再开启";

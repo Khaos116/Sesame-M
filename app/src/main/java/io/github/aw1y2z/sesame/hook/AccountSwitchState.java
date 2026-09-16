@@ -11,19 +11,35 @@ import java.util.Objects;
  */
 final class AccountSwitchState {
     private String account;
+    private String roundStartAccount;
     private boolean armed;
     private boolean failed;
     private long idleSince = -1;
 
+    /** 开启开关或用户变更激活状态时调用，以当前账号为本轮首个账号并重置状态。 */
+    synchronized void onActivate(String account) {
+        if (account == null || account.isEmpty()) return;
+        this.roundStartAccount = account;
+        this.account = account;
+        this.armed = true;
+        this.failed = false;
+        this.idleSince = -1;
+    }
+
+    /** 每次切号完成或进入新账号时调用。 */
     synchronized void onRound(String account) {
         if (account == null || account.isEmpty()) return;
+        if (roundStartAccount == null) roundStartAccount = account;
         if (Objects.equals(this.account, account) && armed) return;
         this.account = account;
         armed = !failed;
         idleSince = -1;
     }
 
+    /** 关闭开关：清空状态、清空轮次起始账号与冷却。 */
     synchronized void disabled() {
+        account = null;
+        roundStartAccount = null;
         armed = false;
         failed = false;
         idleSince = -1;
@@ -35,22 +51,42 @@ final class AccountSwitchState {
         idleSince = -1;
     }
 
+    /** 判断下一个目标是否为本轮起始账号（即代表本轮全部账号已遍历完毕，即将开始新一轮）。 */
+    synchronized boolean isRoundEnd(String next) {
+        return roundStartAccount != null && roundStartAccount.equals(next);
+    }
+
+    synchronized String getRoundStartAccount() {
+        return roundStartAccount;
+    }
+
+    /** 轮内切换固定15秒；整轮结束切回首个账号时冷却设定的整轮间隔（默认2小时）。 */
+    synchronized long targetIntervalMillis(String next, int roundIntervalSeconds) {
+        if (isRoundEnd(next)) {
+            return intervalMillis(roundIntervalSeconds);
+        }
+        return AccountSwitchIntervalDraft.ACCOUNT_INTERVAL_SECONDS * 1000L;
+    }
+
     synchronized boolean ready(String current, boolean enabled, boolean idle,
-            boolean validationPending, long now, int intervalSeconds) {
+            boolean validationPending, long now, int roundIntervalSeconds, String next) {
         if (!enabled) { disabled(); return false; }
         if (!armed || failed) return false;
         if (!Objects.equals(account, current)) { armed = false; idleSince = -1; return false; }
+        if (!idle || validationPending) {
+            idleSince = -1;
+            return false;
+        }
         if (idleSince < 0 || now < idleSince) idleSince = now;
-        if (!idle || validationPending) return false;
-        if (now - idleSince < intervalMillis(intervalSeconds)) return false;
+        if (now - idleSince < targetIntervalMillis(next, roundIntervalSeconds)) return false;
         armed = false;
         return true;
     }
 
-    synchronized String waitPhase(long now, int intervalSeconds, boolean idle) {
+    synchronized String waitPhase(long now, int roundIntervalSeconds, boolean idle, String next) {
         if (failed) return "PAUSED";
-        if (idleSince < 0 || now < idleSince || now - idleSince < intervalMillis(intervalSeconds)) return "COUNTDOWN";
-        return idle ? "COUNTDOWN" : "WAIT_TASKS";
+        if (!idle) return "WAIT_TASKS";
+        return isRoundEnd(next) ? "ROUND_COOLDOWN" : "COUNTDOWN";
     }
 
     synchronized void defer() { if (!failed) armed = true; }
