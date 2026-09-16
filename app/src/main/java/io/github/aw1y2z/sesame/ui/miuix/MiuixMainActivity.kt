@@ -786,13 +786,19 @@ fun SettingsTab(activity: MiuixMainActivity, currentAccount: String) {
                     title = "立即申请权限",
                     onClick = {
                         try {
-                            PermissionUtil.checkOrRequestBatteryPermissions(context)
+                            if (PermissionUtil.checkOrRequestBatteryPermissions(context)) {
+                                ToastUtil.show(context, "支付宝已获准忽略电池优化")
+                            }
                         } catch (e: Exception) {
                             ToastUtil.show(context, "申请权限失败")
                         }
                     }
                 )
             }
+            ArrowPreference(
+                title = "手动设置支付宝后台权限",
+                onClick = { PermissionUtil.openBatterySettings(context) }
+            )
         }
     }
     Spacer(Modifier.height(16.dp))

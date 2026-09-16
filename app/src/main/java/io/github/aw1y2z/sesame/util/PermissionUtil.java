@@ -151,7 +151,7 @@ public class PermissionUtil {
             if (powerManager != null) {
                 return powerManager.isIgnoringBatteryOptimizations(ClassUtil.PACKAGE_NAME);
             }
-            return true;
+            return false;
         }
         return true;
     }
@@ -164,22 +164,34 @@ public class PermissionUtil {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 //跳转到权限页，请求权限
                 Intent appIntent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                appIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                appIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                appIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 appIntent.setData(Uri.parse("package:" + ClassUtil.PACKAGE_NAME));
-                //appIntent.setData(Uri.fromParts("package", ClassUtil.PACKAGE_NAME, null));
                 try {
                     context.startActivity(appIntent);
-                } catch (ActivityNotFoundException ex) {
-                    Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                    intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    context.startActivity(intent);
+                } catch (Exception ex) {
+                    Log.printStackTrace(TAG, ex);
+                    openBatterySettings(context);
                 }
             }
         } catch (Exception e) {
             Log.printStackTrace(TAG, e);
+            openBatterySettings(context);
         }
         return false;
+    }
+
+    /** 标准申请弹窗不可用或被厂商系统静默拦截时，提供手动设置入口。 */
+    public static void openBatterySettings(Context context) {
+        Intent details = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                .setData(Uri.parse("package:" + ClassUtil.PACKAGE_NAME));
+        try {
+            details.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(details);
+            ToastUtil.show(context, "请允许支付宝后台运行或设为不优化；若未打开，请在系统设置中手动调整");
+            return;
+        } catch (Exception e) {
+            Log.printStackTrace(TAG, e);
+        }
+        ToastUtil.show(context, "无法打开设置，请在系统设置中找到支付宝，允许后台运行或关闭电池优化");
     }
 }
