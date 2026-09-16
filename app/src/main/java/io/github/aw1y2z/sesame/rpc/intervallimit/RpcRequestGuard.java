@@ -168,7 +168,7 @@ public final class RpcRequestGuard {
                 return;
             }
             String code = result.optString("error");
-            if (code.isEmpty()) code = result.optString("resultCode");
+            if (code.isEmpty() || "0".equals(code)) code = result.optString("resultCode");
             if ("2000".equals(code) || "RPC_SKIPPED".equals(code)) return;
             String message = errorMessage(result);
             int failures = now - saved.optLong("last") < DAY ? saved.optInt("failures") + 1 : 1;
@@ -179,7 +179,9 @@ public final class RpcRequestGuard {
             } else if ("48".equals(code) || "TRANSPORT_ERROR".equals(code)) {
                 pause = core ? (failures < 3 ? MINUTE : 5 * MINUTE)
                         : (failures == 1 ? 5 * MINUTE : failures == 2 ? 30 * MINUTE : DAY);
-            } else if (RpcFailurePolicy.kind(code) == RpcFailurePolicy.Kind.SYSTEM_ERROR) {
+            } else if (RpcFailurePolicy.kind(code) == RpcFailurePolicy.Kind.SYSTEM_ERROR
+                    || ("com.alipay.antfarm.receiveFarmTaskAward".equals(request.getRequestMethod())
+                    && "102".equals(code) && message.startsWith("服务器正在开小差"))) {
                 pause = core ? (failures < 3 ? 5 * MINUTE : 30 * MINUTE)
                         : RpcFailurePolicy.SYSTEM_ERROR_MS;
             } else if (!core && failures >= 3) {

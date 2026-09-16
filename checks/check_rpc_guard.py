@@ -359,9 +359,41 @@ public class GuardCheck {
     }
     public static void main(String[] ignored) throws Exception {
         bridges();
+        // Device report: only farm reward 102 + busy message gets task-local transient backoff.
+        String awardMethod = "com.alipay.antfarm.receiveFarmTaskAward";
+        for (String taskId : new String[]{"cclyx_3bei_xjcmx_2", "cclyx_sgbhsd_1c_zm3c", "IP_chouchoule_juankuan"}) {
+            reset();
+            String scene = taskId.startsWith("IP_") ? "ANTFARM_IP_DRAW_TASK" : "ANTFARM_DAILY_DRAW_TASK";
+            String args = new JSONArray().put(new JSONObject().put("sceneCode", "ANTFARM")
+                    .put("taskSceneCode", scene).put("taskId", taskId)).toString();
+            JSONObject busy = new JSONObject().put("success", false)
+                    .put("resultCode", "102").put("memo", "服务器正在开小差，请稍后再试～");
+            for (long duration : new long[]{5*MIN, 5*MIN, 30*MIN}) {
+                assert !guard(awardMethod, args).shouldSkip();
+                guard(awardMethod, args).record(busy);
+                assert guard(awardMethod, args).shouldSkip() : "farm busy failure did not pause: " + taskId;
+                assert !guard(awardMethod, args.replace(taskId, "another-task")).shouldSkip();
+                assert !guard(awardMethod, args.replace(scene, "another-scene")).shouldSkip();
+                RuntimeInfo.account = "B";
+                assert !guard(awardMethod, args).shouldSkip();
+                RuntimeInfo.account = "A";
+                now += duration - 1;
+                assert guard(awardMethod, args).shouldSkip();
+                now++;
+                assert !guard(awardMethod, args).shouldSkip();
+            }
+        }
+        reset();
+        guard("com.alipay.antfarm.feedAnimal").record(json("{\"success\":false,\"resultCode\":102,\"memo\":\"服务器正在开小差，请稍后再试～\"}"));
+        assert !guard("com.alipay.antfarm.feedAnimal").shouldSkip();
+        for (String response : new String[]{"{\"success\":false,\"resultCode\":102,\"memo\":\"other business reason\"}",
+                "{\"success\":false,\"resultCode\":331,\"memo\":\"饲料槽已满\"}"}) {
+            guard(awardMethod).record(json(response));
+            assert !guard(awardMethod).shouldSkip();
+        }
         for (String method : new String[]{"other.fallback", "alipay.antforest.forest.h5.queryHomePage"}) {
             for (String code : new String[]{"1009", "SYSTEM_ERROR", "3000", "48", "2000", "RPC_SKIPPED"}) {
-                for (Object error : new Object[]{"", JSONObject.NULL}) {
+                for (Object error : new Object[]{"", JSONObject.NULL, 0}) {
                     reset();
                     JSONObject missing = new JSONObject().put("success", false).put("resultCode", code);
                     guard(method).record(missing);
