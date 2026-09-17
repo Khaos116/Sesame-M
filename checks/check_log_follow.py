@@ -101,7 +101,9 @@ fun main() {
     } finally { file.delete() }
 }
 '''.replace("@@UPDATE@@", method(source_path, "    fun updateEntries("))
-assert "reverseLayout" not in source and "itemsIndexed(entries.asReversed()" in source
+assert "reverseLayout" not in source
+assert re.search(r"itemsIndexed\(\s*filteredEntries\.asReversed\(\)", source), \
+    "list must render filteredEntries reversed without flipping layout direction"
 assert "LaunchedEffect(entries.size)" not in source
 with tempfile.TemporaryDirectory(prefix="sesame-log-check-") as temporary:
     work = Path(temporary)

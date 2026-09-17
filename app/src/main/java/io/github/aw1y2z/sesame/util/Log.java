@@ -65,7 +65,7 @@ public class Log {
 
     private static Logger getUserLogger(String type, String tag, String pattern) {
         String userId = UserIdMap.getCurrentUid();
-        String key = type + "::" + (userId == null || userId.isEmpty() ? "default" : userId);
+        String key = type + "::" + tag + "::" + (userId == null || userId.isEmpty() ? "default" : userId);
         return LOGGER_CACHE.computeIfAbsent(key, k -> XLog.tag(tag).printers(
                 new FilePrinter.Builder(FileUtil.getUserLogDirectory(userId).getPath())
                         .fileNameGenerator(new CustomDateFileNameGenerator(type))
@@ -77,6 +77,23 @@ public class Log {
 
     private static Logger runtimeLogger() {
         return getUserLogger("runtime", "RUNTIME", "{d HH:mm:ss.SSS} {t}: {m}");
+    }
+
+    /** 各模块向 runtime.log 写入时使用的专用 logger（不同 tag，同文件），供日志页按 tag 过滤 */
+    private static Logger runtimeForestLogger() {
+        return getUserLogger("runtime", "FOREST", "{d HH:mm:ss.SSS} {t}: {m}");
+    }
+
+    private static Logger runtimeGoldenBeansLogger() {
+        return getUserLogger("runtime", "GOLDENBEANS", "{d HH:mm:ss.SSS} {t}: {m}");
+    }
+
+    private static Logger runtimeFarmLogger() {
+        return getUserLogger("runtime", "FARM", "{d HH:mm:ss.SSS} {t}: {m}");
+    }
+
+    private static Logger runtimeOtherLogger() {
+        return getUserLogger("runtime", "OTHER", "{d HH:mm:ss.SSS} {t}: {m}");
     }
 
     private static Logger recordLogger() {
@@ -92,19 +109,19 @@ public class Log {
     }
 
     private static Logger forestLogger() {
-        return getUserLogger("forest", "FOREST", "{d HH:mm:ss.SSS} {m}");
+        return getUserLogger("forest", "FOREST", "{d HH:mm:ss.SSS} {t}: {m}");
     }
 
     private static Logger goldenBeansLogger() {
-        return getUserLogger("goldenbeans", "GOLDENBEANS", "{d HH:mm:ss.SSS} {m}");
+        return getUserLogger("goldenbeans", "GOLDENBEANS", "{d HH:mm:ss.SSS} {t}: {m}");
     }
 
     private static Logger farmLogger() {
-        return getUserLogger("farm", "FARM", "{d HH:mm:ss.SSS} {m}");
+        return getUserLogger("farm", "FARM", "{d HH:mm:ss.SSS} {t}: {m}");
     }
 
     private static Logger otherLogger() {
-        return getUserLogger("other", "OTHER", "{d HH:mm:ss.SSS} {m}");
+        return getUserLogger("other", "OTHER", "{d HH:mm:ss.SSS} {t}: {m}");
     }
 
     private static Logger errorLogger() {
@@ -174,38 +191,42 @@ public class Log {
 
     public static void forest(String s) {
         countModuleLog();
-        if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableForestLog()) {
-            return;
+        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
+            runtimeForestLogger().i(s);
         }
-        record(s);
-        forestLogger().i(s);
+        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableForestLog()) {
+            forestLogger().i(s);
+        }
     }
 
     public static void goldenBeans(String s) {
         countModuleLog();
-        if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableGoldenBeansLog()) {
-            return;
+        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
+            runtimeGoldenBeansLogger().i(s);
         }
-        record(s);
-        goldenBeansLogger().i(s);
+        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableGoldenBeansLog()) {
+            goldenBeansLogger().i(s);
+        }
     }
 
     public static void farm(String s) {
         countModuleLog();
-        if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableFarmLog()) {
-            return;
+        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
+            runtimeFarmLogger().i(s);
         }
-        record(s);
-        farmLogger().i(s);
+        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableFarmLog()) {
+            farmLogger().i(s);
+        }
     }
 
     public static void other(String s) {
         countModuleLog();
-        if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableOtherLog()) {
-            return;
+        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
+            runtimeOtherLogger().i(s);
         }
-        record(s);
-        otherLogger().i(s);
+        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableOtherLog()) {
+            otherLogger().i(s);
+        }
     }
 
     public static void debug(String s) {

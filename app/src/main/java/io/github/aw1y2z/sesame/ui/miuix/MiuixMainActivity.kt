@@ -878,9 +878,9 @@ fun TabTitleRow(title: String, account: String) {
 }
 
 @Composable
-fun CardColumn(content: @Composable ColumnScope.() -> Unit) {
+fun CardColumn(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(
-        Modifier
+        modifier
             .fillMaxWidth()
             .background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(16.dp))
             .padding(horizontal = 16.dp, vertical = 8.dp)

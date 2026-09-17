@@ -32,8 +32,10 @@ for key, path, signature in (
 ui = (SOURCE / "ui/miuix/MiuixSettingsActivity.kt").read_text(encoding="utf-8")
 assert "val current = field.configValue.toIntOrNull()" in ui
 assert "field.setConfigValue(parsed.toString())" in ui
-assert "sel = if (single) setOf(opt.id) else sel + opt.id" in ui, "single selection must replace the previous ID"
-assert "counts.filterKeys { it in sel }" in ui, "save must omit deselected counts"
+selection_ui = (SOURCE / "ui/miuix/MiuixSelectionEditActivity.kt").read_text(encoding="utf-8")
+assert "sel = setOf(opt.id)" in selection_ui, "single selection must replace the previous ID"
+assert "sel.forEach { id -> csmf?.add(id, counts[id] ?: 1) }" in selection_ui, \
+    "save must only persist counts for currently selected IDs"
 with tempfile.TemporaryDirectory(prefix="sesame-merge-check-") as temporary:
     source = Path(temporary) / "MergeConfigCheck.java"
     source.write_text(code, encoding="utf-8")

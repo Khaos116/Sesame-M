@@ -45,6 +45,8 @@ public final class ModelConfig implements Serializable {
         }
     }
 
+    public String getCode() { return code; }
+
     public Boolean hasModelField(String fieldCode) {
         return fields.containsKey(fieldCode);
     }

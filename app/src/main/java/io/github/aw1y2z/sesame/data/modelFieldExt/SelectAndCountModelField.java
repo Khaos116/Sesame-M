@@ -29,23 +29,37 @@ public class SelectAndCountModelField extends ModelField<Map<String, Integer>> i
 
     private List<? extends IdAndName> expandValue;
 
+    /** 滑块数值范围，默认 0..100 */
+    public final float valueRangeMin;
+    public final float valueRangeMax;
+
     public SelectAndCountModelField(String code, String name, Map<String, Integer> value, List<? extends IdAndName> expandValue) {
-        super(code, name, value);
-        this.expandValue = expandValue;
+        this(code, name, value, expandValue, "SELECT_AND_COUNT", 0, 100);
     }
 
     public SelectAndCountModelField(String code, String name, Map<String, Integer> value, SelectListFunc selectListFunc) {
-        super(code, name, value);
-        this.selectListFunc = selectListFunc;
+        this(code, name, value, selectListFunc, "SELECT_AND_COUNT", 0, 100);
     }
 
     public SelectAndCountModelField(String code, String name, Map<String, Integer> value, List<? extends IdAndName> expandValue, String description) {
-        super(code, name, value, description);
-        this.expandValue = expandValue;
+        this(code, name, value, expandValue, description, 0, 100);
     }
 
     public SelectAndCountModelField(String code, String name, Map<String, Integer> value, SelectListFunc selectListFunc, String description) {
+        this(code, name, value, selectListFunc, description, 0, 100);
+    }
+
+    public SelectAndCountModelField(String code, String name, Map<String, Integer> value, List<? extends IdAndName> expandValue, String description, int min, int max) {
         super(code, name, value, description);
+        this.valueRangeMin = (float) min;
+        this.valueRangeMax = (float) max;
+        this.expandValue = expandValue;
+    }
+
+    public SelectAndCountModelField(String code, String name, Map<String, Integer> value, SelectListFunc selectListFunc, String description, int min, int max) {
+        super(code, name, value, description);
+        this.valueRangeMin = (float) min;
+        this.valueRangeMax = (float) max;
         this.selectListFunc = selectListFunc;
     }
 

@@ -42,6 +42,16 @@
             tools:targetApi="n" />
 
         <activity
+            android:name=".ui.miuix.MiuixGroupFieldsActivity"
+            android:exported="false"
+            android:resizeableActivity="true" />
+
+        <activity
+            android:name=".ui.miuix.MiuixSelectionEditActivity"
+            android:exported="false"
+            android:resizeableActivity="true" />
+
+        <activity
             android:name=".ui.miuix.MiuixExtensionsActivity"
             android:exported="true"
             android:resizeableActivity="true"
@@ -74,6 +84,15 @@
             </intent-filter>
         </activity-alias>
 
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/provider_paths" />
+        </provider>
     </application>
 
 </manifest>

@@ -3,10 +3,15 @@ package io.github.aw1y2z.sesame.ui.miuix
 import android.content.Intent
 import android.os.Bundle
 import android.os.FileObserver
+import androidx.core.content.FileProvider
 import java.io.RandomAccessFile
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -26,6 +32,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -38,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -49,6 +58,7 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.basic.TextField
 import io.github.aw1y2z.sesame.util.diagnostics.RpcFailureJournal
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlinx.coroutines.channels.Channel
@@ -133,6 +143,10 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     }
     var entries by remember(logType) { mutableStateOf(loadLogEntries(file)) }
     val listState = rememberLazyListState()
+    // 搜索文本
+    var searchQuery by remember { mutableStateOf("") }
+    // Runtime 页面额外支持 tag 过滤
+    var selectedTag by remember { mutableStateOf<String?>(null) }
     fun updateEntries(updated: List<LogEntry>, reset: Boolean = false) {
         // 在替换数据前读取位置；index 0 是最新一条，排在列表顶部。
         val followTop = reset || entries.isEmpty() || !listState.canScrollBackward
@@ -166,6 +180,20 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
         onDispose { observer?.stopWatching() }
     }
 
+    // 计算可见条目:根据搜索文本和 tag 过滤
+    val filteredEntries = entries.filter { e ->
+        val matchSearch = searchQuery.isBlank() ||
+                (e.tag?.contains(searchQuery, ignoreCase = true) == true) ||
+                e.body.contains(searchQuery, ignoreCase = true)
+        val matchTag = selectedTag == null || e.tag == selectedTag
+        matchSearch && matchTag
+    }
+
+    // Runtime 页面:统计各 tag 出现次数,用于 Chip 显示
+    val tagCounts = remember(entries) {
+        entries.mapNotNull { it.tag }.groupBy { it }.mapValues { it.value.size }
+    }
+
     Scaffold(
         topBar = {
             LogTopBar(
@@ -191,42 +219,150 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                 onClear = {
                     if (FileUtil.clearFile(file)) {
                         updateEntries(loadLogEntries(file), reset = true)
+                        searchQuery = ""
+                        selectedTag = null
                         ToastUtil.show(context, "已清空")
                     }
-                }
+                },
+                onShare = if (logType == LogType.RUNTIME) {
+                    {
+                        val file = logType.file
+                        val uri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            file
+                        )
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            putExtra(Intent.EXTRA_SUBJECT, file.name)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        activity.startActivity(Intent.createChooser(shareIntent, "分享日志"))
+                    }
+                } else null
             )
         },
         containerColor = MiuixTheme.colorScheme.surface
     ) { padding ->
-        if (entries.isEmpty()) {
-            Box(
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            // ── 搜索框 ──────────────────────────────────────────────────
+            Row(
                 Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "(空)",
-                    fontSize = 14.sp,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                TextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = "",
+                    modifier = Modifier.weight(1f),
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Filled.Search,
+                            contentDescription = "搜索",
+                            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(start = 12.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            Text(
+                                "×",
+                                fontSize = 16.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.padding(end = 12.dp).clickable { searchQuery = "" }
+                            )
+                        }
+                    }
                 )
             }
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(vertical = 8.dp)
-            ) {
-                itemsIndexed(entries.asReversed(), key = { _, e -> "${e.lineNumber}-${e.hashCode()}" }) { _, entry ->
-                    LogEntryCard(entry)
+            // ── Runtime tag 过滤条 ──────────────────────────────────────
+            if (logType == LogType.RUNTIME && tagCounts.isNotEmpty()) {
+                val tags = tagCounts.keys.sorted()
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // 全部 Chip
+                    TagChip(
+                        label = "全部",
+                        count = entries.size,
+                        selected = selectedTag == null,
+                        onClick = { selectedTag = null }
+                    )
+                    // 各 tag Chip
+                    for (tag in tags) {
+                        TagChip(
+                            label = tag,
+                            count = tagCounts[tag]!!,
+                            selected = selectedTag == tag,
+                            onClick = { selectedTag = if (selectedTag == tag) null else tag }
+                        )
+                    }
+                }
+            }
+            // ── 日志列表 ────────────────────────────────────────────────
+            if (filteredEntries.isEmpty()) {
+                Box(
+                    Modifier.fillMaxSize().padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (searchQuery.isNotEmpty() || selectedTag != null) "无匹配日志" else "(空)",
+                        fontSize = 14.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    )
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    itemsIndexed(
+                        filteredEntries.asReversed(),
+                        key = { _, e -> "${e.lineNumber}-${e.hashCode()}" }
+                    ) { _, entry ->
+                        LogEntryCard(entry)
+                    }
                 }
             }
         }
+    }
+}
+
+/** Tag 过滤 Chip:圆角小药片,选中时高亮 */
+@Composable
+private fun TagChip(label: String, count: Int, selected: Boolean, onClick: () -> Unit) {
+    val bg = if (selected) MiuixTheme.colorScheme.primaryContainer
+        else MiuixTheme.colorScheme.surfaceContainer
+    val fg = if (selected) MiuixTheme.colorScheme.onPrimaryContainer
+        else MiuixTheme.colorScheme.onSurfaceVariantSummary
+    Row(
+        Modifier
+            .height(30.dp)
+            .clip(RoundedCornerShape(15.dp))
+            .background(bg)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClick() }
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(text = label, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = fg)
+        Text(
+            text = count.toString(),
+            fontSize = 11.sp,
+            color = fg.copy(alpha = 0.7f)
+        )
     }
 }
 
@@ -282,7 +418,8 @@ fun LogTopBar(
     onImport: (() -> Unit)? = null,
     onExport: (() -> Unit)? = null,
     onClear: (() -> Unit)? = null,
-    onExportSummary: (() -> Unit)? = null
+    onExportSummary: (() -> Unit)? = null,
+    onShare: (() -> Unit)? = null,
 ) {
     Column(
         Modifier
@@ -346,6 +483,15 @@ fun LogTopBar(
                     )
                 }
             }
+            if (onShare != null) {
+                IconButton(onClick = onShare) {
+                    Icon(
+                        imageVector = Icons.Filled.Share,
+                        contentDescription = "分享",
+                        tint = MiuixTheme.colorScheme.onBackground
+                    )
+                }
+            }
         }
     }
 }
@@ -387,7 +533,8 @@ private fun loadLogEntries(file: File?): List<LogEntry> {
     if (file == null || !file.exists()) {
         return emptyList()
     }
-    // 分类日志只有时间和正文；运行/异常/抓包日志另有 TAG: 前缀。
+    // 各类日志均已带 TAG: 前缀(如 "13:34:10.251 RUNTIME: 执行结束-庄园");
+    // TAG 可选是为了兼容旧日志文件里没有前缀的历史行。
     val timeRegex = Regex("^(\\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+(?:(\\w+):\\s*)?(.*)$")
     val entries = ArrayDeque<LogEntry>()
     return try {

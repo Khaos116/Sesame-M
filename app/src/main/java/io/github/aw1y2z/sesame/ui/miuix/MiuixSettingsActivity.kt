@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -34,7 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import io.github.aw1y2z.sesame.data.ConfigPreload
 import io.github.aw1y2z.sesame.data.ConfigV2
@@ -54,11 +58,8 @@ import io.github.aw1y2z.sesame.util.Log
 import io.github.aw1y2z.sesame.util.StringUtil
 import io.github.aw1y2z.sesame.util.ToastUtil
 import kotlin.math.roundToInt
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
@@ -71,14 +72,15 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 class MiuixSettingsActivity : MiuixBaseActivity() {
 
-    private var userId: String? = null
+    companion object {
+        const val EXTRA_USER_ID = "userId"
+    }
 
-    /** 三级导航状态：null=分组目录(二级)；非null=该分组字段页(三级) */
-    var currentGroup by mutableStateOf<ModelGroup?>(null)
+    private var userId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        userId = intent.getStringExtra("userId")
+        userId = intent.getStringExtra(EXTRA_USER_ID)
         Model.initAllModel()
         ConfigPreload.prepare(userId)
         setAppContent {
@@ -87,17 +89,24 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
     }
 
     override fun onBackPressed() {
-        if (currentGroup != null) {
-            // 在分组字段页(三级)按返回 → 回到分组目录(二级)
-            currentGroup = null
-        } else {
-            save()
-            super.onBackPressed()
-        }
+        save()
+        super.onBackPressed()
     }
 
+    /** 顶部返回按钮与系统返回统一入口：先保存再退出（与三级/四级保持一致）。 */
+    fun saveAndFinish() {
+        save()
+        finish()
+    }
+
+    /**
+     * 统一落盘入口（二级/三级/四级同款实现）：
+     * 先用 isModify() 短路「无改动」的情况，确认有改动后走 force=true，
+     * 避免 ConfigV2.save() 内部再重复做一次全量序列化比较。
+     */
     fun save() {
-        if (ConfigV2.isModify(userId) && ConfigV2.save(userId, false)) {
+        if (!ConfigV2.isModify(userId)) return
+        if (ConfigV2.save(userId, true)) {
             ToastUtil.show(this, "保存成功！")
             sendRestartIfNeeded()
         }
@@ -119,9 +128,6 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
 @Composable
 fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
     val context = LocalContext.current
-
-    // 三级导航状态:null=分组目录(二级)
-    val group = activity.currentGroup
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
@@ -162,17 +168,12 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
         }
     }
 
-    if (group != null) {
-        GroupFieldsPage(activity, userId, group)
-        return
-    }
-
-    // ============ 二级:分组目录(标题) ============
+    // ============ 二级:分组目录 ============
     Scaffold(
         topBar = {
             LogTopBar(
                 title = "配置设置",
-                onBack = { activity.finish() },
+                onBack = { activity.saveAndFinish() },
                 onImport = { importLauncher.launch("*/*") },
                 onExport = { exportLauncher.launch("[" + (userId ?: "默认") + "]-config_v2.json") },
                 onClear = { showDeleteDialog = true }
@@ -192,7 +193,14 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
             CardColumn {
                 ModelGroup.values().forEach { g ->
                     if (Model.getGroupModelConfig(g).isNotEmpty()) {
-                        ArrowPreference(title = g.getName(), onClick = { activity.currentGroup = g })
+                        ArrowPreference(title = g.getName(), onClick = {
+                            activity.startActivity(
+                                Intent(activity, MiuixGroupFieldsActivity::class.java).apply {
+                                    putExtra(MiuixGroupFieldsActivity.EXTRA_USER_ID, userId)
+                                    putExtra(MiuixGroupFieldsActivity.EXTRA_GROUP_CODE, g.name)
+                                }
+                            )
+                        })
                     }
                 }
             }
@@ -216,59 +224,21 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
     }
 }
 
-/** 三级:某大类分组下的全部配置字段(懒加载,避免整页全量组合造成的卡顿) */
+/**
+ * 配置字段编辑项（原地展开编辑）。
+ *
+ * 值为「只写内存」：任何变更只调用 setObjectValue() 落在 ConfigV2 单例上，不触发磁盘写入。
+ * 统一落盘由所在页面的退出流程负责（MiuixGroupFieldsActivity.saveAndFinish() / onBackPressed()），
+ * 避免每次拨开关、每次提交输入都做一次「全量序列化 + 写盘 + 备份检查」。
+ */
 @Composable
-fun GroupFieldsPage(activity: MiuixSettingsActivity, userId: String?, group: ModelGroup) {
-    val modelConfigs = Model.getGroupModelConfig(group).values.toList()
-    Scaffold(
-        topBar = {
-            SmallTopAppBar(
-                title = group.getName(),
-                navigationIcon = {
-                    IconButton(onClick = { activity.currentGroup = null }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
-                            tint = MiuixTheme.colorScheme.onBackground
-                        )
-                    }
-                }
-            )
-        },
-        containerColor = MiuixTheme.colorScheme.surface
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 12.dp),
-            contentPadding = PaddingValues(vertical = 8.dp)
-        ) {
-            modelConfigs.forEachIndexed { mcIdx, mc ->
-                item(key = "title-$mcIdx") {
-                    SmallTitle(text = mc.name ?: "")
-                }
-                mc.fields.values.toList().forEachIndexed { fIdx, field ->
-                    item(key = "field-$mcIdx-$fIdx") {
-                        FieldItem(field = field, onSave = {
-                            val success = ConfigV2.save(userId, false)
-                            if (!success) ToastUtil.show(activity, "保存失败")
-                        })
-                    }
-                }
-                item(key = "spacer-$mcIdx") {
-                    Spacer(Modifier.height(12.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
-    var showDialog by remember { mutableStateOf(false) }
-    when (field.type) {
-        "BOOLEAN" -> {
+fun FieldItem(field: ModelField<*>) {
+    // 用字段名唯一标识展开状态，避免 LazyColumn 复用导致错位
+    val fieldKey = "${field.type}:${field.name}"
+    var expanded by remember { mutableStateOf(false) }
+    var expandedFieldKey by remember { mutableStateOf<String?>(null) }
+    when {
+        field.type == "BOOLEAN" -> {
             var checked by remember { mutableStateOf(field.value as? Boolean ?: false) }
             SwitchPreference(
                 title = field.name ?: "",
@@ -277,12 +247,11 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
                 onCheckedChange = {
                     checked = it
                     field.setObjectValue(it)
-                    onSave()
                 }
             )
         }
 
-        "INTEGER", "MULTIPLY_INTEGER" -> {
+        field.type in listOf("INTEGER", "MULTIPLY_INTEGER") -> {
             val context = LocalContext.current
             val imf = field as? IntegerModelField
             val maxLimit = imf?.maxLimit
@@ -295,458 +264,179 @@ fun FieldItem(field: ModelField<*>, onSave: () -> Unit) {
                 maxLimit != null -> "（上限 ${maxLimit}）"
                 else -> "（下限 ${lowerLimit}）"
             }
+            if (expandedFieldKey != fieldKey) {
+                expanded = false
+                expandedFieldKey = null
+            }
             ArrowPreference(
                 title = field.name ?: "",
                 summary = if (limitHint.isEmpty()) current.toString() else "$current$limitHint",
-                onClick = { showDialog = true }
+                onClick = {
+                    expanded = !expanded
+                    expandedFieldKey = fieldKey
+                }
             )
-            if (showDialog) {
-                EditDialog(
-                    title = field.name ?: "",
-                    initial = current.toString(),
-                    multiline = false,
-                    onConfirm = { text ->
-                        val parsed = text.trim().toIntOrNull()
-                        if (parsed == null) {
-                            ToastUtil.show(context, "请输入有效整数")
-                        } else if (lowerLimit != null && parsed < lowerLimit) {
-                            ToastUtil.show(context, "最小值为 $lowerLimit")
-                        } else if (maxLimit != null && parsed > maxLimit) {
-                            ToastUtil.show(context, "最大值为 $maxLimit")
-                        } else {
-                            field.setConfigValue(parsed.toString())
-                            onSave()
-                        }
-                        showDialog = false
-                    },
-                    onDismiss = { showDialog = false }
-                )
+            if (expanded) {
+                val context2 = LocalContext.current
+                var text by remember { mutableStateOf(current.toString()) }
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                    TextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        label = "",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(text = "取消", onClick = { expanded = false; expandedFieldKey = null })
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(text = "保存", onClick = {
+                            val parsed = text.trim().toIntOrNull()
+                            if (parsed == null) {
+                                ToastUtil.show(context2, "请输入有效整数")
+                            } else if (lowerLimit != null && parsed < lowerLimit) {
+                                ToastUtil.show(context2, "最小值为 $lowerLimit")
+                            } else if (maxLimit != null && parsed > maxLimit) {
+                                ToastUtil.show(context2, "最大值为 $maxLimit")
+                            } else {
+                                field.setConfigValue(parsed.toString())
+                                expanded = false
+                                expandedFieldKey = null
+                            }
+                        })
+                    }
+                }
             }
         }
 
-        "STRING", "TEXT" -> {
-            val context = LocalContext.current
+        field.type in listOf("STRING", "TEXT") -> {
+            if (expandedFieldKey != fieldKey) {
+                expanded = false
+                expandedFieldKey = null
+            }
             ArrowPreference(
                 title = field.name ?: "",
                 summary = field.configValue,
-                onClick = { showDialog = true }
+                onClick = {
+                    expanded = !expanded
+                    expandedFieldKey = fieldKey
+                }
             )
-            if (showDialog) {
-                EditDialog(
-                    title = field.name ?: "",
-                    initial = field.configValue ?: "",
-                    multiline = false,
-                    onConfirm = { text ->
-                        field.setObjectValue(text)
-                        onSave()
-                        showDialog = false
-                    },
-                    onDismiss = { showDialog = false }
-                )
+            if (expanded) {
+                var text by remember { mutableStateOf(field.configValue ?: "") }
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                    TextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        label = "",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(text = "取消", onClick = { expanded = false; expandedFieldKey = null })
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(text = "保存", onClick = {
+                            field.setObjectValue(text)
+                            expanded = false
+                            expandedFieldKey = null
+                        })
+                    }
+                }
             }
         }
 
-        "READ_TEXT", "URL_TEXT" -> {
-            ArrowPreference(
-                title = field.name ?: "",
-                summary = field.configValue
-            )
+        field.type == "READ_TEXT" || field.type == "URL_TEXT" -> {
+            ArrowPreference(title = field.name ?: "", summary = field.configValue)
         }
 
-        "SELECT_ONE" -> {
-            val smf = field as? SelectOneModelField
-            val options = smf?.expandValue ?: emptyList()
-            val current = field.value as? String
-            ArrowPreference(
-                title = field.name ?: "",
-                summary = options.firstOrNull { it.id == current }?.name,
-                onClick = { showDialog = true }
-            )
-            if (showDialog) {
-                SelectionDialog(
-                    title = field.name ?: "",
-                    single = true,
-                    withCount = false,
-                    options = options,
-                    selectedIds = if (current != null) setOf(current) else emptySet(),
-                    onConfirm = { ids, _ ->
-                        field.setObjectValue(ids.firstOrNull())
-                        onSave()
-                        showDialog = false
-                    },
-                    onDismiss = { showDialog = false }
-                )
-            }
+        field.type in listOf("SELECT", "SELECT_ONE", "SELECT_AND_COUNT", "SELECT_AND_COUNT_ONE") -> {} // 由 GroupFieldsPage 处理
+        field.type == "EMPTY" -> {
+            val emf = field as? EmptyModelField
+            ArrowPreference(title = field.name ?: "", onClick = { emf?.clickRunner?.run() })
         }
 
-        "SELECT" -> {
-            val smf = field as? SelectModelField
-            val options = smf?.expandValue ?: emptyList()
-            val current = (field.value as? Set<*>)?.mapNotNull { it?.toString() }?.toSet() ?: emptySet()
-            ArrowPreference(
-                title = field.name ?: "",
-                summary = "已选 ${current.size} 项",
-                onClick = { showDialog = true }
-            )
-            if (showDialog) {
-                SelectionDialog(
-                    title = field.name ?: "",
-                    single = false,
-                    withCount = false,
-                    options = options,
-                    selectedIds = current,
-                    onConfirm = { ids, _ ->
-                        field.setObjectValue(ids)
-                        onSave()
-                        showDialog = false
-                    },
-                    onDismiss = { showDialog = false }
-                )
-            }
-        }
-
-        "SELECT_AND_COUNT_ONE" -> {
-            val smf = field as? SelectAndCountOneModelField
-            val options = smf?.expandValue ?: emptyList()
-            val kv = field.value as? KVNode<*, *>
-            val current = kv?.key?.toString()
-            val currentCount = kv?.value as? Int ?: 1
-            ArrowPreference(
-                title = field.name ?: "",
-                summary = options.firstOrNull { it.id == current }?.name,
-                onClick = { showDialog = true }
-            )
-            if (showDialog) {
-                SelectionDialog(
-                    title = field.name ?: "",
-                    single = true,
-                    withCount = true,
-                    options = options,
-                    selectedIds = if (current != null) setOf(current) else emptySet(),
-                    initialCounts = if (current != null) mapOf(current to currentCount) else emptyMap(),
-                    onConfirm = { ids, counts ->
-                        smf?.clear()
-                        ids.firstOrNull()?.let { smf?.add(it, counts[it] ?: 1) }
-                        onSave()
-                        showDialog = false
-                    },
-                    onDismiss = { showDialog = false }
-                )
-            }
-        }
-
-        "SELECT_AND_COUNT" -> {
-            val smf = field as? SelectAndCountModelField
-            val options = smf?.expandValue ?: emptyList()
-            val currentMap = field.value as? Map<*, *>
-            val current = currentMap?.keys?.mapNotNull { it?.toString() }?.toSet() ?: emptySet()
-            // 把已有次数传给 dialog，防止初始化时丢失
-            val currentCounts = currentMap?.mapValues { (_, v) -> (v as? Int) ?: 1 }?.mapKeys { (k, _) -> k as? String ?: "" }?.filterKeys { it in current } ?: emptyMap()
-            ArrowPreference(
-                title = field.name ?: "",
-                summary = "已选 ${current.size} 项",
-                onClick = { showDialog = true }
-            )
-            if (showDialog) {
-                SelectionDialog(
-                    title = field.name ?: "",
-                    single = false,
-                    withCount = true,
-                    options = options,
-                    selectedIds = current,
-                    initialCounts = currentCounts,
-                    onConfirm = { ids, counts ->
-                        smf?.clear()
-                        ids.forEach { smf?.add(it, counts[it] ?: 1) }
-                        onSave()
-                        showDialog = false
-                    },
-                    onDismiss = { showDialog = false }
-                )
-            }
-        }
-
-        "LIST" -> {
+        field.type == "LIST" -> {
             val list = (field.value as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+            if (expandedFieldKey != fieldKey) {
+                expanded = false
+                expandedFieldKey = null
+            }
             ArrowPreference(
                 title = field.name ?: "",
                 summary = list.joinToString(","),
-                onClick = { showDialog = true }
+                onClick = {
+                    expanded = !expanded
+                    expandedFieldKey = fieldKey
+                }
             )
-            if (showDialog) {
-                EditDialog(
-                    title = field.name ?: "",
-                    initial = list.joinToString("\n"),
-                    multiline = true,
-                    onConfirm = { text ->
-                        val newList = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
-                        field.setObjectValue(newList)
-                        onSave()
-                        showDialog = false
-                    },
-                    onDismiss = { showDialog = false }
-                )
+            if (expanded) {
+                var text by remember { mutableStateOf(list.joinToString("\n")) }
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                    TextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        label = "",
+                        singleLine = false,
+                        maxLines = 8,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(text = "取消", onClick = { expanded = false; expandedFieldKey = null })
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(text = "保存", onClick = {
+                            val newList = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
+                            field.setObjectValue(newList)
+                            expanded = false
+                            expandedFieldKey = null
+                        })
+                    }
+                }
             }
         }
 
-        "CHOICE" -> {
+        field.type == "CHOICE" -> {
             val cmf = field as? ChoiceModelField
             val choiceArray = cmf?.expandKey ?: emptyArray()
             val current = field.value as? Int ?: 0
+            if (expandedFieldKey != fieldKey) {
+                expanded = false
+                expandedFieldKey = null
+            }
             ArrowPreference(
                 title = field.name ?: "",
                 summary = choiceArray.getOrNull(current),
-                onClick = { showDialog = true }
+                onClick = {
+                    expanded = !expanded
+                    expandedFieldKey = fieldKey
+                }
             )
-            if (showDialog) {
-                ChoiceDialog(
-                    title = field.name ?: "",
-                    options = choiceArray,
-                    current = current,
-                    onConfirm = { idx ->
-                        field.setObjectValue(idx)
-                        onSave()
-                        showDialog = false
-                    },
-                    onDismiss = { showDialog = false }
-                )
+            if (expanded) {
+                var sel by remember { mutableStateOf(current) }
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                    choiceArray.forEachIndexed { index, opt ->
+                        RadioButtonPreference(
+                            title = opt,
+                            selected = sel == index,
+                            onClick = { sel = index }
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(text = "取消", onClick = { expanded = false; expandedFieldKey = null })
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(text = "保存", onClick = {
+                            field.setObjectValue(sel)
+                            expanded = false
+                            expandedFieldKey = null
+                        })
+                    }
+                }
             }
-        }
-
-        "EMPTY" -> {
-            val emf = field as? EmptyModelField
-            ArrowPreference(
-                title = field.name ?: "",
-                onClick = { emf?.clickRunner?.run() }
-            )
         }
 
         else -> {
-            Text(
-                text = field.name ?: "",
-                color = MiuixTheme.colorScheme.onBackground
-            )
-        }
-    }
-}
-
-@Composable
-fun EditDialog(
-    title: String,
-    initial: String,
-    multiline: Boolean,
-    onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var text by remember { mutableStateOf(initial) }
-    Dialog(onDismissRequest = onDismiss) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .background(MiuixTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-                .padding(16.dp)
-        ) {
-            Column {
-                Text(title, color = MiuixTheme.colorScheme.onBackground)
-                Spacer(Modifier.height(8.dp))
-                TextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = "",
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(text = "取消", onClick = onDismiss)
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(text = "保存", onClick = { onConfirm(text) })
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun SelectionDialog(
-    title: String,
-    single: Boolean,
-    withCount: Boolean,
-    options: List<IdAndName>,
-    selectedIds: Set<String>,
-    initialCounts: Map<String, Int> = emptyMap(),
-    onConfirm: (Set<String>, Map<String, Int>) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var sel by remember { mutableStateOf(selectedIds) }
-    // 将 counts 提升到顶层，避免为每个选项创建独立的 remember(opt.id) scope
-    // 防止 Dialog recomposition 与 LazyColumn prefetch 调度器冲突导致 crash
-    var counts by remember {
-        mutableStateOf(selectedIds.associateWith { initialCounts[it] ?: 1 })
-    }
-    var searchQuery by remember { mutableStateOf("") }
-    // 过滤后的列表
-    val filteredOptions = remember(options, searchQuery) {
-        if (searchQuery.isBlank()) options
-        else options.filter { it.name.contains(searchQuery, ignoreCase = true) || it.id.contains(searchQuery) }
-    }
-
-    Dialog(onDismissRequest = onDismiss) {
-        val maxDialogHeight = LocalConfiguration.current.screenHeightDp.dp * 0.8f
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = maxDialogHeight)
-                .background(MiuixTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-                .padding(16.dp)
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // ── 顶部固定 ──
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        title,
-                        color = MiuixTheme.colorScheme.onBackground,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (!single) {
-                        Spacer(Modifier.width(8.dp))
-                        TextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            label = "",
-                            modifier = Modifier.width(128.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-
-                // ── 中间：weight(fill = false) + verticalScroll ──
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    filteredOptions.forEach { opt ->
-                        key(opt.id) {
-                            OptionRow(
-                                opt = opt,
-                                single = single,
-                                withCount = withCount,
-                                checked = sel.contains(opt.id),
-                                count = counts[opt.id] ?: 1,
-                                onCheckChange = { checked ->
-                                    if (checked) {
-                                        sel = if (single) setOf(opt.id) else sel + opt.id
-                                        if (!counts.containsKey(opt.id)) {
-                                            counts = counts + (opt.id to (initialCounts[opt.id] ?: 1))
-                                        }
-                                    } else {
-                                        sel = sel - opt.id
-                                    }
-                                },
-                                onCountChange = { newCount ->
-                                    counts = counts + (opt.id to newCount)
-                                }
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                // ── 底部固定 ──
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(text = "取消", onClick = onDismiss)
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(
-                        text = "保存",
-                        onClick = { onConfirm(sel, counts.filterKeys { it in sel }) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * 每个选项独立成 Composable，本地状态随 id 一起生灭，不会错位。
- */
-@Composable
-private fun OptionRow(
-    opt: IdAndName,
-    single: Boolean,
-    withCount: Boolean,
-    checked: Boolean,
-    count: Int,
-    onCheckChange: (Boolean) -> Unit,
-    onCountChange: (Int) -> Unit
-) {
-    if (single) {
-        RadioButtonPreference(
-            title = opt.name,
-            selected = checked,
-            onClick = { onCheckChange(true) }
-        )
-        return
-    }
-
-    CheckboxPreference(
-        title = opt.name,
-        checked = checked,
-        onCheckedChange = onCheckChange
-    )
-
-    if (withCount && checked) {
-        var sliderValue by remember(count) { mutableFloatStateOf(count.toFloat()) }
-        SliderPreference(
-            title = "数量",
-            value = sliderValue,
-            valueRange = 0f..100f,
-            valueText = sliderValue.roundToInt().toString(),
-            onValueChange = { sliderValue = it },
-            onValueChangeFinished = { onCountChange(sliderValue.roundToInt()) }
-        )
-    }
-}
-
-@Composable
-fun ChoiceDialog(
-    title: String,
-    options: Array<String>,
-    current: Int,
-    onConfirm: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var sel by remember { mutableStateOf(current) }
-    Dialog(onDismissRequest = onDismiss) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .background(MiuixTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-                .padding(16.dp)
-        ) {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(title, color = MiuixTheme.colorScheme.onBackground)
-                Spacer(Modifier.height(8.dp))
-                options.forEachIndexed { index, opt ->
-                    RadioButtonPreference(
-                        title = opt,
-                        selected = sel == index,
-                        onClick = { sel = index }
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(text = "取消", onClick = onDismiss)
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(text = "保存", onClick = { onConfirm(sel) })
-                }
-            }
+            Text(text = field.name ?: "", color = MiuixTheme.colorScheme.onBackground)
         }
     }
 }

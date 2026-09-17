@@ -82,13 +82,13 @@ public class ConfigV2 {
         return modelFieldsMap.containsKey(modelCode);
     }
 
-    /*public ModelFields getModelFields(String modelCode) {
+    public ModelFields getModelFields(String modelCode) {
         return modelFieldsMap.get(modelCode);
-    }*/
+    }
 
-    /*public void removeModelFields(String modelCode) {
+    public void removeModelFields(String modelCode) {
         modelFieldsMap.remove(modelCode);
-    }*/
+    }
 
     /*public void addModelFields(String modelCode, ModelFields modelFields) {
         modelFieldsMap.put(modelCode, modelFields);
