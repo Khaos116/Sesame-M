@@ -11,10 +11,36 @@ import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.diagnostics.RpcFailureJournal;
 
 public class RpcFailureJournalCheck {
+    static void signInScenes() throws Exception {
+        RuntimeInfo.account = "signin-scenes";
+        String method = "com.alipay.loanpromoweb.promo.signin.query";
+        String a = "[{\"sceneId\":\"PLAY102632271\"}]";
+        String b = "[{\"sceneId\":\"PLAY102232206\"}]";
+        JSONObject failure = MyUtils.newJSONObject("{\"success\":false}");
+        JSONObject success = MyUtils.newJSONObject("{\"success\":true}");
+        for (int i = 0; i < 3; i++) {
+            RpcRequestGuard first = new RpcRequestGuard(new RpcEntity(method, a));
+            assert !first.shouldSkip();
+            first.record(failure);
+            RpcRequestGuard second = new RpcRequestGuard(new RpcEntity(method, b));
+            assert !second.shouldSkip() : "one signin scene must not pause another";
+            second.record(success);
+        }
+        assert new RpcRequestGuard(new RpcEntity(method, a)).shouldSkip()
+                : "another scene's success must not clear failure history";
+        new RpcRequestGuard(new RpcEntity(method, b)).record(failure);
+        JSONObject report = read(FileUtil.getCurrentUserLogDirectory(), GuardCheck.now);
+        assert report.optLong("totalFailures") == 4;
+        assert report.optJSONArray("entries").length() == 2 : "report must separate sceneId";
+        JSONObject first = report.optJSONArray("entries").optJSONObject(0);
+        assert first.optString("sceneId").equals("PLAY102632271") && first.optInt("count") == 3;
+        assert report.optJSONArray("entries").optJSONObject(1).optString("sceneId").equals("PLAY102232206");
+    }
     static JSONObject read(File dir, long now) throws Exception {
         return MyUtils.newJSONObject(Files.readString(RpcFailureJournal.fileFor(dir, now).toPath()));
     }
     public static void main(String[] args) throws Exception {
+        signInScenes();
         TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));
         long now = java.time.Instant.parse("2026-09-16T15:59:59Z").toEpochMilli();
         File a = new File(FileUtil.root, "journal-A"), b = new File(FileUtil.root, "journal-B");

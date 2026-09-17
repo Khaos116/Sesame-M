@@ -361,7 +361,8 @@ public class GuardCheck {
         bridges();
         // Device report: only farm reward 102 + busy message gets task-local transient backoff.
         String awardMethod = "com.alipay.antfarm.receiveFarmTaskAward";
-        for (String taskId : new String[]{"cclyx_3bei_xjcmx_2", "cclyx_sgbhsd_1c_zm3c", "IP_chouchoule_juankuan"}) {
+        for (String taskId : new String[]{"cclyx_3bei_xjcmx_2", "cclyx_sgbhsd_1c_zm3c", "IP_chouchoule_juankuan",
+                "cclyx_3bei_dgls_2", "cclyx_wdhysj_1cV2"}) {
             reset();
             String scene = taskId.startsWith("IP_") ? "ANTFARM_IP_DRAW_TASK" : "ANTFARM_DAILY_DRAW_TASK";
             String args = new JSONArray().put(new JSONObject().put("sceneCode", "ANTFARM")

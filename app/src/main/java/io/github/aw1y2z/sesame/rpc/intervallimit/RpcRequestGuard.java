@@ -40,7 +40,7 @@ public final class RpcRequestGuard {
         } catch (Exception ignored) {
             args = null;
         }
-        if (args == null) args = new JSONObject();
+        if (args == null) args = MyUtils.newJSONObject("{}");
         String scene = args.optString("sceneCode");
         core = method.contains("antforest") || method.contains(".forest.")
                 || (method.startsWith("com.alipay.antfarm.") && !method.contains("orchard"))
@@ -53,6 +53,9 @@ public final class RpcRequestGuard {
                 "bizkey", "bizSubType", "taskId", "recordId", "groupId", "activityId"}) {
             identity.put(args.optString(field));
         }
+        // Preserve existing keys for requests without sceneId.
+        String sceneId = args.optString("sceneId");
+        if (!sceneId.isEmpty()) identity.put("sceneId").put(sceneId);
         key = "RpcRequestGuard.v1." + identity;
         knownUnsupported = isKnownUnsupported(method, args);
     }

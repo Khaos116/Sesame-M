@@ -47,7 +47,7 @@ public final class RpcFailureJournal {
         if (args == null) args = MyUtils.newJSONObject("{}");
         JSONObject identity = MyUtils.newJSONObject("{}");
         identity.put("method", method);
-        for (String field : new String[]{"sceneCode", "taskSceneCode", "taskType", "taskId",
+        for (String field : new String[]{"sceneCode", "sceneId", "taskSceneCode", "taskType", "taskId",
                 "bizKey", "bizkey", "bizSubType", "recordId", "groupId", "activityId", "awardType"}) {
             String text = value(args, field);
             if (!text.isEmpty()) identity.put(field, text);
