@@ -79,6 +79,16 @@ public final class AccountSwitchController {
 
     public static boolean isBusy() { return BUSY.get(); }
 
+    private static boolean homeReady() {
+        try {
+            android.app.Activity top = SimplePageManager.getTopActivity();
+            return top != null && SimplePageManager.isAppForeground() && top.hasWindowFocus()
+                    && io.github.aw1y2z.sesame.util.ClassUtil.CURRENT_USING_ACTIVITY.equals(top.getClass().getName());
+        } catch (Throwable unavailable) {
+            return false;
+        }
+    }
+
     private static boolean captchaPending() {
         try {
             android.app.Activity top = SimplePageManager.getTopActivity();
@@ -153,8 +163,9 @@ public final class AccountSwitchController {
                     return;
                 }
             }
-            if (!STATE.ready(current, true, idle, false, now, settings.seconds, next)) {
-                phase(STATE.waitPhase(now, settings.seconds, idle, next));
+            boolean home = homeReady();
+            if (!STATE.ready(current, true, idle, !home, now, settings.seconds, next)) {
+                phase(home ? STATE.waitPhase(now, settings.seconds, idle, next) : "WAIT_HOME");
                 return;
             }
             if (captchaPending()) { phase("WAIT_CAPTCHA"); STATE.defer(); return; }
@@ -182,10 +193,10 @@ public final class AccountSwitchController {
             freeze = TaskLifecycle.freezeIfIdle();
             if (freeze == null) { STATE.defer(); phase("WAIT_TASKS"); return; }
             BUSY.set(true);
-            if (!AccountSwitchSettings.read().enabled || captchaPending()
+            if (!AccountSwitchSettings.read().enabled || !homeReady()
                     || !Objects.equals(port.currentUid(), current) || !Objects.equals(BRIDGE.currentUid(), current)) {
                 releaseFreeze();
-                STATE.defer();
+                STATE.waitForHome();
                 return;
             }
             HostAccountSwitchBridge.Account target = null;
@@ -199,9 +210,12 @@ public final class AccountSwitchController {
             HostAccountSwitchBridge.Account selected = target;
             boolean roundEnd = STATE.isRoundEnd(next);
             phase("SWITCHING");
-            status(roundEnd ? "整轮冷却结束，正在切换回首个账号开启新一轮" : "本账号任务已完成，正在切换到下一个账号");
+            status(roundEnd ? "本轮任务已完成，正在返回首个账号" : "本账号任务已完成，正在切换到下一个账号");
             Thread login = new Thread(() -> {
-                try { started.accepted = BRIDGE.switchTo(selected); }
+                try {
+                    if (!homeReady()) { started.pageBlocked = true; return; }
+                    started.accepted = BRIDGE.switchTo(selected);
+                }
                 catch (Throwable rejected) { started.accepted = false; }
                 finally { started.returned = true; }
             }, "Sesame-AccountLogin");
@@ -223,6 +237,13 @@ public final class AccountSwitchController {
             status("切号确认超时，保持任务暂停并等待宿主明确结果");
         }
         if (!active.returned) return;
+        if (active.pageBlocked) {
+            flight = null;
+            STATE.waitForHome();
+            releaseFreeze();
+            phase("WAIT_HOME");
+            return;
+        }
         String auth;
         try { auth = BRIDGE.currentUid(); } catch (Throwable notReady) { active.stable = 0; return; }
         String local = host.currentUid();
@@ -233,15 +254,20 @@ public final class AccountSwitchController {
         try { initialized = host.initialize(auth, freeze); }
         catch (Throwable failed) { initialized = false; }
         flight = null;
-        if (initialized) {
-            releaseFreeze();
-        }
         if (success && initialized) {
             boolean isStart = auth.equals(STATE.getRoundStartAccount());
-            status(isStart ? "新一轮已开始，首个账号配置已加载" : "切换成功，新账号配置已加载");
             STATE.onRound(auth);
             armedAccount = auth;
+            if (isStart) {
+                STATE.startCooldown(SystemClock.elapsedRealtime());
+                phase("ROUND_COOLDOWN");
+                status("已返回首个账号，开始切号冷却，当前账号任务正常运行");
+            } else {
+                status("切换成功，新账号配置已加载");
+            }
+            releaseFreeze();
         } else {
+            if (initialized) releaseFreeze();
             STATE.fail();
             status(initialized ? "本次切号未完整确认，轮询已暂停" : "新账号初始化失败，轮询已暂停");
         }

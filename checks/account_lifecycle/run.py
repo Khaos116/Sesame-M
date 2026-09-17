@@ -6,6 +6,8 @@ import subprocess
 import sys
 import tempfile
 
+sys.dont_write_bytecode = True
+
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "app/src/main/java/io/github/aw1y2z/sesame/data/task"
 
@@ -21,6 +23,7 @@ class BaseModel { static void taskRpcRequest() {} static Value getTimedTaskModel
 class Log { static final java.util.concurrent.atomic.AtomicInteger completions = new java.util.concurrent.atomic.AtomicInteger();
  static void record(String s) { if (s.equals("🏁全部任务已执行完成")) completions.incrementAndGet(); }
  static void startModuleLogCount() {} static int stopModuleLogCount() { return 1; }
+ static void error(String s) { }
  static void printStackTrace(Throwable t) { throw new AssertionError(t); } }
 class ThreadUtil { static void shutdownAndWait(Thread t, long n, java.util.concurrent.TimeUnit u) {
  if(t != null) { t.interrupt(); if(n >= 0) try { t.join(u.toMillis(n)); } catch(InterruptedException e) { Thread.currentThread().interrupt(); } } } }
@@ -60,6 +63,16 @@ with tempfile.TemporaryDirectory(prefix="sesame-account-check-") as directory:
     (out / "Stubs.java").write_text(STUBS, encoding="utf-8")
     shutil.copy(Path(__file__).with_name("AccountLifecycleCheck.java"), out)
     shutil.copy(Path(__file__).with_name("TaskCompletionCheck.java"), out)
+    # Compile the actual async entry methods with deterministic queued/rejected workers.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "audit_regressions"))
+    from run import method
+    async_source = Path(__file__).with_name("AsyncGameCheck.java.in").read_text(encoding="utf-8")
+    async_source = async_source.replace("/*REPORT*/", method(
+        "model/task/antGame/GameTask.java", "public void report("))
+    async_source = async_source.replace("/*START*/", method(
+        "model/task/antForest/WhackMole.java", "public static void start(Mode mode)"))
+    (out / "AsyncGameCheck.java").write_text(async_source, encoding="utf-8")
     subprocess.run(["javac", "-encoding", "UTF-8", "-d", str(out), *map(str, out.glob("*.java"))], check=True)
     subprocess.run(["java", "-cp", str(out), "io.github.aw1y2z.sesame.data.task.AccountLifecycleCheck"], check=True, timeout=30)
     subprocess.run(["java", "-cp", str(out), "io.github.aw1y2z.sesame.data.task.TaskCompletionCheck"], check=True, timeout=30)
+    subprocess.run(["java", "-cp", str(out), "io.github.aw1y2z.sesame.data.task.AsyncGameCheck"], check=True, timeout=30)

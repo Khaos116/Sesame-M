@@ -1,0 +1,72 @@
+package io.github.aw1y2z.sesame.data.task;
+
+import java.util.Random;
+
+public class AsyncGameCheck {
+    static Runnable queued;
+    static boolean reject, fail;
+    static int reports;
+
+    // Hold submitted work without starting it, making the admission race deterministic.
+    static class Thread {
+        final Runnable task;
+        Thread(Runnable task) { this.task = task; }
+        void start() {
+            if (reject) throw new IllegalStateException("rejected");
+            queued = task;
+        }
+        static void sleep(long millis) throws InterruptedException { }
+        static java.lang.Thread currentThread() { return java.lang.Thread.currentThread(); }
+    }
+    static class Executor {
+        void submit(Runnable task) { new Thread(task).start(); }
+    }
+    static class Game {
+        int requestsPerEgg = 1;
+        String cachedToken;
+        String login() { if (fail) throw new IllegalStateException("login failed"); return "token"; }
+        boolean executeSingleReport(String type, int index, int total) { reports++; return true; }
+        /*REPORT*/
+    }
+    static class Mole {
+        enum Mode { COMPATIBLE }
+        static final Executor EXECUTOR = new Executor();
+        static void startSuspend(Mode mode) {
+            if (fail) throw new IllegalStateException("game failed");
+            reports++;
+        }
+        /*START*/
+    }
+    static void require(boolean value, String message) {
+        if (!value) throw new AssertionError(message);
+    }
+    public static void main(String[] args) {
+        for (Runnable submit : new Runnable[] {
+                () -> new Game().report("test", 1), () -> Mole.start(Mole.Mode.COMPATIBLE) }) {
+            submit.run();
+            require(!TaskLifecycle.isIdle(), "queued game was reported idle");
+            require(TaskLifecycle.freezeIfIdle() == null, "switch admitted before game starts");
+            queued.run();
+            require(TaskLifecycle.isIdle(), "completed game leaked admission");
+            reject = true;
+            try { submit.run(); throw new AssertionError("submission should fail"); }
+            catch (IllegalStateException expected) { }
+            reject = false;
+            require(TaskLifecycle.isIdle(), "rejected game leaked admission");
+            fail = true;
+            submit.run();
+            try { queued.run(); throw new AssertionError("execution should fail"); }
+            catch (IllegalStateException expected) { }
+            fail = false;
+            require(TaskLifecycle.isIdle(), "failed game leaked admission");
+            TaskLifecycle.Freeze freeze = TaskLifecycle.freezeIfIdle();
+            require(freeze != null, "freeze missing");
+            queued = null;
+            submit.run();
+            require(queued == null, "game was submitted during account switch");
+            TaskLifecycle.thaw(freeze);
+        }
+        require(reports == 3, "games did not execute");
+        System.out.println("PASS: game admission covers queue, execution, rejection, failure and freeze");
+    }
+}

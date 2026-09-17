@@ -15,6 +15,7 @@ final class AccountSwitchState {
     private boolean armed;
     private boolean failed;
     private long idleSince = -1;
+    private long cooldownSince = -1;
 
     /** 开启开关或用户变更激活状态时调用，以当前账号为本轮首个账号并重置状态。 */
     synchronized void onActivate(String account) {
@@ -24,6 +25,7 @@ final class AccountSwitchState {
         this.armed = true;
         this.failed = false;
         this.idleSince = -1;
+        cooldownSince = -1;
     }
 
     /** 每次切号完成或进入新账号时调用。 */
@@ -31,15 +33,32 @@ final class AccountSwitchState {
         if (account == null || account.isEmpty()) return;
         if (roundStartAccount == null) roundStartAccount = account;
         if (Objects.equals(this.account, account) && armed) return;
+        cooldownSince = -1;
         this.account = account;
         armed = !failed;
         idleSince = -1;
+    }
+
+    synchronized void startCooldown(long now) {
+        cooldownSince = now;
+        idleSince = -1;
+    }
+
+    synchronized boolean isCoolingDown() { return cooldownSince >= 0; }
+
+    synchronized boolean cooldownPending(long now, int seconds) {
+        if (cooldownSince < 0) return false;
+        if (now < cooldownSince) cooldownSince = now;
+        if (now - cooldownSince < intervalMillis(seconds)) return true;
+        cooldownSince = -1;
+        return false;
     }
 
     /** 关闭开关：清空状态、清空轮次起始账号与冷却。 */
     synchronized void disabled() {
         account = null;
         roundStartAccount = null;
+        cooldownSince = -1;
         armed = false;
         failed = false;
         idleSince = -1;
@@ -60,11 +79,8 @@ final class AccountSwitchState {
         return roundStartAccount;
     }
 
-    /** 轮内切换固定15秒；整轮结束切回首个账号时冷却设定的整轮间隔（默认2小时）。 */
+    /** 每次切换均等待15秒；确认返回首个账号后立即单独计算切号冷却。 */
     synchronized long targetIntervalMillis(String next, int roundIntervalSeconds) {
-        if (isRoundEnd(next)) {
-            return intervalMillis(roundIntervalSeconds);
-        }
         return AccountSwitchIntervalDraft.ACCOUNT_INTERVAL_SECONDS * 1000L;
     }
 
@@ -73,6 +89,8 @@ final class AccountSwitchState {
         if (!enabled) { disabled(); return false; }
         if (!armed || failed) return false;
         if (!Objects.equals(account, current)) { armed = false; idleSince = -1; return false; }
+        // 冷却只限制下一次切号，不持有生命周期冻结；到期后重新计算空闲15秒。
+        if (cooldownPending(now, roundIntervalSeconds)) { idleSince = -1; return false; }
         if (!idle || validationPending) {
             idleSince = -1;
             return false;
@@ -85,11 +103,14 @@ final class AccountSwitchState {
 
     synchronized String waitPhase(long now, int roundIntervalSeconds, boolean idle, String next) {
         if (failed) return "PAUSED";
+        if (isCoolingDown()) return "ROUND_COOLDOWN";
         if (!idle) return "WAIT_TASKS";
-        return isRoundEnd(next) ? "ROUND_COOLDOWN" : "COUNTDOWN";
+        return "COUNTDOWN";
     }
 
     synchronized void defer() { if (!failed) armed = true; }
+
+    synchronized void waitForHome() { idleSince = -1; defer(); }
 
     static long intervalMillis(int seconds) {
         return Math.max(AccountSwitchIntervalDraft.MIN_SECONDS, Math.min(86400, seconds)) * 1000L;

@@ -18,6 +18,7 @@ import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.model.task.antForest.AntForestRpcCall;
+import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
 
 /**
  * 6秒拼手速打地鼠
@@ -111,7 +112,19 @@ public class WhackMole {
      * 异步启动打地鼠
      */
     public static void start(Mode mode) {
-        EXECUTOR.submit(() -> startSuspend(mode));
+        // 提交前计数，排队中的游戏也必须阻止完成提示和账号切换。
+        TaskLifecycle.Work work = TaskLifecycle.enter();
+        if (work == null) return;
+        try {
+            EXECUTOR.submit(() -> {
+                try (TaskLifecycle.Work admitted = work) {
+                    startSuspend(mode);
+                }
+            });
+        } catch (RuntimeException | Error failure) {
+            work.close();
+            throw failure;
+        }
     }
     
     /**

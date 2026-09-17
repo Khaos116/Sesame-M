@@ -30,7 +30,7 @@ public class SimplePageManager {
     
     private static WeakReference<Context> mContextRef;
     private static ClassLoader mClassLoader;
-    private static Activity topActivity;
+    private static volatile Activity topActivity;
     
     private static final ConcurrentHashMap<String, ActivityFocusHandler> activityFocusHandlerMap = new ConcurrentHashMap<>();
     

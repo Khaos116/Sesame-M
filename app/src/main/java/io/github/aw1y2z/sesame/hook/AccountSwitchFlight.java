@@ -11,6 +11,7 @@ class AccountSwitchFlight {
     final String source, target;
     final long deadline;
     volatile boolean returned, accepted;
+    volatile boolean pageBlocked;
     boolean timedOut, cancelled;
     int stable;
 

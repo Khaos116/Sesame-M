@@ -4,6 +4,7 @@ import io.github.aw1y2z.sesame.util.MyUtils;
 
 import static io.github.aw1y2z.sesame.hook.AlipayMiniMarkHelper.getAlipayMiniMark;
 
+import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
 import io.github.aw1y2z.sesame.hook.AlipayMiniMarkHelper;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.AuthCodeHelper;
@@ -156,30 +157,40 @@ public enum GameTask {
      */
     public void report(String gameType,int eggCount) {
         int totalNeeded = eggCount * (this.requestsPerEgg + 1); // 多1次确保网络请求不会错误
-        new Thread(() -> {
-            this.cachedToken = login();
-            if (this.cachedToken == null || this.cachedToken.isEmpty()) {
-                 Log.error("无法获取⚠️有效的Token，放弃上报任务");
-                return;
-            }
-
-            Log.record("开始执行🚀"+gameType+"游戏任务:目标" + eggCount + "个蛋，需请求" + totalNeeded + "次");
-            for (int i = 1; i <= totalNeeded; i++) {
-                if (!executeSingleReport(gameType,i, totalNeeded)) {
-                    // 具体的错误原因已在 executeSingleReport 中详细输出
-                    break;
-                }
-                if (i < totalNeeded) {
-                    try {
-                        Thread.sleep(new Random().nextInt(2001) + 1000); // 1000-3000ms随机休眠
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        break;
+        // 提交前计数，覆盖等待线程启动的窗口。
+        TaskLifecycle.Work work = TaskLifecycle.enter();
+        if (work == null) return;
+        try {
+            new Thread(() -> {
+                try (TaskLifecycle.Work admitted = work) {
+                    this.cachedToken = login();
+                    if (this.cachedToken == null || this.cachedToken.isEmpty()) {
+                         Log.error("无法获取⚠️有效的Token，放弃上报任务");
+                        return;
                     }
+
+                    Log.record("开始执行🚀"+gameType+"游戏任务:目标" + eggCount + "个蛋，需请求" + totalNeeded + "次");
+                    for (int i = 1; i <= totalNeeded; i++) {
+                        if (!executeSingleReport(gameType,i, totalNeeded)) {
+                            // 具体的错误原因已在 executeSingleReport 中详细输出
+                            break;
+                        }
+                        if (i < totalNeeded) {
+                            try {
+                                Thread.sleep(new Random().nextInt(2001) + 1000); // 1000-3000ms随机休眠
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                break;
+                            }
+                        }
+                    }
+                    Log.record("任务流程🏁运行结束");
                 }
-            }
-            Log.record("任务流程🏁运行结束");
-        }).start();
+            }).start();
+        } catch (RuntimeException | Error failure) {
+            work.close();
+            throw failure;
+        }
     }
 
     /**

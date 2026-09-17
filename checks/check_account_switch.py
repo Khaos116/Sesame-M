@@ -96,30 +96,29 @@ public class AccountSwitchCheck {
         assert "account_B".equals(AccountSwitchState.next(accounts, "account_A")) : "next after A is B";
         assert state.isRoundEnd("account_B") : "isRoundEnd should be true for B";
 
-        // At t2 (0s after A finishes idle): starts countdown, not ready
-        assert !state.ready("account_A", true, true, false, t2, 7200, "account_B") : "A not ready at t2";
-        assert "ROUND_COOLDOWN".equals(state.waitPhase(t2, 7200, true, "account_B")) : "phase should be ROUND_COOLDOWN at t2";
+        assert !state.ready("account_A", true, true, false, t2, 7200, "account_B");
+        assert "COUNTDOWN".equals(state.waitPhase(t2, 7200, true, "account_B"));
+        assert state.ready("account_A", true, true, false, t2 + 15000L, 7200, "account_B")
+                : "return to start must take 15s, not 2 hours";
 
-        // At 15s after A finishes: NOT ready, phase must be ROUND_COOLDOWN!
-        assert !state.ready("account_A", true, true, false, t2 + 15000L, 7200, "account_B") : "A not ready at 15s";
-        assert "ROUND_COOLDOWN".equals(state.waitPhase(t2 + 15000L, 7200, true, "account_B")) : "phase should be ROUND_COOLDOWN at 15s";
-
-        // At 7199s after A finishes: still cooling down
-        assert !state.ready("account_A", true, true, false, t2 + 7199000L, 7200, "account_B") : "A not ready at 7199s";
-        assert "ROUND_COOLDOWN".equals(state.waitPhase(t2 + 7199000L, 7200, true, "account_B")) : "phase should be ROUND_COOLDOWN at 7199s";
-
-        // At 7200s (2 hours): round cooldown complete, ready to switch to B!
-        assert state.ready("account_A", true, true, false, t2 + 7200000L, 7200, "account_B") : "A ready at 7200s";
-
-        // Switched back to B for new round!
-        long t3 = t2 + 7210000L;
+        long returned = t2 + 20000L;
         state.onRound("account_B");
-        assert "account_B".equals(state.getRoundStartAccount()) : "start account remains B in round 2";
-
-        // B finishes tasks in new round: next is C (!= B), interval is 15s again!
-        assert !state.ready("account_B", true, true, false, t3, 7200, "account_C") : "B round 2 not ready at t3";
-        assert "COUNTDOWN".equals(state.waitPhase(t3, 7200, true, "account_C")) : "B round 2 phase COUNTDOWN";
-        assert state.ready("account_B", true, true, false, t3 + 15000L, 7200, "account_C") : "B round 2 ready at 15s";
+        state.startCooldown(returned);
+        assert state.isCoolingDown();
+        assert "ROUND_COOLDOWN".equals(state.waitPhase(returned, 7200, true, "account_C"));
+        assert !state.ready("account_B", true, true, false, returned, 7200, "account_C");
+        assert state.cooldownPending(returned + 7199999L, 7200);
+        assert !state.cooldownPending(returned + 7200000L, 7200);
+        assert !state.isCoolingDown();
+        assert !state.ready("account_B", true, false, false, returned + 7200000L, 7200, "account_C");
+        assert !state.ready("account_B", true, true, false, returned + 7210000L, 7200, "account_C");
+        assert state.ready("account_B", true, true, false, returned + 7225000L, 7200, "account_C");
+        state.onRound("account_C");
+        state.onRound("account_A");
+        state.onRound("account_B");
+        state.startCooldown(returned + 7300000L);
+        assert state.cooldownPending(returned + 7359999L, 60);
+        assert !state.cooldownPending(returned + 7360000L, 60);
     }
 
     private static void testToggleResetAndNewAnchor() {
@@ -127,9 +126,11 @@ public class AccountSwitchCheck {
         state.onActivate("account_A");
         assert "account_A".equals(state.getRoundStartAccount());
 
+        state.startCooldown(100);
         // Toggle disabled: clears all state and cooldown
         state.disabled();
         assert state.getRoundStartAccount() == null;
+        assert !state.isCoolingDown();
         assert !state.ready("account_A", false, true, false, 100000L, 7200, "account_B");
 
         // Reactivate on Account C: C becomes the new anchor!
@@ -139,7 +140,7 @@ public class AccountSwitchCheck {
 
     private static void testStatusMessages() {
         assert "本账号任务已完成，等待切换下一个账号（15秒）".equals(AccountSwitchStatus.message("COUNTDOWN"));
-        assert "本轮全部账号已完成，正在整轮冷却".equals(AccountSwitchStatus.message("ROUND_COOLDOWN"));
+        assert "切号冷却中，当前账号任务正常运行".equals(AccountSwitchStatus.message("ROUND_COOLDOWN"));
         assert "已关闭".equals(AccountSwitchStatus.message("DISABLED"));
     }
 }
@@ -152,6 +153,30 @@ with tempfile.TemporaryDirectory(prefix="sesame-switch-check-") as tempdir:
     test_file = pkg_dir / "AccountSwitchCheck.java"
     test_file.write_text(TEST_CODE, encoding="utf-8")
 
-    classpath = os.pathsep.join([str(classes), str(temp_dir)])
-    subprocess.run(["javac", "-encoding", "UTF-8", "-cp", classpath, "-d", str(temp_dir), str(test_file)], check=True)
+    classpath = os.pathsep.join([str(temp_dir), str(classes)])
+    subprocess.run(["javac", "-encoding", "UTF-8", "-cp", classpath, "-d", str(temp_dir), str(test_file), *[str(SOURCE / (name + ".java")) for name in ("AccountSwitchState", "AccountSwitchIntervalDraft", "AccountSwitchStatus")]], check=True)
     subprocess.run(["java", "-ea", "-cp", classpath, "io.github.aw1y2z.sesame.hook.AccountSwitchCheck"], check=True)
+
+    # Compile the real controller and lifecycle with an isolated clock/host, no Android or RPC.
+    import re
+    controller_dir = temp_dir / "controller"
+    controller_dir.mkdir()
+    for name in ("AccountSwitchController", "AccountSwitchState", "AccountSwitchFlight", "AccountSwitchIntervalDraft", "AccountSwitchPagePolicy"):
+        source = (SOURCE / (name + ".java")).read_text(encoding="utf-8")
+        source = re.sub(r"^import (?:android|io\.github)\..*;\n", "", source, flags=re.M)
+        (controller_dir / (name + ".java")).write_text(source, encoding="utf-8")
+    lifecycle = (SOURCE.parent / "data/task/TaskLifecycle.java").read_text(encoding="utf-8")
+    lifecycle = lifecycle.replace("package io.github.aw1y2z.sesame.data.task;", "package io.github.aw1y2z.sesame.hook;")
+    (controller_dir / "TaskLifecycle.java").write_text(lifecycle, encoding="utf-8")
+    template = ROOT / "checks/account_lifecycle/AccountSwitchControllerCheck.java.in"
+    (controller_dir / "AccountSwitchControllerCheck.java").write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+    (controller_dir / "Activity.java").write_text(
+        "package android.app; public class Activity { public static boolean focus = true; public boolean hasWindowFocus() { return focus; } }", encoding="utf-8")
+    (controller_dir / "AlipayLogin.java").write_text(
+        "package com.eg.android.AlipayGphone; public class AlipayLogin extends android.app.Activity {}", encoding="utf-8")
+    (controller_dir / "ClassUtil.java").write_text(
+        'package io.github.aw1y2z.sesame.util; public class ClassUtil { public static String CURRENT_USING_ACTIVITY = "com.eg.android.AlipayGphone.AlipayLogin"; }', encoding="utf-8")
+    subprocess.run(["javac", "-encoding", "UTF-8", "-d", str(controller_dir),
+                    *map(str, controller_dir.glob("*.java"))], check=True)
+    subprocess.run(["java", "-ea", "-cp", str(controller_dir),
+                    "io.github.aw1y2z.sesame.hook.AccountSwitchControllerCheck"], check=True, timeout=30)

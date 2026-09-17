@@ -1,0 +1,182 @@
+package io.github.aw1y2z.sesame.hook;
+
+import java.util.List;
+
+class SystemClock { static long now = 1000; static long elapsedRealtime() { return now; } }
+class AccountSwitchSettings {
+    static class Values { boolean enabled = true; long activation = 1; int seconds = 60; }
+    static Values values = new Values();
+    static Values read() { return values; }
+}
+class AccountSwitchAccountCount { static void publish(int size) { } }
+class AccountSwitchStatus { static String phase; static void publish(String value) { phase = value; } }
+class Log { static void record(String value) { } }
+class UserIdMap { static String uid = "A"; static String getCurrentUid() { return uid; } }
+class ModelTask {
+    static boolean leaveOnStop;
+    static boolean isAllTaskIdle() { return TaskLifecycle.isIdle(); }
+    static void stopAllTask() {
+        if (leaveOnStop) SimplePageManager.top = new android.app.Activity();
+    }
+}
+class SimplePageManager {
+    static boolean foreground = true;
+    static android.app.Activity top = new com.eg.android.AlipayGphone.AlipayLogin();
+    static android.app.Activity getTopActivity() { return top; }
+    static boolean isAppForeground() { return foreground; }
+}
+class HostAccountSwitchBridge {
+    static volatile String uid = "A";
+    static class Account { final String uid; Account(String id) { uid = id; } }
+    List<Account> accounts() { return List.of(new Account("A"), new Account("B"), new Account("C")); }
+    String currentUid() { return uid; }
+    void probe() { }
+    boolean switchTo(Account target) { uid = target.uid; return true; }
+}
+
+public class AccountSwitchControllerCheck {
+    static int resumes;
+    static final AccountSwitchController.Host HOST = new AccountSwitchController.Host() {
+        public String readiness() { return "READY"; }
+        public String currentUid() { return HostAccountSwitchBridge.uid; }
+        public boolean initialize(String uid, TaskLifecycle.Freeze owner) {
+            try (TaskLifecycle.Work work = TaskLifecycle.enterInitialization(owner)) {
+                require(work != null, "initialization admission missing");
+                UserIdMap.uid = uid;
+                return true;
+            }
+        }
+        public void resume() {
+            require(TaskLifecycle.isOpen(), "resume while frozen");
+            resumes++;
+        }
+    };
+    static void require(boolean value, String message) {
+        if (!value) throw new AssertionError(message);
+    }
+    static Object field(String name) throws Exception {
+        var field = AccountSwitchController.class.getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(null);
+    }
+    static void tick() throws Exception {
+        var method = AccountSwitchController.class.getDeclaredMethod("tick");
+        method.setAccessible(true);
+        method.invoke(null);
+    }
+    static void next(String expected) throws Exception {
+        tick();
+        SystemClock.now += 15000;
+        tick();
+        var flight = (AccountSwitchFlight) field("flight");
+        require(flight != null, "switch did not start after 15 seconds");
+        long deadline = System.nanoTime() + 2_000_000_000L;
+        while (!flight.returned && System.nanoTime() < deadline) java.lang.Thread.yield();
+        require(flight.returned, "login worker did not return");
+        tick();
+        tick();
+        require(expected.equals(UserIdMap.uid), "wrong initialized account");
+    }
+    public static void main(String[] args) throws Exception {
+        var host = AccountSwitchController.class.getDeclaredField("host");
+        host.setAccessible(true);
+        host.set(null, HOST);
+        for (int scenario = 0; scenario < 4; scenario++) {
+            SimplePageManager.top = scenario == 0 ? null : scenario == 1
+                    ? new android.app.Activity() : new com.eg.android.AlipayGphone.AlipayLogin();
+            SimplePageManager.foreground = scenario != 2;
+            android.app.Activity.focus = scenario != 3;
+            tick();
+            SystemClock.now += 60000;
+            tick();
+            require(field("flight") == null && "A".equals(UserIdMap.uid), "switched away from home/focus");
+            require("WAIT_HOME".equals(AccountSwitchStatus.phase), "missing home wait status");
+        }
+        SimplePageManager.foreground = true;
+        android.app.Activity.focus = true;
+        tick();
+        SystemClock.now += 14999;
+        tick();
+        require(field("flight") == null, "returning home skipped fresh countdown");
+        // Navigate away between freezing tasks and the login worker's final check.
+        ModelTask.leaveOnStop = true;
+        SystemClock.now++;
+        tick();
+        var blocked = (AccountSwitchFlight) field("flight");
+        require(blocked != null, "missing pending login");
+        long timeout = System.nanoTime() + 2_000_000_000L;
+        while (!blocked.returned && System.nanoTime() < timeout) java.lang.Thread.yield();
+        require(blocked.returned && blocked.pageBlocked, "login worker ignored navigation");
+        tick();
+        require("A".equals(UserIdMap.uid) && TaskLifecycle.isOpen(), "blocked login changed account or leaked freeze");
+        ModelTask.leaveOnStop = false;
+        SimplePageManager.top = new com.eg.android.AlipayGphone.AlipayLogin();
+        resumes = 0;
+        next("B");
+        next("C");
+        try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
+            tick();
+            SystemClock.now += 60000;
+            tick();
+            require("C".equals(UserIdMap.uid), "switched while game active");
+        }
+        next("A");
+        require(resumes == 3, "returning to A did not immediately resume tasks");
+        require(!AccountSwitchController.isBusy() && TaskLifecycle.isOpen(), "cooldown froze normal tasks");
+        require(field("freeze") == null, "cooldown retained freeze ownership");
+        require("ROUND_COOLDOWN".equals(AccountSwitchStatus.phase), "returning A did not immediately start cooldown");
+        try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
+            require(work != null, "A cannot run periodic tasks during cooldown");
+            SystemClock.now += 59999;
+            tick();
+            require(field("flight") == null, "switched during cooldown");
+            SystemClock.now++;
+            tick();
+            require(field("flight") == null, "cooldown expiry switched over active tasks");
+            require(!((AccountSwitchState) field("STATE")).isCoolingDown(), "periodic tasks restarted cooldown");
+        }
+        require(resumes == 3 && TaskLifecycle.isOpen(), "cooldown expiry restarted A unnecessarily");
+        require("A".equals(UserIdMap.uid), "cooldown switched away from A");
+        SimplePageManager.top = new android.app.Activity();
+        SystemClock.now += 30000;
+        tick();
+        require(field("flight") == null, "cooldown expiry bypassed home gate");
+        SimplePageManager.top = new com.eg.android.AlipayGphone.AlipayLogin();
+        tick();
+        SystemClock.now += 14999;
+        tick();
+        require(field("flight") == null, "cooldown counted toward home idle delay");
+        next("B");
+        next("C");
+        next("A");
+        AccountSwitchSettings.values.enabled = false;
+        HostAccountSwitchBridge.uid = null;
+        tick();
+        require(TaskLifecycle.isOpen(), "disabling rotation froze tasks");
+        HostAccountSwitchBridge.uid = "A";
+        tick();
+        require(!AccountSwitchController.isBusy() && TaskLifecycle.isOpen(), "disable left tasks frozen");
+        require(!((AccountSwitchState) field("STATE")).isCoolingDown(), "disable retained cooldown");
+        AccountSwitchSettings.values.enabled = true;
+        AccountSwitchSettings.values.activation++;
+        next("B");
+        next("C");
+        next("A");
+        AccountSwitchSettings.values.activation++;
+        tick();
+        require(TaskLifecycle.isOpen(), "reactivation retained cooldown");
+        next("B");
+        next("C");
+        next("A");
+        HostAccountSwitchBridge.uid = "B";
+        tick();
+        require("A".equals(UserIdMap.uid) && field("flight") == null,
+                "controller reinitialized a manual switch without lifecycle protection");
+        // The existing account-reload path synchronizes config; controller only observes it.
+        UserIdMap.uid = "B";
+        tick();
+        require(!((AccountSwitchState) field("STATE")).isCoolingDown(), "manual switch retained old cooldown");
+        require(TaskLifecycle.isOpen(), "manual switch observation froze tasks");
+        System.out.println("PASS: cooldown permits A tasks; rotation waits for expiry, idle and home; reset and manual switch");
+    }
+}
