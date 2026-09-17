@@ -14,6 +14,21 @@
 
 ## 变更记录
 
+### 2026-09-17（续）：合并 MIUIX-api102 至 0dae0755
+
+从 `42b7a1fa`（自动切号冷却不再冻结账号任务）执行 `git merge origin/MIUIX-api102`，合入 `d0755133`"日志页新增搜索/过滤/分享功能，各模块日志增加tag"、`0dae0755`"新增 Miuix 配置三级/四级界面并统一保存策略"两个提交。三个文件冲突：
+
+- `Log.java`：my_dev 侧早先已把各模块 logger 从静态字段改成按账号懒加载的 `getUserLogger()` 工厂方法（多账号日志分目录）；upstream 侧新增了运行日志按 tag 过滤所需的专用 sub-logger（`runtimeForestLogger` 等，写入 runtime.log 但用各模块 tag）以及 `forest()`/`goldenBeans()`/`farm()`/`other()` 的双路写入逻辑（运行日志按查看开关写、模块专属日志按模块开关写，不再经过 `record()` 转发，顺带修掉了 `record()` 内部 `countModuleLog()` 导致的重复计数）。两边都是真实功能、位置重叠但意图不冲突：把 upstream 新增的四个 runtime-tag sub-logger 也改成 `getUserLogger()` 工厂方法（type 都是 `"runtime"`，tag 不同），发现 `getUserLogger()` 原缓存 key 只有 `type::userId`，同一 `type="runtime"` 不同 tag 会互相覆盖缓存拿错 logger——顺手把 tag 也编进缓存 key（`type::tag::userId`）修掉这个新引入的隐患。`forest`/`goldenBeans`/`farm`/`other` 四个方法体采用 upstream 的双路写入结构，logger 调用换成账号感知的工厂方法；`forestLogger()`/`goldenBeansLogger()`/`farmLogger()`/`otherLogger()` 的 flattener 也按 upstream 的新版本加上 `{t}:` 前缀，配合日志页新的按 tag 过滤。
+- `MiuixLogViewerActivity.kt`：my_dev 侧是已用 `checks/check_log_follow.py` 验证过的 FileObserver 实时刷新 + 列表不反转（最新在顶部）；upstream 侧新增搜索框、Runtime 页 tag 过滤 Chip、分享按钮。两者互不冲突但改的是同一批代码（`LogScreen`/`LogTopBar`），手动以 my_dev 的刷新/排序结构为骨架，把 upstream 的搜索/tag 过滤/分享功能整体嫁接进去：搜索与 tag 过滤在 my_dev 的 `entries` 基础上派生出 `filteredEntries` 供渲染，`onShare`/`onExportSummary` 两个可选回调都保留。同时清理了合并遗留的重复 `.padding(padding)`。
+- `MiuixSettingsActivity.kt`：upstream 是整体架构重写（三级分组页 `MiuixGroupFieldsActivity`、四级选择编辑页 `MiuixSelectionEditActivity` 拆成独立 Activity、字段改原地展开、退出统一落盘策略），my_dev 只有两处局部 bug 修复（整数字段读取改用 `field.configValue` 而非反射转型 `MultiplyIntegerModelField`；单选替换而非累加选中集合）落在被整体替换掉的旧代码里。确认 upstream 这次重写没有带上 my_dev 这两处修复后，直接采纳 upstream 全文件重写，把两处修复移植到新位置：整数字段读取修复重新打在新版 `FieldItem()`（该函数继续留在 `MiuixSettingsActivity.kt`，被三级页复用，还是同一处旧 bug）；单选修复核对后发现 upstream 拆出的新 `MiuixSelectionEditActivity.kt` 本身已经是 `if (single) RadioButtonPreference(...sel = setOf(opt.id)...) else CheckboxPreference(...)` 结构，等价于要修的效果，不需要重复打。
+- 自动合并未提示冲突的 `AntForestV2.java`（浇水字段范围 1~3）、`ConfigV2.java`（放开 `getModelFields`/`removeModelFields`）、`ModelConfig.java`（补充 `getCode`）、`SelectAndCountModelField.java`（新增 `valueRangeMin`/`Max`）：核对 upstream 改动，未见裸 JSON get/裸 `Calendar`。
+
+`checks/check_log_follow.py`、`checks/check_merge_config.py` 里断言旧代码具体写法（`itemsIndexed(entries.asReversed()`、`sel = if (single) setOf(opt.id) else sel + opt.id`、`counts.filterKeys { it in sel }`）随上面两处重构失效，按新代码的等价写法更新断言，语义不变（列表仍是不反转+asReversed 渲染；单选仍是替换而非累加；保存仍只落选中项的数量，只是从 `filterKeys` 换成对 `sel` 做 `forEach` 达到同样效果）。
+
+三项必查：合并未引入新的时间/日历逻辑；无新增 JSON 创建；JSON 读取无变化。
+
+验证：`:app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin` 编译通过；`checks/` 下九项 Python 回归（`account_lifecycle`、`audit_regressions`、`check_reward_cooldown`、`check_log_follow`、`check_merge_config`、`check_rpc_guard`、`check_gr_followups`、`check_manifest_permissions`、`check_account_switch`）全部通过。未真机验证，未打包，未推送。commit `a1f58a20`。
+
 ### 2026-09-17（续）：最终确认切回 A 即开始切号冷却，任务独立运行
 
 按用户最新确认简化起算点：确认返回起始账号 A 且配置初始化成功后立即开始默认7200秒/自定义的切号冷却，同时解冻并恢复任务。无需等待 A 首轮完成再计时；A 的正常周期任务不受冷却影响，也不重置计时。到期后仍须等待运行任务结束，并满足首页有焦点、空闲15秒才切换。删除上一版专为等待首轮完成添加的 ModelTask 世代完成标记、Host.tasksEnabled 和等待状态，保持任务调度与切号计时独立。
