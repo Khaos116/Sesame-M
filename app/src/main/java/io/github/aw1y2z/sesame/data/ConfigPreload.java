@@ -43,6 +43,16 @@ public final class ConfigPreload {
     private ConfigPreload() {
     }
 
+    /** 子页面可被系统单独恢复；正常跳转时保留尚未落盘的配置。 */
+    public static void ensurePrepared(String userId) {
+        String configUserId = StringUtil.isEmpty(userId) ? null : userId;
+        if (Model.getModelConfigMap().isEmpty() || !ConfigV2.INSTANCE.isInit()
+                || !java.util.Objects.equals(UserIdMap.getCurrentUid(), configUserId)) {
+            Model.initAllModel();
+            prepare(userId);
+        }
+    }
+
     public static void prepare(String userId) {
         UserIdMap.setCurrentUserId(userId);
         UserIdMap.load(userId);

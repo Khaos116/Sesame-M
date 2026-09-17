@@ -83,6 +83,7 @@ class MiuixGroupFieldsActivity : MiuixBaseActivity() {
         super.onCreate(savedInstanceState)
         userId = intent.getStringExtra(EXTRA_USER_ID)
         groupCode = intent.getStringExtra(EXTRA_GROUP_CODE)
+        ConfigPreload.ensurePrepared(userId)
         setAppContent {
             groupCode?.let { code ->
                 val group = ModelGroup.entries.find { it.name == code }

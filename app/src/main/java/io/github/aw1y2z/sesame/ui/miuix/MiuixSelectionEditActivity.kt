@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.aw1y2z.sesame.data.ConfigPreload
 import io.github.aw1y2z.sesame.data.ConfigV2
 import io.github.aw1y2z.sesame.data.Model
 import io.github.aw1y2z.sesame.data.ModelField
@@ -87,6 +88,7 @@ class MiuixSelectionEditActivity : MiuixBaseActivity() {
         groupCode = intent.getStringExtra(EXTRA_GROUP_CODE)
         fieldCode = intent.getStringExtra(EXTRA_FIELD_CODE)
         modelCode = intent.getStringExtra(EXTRA_MODEL_CODE)
+        ConfigPreload.ensurePrepared(userId)
         setAppContent {
             val modelCodeVal = modelCode
             val fieldCodeVal = fieldCode
@@ -132,7 +134,7 @@ fun SelectionEditContent(
     // 避免传入引用与单例不一致时读不到已保存的勾选。
     val liveField = ConfigV2.INSTANCE.getModelFields(modelCode)?.get(field.code) ?: field
     val single = liveField.type == "SELECT_ONE" || liveField.type == "SELECT_AND_COUNT_ONE"
-    val withCount = liveField.type == "SELECT_AND_COUNT" && (liveField.code == "waterFriendList" || liveField.code == "wateredFriendList")
+    val withCount = liveField.type == "SELECT_AND_COUNT" || liveField.type == "SELECT_AND_COUNT_ONE"
 
     @Suppress("UNCHECKED_CAST")
     val smf = when {
@@ -167,7 +169,7 @@ fun SelectionEditContent(
             }
         }
         val initialCounts: Map<String, Int> = when {
-            withCount -> (v as? Map<*, *>)
+            liveField.type == "SELECT_AND_COUNT" -> (v as? Map<*, *>)
                 ?.mapValues { (_, value) -> (value as? Int) ?: 1 }
                 ?.mapKeys { (k, _) -> k as? String ?: "" }
                 ?.filterKeys { it in ids } ?: emptyMap()
