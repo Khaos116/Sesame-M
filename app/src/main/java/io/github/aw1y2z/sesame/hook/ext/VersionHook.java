@@ -56,9 +56,15 @@ public class VersionHook {
     private static volatile boolean sConfigLoaded = false;
     private static volatile boolean sSamplesPrinted = false;
     private static volatile boolean sFakedLogged = false;
-    private static volatile boolean sEarlyEnabled = false;
-    /** 配置文件里手写的 "earlyEnable"：saveVersionConfig 覆盖写文件时要带回去，否则用户手动加的开关会被抹掉 */
-    private static volatile boolean sEarlyEnableConfigured = false;
+    /**
+     * 启动早期（配置未加载）时，是否对日志模块的读取提前伪装。缺省为开：读不到配置（首次运行、文件读取失败）
+     * 就按默认开启、默认版本 10.6.58.8000 处理；只有配置文件里明确关闭时 preloadEarlyEnable 才把它关掉。
+     */
+    private static volatile boolean sEarlyFake = true;
+    private static final AtomicInteger sEarlyFaked = new AtomicInteger();
+    private static final String LOGGING_CALLER_PREFIX = "com.alipay.mobile.common.logging.";
+    /** 配置文件里的 "earlyEnable"（缺省为真）：用户手写成 false 时，saveVersionConfig 覆盖写文件要带回去，否则会被抹掉 */
+    private static volatile boolean sEarlyEnableConfigured = true;
     /** 当前线程正在读真实版本（readRealVersionName）时不改写 */
     private static final ThreadLocal<Boolean> sReadingReal = new ThreadLocal<>();
     /** 标记当前线程正处在 int 重载里，避免把它内部委托到 Flags 重载的那次重复统计 */
@@ -104,7 +110,7 @@ public class VersionHook {
             sEnableVersionHook = config.optBoolean("enableVersionHook", true);
             sCachedVersionName = config.optString("versionName", DEFAULT_VERSION_NAME);
             sCachedVersionCode = config.optLong("versionCode", DEFAULT_VERSION_CODE);
-            sEarlyEnableConfigured = config.optBoolean("earlyEnable", false);
+            sEarlyEnableConfigured = config.optBoolean("earlyEnable", true);
 
             // ≤1.1.4 自动建的配置是“关闭、版本名空、版本号 0”，从没被用户改过；1.1.5 起默认开启，
             // 而 ensureVersionConfig 只在文件不存在时才写默认值，不迁移的话老用户永远是关闭状态
@@ -126,11 +132,31 @@ public class VersionHook {
     }
 
     /**
-     * 记下读取来源。R8 会把本模块的 hook 框架类改成 yb2/ac2 这类名字，按包名过滤不掉，
-     * 所以改成：在栈顶 20 帧里找到最后一个 hook 机制帧（LSPosed/Vector/libxposed/被 hook 的
-     * ApplicationPackageManager），取它之后的 4 帧作为真正的调用方。
-     * 每种类型（早读/已伪装/关闭…）各留 MAX_SAMPLES_PER_KIND 条；启动早期只缓存不直接打日志，避免日志系统未就绪。
+     * 真正的调用方帧（最多 max 个）。R8 会把本模块的 hook 框架类改成 yb2/ac2 这类名字，按包名过滤不掉，
+     * 所以在栈顶 20 帧里找最后一个 hook 机制帧（LSPosed/Vector/LSPatch/libxposed/被 hook 的
+     * ApplicationPackageManager），取它之后的帧。
      */
+    private static List<StackTraceElement> callerFrames(int max) {
+        StackTraceElement[] stack = new Throwable().getStackTrace();
+        int start = 0;
+        for (int i = 0; i < Math.min(stack.length, 24); i++) {
+            String c = stack[i].getClassName();
+            if (c.contains("LSPHooker") || c.contains("VectorChain") || c.contains("VectorNativeHooker")
+                    || c.startsWith("LSPatch_") || c.startsWith("org.lsposed") || c.startsWith("org.matrix.vector")
+                    || c.startsWith("io.github.libxposed") || c.startsWith("android.app.ApplicationPackageManager")) {
+                start = i + 1;
+            }
+        }
+        List<StackTraceElement> frames = new ArrayList<>();
+        for (int i = start; i < stack.length && frames.size() < max; i++) {
+            if (!stack[i].getClassName().startsWith("java.lang.reflect")) {
+                frames.add(stack[i]);
+            }
+        }
+        return frames;
+    }
+
+    /** 每种类型各留 MAX_SAMPLES_PER_KIND 条读取来源；启动早期只缓存不直接打日志，避免日志系统未就绪。 */
     private static void sample(String kind) {
         synchronized (sSamples) {
             int same = 0;
@@ -143,28 +169,27 @@ public class VersionHook {
                 return;
             }
         }
-        StackTraceElement[] stack = new Throwable().getStackTrace();
-        int start = 0;
-        for (int i = 0; i < Math.min(stack.length, 20); i++) {
-            String c = stack[i].getClassName();
-            if (c.contains("LSPHooker") || c.contains("VectorChain") || c.startsWith("org.lsposed")
-                    || c.startsWith("io.github.libxposed") || c.startsWith("android.app.ApplicationPackageManager")) {
-                start = i + 1;
-            }
-        }
         StringBuilder callers = new StringBuilder();
-        int n = 0;
-        for (int i = start; i < stack.length && n < 4; i++) {
-            String c = stack[i].getClassName();
-            if (c.startsWith("java.lang.reflect")) {
-                continue;
-            }
-            if (n++ > 0) {
+        for (StackTraceElement e : callerFrames(4)) {
+            if (callers.length() > 0) {
                 callers.append('<');
             }
-            callers.append(c).append('.').append(stack[i].getMethodName());
+            callers.append(e.getClassName()).append('.').append(e.getMethodName());
         }
         sSamples.add(kind + "@" + callers);
+    }
+
+    /**
+     * 读取方是不是支付宝的日志/上下文模块（LogContextImpl 启动时读一次版本并缓存，是发给服务端的“应用版本”的
+     * 最可能来源）。只看紧邻的 2 个调用帧，避免把同一启动链上更外层的 quinox UpgradeHelper 等误算进来。
+     */
+    private static boolean fromLoggingModule() {
+        for (StackTraceElement e : callerFrames(2)) {
+            if (e.getClassName().startsWith(LOGGING_CALLER_PREFIX)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -174,8 +199,9 @@ public class VersionHook {
      */
     public static String diagnostics() {
         StringBuilder sb = new StringBuilder("版本伪装诊断：开关=").append(sEnableVersionHook ? "开" : "关")
-                .append("，Hook=").append(isVersionHookRegistered ? "已注册" : "未注册").append(sEarlyEnabled ? "，提前生效=是" : "")
+                .append("，Hook=").append(isVersionHookRegistered ? "已注册" : "未注册").append(sEarlyFake ? "，提前伪装=开" : "，提前伪装=关")
                 .append("，支付宝读取自身版本：开关就绪前").append(sEarlyReads.get()).append("次(真实版本)")
+                .append("，早期伪装(日志模块)").append(sEarlyFaked.get()).append("次")
                 .append("，已伪装").append(sFakedReads.get()).append("次")
                 .append("，开关关闭时").append(sOffReads.get()).append("次")
                 .append("，PackageInfoFlags重载").append(sFlagsReads.get()).append("次");
@@ -195,8 +221,8 @@ public class VersionHook {
             config.put("enableVersionHook", sEnableVersionHook);
             config.put("versionName", sCachedVersionName);
             config.put("versionCode", sCachedVersionCode);
-            if (sEarlyEnableConfigured) {
-                config.put("earlyEnable", true);
+            if (!sEarlyEnableConfigured) {
+                config.put("earlyEnable", false);
             }
             FileUtil.write2File(config.toString(), configFile);
         } catch (Throwable t) {
@@ -338,13 +364,20 @@ public class VersionHook {
             sFlagsReads.incrementAndGet();
         }
         String via = viaFlags ? "/Flags" : "/int";
+        boolean earlyFake = false;
         if (!sEnableVersionHook) {
-            (sConfigLoaded ? sOffReads : sEarlyReads).incrementAndGet();
-            sample((sConfigLoaded ? "关闭" : "早读") + via);
-            return;
+            // 配置还没加载：支付宝日志模块启动时读一次版本并缓存，之后不再读，等配置加载好就来不及了，
+            // 所以对它单独提前伪装；其它早读（如 quinox 升级检查）保持真实版本，避免影响支付宝启动
+            if (!sConfigLoaded && sEarlyFake && fromLoggingModule()) {
+                earlyFake = true;
+            } else {
+                (sConfigLoaded ? sOffReads : sEarlyReads).incrementAndGet();
+                sample((sConfigLoaded ? "关闭" : "早读") + via);
+                return;
+            }
         }
-        String versionName = getFakeVersionName();
-        long versionCode = getFakeVersionCode();
+        String versionName = earlyName();
+        long versionCode = earlyCode();
         XHelpers.setObjectField(info, "versionName", versionName);
         try {
             PackageInfo.class.getMethod("setLongVersionCode", long.class).invoke(info, versionCode);
@@ -352,6 +385,12 @@ public class VersionHook {
             XHelpers.setObjectField(info, "versionCode", (int) versionCode);
         }
         param.setResult(info);
+        if (earlyFake) {
+            // 启动早期日志系统可能还没就绪，这里只计数，不直接打日志
+            sEarlyFaked.incrementAndGet();
+            sample("早期伪装" + via);
+            return;
+        }
         sFakedReads.incrementAndGet();
         sample("已伪装" + via);
         if (!sFakedLogged) {
@@ -361,11 +400,10 @@ public class VersionHook {
     }
 
     /**
-     * 可选：让开关在支付宝进程启动（Application.attach 之前）就生效。version_config.json 里
-     * "earlyEnable": true 且 "enableVersionHook": true 才启用，默认不启用。
-     * 原因：支付宝启动时就会读一次自身版本并缓存，Service.onCreate 才读到配置时已经晚了；
-     * 但提前伪装会让支付宝启动阶段的版本校验（热修复/容器版本匹配等）也看到假版本，
-     * 有让支付宝异常的风险，所以做成需要手动改配置文件的开关，先用诊断日志确认必要性。
+     * 启动早期（Application.attach 之前）按配置文件决定是否“提前伪装”：默认开启（sEarlyFake 缺省为真），
+     * 文件不存在或读取失败都保持开启；文件存在时要求 enableVersionHook 为真（旧版自动建的“关闭且未填写”配置会在 loadVersionConfig 迁移为开启，
+     * 这里同样按开启看待）且 earlyEnable 不为 false。只影响支付宝日志模块的那次读取（见 handleRead），
+     * 不像“全部早读都伪装”那样波及 quinox 升级检查等启动逻辑。
      */
     private static void preloadEarlyEnable() {
         try {
@@ -373,18 +411,29 @@ public class VersionHook {
             if (!configFile.exists()) {
                 return;
             }
-            String content = FileUtil.readFromFile(configFile);
-            JSONObject config = MyUtils.newJSONObject(content);
-            sEarlyEnableConfigured = config.optBoolean("earlyEnable", false);
-            if (sEarlyEnableConfigured && config.optBoolean("enableVersionHook", false)) {
-                sCachedVersionName = config.optString("versionName", DEFAULT_VERSION_NAME);
-                sCachedVersionCode = config.optLong("versionCode", DEFAULT_VERSION_CODE);
-                sEnableVersionHook = true;
-                sEarlyEnabled = true;
+            JSONObject config = MyUtils.newJSONObject(FileUtil.readFromFile(configFile));
+            String name = config.optString("versionName", "");
+            long code = config.optLong("versionCode", 0);
+            boolean enabled = config.optBoolean("enableVersionHook", true) || (name.isEmpty() && code <= 0);
+            sEarlyEnableConfigured = config.optBoolean("earlyEnable", true);
+            if (!name.isEmpty()) {
+                sCachedVersionName = name;
             }
+            if (code > 0) {
+                sCachedVersionCode = code;
+            }
+            sEarlyFake = enabled && sEarlyEnableConfigured;
         } catch (Throwable t) {
             Log.i("VersionHook", "提前读取版本伪装配置失败: " + t.getClass().getSimpleName());
         }
+    }
+
+    private static String earlyName() {
+        return (sCachedVersionName != null && !sCachedVersionName.isEmpty()) ? sCachedVersionName : DEFAULT_VERSION_NAME;
+    }
+
+    private static long earlyCode() {
+        return sCachedVersionCode > 0 ? sCachedVersionCode : DEFAULT_VERSION_CODE;
     }
 
     /** 读支付宝真实版本名（绕过伪装），给模块自己记录“实际版本”用。 */
