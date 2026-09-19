@@ -61,7 +61,7 @@ public class AnswerAI extends Model {
     private final StringModelField customAIModel = new StringModelField("customAIModel", "自定义AI | 模型名", "");
     private final StringModelField customAIKey = new StringModelField("customAIKey", "自定义AI | 令牌", "");
     private final IntegerModelField customAIMaxTokens = new IntegerModelField("customAIMaxTokens", "自定义AI | 输出Token上限(0=不发)", 1024, 0, 8192);
-    private final EmptyModelField customAITest = new EmptyModelField("customAITest", "自定义AI | 测试响应", this::testConnection);
+    private final EmptyModelField customAITest = new EmptyModelField("customAITest", "AI答题 | 测试响应", this::testConnection);
 
     @Override
     public ModelFields getFields() {
@@ -79,6 +79,11 @@ public class AnswerAI extends Model {
     @Override
     public void boot(ClassLoader classLoader) {
         enable = getEnableField().getValue();
+        if (!Boolean.TRUE.equals(enable)) {
+            // 没开「AI答」时不初始化也不打“未填齐”提示，避免不用 AI 的用户每次启动都刷一条日志
+            answerAI = null;
+            return;
+        }
         if (aiType.getValue() == AIType.GEMINI) {
             answerAI = new GeminiAI(setGeminiAIToken.getValue());
             return;
