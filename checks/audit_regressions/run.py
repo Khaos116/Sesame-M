@@ -60,8 +60,6 @@ def main():
             "model/task/greenFinance/GreenFinance.java", "    private void batchStealFriend")})
         run("tasks", "Review.java", "Tasks.java.in", {"@@TASKS@@": method(
             "model/task/goldenbeans/GoldenBeansTasks.java", "    private boolean runTaskList")})
-        run("answers", "AnswerCheck.java", "Answers.java.in", {"@@ANSWER@@": method(
-            "model/normal/answerAI/GeminiAI.java", "    public Integer getAnswer(")})
         run("scheduler", "SchedulerCheck.java", "Scheduler.java.in", {
             "@@LIFECYCLE@@": method("data/task/TaskLifecycle.java", "public final class TaskLifecycle")
                 .replace("public final class TaskLifecycle", "static final class TaskLifecycle", 1),
@@ -84,8 +82,6 @@ def main():
                 "    public static void clearLog()",
                 "    public static void clearLog(String logName)"))})
         assert "FLAG_TASKS_DONE" not in (SOURCE / "model/task/goldenbeans/goldenbeans.java").read_text(encoding="utf-8")
-        response = method("model/normal/answerAI/GeminiAI.java", "    public String getAnswerStr(")
-        assert "replaceAll" not in response and "return answer.trim();" in response
         hook = method("hook/ext/VersionHook.java", "    public static void initVersionHook(")
         assert "String versionName = getFakeVersionName();" in hook
         assert "long versionCode = getFakeVersionCode();" in hook

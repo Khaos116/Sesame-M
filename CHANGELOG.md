@@ -5,6 +5,7 @@
 
 ## 2026-09-19
 
+- merge：合并 `origin/MIUIX-api102`（4f975462 → d51b841f，7 个上游提交）到 `my_dev`，9 个文件冲突（含上游删除 `GeminiAI`/`TongyiAI`、新增 `CustomAI` 通用 AI 答题）；三项必查、九项回归 + `check_standalone_no_xposed_class` 通过，`audit_regressions` 中两处针对已删 `GeminiAI` 的检查移除。详见详细记录。
 - fix（未提交）：补看遗漏的第三个账号日报 `rpc-failures.2026-09-18.2088942846628038.json`（50 次）：① 好友浇水 `transferEnergy` `ENERGY_INSUFFICIENT` 36 次——原先落入 default 分支继续浇下一个好友，现在自己能量不足即结束本轮浇水；② 1009“系统繁忙”（`neverland.queryItemList`）不再拉起支付宝，`showVerification()` 只在消息含“验证”/`cheating traffic` 时触发（暂停 24 小时的旧行为不变）。
 - feat（未提交）：森林新增「找能量」`findEnergyCollect`（默认关，需同时开「收集能量」）：调用 `alipay.antforest.forest.h5.takeLook` 逐个获取推荐好友，进主页交给现有 `collectUserEnergy` 收取；接口与流程对照 AG，来源见详细记录。朋友文件里的「升级发财树领红包」未移植（见详细记录）。
 - fix（未提交）：复核 09-19 两个账号异常日报（70+21 次）。① `receiveFarmTaskAward` 102“服务器正在开小差”（`cclyx_3bei_xjcmx_2`、`cclyx_sgbhsd_1c_zm3c`、`cclyx_3bei_dgls_2`、`cclyx_wdhysj_1cV2`、`IP_chouchoule_juankuan`，连续多日每天 8~12 次）：同任务当天第 5 次起退避改 6 小时，前 4 次仍 5/5/30/30 分钟，不永久拉黑；② 我的快递 `KUAIDI_VITALITY` 领奖（无原因，两账号共 15 次，09-17 为 13 次）：失败后当天不再重复领，成功行为不变。暂不处理：48 网络错误（01:50~01:53 集中，已有退避）；`energyRain*` 1009（风控，已暂停 24 小时）；`donation` 218“自营项目没有指定标的物”（1 次，配置项问题，证据不足）；`walk.go`“走慢一点”（业务限速，3 次）；`B_FREE_SEAT`、`TARGET_USER_PROTECT_BY_ENERGY_SHIELD`（正常业务提示）；金豆/`ORCHARD`/`loanpromoweb signin.query` 无原因各 1~3 次（后者较 09-17 的 19 次已大幅下降），证据不足。
@@ -95,6 +96,28 @@
 - `6a31c9e1` feat: 新增全局自动切号功能（账号轮询，最小间隔2小时）
 
 ## 详细记录（自 doc/MyFix.md 迁移）
+
+### 2026-09-19（续）：合并 MIUIX-api102 至 d51b841f
+
+上游 7 个提交：庄园捐蛋排位赛不存在时 fallback 到公益捐蛋、农场施肥场景显示名（main→果树、yeb→金钱树）、亲密家庭若干修复、森林合种浇水顺序与空值保护、保护合种浇水量计算、AI 答题重构为可自填的通用接口（`CustomAI`）、日志路径触达 libxposed 类导致 App 闪退。
+
+冲突及取舍（按分叉点 4f975462 双方状态判断，多数为“my_dev 已把 `.get*()` 改成 `.opt*()`/`MyUtils`，上游同处又改了逻辑”，取上游逻辑 + my_dev 的读取方式）：
+- `GeminiAI`/`TongyiAI`：my_dev 改过（JSON 创建、OkHttp 单例、选项匹配），上游删除并由 `CustomAI` 取代。确认全仓库已无引用后跟随上游删除，`AnswerAIInterface` 同删。
+- `AntFarm`：① 20:01 后捐蛋排位跳过分支——上游机械把 `return;` 改成 `return false;`，但 `competition()` 现在 `false` 表示“排位赛不存在，fallback 到公益捐蛋”，20:01 后属于“排位赛存在只是过了截止时间”，保留 my_dev 的 `return true`，避免 20:01 后又去公益捐蛋；② 庄园答题取上游的空选项提示 + my_dev 的 `opt*` 与空指针防护，`AnswerAI` 已内置兜底取第一项，去掉重复兜底；③ 家庭“顶梁柱特权”采用上游对 `RandomUtil.nextInt` 右开区间的修正（上界传 `size()`/`length()`，原 `size()-1` 永远取不到最后一个），保留 my_dev 的空列表/空对象防护与 `MyUtils`；④ `familyFeedFriendAnimal`：上游删除，全仓库无其它调用，跟随删除；⑤ 家庭分享 `invitedCount` 计数取上游。
+- `AntForestV2`：组队合种浇水改用上游的 `queryTeamHomePage()`/`getTeamId`/`isTeam`，真爱合种改用上游按队伍名浇水的写法；四处创建 JSON 保持 `MyUtils.newJSONObject`。
+- `AntOcean` 海洋答题：交给 `AnswerAI` 作答（上游），读取用 `opt*`，选项为空/缺失时跳过。
+- `AntOrchard`：场景显示名用上游 `getSceneDisplayName`，读取 `optString`。
+- `ProtectEcology`：保护合种取上游“未勾选日浇水量则静默跳过”，`waterDayLimit` 保持 `optInt`。
+- `ReadingDada`：`opt*` + 空选项提示 + 兜底取第一项。
+- `ExtensionsHandle`：取上游合种提示文案（无类型时只显示“可以合种”）。
+
+三项必查（对合并结果中来自上游的全部新增行做了检索）：
+- GMT+8：上游新增内容无日历/日期格式化/时区相关代码，无需处理。
+- JSON 创建：发现三处直接 `new JSONObject(raw)`——`AntForestV2.queryTeamHomePage`、`CustomAI.requestOnce`、`CustomAI.parseJsonOrNull`，均已改为 `MyUtils.newJSONObject`。`parseJsonOrNull` 原靠解析异常返回 null，改为空对象视为失败并返回 null，语义不变。
+- JSON 读取：上游新增内容无裸 `.get*()`，无对 `optJSONObject`/`optJSONArray` 结果的未判空链式调用。
+- 例外/遗留：无新增例外。上游 `CustomAI` 是 479 行的新解析逻辑，本次只做了三项规范检查，未逐行审计其解析行为，也未做真机验证。
+
+回归：`checks/audit_regressions/run.py` 原有两项检查绑定在已删除的 `GeminiAI` 上（`getAnswer` 选项匹配规则：精确优先、含小数、歧义拒绝；`getAnswerStr` 不含 `replaceAll` 且 `return answer.trim()`），已一并移除并删除 `Answers.java.in`。**遗留：`CustomAI.parseAnswerIndex` 目前没有回归覆盖**，它依赖多个静态辅助方法，需要单独提取后再补。其余九项及 `check_standalone_no_xposed_class.py` 均通过，`:app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin` 通过。未真机验证、未打包。
 
 ### 2026-09-19（续）：移植「找能量」，评估朋友文件的其它新功能
 

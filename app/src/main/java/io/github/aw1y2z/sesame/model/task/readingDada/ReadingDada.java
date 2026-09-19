@@ -40,9 +40,10 @@ public class ReadingDada {
             if ("200".equals(jo.optString("resultCode"))) {
                 JSONArray jsonArray = jo.optJSONArray("options");
                 if (jsonArray == null || jsonArray.length() == 0) {
-                    Log.record("获取问题失败");
+                    Log.record("答题跳过：选项为空");
                     return false;
                 }
+                // title 用 optString：缺该字段时不应让整条答题失败（AI 仍可凭选项作答）
                 String answer = AnswerAI.getAnswer(jo.optString("title"), JsonUtil.jsonArrayToList(jsonArray));
                 if (answer == null || answer.isEmpty()) {
                     answer = jsonArray.optString(0);

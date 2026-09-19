@@ -121,8 +121,8 @@ public class ExtensionsHandle {
             String tips = "不可合种";
             if (exchangeableTree.optBoolean("canCoexchange", false)) {
                 JSONObject extendInfo = exchangeableTree.optJSONObject("extendInfo");
-                tips = "可以合种-合种类型："
-                        + (extendInfo != null ? extendInfo.optString("cooperate_template_id_list") : "");
+                String cooperateTypes = extendInfo == null ? "" : extendInfo.optString("cooperate_template_id_list", "");
+                tips = StringUtil.isEmpty(cooperateTypes) ? "可以合种" : "可以合种-合种类型：" + cooperateTypes;
             }
             Log.forest("新树上苗🌱[" + region + "-" + treeName + "]#" + currentBudget + "株-" + tips);
         } catch (Throwable t) {

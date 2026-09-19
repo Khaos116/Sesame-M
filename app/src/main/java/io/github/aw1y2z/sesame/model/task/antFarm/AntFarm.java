@@ -40,6 +40,10 @@ import java.util.concurrent.TimeUnit;
 
 public class AntFarm extends ModelTask {
     private static final String TAG = AntFarm.class.getSimpleName();
+    /** 家庭分享：当日累计"邀请全部失败"次数 */
+    private static final String FLAG_FAMILY_SHARE_FAIL_COUNT = "antFarm::familyShareToFriends::failCount";
+    /** 家庭分享：当日最多尝试几次，超过后当天不再重试（避免每轮任务都重发邀请请求） */
+    private static final int MAX_FAMILY_SHARE_ATTEMPT = 3;
 
     private String ownerFarmId;
     private String ownerUserId;
@@ -1224,6 +1228,7 @@ public class AntFarm extends ModelTask {
                 int minute = now.get(java.util.Calendar.MINUTE);
                 if (hour > 20 || (hour == 20 && minute >= 1)) {
                     Log.record("捐蛋排位🥚每日20:01后不执行捐蛋操作");
+                    // competition() 返回 true 表示排位赛存在、只是过了截止时间，不能落到公益捐蛋（false 才表示排位赛不存在）
                     return true;
                 }
 
@@ -1811,13 +1816,12 @@ public class AntFarm extends ModelTask {
             }
             long questionId = question.optLong("questionId");
             JSONArray labels = question.optJSONArray("label");
-            if (labels == null) {
+            if (labels == null || labels.length() == 0) {
+                Log.record("庄园答题跳过：选项为空");
                 return false;
             }
+            // title 用 optString：缺该字段时不应让整条答题失败（AI 仍可凭选项作答，AnswerAI 内部已兜底取第一项）
             String answer = AnswerAI.getAnswer(question.optString("title"), JsonUtil.jsonArrayToList(labels));
-            if (answer == null || answer.isEmpty()) {
-                answer = labels.optString(0);
-            }
             jo = MyUtils.newJSONObject(DadaDailyRpcCall.submit("100", answer, questionId));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
@@ -2126,6 +2130,11 @@ public class AntFarm extends ModelTask {
     }
 
     private void feedFriendAnimal(String friendFarmId) {
+        // 当日帮喂总数已达上限（服务端 391 已记录）时直接跳过，避免逐个好友白跑请求
+        if (Status.hasFlagToday(Status.FLAG_FEED_FRIEND_ANIMAL_LIMIT)) {
+            Log.record("今日帮喂次数已达上限🥣，跳过喂养");
+            return;
+        }
         try {
             String userId = AntFarmRpcCall.farmId2UserId(friendFarmId);
             String maskName = UserIdMap.getMaskName(userId);
@@ -2160,7 +2169,7 @@ public class AntFarm extends ModelTask {
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.feedFriendAnimal(friendFarmId, groupId));
             if (!MessageUtil.checkMemo(TAG, jo)) {
                 if (Objects.equals("391", jo.optString("resultCode"))) {
-                    Status.flagToday("farm::feedFriendAnimalLimit");
+                    Status.flagToday(Status.FLAG_FEED_FRIEND_ANIMAL_LIMIT);
                 }
                 return false;
             }
@@ -3749,7 +3758,6 @@ public class AntFarm extends ModelTask {
             }
             // 获取家庭成员ID列表
             List<String> familyUserIds = new ArrayList<>();
-            JSONArray friendUserIds = new JSONArray();
             for (int i = 0; i < familyAnimals.length(); i++) {
                 jo = familyAnimals.optJSONObject(i);
                 if (jo == null) {
@@ -3758,7 +3766,6 @@ public class AntFarm extends ModelTask {
                 String animalId = jo.optString("animalId");
                 String userId = jo.optString("userId");
                 familyUserIds.add(userId);
-                friendUserIds.put(userId);
                 if (animalId.equals(ownerAnimal.animalId)) {
                     continue;
                 }
@@ -3770,7 +3777,8 @@ public class AntFarm extends ModelTask {
                 String animalFeedStatus = animalStatusVO.optString("animalFeedStatus");
                 String animalInteractStatus = animalStatusVO.optString("animalInteractStatus");
                 if (AnimalInteractStatus.HOME.name().equals(animalInteractStatus) && AnimalFeedStatus.HUNGRY.name().equals(animalFeedStatus)) {
-                    if (familyOptions.getValue().contains("familyFeed")) {
+                    // feedFriendLimit 是服务端"今日帮喂已达上限"的信号，已满就不必逐个成员再试
+                    if (familyOptions.getValue().contains("familyFeed") && !feedFriendLimit) {
                         feedFriendAnimal(farmId);
                     }
                 }
@@ -3796,11 +3804,6 @@ public class AntFarm extends ModelTask {
             // 领取家庭奖励
             if (familyOptions.getValue().contains("familyClaimReward") && familyAwardNum > 0) {
                 familyAwardList();
-            }
-
-            // 帮家庭成员喂鸡
-            if (familyOptions.getValue().contains("feedFamilyAnimal") && !feedFriendLimit) {
-                familyFeedFriendAnimal(familyAnimals);
             }
 
             JSONArray familyInteractActions = joenterFamily.optJSONArray("familyInteractActions");
@@ -3936,16 +3939,14 @@ public class AntFarm extends ModelTask {
             if (userIds.isEmpty()) {
                 return;
             }
-            String beAssignUser = userIds.get(RandomUtil.nextInt(0, userIds.size() - 1));
+            // RandomUtil.nextInt 是右开区间 [min, max)，这里要传 size()/length() 才能取到最后一个
+            String beAssignUser = userIds.get(RandomUtil.nextInt(0, userIds.size()));
             JSONArray assignConfigList = jsonObject.optJSONArray("assignConfigList");
             if (assignConfigList == null || assignConfigList.length() == 0) {
-                // 对齐 Sesame-AG AntFarmFamily.kt#assignFamilyMember 的空列表保护：
-                // 原来的 getJSONArray + nextInt(0, length()-1) 在列表为空时会传入非法区间抛异常，
-                // 虽然外层 try/catch 会吞掉，但不如直接判断跳过更清楚
                 Log.record("家庭任务🏡[使用顶梁柱特权] assignConfigList 为空，跳过");
                 return;
             }
-            JSONObject assignConfig = assignConfigList.optJSONObject(RandomUtil.nextInt(0, assignConfigList.length() - 1));
+            JSONObject assignConfig = assignConfigList.optJSONObject(RandomUtil.nextInt(0, assignConfigList.length()));
             if (assignConfig == null) {
                 return;
             }
@@ -3955,63 +3956,6 @@ public class AntFarm extends ModelTask {
             }
         } catch (Throwable t) {
             Log.err(TAG, "assignFamilyMember err:", t);
-        }
-    }
-
-    /**
-     * 帮家庭成员喂鸡
-     */
-    private void familyFeedFriendAnimal(JSONArray animals) {
-        try {
-            for (int i = 0; i < animals.length(); i++) {
-                JSONObject animal = animals.optJSONObject(i);
-                if (animal == null) {
-                    continue;
-                }
-                JSONObject status = animal.optJSONObject("animalStatusVO");
-                if (status == null) {
-                    continue;
-                }
-                String interactStatus = status.optString("animalInteractStatus");
-                String feedStatus = status.optString("animalFeedStatus");
-
-                if (!AnimalInteractStatus.HOME.name().equals(interactStatus) || !AnimalFeedStatus.HUNGRY.name().equals(feedStatus)) {
-                    continue;
-                }
-
-                String groupId = animal.optString("groupId");
-                String farmId = animal.optString("farmId");
-                String userId = animal.optString("userId");
-
-                if (!UserIdMap.getUserIdSet().contains(userId)) {
-                    Log.record(userId + " 不是你的好友！ 跳过家庭喂食");
-                    continue;
-                }
-
-                String flagKey = "farm::feedFriendLimit::" + userId;
-                if (Status.hasFlagToday(flagKey)) {
-                    Log.record("[" + userId + "] 今日喂鸡次数已达上限（已记录）🥣，跳过");
-                    continue;
-                }
-
-                JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.feedFriendAnimal(farmId, groupId));
-                if (!jo.optBoolean("success", false)) {
-                    String code = jo.optString("resultCode");
-                    if ("391".equals(code)) {
-                        Status.flagToday(flagKey);
-                        Log.record("[" + userId + "] 今日帮喂次数已达上限🥣，已记录为当日限制");
-                    } else {
-                        Log.record("喂食失败 user=" + userId + " code=" + code + " msg=" + jo.optString("memo"));
-                    }
-                    continue;
-                }
-
-                int foodStockAfter = jo.optInt("foodStock");
-                String maskName = UserIdMap.getMaskName(userId);
-                Log.farm("家庭任务🏠帮喂好友🥣[" + maskName + "]的小鸡180g #剩余" + foodStockAfter + "g");
-            }
-        } catch (Throwable t) {
-            Log.err(TAG, "familyFeedFriendAnimal err:", t);
         }
     }
 
@@ -4275,7 +4219,7 @@ public class AntFarm extends ModelTask {
             Collections.shuffle(shuffledUsers);
             JSONArray inviteList = new JSONArray();
             for (AlipayUser user : shuffledUsers) {
-                if (!familyUserIds.contains(user.getId()) && !notInviteSet.contains(user.getId()) && (user.getId() != UserIdMap.getCurrentUid())) {
+                if (!familyUserIds.contains(user.getId()) && !notInviteSet.contains(user.getId()) && (!user.getId().equals(UserIdMap.getCurrentUid()))) {
                     inviteList.put(user.getId());
                     if (inviteList.length() >= 2) {
                         break;
@@ -4290,14 +4234,28 @@ public class AntFarm extends ModelTask {
             Log.record("家庭分享🏠邀请:" + inviteList);
 
             //JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.inviteFriendVisitFamily(inviteList));
+            int invitedCount = 0;
             for (int i = 0; i < inviteList.length(); i++) {
                 String inviteUID = inviteList.optString(i);
                 JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.batchInviteP2P(ownerGroupId, inviteUID));
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     Log.farm("家庭任务🏠分享给好友[" + UserIdMap.getShowName(inviteUID) + "]");
+                    invitedCount++;
                 }
             }
-            Status.flagToday("antFarm::familyShareToFriends");
+            // 全部失败时累计失败次数，达到次数上限才置标记：既不会"一次失败就整天不试"，也不会每轮都重发邀请
+            if (invitedCount > 0) {
+                Status.flagToday("antFarm::familyShareToFriends");
+            } else {
+                int failCount = Status.getIntFlagToday(FLAG_FAMILY_SHARE_FAIL_COUNT) + 1;
+                if (failCount >= MAX_FAMILY_SHARE_ATTEMPT) {
+                    Status.flagToday("antFarm::familyShareToFriends");
+                    Log.record("家庭分享🏠邀请已连续失败" + failCount + "次，今日不再尝试");
+                } else {
+                    Status.setIntFlagToday(FLAG_FAMILY_SHARE_FAIL_COUNT, failCount);
+                    Log.record("家庭分享🏠邀请全部失败(第" + failCount + "/" + MAX_FAMILY_SHARE_ATTEMPT + "次)，稍后重试");
+                }
+            }
         } catch (Throwable t) {
             Log.err(TAG, "familyShareToFriends err:", t);
         }

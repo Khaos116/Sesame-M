@@ -18,8 +18,10 @@ import io.github.aw1y2z.sesame.entity.AlipayUser;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
+import io.github.aw1y2z.sesame.model.normal.answerAI.AnswerAI;
 import io.github.aw1y2z.sesame.model.task.antFarm.AntFarm.TaskStatus;
 import io.github.aw1y2z.sesame.model.task.antForest.AntForestRpcCall;
+import io.github.aw1y2z.sesame.util.JsonUtil;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Statistics;
@@ -946,9 +948,11 @@ public class AntOcean extends ModelTask {
             String questionId = jo.optString("questionId");
             JSONArray options = jo.optJSONArray("options");
             if (options == null || options.length() == 0) {
+                Log.record("海洋答题：选项为空，跳过");
                 return false;
             }
-            String answer = options.optString(0);
+            // 与蚂蚁新村每日答题用的是同一个 dada 接口，这里同样交给 AI 作答（AnswerAI 内部已兜底取第一项）
+            String answer = AnswerAI.getAnswer(jo.optString("title"), JsonUtil.jsonArrayToList(options));
             TimeUtil.sleep(500);
             jo = MyUtils.newJSONObject(AntOceanRpcCall.submitAnswer(answer, questionId));
             if (MessageUtil.checkResultCode(TAG, jo)) {

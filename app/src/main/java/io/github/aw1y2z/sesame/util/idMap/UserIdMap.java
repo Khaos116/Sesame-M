@@ -165,9 +165,13 @@ public class UserIdMap {
     public synchronized static void setCurrentUserId(String userId) {
         if (userId == null || userId.isEmpty()) {
             currentUid = null;
+            Log.setAccountLabel(null);
             return;
         }
         currentUid = userId;
+        // 日志前缀只在 uid 变化时算一次（首次会读/写 accountIndex.json），
+        // 不再让 Log 每条日志回调 UserIdMap，避免 UI 进程被拖进 libxposed 类
+        Log.setAccountLabel(getAccountLabel(userId));
     }
     
     public static String getCurrentMaskName() {

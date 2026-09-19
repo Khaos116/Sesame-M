@@ -89,6 +89,12 @@ public class AntForestV2 extends ModelTask {
 
     private static final String TAG = AntForestV2.class.getSimpleName();
 
+    /**
+     * 组队合种浇水本地标记：表示"本方法把用户切到了组队模式，还没切回来"。
+     * 用于切回失败 / 进程被杀之后的校正，避免用户被永久留在组队模式。
+     */
+    private static final String FLAG_TEAM_MODE_SWITCHED = "Forest::teamWaterSwitchedToTeam";
+
     private static final AverageMath offsetTimeMath = new AverageMath(5);
 
     private static final Map<String, Long> usingProps = new ConcurrentHashMap<>();
@@ -391,6 +397,9 @@ public class AntForestV2 extends ModelTask {
             selfId = UserIdMap.getCurrentUid();
             hasErrorWait = false;
 
+            // 组队合种浇水异常中断后，把账号从组队模式恢复回个人模式
+            fixTeamModeIfNeeded();
+
             //GameTask.Orchard_ncscc.report("农场上车车", 1);
             if (waterFriendEnergyFirst.getValue()) {
                 waterFriendEnergy();
@@ -629,13 +638,6 @@ public class AntForestV2 extends ModelTask {
                 if (pkEnergy.getValue()) {
                     collectPKEnergy();
                 }
-
-                // 组队合种浇水
-                //if (partnerteamWater.getValue()) {
-                //    if (partnerteamWaterNum.getValue() > 0 && partnerteamWaterNum.getValue() <= 5000) {
-                //        partnerteamWater(partnerteamWaterNum.getValue());
-                //    }
-                //}
 
                 //初始任务列表
                 if (!Status.hasFlagToday("BlackList::initAntForest")) {
@@ -4178,8 +4180,9 @@ public class AntForestV2 extends ModelTask {
     }
 
     private void teamCooperateWater() {
+        // 记录本次是否由本方法切到组队模式，只要是就得切回来
+        boolean switchedToTeam = false;
         try {
-
             int userDailyTarget = Math.min(Math.max(partnerteamWaterNum.getValue(), 10), 5000);
             int todayUsed = Status.getforestHuntHelpToday("FLAG_TEAM_WATER_DAILY_COUNT");
             int userRemainingQuota = userDailyTarget - todayUsed;
@@ -4189,53 +4192,51 @@ public class AntForestV2 extends ModelTask {
                 return;
             }
 
-            // 获取组队合种基础信息
-            String homeStr = AntForestRpcCall.queryHomePage();
-            JSONObject homeJo = MyUtils.newJSONObject(homeStr);
-            if (!MessageUtil.checkResultCode(TAG, homeJo)) {
-                Log.record("queryHomePage 返回异常");
+            JSONObject homeJo = queryTeamHomePage();
+            if (homeJo == null) {
                 return;
             }
 
-            String teamId = homeJo.optJSONObject("teamHomeResult").optJSONObject("teamBaseInfo").optString("teamId", "");
+            // 必须先把模式切到组队，个人模式的返回体里没有 teamHomeResult，取不到 teamId
+            if (!isTeam(homeJo)) {
+                Log.record("不在队伍模式,已为您切换至组队浇水");
+                if (!updateUserConfiginTeam(true)) {
+                    Log.record("切换到组队模式失败，跳过组队合种浇水");
+                    return;
+                }
+                switchedToTeam = true;
+                Status.flagToday(FLAG_TEAM_MODE_SWITCHED);
+                homeJo = queryTeamHomePage();
+                if (homeJo == null) {
+                    return;
+                }
+            }
+
+            String teamId = getTeamId(homeJo);
             if (teamId.isEmpty()) {
                 Log.record("未获取到组队合种 TeamID");
                 return;
             }
 
-            int currentEnergy = homeJo.optJSONObject("userBaseInfo").optInt("currentEnergy", 0);
+            JSONObject userBaseInfo = homeJo.optJSONObject("userBaseInfo");
+            int currentEnergy = userBaseInfo == null ? 0 : userBaseInfo.optInt("currentEnergy", 0);
             if (currentEnergy < 10) {
                 Log.record("当前能量不足10g(" + currentEnergy + "g)，无法浇水");
                 return;
             }
 
-            // 切换团队模式
-            boolean needReturn = false;
-            if (!isTeam(homeJo)) {
-                Log.record("不在队伍模式,已为您切换至组队浇水");
-                updateUserConfiginTeam(!needReturn);
-                needReturn = true;
-            }
-
             // 获取服务端限制
-            String miscStr = AntForestRpcCall.queryMiscInfo("teamCanWaterCount", teamId);
-            JSONObject miscJo = MyUtils.newJSONObject(miscStr);
+            JSONObject miscJo = MyUtils.newJSONObject(AntForestRpcCall.queryMiscInfo("teamCanWaterCount", teamId));
             if (!MessageUtil.checkResultCode(TAG, miscJo)) {
                 Log.record("queryMiscInfo 查询失败");
-                if (needReturn) {
-                    updateUserConfiginTeam(!needReturn);
-                }
                 return;
             }
 
-            int serverRemaining = miscJo.optJSONObject("combineHandlerVOMap").optJSONObject("teamCanWaterCount").optInt("waterCount", 0);
+            int serverRemaining = getTeamCanWaterCount(miscJo);
             Log.record("组队状态检查:目标剩余" + userRemainingQuota + "g|官方剩余" + serverRemaining + "g|背包能量" + currentEnergy + "g");
 
             if (serverRemaining < 10) {
                 Log.record("官方限制今日无可浇水额度，跳过");
-                if (needReturn) {
-                    updateUserConfiginTeam(!needReturn);
-                }
                 return;
             }
 
@@ -4243,29 +4244,82 @@ public class AntForestV2 extends ModelTask {
             int finalWaterAmount = Math.min(userRemainingQuota, Math.min(serverRemaining, currentEnergy));
             if (finalWaterAmount < 10) {
                 Log.record("计算后浇水量(" + finalWaterAmount + "g)低于最小限制10g，不执行");
-                if (needReturn) {
-                    updateUserConfiginTeam(!needReturn);
-                }
                 return;
             }
 
             // 执行浇水
-            String waterStr = AntForestRpcCall.teamWater(teamId, finalWaterAmount);
-            JSONObject waterJo = MyUtils.newJSONObject(waterStr);
+            JSONObject waterJo = MyUtils.newJSONObject(AntForestRpcCall.teamWater(teamId, finalWaterAmount));
             if (MessageUtil.checkResultCode(TAG, waterJo)) {
                 Log.forest("组队合种🚿给合种浇水" + finalWaterAmount + "g");
                 Toast.show("组队合种🚿给合种浇水" + finalWaterAmount + "g");
                 Status.forestHuntHelpToday("FLAG_TEAM_WATER_DAILY_COUNT", todayUsed + finalWaterAmount, UserIdMap.getCurrentUid());
                 Log.record("组队合种今日浇水累计: " + (todayUsed + finalWaterAmount) + "g / " + userDailyTarget + "g");
             }
-
-            // 切换回个人模式
-            if (needReturn) {
-                updateUserConfiginTeam(!needReturn);
-                Log.record("已返回个人模式");
-            }
         } catch (Throwable t) {
-            Log.printStackTrace("teamCooperateWater 异常:", t);
+            Log.err(TAG, "teamCooperateWater err:", t);
+        } finally {
+            // 任何分支（含异常和提前 return）都要切回个人模式，否则会一直停在组队模式影响其它功能
+            if (switchedToTeam) {
+                if (updateUserConfiginTeam(false)) {
+                    Status.clearFlag(FLAG_TEAM_MODE_SWITCHED);
+                    Log.record("已返回个人模式");
+                } else {
+                    Log.record("组队合种浇水后切回个人模式失败，下次运行会自动重试");
+                }
+            }
+        }
+    }
+
+    /** 查询森林首页，失败返回 null */
+    private static JSONObject queryTeamHomePage() {
+        try {
+            JSONObject homeJo = MyUtils.newJSONObject(AntForestRpcCall.queryHomePage());
+            if (!MessageUtil.checkResultCode(TAG, homeJo)) {
+                Log.record("queryHomePage 返回异常");
+                return null;
+            }
+            return homeJo;
+        } catch (Throwable t) {
+            Log.err(TAG, "queryTeamHomePage err:", t);
+        }
+        return null;
+    }
+
+    /** 取组队合种的 teamId，缺失时返回空串 */
+    private static String getTeamId(JSONObject homeJo) {
+        JSONObject teamHomeResult = homeJo.optJSONObject("teamHomeResult");
+        if (teamHomeResult == null) {
+            return "";
+        }
+        JSONObject teamBaseInfo = teamHomeResult.optJSONObject("teamBaseInfo");
+        return teamBaseInfo == null ? "" : teamBaseInfo.optString("teamId", "");
+    }
+
+    /** 取官方今日剩余可浇额度，缺失时返回 0 */
+    private static int getTeamCanWaterCount(JSONObject miscJo) {
+        JSONObject combineHandlerVOMap = miscJo.optJSONObject("combineHandlerVOMap");
+        if (combineHandlerVOMap == null) {
+            return 0;
+        }
+        JSONObject teamCanWaterCount = combineHandlerVOMap.optJSONObject("teamCanWaterCount");
+        return teamCanWaterCount == null ? 0 : teamCanWaterCount.optInt("waterCount", 0);
+    }
+
+    /**
+     * 组队合种浇水会临时把账号切到组队模式。若上次切回失败、或进程在切回前被杀，
+     * 这里做一次校正，避免用户被永久留在组队模式（会影响个人主页 / 好友页的表现）。
+     * <p>
+     * 没开「组队合种浇水」也会执行：正是"开了功能 → 切换中途中断 → 用户随后把开关关掉"这种情况最需要校正。
+     */
+    private static void fixTeamModeIfNeeded() {
+        if (!Status.hasFlagToday(FLAG_TEAM_MODE_SWITCHED)) {
+            return;
+        }
+        if (updateUserConfiginTeam(false)) {
+            Status.clearFlag(FLAG_TEAM_MODE_SWITCHED);
+            Log.record("检测到上次组队合种浇水未切回，已恢复个人模式");
+        } else {
+            Log.record("上次组队合种浇水未切回个人模式，本次恢复失败，稍后重试");
         }
     }
 
@@ -4291,30 +4345,51 @@ public class AntForestV2 extends ModelTask {
         return "Team".equals(homeObj.optString("nextAction", ""));
     }
 
-    private static void loveteam(int loveteamWater) {
-        if (!Status.hasFlagToday("Forest::loveteamWater")) {
-            try {
-                JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.loveteamHome());
-                if (!MessageUtil.checkResultCode(TAG, jo)) {
-                    return;
-                }
-                JSONObject userInfo = jo.optJSONObject("userInfo");
-                if (userInfo != null && userInfo.has("teamId")) {
-                    String teamId = userInfo.optString("teamId");
-                    loveteamWater(teamId, loveteamWater);
-                }
-            } catch (Throwable th) {
-                Log.err(TAG, "loveteam err:", th);
+    private static void loveteam(int waterNum) {
+        if (Status.hasFlagToday("Forest::loveteamWater")) {
+            return;
+        }
+        try {
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.loveteamHome());
+            if (!MessageUtil.checkResultCode(TAG, jo)) {
+                return;
             }
+            JSONObject userInfo = jo.optJSONObject("userInfo");
+            String teamId = userInfo == null ? "" : userInfo.optString("teamId", "");
+            if (teamId.isEmpty()) {
+                Log.record("真爱合种:未加入真爱合种或未取到队伍，跳过");
+                return;
+            }
+            loveteamWater(teamId, getLoveteamName(jo, teamId), waterNum);
+        } catch (Throwable th) {
+            Log.err(TAG, "loveteam err:", th);
         }
     }
 
-    private static void loveteamWater(String loveteamWater, int loveteamWaterNum) {
+    /**
+     * 真爱合种名称：loveHome 返回体里没有稳定已知的名称字段，这里按可能的 key 依次探测，
+     * 都取不到时退回 teamId，保证日志始终有可读内容。
+     */
+    private static String getLoveteamName(JSONObject loveHome, String teamId) {
+        JSONObject userInfo = loveHome.optJSONObject("userInfo");
+        if (userInfo != null) {
+            for (String key : new String[]{"teamName", "name", "treeName"}) {
+                String name = userInfo.optString(key, "");
+                if (!name.isEmpty()) {
+                    return name;
+                }
+            }
+        }
+        String name = loveHome.optString("teamName", "");
+        return name.isEmpty() ? teamId : name;
+    }
+
+    private static void loveteamWater(String teamId, String teamName, int waterNum) {
         try {
-            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.loveteamWater(loveteamWater, loveteamWaterNum));
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.loveteamWater(teamId, waterNum));
             if (MessageUtil.checkSuccess(TAG, jo)) {
-                Log.forest("真爱浇水🚿给[" + loveteamWater + "]合种浇水" + loveteamWaterNum + "g");
-                Toast.show("真爱浇水🚿给[" + loveteamWater + "]合种浇水" + loveteamWaterNum + "g");
+                Log.forest("真爱浇水🚿给[" + teamName + "]合种浇水" + waterNum + "g");
+                Toast.show("真爱浇水🚿给[" + teamName + "]合种浇水" + waterNum + "g");
                 Status.flagToday("Forest::loveteamWater");
             }
         } catch (Throwable th) {

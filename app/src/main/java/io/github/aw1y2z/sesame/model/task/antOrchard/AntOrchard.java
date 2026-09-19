@@ -357,11 +357,19 @@ public class AntOrchard extends ModelTask {
             PlantSceneIdMap.load();
             for (int i = 0; i < sceneArray.length(); i++) {
                 String scene = sceneArray.optString(i);
-                PlantSceneIdMap.add(scene, scene);
+                PlantSceneIdMap.add(scene, getSceneDisplayName(scene));
             }
             PlantSceneIdMap.save();
         } catch (Throwable t) {
             Log.err(TAG, "initPlantScene err:", t);
+        }
+    }
+
+    private static String getSceneDisplayName(String scene) {
+        switch (scene) {
+            case "main": return "果树";
+            case "yeb": return "金钱树";
+            default: return scene;
         }
     }
 
