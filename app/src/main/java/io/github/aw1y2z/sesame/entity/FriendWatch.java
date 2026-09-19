@@ -53,8 +53,7 @@ public class FriendWatch extends IdAndName {
             }
             joSingle.put("weekGet", joSingle.optInt("weekGet", 0) + collectedEnergy);
         } catch (Throwable th) {
-            Log.i(TAG, "friendWatch err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "friendWatch err:", th);
         }
     }
 
@@ -62,8 +61,7 @@ public class FriendWatch extends IdAndName {
         try {
             FileUtil.write2File(joFriendWatch.toString(), FileUtil.getFriendWatchFile());
         } catch (Exception e){
-            Log.i(TAG, "friendWatch save err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "friendWatch save err:", e);
         }
     }
 
@@ -91,8 +89,7 @@ public class FriendWatch extends IdAndName {
             }
             FileUtil.write2File(joFriendWatch.toString(), FileUtil.getFriendWatchFile());
         } catch (Throwable th) {
-            Log.i(TAG, "friendWatchNewWeek err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "friendWatchNewWeek err:", th);
         }
     }
 
@@ -150,8 +147,7 @@ public class FriendWatch extends IdAndName {
                 list.add(friendWatch);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "FriendWatch getList: ");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "FriendWatch getList: ", t);
             try {
                 FileUtil.write2File(new JSONObject().toString(), FileUtil.getFriendWatchFile());
             } catch (Exception e) {

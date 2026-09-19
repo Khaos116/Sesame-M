@@ -17,6 +17,9 @@ public class TongyiAI implements AnswerAIInterface {
 
     private final String url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
 
+    /** 复用同一个 OkHttpClient（自带连接池与线程），避免每次请求都新建 */
+    private static final OkHttpClient CLIENT = new OkHttpClient();
+
     private final String token;
 
     public TongyiAI(String token) {
@@ -39,9 +42,7 @@ public class TongyiAI implements AnswerAIInterface {
     @Override
     public String getAnswerStr(String text) {
         String result = "";
-        Response response = null;
         try {
-            OkHttpClient client = new OkHttpClient().newBuilder().build();
             JSONObject contentObject = new JSONObject();
             contentObject.put("role", "user");
             contentObject.put("content", text);
@@ -58,23 +59,23 @@ public class TongyiAI implements AnswerAIInterface {
                     .addHeader("Authorization", "Bearer " + token)
                     .addHeader("Content-Type", contentType)
                     .build();
-            response = client.newCall(request).execute();
-            if (response.body() == null) {
-                return result;
+            // try-with-resources：成功、提前 return、异常三条路径都会关闭 Response，连接归还连接池
+            try (Response response = CLIENT.newCall(request).execute()) {
+                ResponseBody responseBody = response.body();
+                if (responseBody == null) {
+                    return result;
+                }
+                String json = responseBody.string();
+                if (!response.isSuccessful()) {
+                    Log.other("Tongyi请求失败");
+                    Log.i("Tongyi接口异常：" + json);
+                    return result;
+                }
+                JSONObject jsonObject = MyUtils.newJSONObject(json);
+                result = JsonUtil.getValueByPath(jsonObject, "choices.[0].message.content");
             }
-            String json = response.body().string();
-            if (!response.isSuccessful()) {
-                Log.other("Tongyi请求失败");
-                Log.i("Tongyi接口异常：" + json);
-                return result;
-            }
-            JSONObject jsonObject = MyUtils.newJSONObject(json);
-            result = JsonUtil.getValueByPath(jsonObject, "choices.[0].message.content");
         } catch (Throwable t) {
             Log.printStackTrace(TAG, t);
-            if (response != null) {
-                response.close();
-            }
         }
         return result;
     }

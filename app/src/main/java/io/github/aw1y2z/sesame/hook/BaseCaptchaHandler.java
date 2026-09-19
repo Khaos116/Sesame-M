@@ -16,6 +16,9 @@ import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 /**
  * 验证码处理程序的基类，提供处理滑动验证码的通用逻辑。
  * 该类专门用于处理目标应用验证页面上的滑动验证码。
+ * <p>**执行线程**：由 {@link SimplePageManager} 投递到它的验证码工作线程执行——处理过程中有视图遍历
+ * 与"等界面稳定"的 {@code Thread.sleep}，放在主线程会把宿主界面拖到无响应（这正是历史问题所在）。
+ * 需要碰 UI 的动作只有派发手势，那部分由 {@link MotionEventSimulator} 自己 post 到主线程。
  */
 public abstract class BaseCaptchaHandler {
     private static final String TAG = "CaptchaHandler";
@@ -68,7 +71,7 @@ public abstract class BaseCaptchaHandler {
                 // Log.captcha(TAG, "未找到滑动验证文本，跳过处理");
                 return false; // 未找到关键视图，返回 false 让其他处理器尝试
             }
-            Log.record("滑动验证🆘发现滑动验证文本:" + slideTextInDialog.getText()+"[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+            Log.record("滑动验证🆘发现滑动验证文本:" + slideTextInDialog.getText()+"");
             try {
                 Thread.sleep(500L); // 等待界面稳定
             } catch (InterruptedException e) {
@@ -107,7 +110,9 @@ public abstract class BaseCaptchaHandler {
         }
         
         // 随机化滑动持续时间，模拟更自然的行为
-        long slideDuration = SLIDE_DURATION_MIN + RandomUtil.nextLong(SLIDE_DURATION_MAX,SLIDE_DURATION_MIN + 1);
+        // （原写法参数是反的：nextLong(max, min+1) 因 min>=max 直接返回 min，于是时长恒定 600ms，
+        //   "随机化"从未生效）
+        long slideDuration = RandomUtil.nextLong(SLIDE_DURATION_MIN, SLIDE_DURATION_MAX + 1);
         
         // 执行滑动
         MotionEventSimulator.simulateSwipe(
@@ -119,8 +124,11 @@ public abstract class BaseCaptchaHandler {
                 slideDuration
         );
         
+        // 滑动是 post 到主线程、按步骤延迟执行的（见 MotionEventSimulator：不再 sleep 阻塞主线程），
+        // 所以这里必须等手势**跑完**再判断结果：原实现只等 500ms，那时滑动事件还排在主线程队列里，
+        // "验证码文本是否消失"必然判为"没消失" → 每次都判失败，把重试次数跑满。
         try {
-            Thread.sleep(POST_SLIDE_CHECK_DELAY_MS);
+            Thread.sleep(slideDuration + POST_SLIDE_CHECK_DELAY_MS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             Log.record("滑动验证🆘滑动后等待检查时被中断:" + e);
@@ -210,15 +218,9 @@ public abstract class BaseCaptchaHandler {
         Log.record("滑块信息: 位置=[" + sliderX + "," + sliderY + "], 尺寸=" + sliderWidth + "x" + sliderHeight);
         Log.record("计算结果: 起点=[" + startX + "," + startY + "], 终点=[" + endX + "," + endY + "], 滑动距离=" + (endX - startX) + "px");
         */
-        //Log.record("滑动验证🆘屏幕信息:尺寸=" + screenWidth + "x" + screenHeight + ";" + "滑动区域信息:容器位置=[" + containerX + "," + containerY + "],尺寸=" + containerWidth + "x" + containerHeight + ";" + "滑块信息:位置=[" + sliderX + "," + sliderY + "],尺寸=" + sliderWidth + "x" + sliderHeight + ";" + "计算结果:起点=[" + startX + "," + startY + "],终点=[" + endX + "," + endY + "],滑动距离=" + (endX - startX) + "px.[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
-        // 生成滑动指令并发送广播
-        long slideDuration = SLIDE_DURATION_MIN + RandomUtil.nextLong(SLIDE_DURATION_MAX,SLIDE_DURATION_MIN + 1);
-        String swipeCmd = String.format("input swipe %d %d %d %d %d",
-                (int) startX, (int) startY,
-                (int) endX, (int) endY,
-                slideDuration);
-        //ApplicationHook.sendBroadcastShell(getSlidePathKey(), swipeCmd);
-        
+        //Log.record("滑动验证🆘屏幕信息:尺寸=" + screenWidth + "x" + screenHeight + ";" + "滑动区域信息:容器位置=[" + containerX + "," + containerY + "],尺寸=" + containerWidth + "x" + containerHeight + ";" + "滑块信息:位置=[" + sliderX + "," + sliderY + "],尺寸=" + sliderWidth + "x" + sliderHeight + ";" + "计算结果:起点=[" + startX + "," + startY + "],终点=[" + endX + "," + endY + "],滑动距离=" + (endX - startX) + "px.");
+        // 说明：这里原先把坐标拼成 "input swipe ..." 命令交给（已注释掉的）广播去执行，
+        // 但该命令从未被使用——真正的手势由 MotionEventSimulator 在主线程派发。死代码，已删。
         return new SlideCoordinates(startX, startY, endX, endY);
     }
     

@@ -12,6 +12,12 @@ import java.util.Collections;
 public class AuthCodeHelper {
     private static final String TAG = "Oauth2AuthCodeHelper";
     private static ClassLoader classLoader;
+
+    /**
+     * 上一次失败的完整描述。宿主侧取授权码失败往往是**确定性**的（例如 facade 为 null），
+     * 每次请求都打完整堆栈会把运行日志淹没；只在失败描述变化时打堆栈，其余只记一行。
+     */
+    private static volatile String lastFailDesc;
     
     /**
      * 初始化 Oauth2AuthCodeHelper
@@ -97,7 +103,15 @@ public class AuthCodeHelper {
             
             return null;
         } catch (Throwable e) {
-            //Log.printStackTrace(TAG+"主动调用获取授权码失败: " + e.getMessage(), e);
+            // 返回 null 与「确实没有授权码」无法区分，必须留痕（原先被注释掉，等于失败无迹可查）；
+            // 但同一失败会随每次请求重复出现，故只在失败描述变化时打完整堆栈
+            String failDesc = String.valueOf(e);
+            if (!failDesc.equals(lastFailDesc)) {
+                lastFailDesc = failDesc;
+                Log.printStackTrace(TAG + " 主动调用获取授权码失败", e);
+            } else {
+                Log.error(TAG + " 主动调用获取授权码失败: " + failDesc);
+            }
             return null;
         }
     }

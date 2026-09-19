@@ -14,8 +14,7 @@ public class ThreadUtil {
                 try {
                     thread.join(unit.toMillis(timeout));
                 } catch (InterruptedException e) {
-                    Log.i(TAG, "thread shutdownAndWait err:");
-                    Log.printStackTrace(TAG, e);
+                    Log.err(TAG, "thread shutdownAndWait err:", e);
                 }
             }
         }
@@ -31,8 +30,7 @@ public class ThreadUtil {
         try {
             shutdownAndAwaitTermination(pool, 30, TimeUnit.SECONDS);
         } catch (Exception e) {
-            Log.i(TAG, "thread shutdownAndWait err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "thread shutdownAndWait err:", e);
             return false;
         }
         return true;

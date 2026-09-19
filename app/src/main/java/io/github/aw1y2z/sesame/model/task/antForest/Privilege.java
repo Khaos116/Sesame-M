@@ -137,7 +137,7 @@ public class Privilege {
         
         switch (status) {
             case TASK_RECEIVED:
-                Log.forest(PREFIX_PRIVILEGE + "[" + taskName + "]已领取[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                Log.forest(PREFIX_PRIVILEGE + "[" + taskName + "]已领取");
                 break;
             case TASK_FINISHED:
                 handleYouthTaskAward(taskType, taskName, results);
@@ -153,7 +153,7 @@ public class Privilege {
         results.add(resultDesc);
 
         String logMessage = "处理成功".equals(resultDesc) ? "领取成功" : "领取结果：" + resultDesc;
-        Log.forest(PREFIX_PRIVILEGE + "[" + taskName + "]" + logMessage + "[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+        Log.forest(PREFIX_PRIVILEGE + "[" + taskName + "]" + logMessage);
     }
     
     public static void studentSignInRedEnvelope() {

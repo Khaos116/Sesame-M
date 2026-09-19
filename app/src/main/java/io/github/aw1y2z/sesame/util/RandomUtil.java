@@ -26,7 +26,10 @@ public class RandomUtil {
     public static long nextLong(long min, long max) {
         if (min >= max) return min;
         long o = max - min;
-        return rnd.nextLong() % o + min;
+        // 原实现是 nextLong() % o：nextLong() 为负时结果也会为负（可能小于 min，甚至为负数）。
+        // 调用点全是"时长/延迟"，负值会直接抛异常（Thread.sleep）或让延迟形同虚设。
+        // floorMod 保证结果始终落在 [min, max)。
+        return Math.floorMod(rnd.nextLong(), o) + min;
     }
     
     public static double nextDouble() {

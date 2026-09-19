@@ -88,9 +88,6 @@ public class AntSports extends ModelTask {
     // 处理气泡任务
     private BooleanModelField QUERY_BUBBLE_TASK;
 
-    // 兑换权益
-    private BooleanModelField QUERY_ITEM_LIST;
-
     //能量泵
     private BooleanModelField WALK_GRID;
 
@@ -103,7 +100,6 @@ public class AntSports extends ModelTask {
     private BooleanModelField awardspecialActivityReceive;
 
     //private SelectModelField neverLandOptions;
-    private SelectModelField neverLandBenefitList;
     private ChoiceModelField energyStrategy;
 
     @Override
@@ -123,35 +119,34 @@ public class AntSports extends ModelTask {
         // modelFields.addField(PathThemeMapList = new SelectModelField("PathThemeMapList", "行走路线 | 路线主题", new LinkedHashSet<>(), WalkPathThemeMapList::getList, "请选择要行走的主题，选择多条则随机走其中一个主题下的路线"));
         // 确保 nickNames 和 values 已初始化
         WalkPathThemeMapList.getList();
-        modelFields.addField(PathThemeMapList = new ChoiceModelField("PathThemeMapList", "行走路线 | 路线主题", 0, WalkPathThemeMapList.nickNames));
-        modelFields.addField(walkMinimumCompleteCount = new BooleanModelField("walkMinimumCompleteCount", "全主题路线(选最少完成数) | 开启", false));
+        modelFields.addField(PathThemeMapList = new ChoiceModelField("PathThemeMapList", "行走路线 | 路线主题", 0, WalkPathThemeMapList.nickNames).setDependsOn("walk"));
+        modelFields.addField(walkMinimumCompleteCount = new BooleanModelField("walkMinimumCompleteCount", "全主题路线(选最少完成数) | 开启", false).setDependsOn("walk"));
         //modelFields.addField(walkCustomPathIdList = new SelectModelField("walkCustomPathIdList", "行走路线 | 自定义路线列表", new LinkedHashSet<>(), WalkPath::getThemeListFromRpc, "请选择要行走的路线，选择多条则随机走其中一条"));
         modelFields.addField(sportsTasks = new BooleanModelField("sportsTasks", "运动任务", false));
-        modelFields.addField(AutoAntSportsTaskList = new BooleanModelField("AutoAntSportsTaskList", "运动任务 | 自动黑白名单", true));
-        modelFields.addField(AntSportsTaskList = new SelectModelField("AntSportsTaskList", "运动任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntSportsTaskList::getList));
+        modelFields.addField(AutoAntSportsTaskList = new BooleanModelField("AutoAntSportsTaskList", "运动任务 | 自动黑名单", true).setDependsOn("sportsTasks"));
+        modelFields.addField(AntSportsTaskList = new SelectModelField("AntSportsTaskList", "运动任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntSportsTaskList::getList).setDependsOn("sportsTasks"));
         modelFields.addField(receiveCoinAsset = new BooleanModelField("receiveCoinAsset", "收运动币", false));
         //modelFields.addField(donateCharityCoinType = new ChoiceModelField("donateCharityCoinType", "捐运动币 | 方式", DonateCharityCoinType.ZERO, DonateCharityCoinType.nickNames));
         //modelFields.addField(donateCharityCoinAmount = new IntegerModelField("donateCharityCoinAmount", "捐运动币 | 数量" + "(每次)", 100));
         //modelFields.addField(coinExchangeDoubleCard = new BooleanModelField("coinExchangeDoubleCard", "运动币兑换限时能量双击卡", false));
         modelFields.addField(club = new BooleanModelField("club", "抢好友 | 开启", false));
-        modelFields.addField(clubTrainItemType = new ChoiceModelField("clubTrainItemType", "抢好友 | 训练动作", TrainItemType.NONE, TrainItemType.nickNames));
-        modelFields.addField(clubTradeMemberType = new ChoiceModelField("clubTradeMemberType", "抢好友 | 抢购动作", TradeMemberType.NONE, TradeMemberType.nickNames));
-        modelFields.addField(clubTradeMemberList = new SelectModelField("clubTradeMemberList", "抢好友 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
+        modelFields.addField(clubTrainItemType = new ChoiceModelField("clubTrainItemType", "抢好友 | 训练动作", TrainItemType.NONE, TrainItemType.nickNames).setDependsOn("club"));
+        modelFields.addField(clubTradeMemberType = new ChoiceModelField("clubTradeMemberType", "抢好友 | 抢购动作", TradeMemberType.NONE, TradeMemberType.nickNames).setDependsOn("club"));
+        modelFields.addField(clubTradeMemberList = new SelectModelField("clubTradeMemberList", "抢好友 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("club"));
         modelFields.addField(tiyubiz = new BooleanModelField("tiyubiz", "文体中心", false));
-        modelFields.addField(syncStepCount = new IntegerModelField("syncStepCount", "同步步数 | 自定义", 22000));
+        modelFields.addField(syncStepCount = new IntegerModelField("syncStepCount", "同步步数 | 自定义", 22000, 0, 78000));
         modelFields.addField(earliestSyncStepTime = new IntegerModelField("earliestSyncStepTime", "同步步数 | 最早同步时间(24小时制)", 0, 0, 23));
         modelFields.addField(latestExchangeTime = new IntegerModelField("latestExchangeTime", "行走捐 | 最晚捐步时间(24小时制)", 22));
         modelFields.addField(minExchangeCount = new IntegerModelField("minExchangeCount", "行走捐 | 最小捐步步数", 10));
         modelFields.addField(neverLand = new BooleanModelField("neverLand", "健康岛 | 开启", false));
-        modelFields.addField(QUERY_SIGN = new BooleanModelField("QUERY_SIGN", "健康岛 | 每日签到", false));
-        modelFields.addField(QUERY_TASK_CENTER = new BooleanModelField("QUERY_TASK_CENTER", "健康岛 | 做任务 加能量", false));
-        modelFields.addField(QUERY_BUBBLE_TASK = new BooleanModelField("QUERY_BUBBLE_TASK", "健康岛 | 领取能量球奖励", false));
-        modelFields.addField(QUERY_ITEM_LIST = new BooleanModelField("QUERY_ITEM_LIST", "健康岛 | 健康能量兑好礼", false));
-        modelFields.addField(WALK_GRID = new BooleanModelField("WALK_GRID", "健康岛 | 能量泵", false));
-        modelFields.addField(WALK_GRID_MAX = new IntegerModelField("WALK_GRID_MAX", "健康岛 | 单次执行能量泵最大次数(不限:0)", 5));
-        modelFields.addField(WALK_GRID_LIMIT = new IntegerModelField("WALK_GRID_LIMIT", "健康岛 | 使用能量泵剩余能量值(低于该值停止使用)", 10000));
-        modelFields.addField(MapListSwitch = new BooleanModelField("MapListSwitch", "健康岛 | 自动切岛", false));
-        modelFields.addField(awardspecialActivityReceive = new BooleanModelField("awardspecialActivityReceive", "健康岛 | 领取活动岛奖励", false));
+        modelFields.addField(QUERY_SIGN = new BooleanModelField("QUERY_SIGN", "健康岛 | 每日签到", false).setDependsOn("neverLand"));
+        modelFields.addField(QUERY_TASK_CENTER = new BooleanModelField("QUERY_TASK_CENTER", "健康岛 | 做任务 加能量", false).setDependsOn("neverLand"));
+        modelFields.addField(QUERY_BUBBLE_TASK = new BooleanModelField("QUERY_BUBBLE_TASK", "健康岛 | 领取能量球奖励", false).setDependsOn("neverLand"));
+        modelFields.addField(WALK_GRID = new BooleanModelField("WALK_GRID", "健康岛 | 能量泵", false).setDependsOn("neverLand"));
+        modelFields.addField(WALK_GRID_MAX = new IntegerModelField("WALK_GRID_MAX", "健康岛 | 单次执行能量泵最大次数(不限:0)", 5).setDependsOn("neverLand"));
+        modelFields.addField(WALK_GRID_LIMIT = new IntegerModelField("WALK_GRID_LIMIT", "健康岛 | 使用能量泵剩余能量值(低于该值停止使用)", 10000).setDependsOn("neverLand"));
+        modelFields.addField(MapListSwitch = new BooleanModelField("MapListSwitch", "健康岛 | 自动切岛", false).setDependsOn("neverLand"));
+        modelFields.addField(awardspecialActivityReceive = new BooleanModelField("awardspecialActivityReceive", "健康岛 | 领取活动岛奖励", false).setDependsOn("neverLand"));
         return modelFields;
     }
 
@@ -167,15 +162,14 @@ public class AntSports extends ModelTask {
                     int hour = Integer.parseInt(Log.getFormatTime().split(":")[0]);
                     int originStep = (Integer) param.getResult();
                     int step = tmpStepCount();
-                    if (!Status.hasFlagToday("sport::syncStep") && hour >= earliestSyncStepTime.getValue() && originStep < step) {
+                    if (hour >= earliestSyncStepTime.getValue() && originStep < step) {
                         param.setResult(step);
                     }
                 }
             });
             Log.i(TAG, "hook readDailyStep successfully");
         } catch (Throwable t) {
-            Log.i(TAG, "hook readDailyStep err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "hook readDailyStep err:", t);
         }
     }
 
@@ -192,8 +186,8 @@ public class AntSports extends ModelTask {
     public void run() {
         try {
             int hour = Integer.parseInt(Log.getFormatTime().split(":")[0]);
-            //if (!Status.hasFlagToday("sport::syncStep")) {
-            if (!Status.hasFlagToday("sport::syncStep") && hour >= earliestSyncStepTime.getValue()) {
+            // 主动推送使用独立标记 sport::syncStepPush，失败/废弃都不再影响 readDailyStep hook
+            if (!Status.hasFlagToday("sport::syncStepPush") && hour >= earliestSyncStepTime.getValue()) {
                 JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep());
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
@@ -202,19 +196,28 @@ public class AntSports extends ModelTask {
                 addChildTask(new ChildModelTask("syncStep", () -> {
                     int step = tmpStepCount();
                     if (stepCount < step) {
-                        // 支付宝 v10.8.60+ 已移除 RpcManager.a() 方法，改用反射调用防止编译报错
-                        // readDailyStep hook 仍正常工作（篡改步数读取），此主动推送机制已废弃
+                        // a(int, boolean, String) 是【实例方法】。旧实现为两步：
+                        //   XHelpers.callMethod(XHelpers.callStaticMethod(RpcManager.class, "a"), "a", {step, false, "system"})
+                        // 即先用静态无参 a() 取单例，再在该实例上调用；此前误写成 Method.invoke(null, …) 传 null 接收者 → null receiver NPE
                         try {
                             ClassLoader classLoader = ApplicationHook.getClassLoader();
                             if (syncStepByRpcManager(classLoader, step)) {
                                 Toast.show("同步步数🏃🏻‍♂️[" + step + "步]");
-                                Log.other("同步步数🏃🏻‍♂️[" + step + "步]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
-                                Status.flagToday("sport::syncStep");
+                                Log.other("同步步数🏃🏻‍♂️[" + step + "步]");
+                                Status.flagToday("sport::syncStepPush");
                             } else {
                                 Log.record("同步运动步数失败:" + step);
                             }
                         } catch (Throwable t) {
-                            Log.printStackTrace(TAG, t);
+                            // XHelpers 会把 NoSuchMethodException 包装进 RuntimeException，这里统一处理
+                            if (t.getCause() instanceof NoSuchMethodException) {
+                                Log.record("同步步数主动推送⚠️接口已不可用（新版支付宝移除），已跳过；readDailyStep hook 不受影响");
+                            } else {
+                                Log.record("同步步数主动推送⚠️异常，已跳过；readDailyStep hook 不受影响");
+                                Log.printStackTrace(TAG, t);
+                            }
+                            // 标记已尝试，避免每次运行都重试刷日志（readDailyStep hook 已能独立工作）
+                            Status.flagToday("sport::syncStepPush");
                         }
                     }
                 }));
@@ -277,8 +280,7 @@ public class AntSports extends ModelTask {
             }
 
         } catch (Throwable t) {
-            Log.i(TAG, "start.run err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "start.run err:", t);
         }
     }
 
@@ -423,8 +425,8 @@ public class AntSports extends ModelTask {
         tmpStepCount = syncStepCount.getValue();
         if (tmpStepCount > 0) {
             tmpStepCount = RandomUtil.nextInt(tmpStepCount, tmpStepCount + 2000);
-            if (tmpStepCount > 100000) {
-                tmpStepCount = 100000;
+            if (tmpStepCount > 78000) {
+                tmpStepCount = 78000;
             }
         }
         return tmpStepCount;
@@ -474,35 +476,12 @@ public class AntSports extends ModelTask {
                         return;
                     }
                     // 2. 批量添加黑名单任务（确保存在）
-                    Set<String> currentValues = AntSportsTaskList.getValue();//该处直接返回列表地址
-                    if (currentValues != null) {
-                        for (String task : blackList) {
-                            if (!currentValues.contains(task)) {
-                                AntSportsTaskList.add(task, 0);
-                            }
-                        }
-                    }
-                    currentValues = AntSportsTaskList.getValue();//该处直接返回列表地址
-                    if (currentValues != null) {
-
-                        // 3. 批量移除白名单任务（从现有列表中删除）
-                        for (String task : whiteList) {
-                            if (currentValues.contains(task)) {
-                                currentValues.remove(task);
-                            }
-                        }
-                    }
-                    // 4. 保存配置
-                    if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
-                        Log.record("黑白名单🈲运动任务自动设置: " + AntSportsTaskList.getValue());
-                    } else {
-                        Log.record("运动任务黑白名单设置失败");
-                    }
+                    // 2~4. 批量写回黑/白名单并保存
+                    MessageUtil.syncTaskBlackList("运动任务", blackList, whiteList, AntSportsTaskList);
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "initSportsTaskListMap err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "initSportsTaskListMap err:", t);
         }
     }
 
@@ -530,8 +509,7 @@ public class AntSports extends ModelTask {
             Log.record("同步路线主题" + PathThemeMapListMap.getMap());
 
         } catch (Throwable t) {
-            Log.i(TAG, "initWalkPathThemeMap err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "initWalkPathThemeMap err:", t);
         }
 
     }
@@ -598,8 +576,7 @@ public class AntSports extends ModelTask {
                 completeTask(taskAction, taskId, taskName);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "sportsTasks err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "sportsTasks err:", t);
         }
     }
 
@@ -610,8 +587,7 @@ public class AntSports extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "signUpTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "signUpTask err:", t);
         }
         return false;
     }
@@ -627,8 +603,7 @@ public class AntSports extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "completeTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "completeTask err:", t);
         }
         return false;
     }
@@ -658,8 +633,7 @@ public class AntSports extends ModelTask {
                 Log.record("运动签到今日已签到");
             }
         } catch (Throwable t) {
-            Log.i(TAG, "signInCoinTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "signInCoinTask err:", t);
         }
     }
 
@@ -687,8 +661,7 @@ public class AntSports extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "receiveCoinAsset err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "receiveCoinAsset err:", t);
         }
     }
 
@@ -700,8 +673,7 @@ public class AntSports extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "receiveCoinAsset err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "receiveCoinAsset err:", t);
         }
         return false;
     }
@@ -792,8 +764,7 @@ public class AntSports extends ModelTask {
             }
             Log.other("切换路线🚶🏻‍♂️选择主题[" + minThemeName + "]城市[" + MinName + "]线路[" + MinCityPathName + "](" + minPathId + ")目前" + minCompleteCount + "次");
         } catch (Throwable t) {
-            Log.i(TAG, "getWalkPathMinCompleteCount err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "getWalkPathMinCompleteCount err:", t);
         }
         return minPathId;
     }
@@ -840,8 +811,7 @@ public class AntSports extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "isNeedJoinNewPath err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "isNeedJoinNewPath err:", t);
         }
         return false;
     }
@@ -872,8 +842,7 @@ public class AntSports extends ModelTask {
             }
             Status.flagToday("sport::treasureBoxLimit");
         } catch (Throwable t) {
-            Log.i(TAG, "hasTreasureBox err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "hasTreasureBox err:", t);
         }
         return false;
     }
@@ -913,8 +882,7 @@ public class AntSports extends ModelTask {
             String pathName = path.optString("name");
             return walkGo(pathName, pathId, useStepCount);
         } catch (Throwable t) {
-            Log.i(TAG, "walkGo err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "walkGo err:", t);
         }
         return false;
     }
@@ -934,8 +902,7 @@ public class AntSports extends ModelTask {
                 parseRewardsByJSONObjectData(jo);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "walkGo err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "walkGo err:", t);
         }
         return result;
     }
@@ -948,8 +915,7 @@ public class AntSports extends ModelTask {
                 theme = jo.optJSONObject("data");
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryWorldMap err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryWorldMap err:", t);
         }
         return theme;
     }
@@ -962,8 +928,7 @@ public class AntSports extends ModelTask {
                 city = jo.optJSONObject("data");
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryCityPath err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryCityPath err:", t);
         }
         return city;
     }
@@ -978,8 +943,7 @@ public class AntSports extends ModelTask {
                 parseRewardsByJSONObjectData(path);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryPath err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryPath err:", t);
         }
         return path;
     }
@@ -995,8 +959,7 @@ public class AntSports extends ModelTask {
                 TimeUtil.sleep(1000);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "openTreasureBox err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "openTreasureBox err:", t);
         }
     }
 
@@ -1011,8 +974,7 @@ public class AntSports extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "receiveEvent err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "receiveEvent err:", t);
         }
     }
 
@@ -1045,8 +1007,7 @@ public class AntSports extends ModelTask {
                 Log.other("行走路线🚶🏻‍♂️收获" + rewardsTypeName + "[" + jo.optString("rewardName") + "*" + jo.optInt("count") + "]");
             }
         } catch (Throwable t) {
-            Log.i(TAG, "parseRewardsByJSONArrayRewards err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "parseRewardsByJSONArrayRewards err:", t);
         }
     }
 
@@ -1071,8 +1032,7 @@ public class AntSports extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "parseRewardsByJSONObjectData err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "parseRewardsByJSONObjectData err:", t);
         }
     }
 
@@ -1086,8 +1046,7 @@ public class AntSports extends ModelTask {
                 goingPathId = jo != null ? jo.optString("goingPathId") : "";
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryGoingPathId err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryGoingPathId err:", t);
         }
         return goingPathId;
     }
@@ -1133,8 +1092,7 @@ public class AntSports extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryJoinPathId err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryJoinPathId err:", t);
         }
         return pathId;
     }
@@ -1152,8 +1110,7 @@ public class AntSports extends ModelTask {
             jo = jo.optJSONObject("userPathStep");
             return jo != null && !jo.optBoolean("dayLimit");
         } catch (Throwable t) {
-            Log.i(TAG, "checkJoinPathId err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "checkJoinPathId err:", t);
         }
         return false;
     }
@@ -1169,12 +1126,11 @@ public class AntSports extends ModelTask {
                 JSONObject pathData = queryPath(pathId);
                 JSONObject pathObj = pathData != null ? pathData.optJSONObject("path") : null;
                 String pathName = pathObj != null ? pathObj.optString("name") : "";
-                Log.other("行走路线🚶🏻‍♂️加入[" + pathName + "]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                Log.other("行走路线🚶🏻‍♂️加入[" + pathName + "]");
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "joinPath err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "joinPath err:", t);
         }
         return false;
     }
@@ -1206,8 +1162,7 @@ public class AntSports extends ModelTask {
             }
             Status.flagToday("sport::donateCharityCoin");
         } catch (Throwable t) {
-            Log.i(TAG, "canDonateCharityCoinToday err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "canDonateCharityCoinToday err:", t);
         }
         return false;
     }
@@ -1253,8 +1208,7 @@ public class AntSports extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryProjectList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryProjectList err:", t);
         }
     }
 
@@ -1267,8 +1221,7 @@ public class AntSports extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "donate err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "donate err:", t);
         }
         return false;
     }
@@ -1296,8 +1249,7 @@ public class AntSports extends ModelTask {
             }
             Status.flagToday("sport::donateWalk");
         } catch (Throwable t) {
-            Log.i(TAG, "canDonateWalkExchangeToday err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "canDonateWalkExchangeToday err:", t);
         }
         return false;
     }
@@ -1353,8 +1305,7 @@ public class AntSports extends ModelTask {
             Status.flagToday("sport::donateWalk");
 
         } catch (Throwable t) {
-            Log.i(TAG, "queryWalkStep err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryWalkStep err:", t);
         }
     }
 
@@ -1390,8 +1341,7 @@ public class AntSports extends ModelTask {
                 Log.record("文体每日任务" + " " + s);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "userTaskGroupQuery err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "userTaskGroupQuery err:", t);
         }
     }
 
@@ -1447,8 +1397,7 @@ public class AntSports extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "participate err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "participate err:", t);
         }
     }
 
@@ -1493,8 +1442,7 @@ public class AntSports extends ModelTask {
                 Log.i(s);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "userTaskRightsReceive err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "userTaskRightsReceive err:", t);
         }
     }
 
@@ -1535,8 +1483,7 @@ public class AntSports extends ModelTask {
                 Log.i(TAG, jo.optString("resultDesc"));
             }
         } catch (Throwable t) {
-            Log.i(TAG, "pathFeatureQuery err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "pathFeatureQuery err:", t);
         }
     }
 
@@ -1568,7 +1515,7 @@ public class AntSports extends ModelTask {
                             }
                             award.append(jo.optString("name")).append("*").append(jo.optInt("count"));
                         }
-                        Log.other("文体宝箱🎁[" + award + "]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                        Log.other("文体宝箱🎁[" + award + "]");
                     } else {
                         Log.record("文体中心开宝箱");
                         Log.i(jo.toString());
@@ -1579,8 +1526,7 @@ public class AntSports extends ModelTask {
                 Log.i(s);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "pathMapHomepage err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "pathMapHomepage err:", t);
         }
     }
 
@@ -1594,8 +1540,7 @@ public class AntSports extends ModelTask {
                 Log.i(TAG, jo.toString());
             }
         } catch (Throwable t) {
-            Log.i(TAG, "pathMapJoin err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "pathMapJoin err:", t);
         }
     }
 
@@ -1619,8 +1564,7 @@ public class AntSports extends ModelTask {
                 Log.i(TAG, s);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "tiyubizGo err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "tiyubizGo err:", t);
         }
     }
 
@@ -1732,8 +1676,7 @@ public class AntSports extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryClubHome err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryClubHome err:", t);
         }
     }
 
@@ -1744,11 +1687,10 @@ public class AntSports extends ModelTask {
             if (jo.optBoolean("success")) {
                 JSONObject ja = jo.optJSONObject("data");
                 String collectCoin = ja != null ? ja.optString("changeAmount") : "";
-                Log.other("好友大战🧊收取" + bubbleType + "获得[" + collectCoin + "运动能量]" + "#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                Log.other("好友大战🧊收取" + bubbleType + "获得[" + collectCoin + "运动能量]");
             }
         } catch (Throwable t) {
-            Log.i(TAG, "collectBubble err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "collectBubble err:", t);
         }
     }
 
@@ -1782,7 +1724,7 @@ public class AntSports extends ModelTask {
                     queryTrainItemjo = queryTrainItemjo.optJSONObject("taskDetail");
                     String taskId = queryTrainItemjo != null ? queryTrainItemjo.optString("taskId") : "";
                     JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.DoubletrainMember(itemType, bizId, memberId, originBossId));
-                    Log.other("好友大战💪训练[" + userName + "]" + name + "[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                    Log.other("好友大战💪训练[" + userName + "]" + name);
                     if (!MessageUtil.checkResultCode(TAG, jo)) {
                         return;
                     }
@@ -1791,19 +1733,18 @@ public class AntSports extends ModelTask {
                     if (!MessageUtil.checkSuccess(TAG, jo)) {
                         return;
                     }
-                    Log.other("好友大战💪翻倍训练[" + userName + "]" + name + "[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                    Log.other("好友大战💪翻倍训练[" + userName + "]" + name + "");
                 } else {
                     JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.trainMember(itemType, memberId, originBossId));
                     if (!MessageUtil.checkResultCode(TAG, jo)) {
                         return;
                     }
-                    Log.other("好友大战💪训练[" + userName + "]" + name + "[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                    Log.other("好友大战💪训练[" + userName + "]" + name + "");
                 }
             }
 
         } catch (Throwable t) {
-            Log.i(TAG, "trainMember err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "trainMember err:", t);
         }
     }
 
@@ -1814,8 +1755,10 @@ public class AntSports extends ModelTask {
             addChildTask(new ChildModelTask(taskId, "TRAIN", () -> {
                 AntSportsRpcCall.queryClubRoom(roomId);
             }, gmtEnd));
-            int roomIdInt = Integer.parseInt(roomId.substring(2, 8));
-            Log.record("蹲点训练💪添加[" + roomIdInt + "号房]在[" + TimeUtil.getCommonDate(gmtEnd) + "]执行");
+            // 原先直接 substring(2, 8) + parseInt：roomId 长度不足或含非数字都会抛异常，连带整个模块出错；
+            // 这里只用于日志展示，取不到就原样打 roomId
+            String roomIdText = roomId.length() > 8 ? roomId.substring(2, 8) : roomId;
+            Log.record("蹲点训练💪添加[" + roomIdText + "号房]在[" + TimeUtil.getCommonDate(gmtEnd) + "]执行");
         }
     }
 
@@ -1888,8 +1831,7 @@ public class AntSports extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryMemberPriceRanking err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryMemberPriceRanking err:", t);
         }
         return;
     }
@@ -1909,8 +1851,7 @@ public class AntSports extends ModelTask {
                 return member;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryClubMember err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryClubMember err:", t);
         }
         return null;
     }
@@ -1929,15 +1870,14 @@ public class AntSports extends ModelTask {
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 String userName = UserIdMap.getShowName(originBossId);
                 int price = member.optInt("price");
-                Log.other("好友大战🉐抢购[" + userName + "]来自[" + currentBossShowName + "]花费[" + price + "健康能量]" + "#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                Log.other("好友大战🉐抢购[" + userName + "]来自[" + currentBossShowName + "]花费[" + price + "健康能量]");
                 Toast.show("好友大战🉐抢购[" + userName + "]来自[" + currentBossShowName + "]花费[" + price + "健康能量]");
                 return true;
             } else {
                 return false;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "buyMember err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "buyMember err:", t);
         }
         return false;
     }
@@ -1967,8 +1907,7 @@ public class AntSports extends ModelTask {
                 Log.other("运动好礼🎐兑换[" + itemTitle + "]花费" + valueCoinCount + "运动币");
             }
         } catch (Throwable t) {
-            Log.i(TAG, "trainMember err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "trainMember err:", t);
         }
     }
 
@@ -1989,8 +1928,7 @@ public class AntSports extends ModelTask {
                 }
             }
         } catch (Exception e) {
-            Log.i(TAG, "receiveSpecialPrize err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "receiveSpecialPrize err:", e);
         }
     }
 
@@ -2008,12 +1946,11 @@ public class AntSports extends ModelTask {
                 JSONObject continuousDoSignInVO = data != null ? data.optJSONObject("continuousDoSignInVO") : null;
                 int continuousDay = continuousSignInfo != null ? continuousSignInfo.optInt("continuitySignedDayCount") : 0;
                 int reward = continuousDoSignInVO != null ? continuousDoSignInVO.optInt("rewardAmount") : 0;
-                Log.other("悦动健康🚑️连续签到[第" + continuousDay + "天]#获得[" + reward + "g健康能量]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                Log.other("悦动健康🚑️连续签到[第" + continuousDay + "天]#获得[" + reward + "g健康能量]");
                 return true;
             }
         } catch (Exception e) {
-            Log.i(TAG, "takeSign err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "takeSign err:", e);
         }
         return false;
     }
@@ -2039,8 +1976,7 @@ public class AntSports extends ModelTask {
                 return true;
             }
         } catch (Exception e) {
-            Log.i(TAG, "taskReceive err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "taskReceive err:", e);
         }
         return false;
     }
@@ -2063,8 +1999,7 @@ public class AntSports extends ModelTask {
                 return true;
             }
         } catch (Exception e) {
-            Log.i(TAG, "taskSend err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "taskSend err:", e);
         }
         return false;
     }
@@ -2103,8 +2038,7 @@ public class AntSports extends ModelTask {
                 return leftCount >= 5 && currentStar < totalStar;
             }
         } catch (Exception e) {
-            Log.i(TAG, "walkGrid err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "walkGrid err:", e);
         }
         return false;
     }
@@ -2129,8 +2063,7 @@ public class AntSports extends ModelTask {
                 return buildingEnergyFinal - endbuildingEnergyProcess;
             }
         } catch (Exception e) {
-            Log.i(TAG, "build err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "build err:", e);
         }
         return 0;
     }
@@ -2167,8 +2100,7 @@ public class AntSports extends ModelTask {
                 return true;
             }
         } catch (Exception e) {
-            Log.i(TAG, "energyReceive err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "energyReceive err:", e);
         }
         return false;
     }
@@ -2189,8 +2121,7 @@ public class AntSports extends ModelTask {
                 }
             }
         } catch (Exception e) {
-            Log.i(TAG, "offlineAward err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "offlineAward err:", e);
         }
     }
 
@@ -2219,8 +2150,7 @@ public class AntSports extends ModelTask {
                 rewardList.add(count + unit + name);
             }
         } catch (Exception e) {
-            Log.i(TAG, "parseRewards err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "parseRewards err:", e);
         }
         return rewardList;
     }
@@ -2240,8 +2170,7 @@ public class AntSports extends ModelTask {
                 Log.other("悦动健康🚑️领取奖励[" + rewardName + "]#获得[" + energy + "g健康能量]");
             }
         } catch (Exception e) {
-            Log.i(TAG, "pickBubbleTaskEnergy err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "pickBubbleTaskEnergy err:", e);
         }
     }
 
@@ -2343,7 +2272,7 @@ public class AntSports extends ModelTask {
                                         }
                                         String subTitle = prize.optString("subTitle");
                                         String title = prize.optString("title");
-                                        Log.other("悦动健康🚑️领取奖励[" + subTitle + "]#获得[" + title + "]#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                                        Log.other("悦动健康🚑️领取奖励[" + subTitle + "]#获得[" + title + "]");
                                     }
                                 }
                             }
@@ -2352,8 +2281,7 @@ public class AntSports extends ModelTask {
                 }
             }
         } catch (Exception e) {
-            Log.i(TAG, "queryBaseInfo err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "queryBaseInfo err:", e);
         }
     }
 
@@ -2403,72 +2331,7 @@ public class AntSports extends ModelTask {
                 queryAndProcessBubbleTasks();
             }
         } catch (Exception e) {
-            Log.i(TAG, "queryBubbleTask err:");
-            Log.printStackTrace(TAG, e);
-        }
-    }
-
-    /**
-     * 兑换权益
-     */
-    public void exchangeBenefits() {
-        int currentEnergy = queryUserEnergy();
-        int page = 1;
-        boolean hasMore = true;
-
-        try {
-            while (hasMore) {
-                if (Status.hasFlagToday("sport::exchangeBenefits_ERROR")) {
-                    return;
-                }
-                JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.queryItemList(page));
-                String errorMessage = jsonResult.optString("errorMessage");
-                if (errorMessage.equals("系统繁忙，请稍后再试。")) {
-                    Status.flagToday("sport::exchangeBenefits_ERROR");
-                    return;
-                }
-                if (!MessageUtil.checkSuccess(TAG, jsonResult)) {
-                    break;
-                }
-
-                JSONObject data = jsonResult.optJSONObject("data");
-                if (data == null) {
-                    break;
-                }
-                hasMore = data.optBoolean("hasMore");
-                if (!data.has("itemVOList")) {
-                    break;
-                }
-
-                JSONArray items = data.optJSONArray("itemVOList");
-                for (int i = 0; items != null && i < items.length(); i++) {
-                    JSONObject item = items.optJSONObject(i);
-                    if (item == null || !"benefitItem".equals(item.optString("materialType"))) {
-                        continue;
-                    }
-
-                    String benefitId = item.optString("benefitId");
-                    String itemId = item.optString("itemId");
-                    String itemName = item.optString("itemName");
-                    int remainCount = item.optInt("remainCount");
-                    int cost = Integer.parseInt(item.optString("salePoint"));
-
-                    // 检查是否可兑换
-                    if (remainCount >= 1 && neverLandBenefitList.contains(itemId) && currentEnergy >= cost) {
-                        if (item.optString("status").equals("ITEM_SALE")) {
-                            String exchangeResult = AntSportsRpcCall.createOrder(benefitId, itemId);
-                            if (MessageUtil.checkSuccess(TAG, MyUtils.newJSONObject(exchangeResult))) {
-                                Log.other("悦动健康🚑️兑换权益[" + itemName + "]#消耗[" + cost + "g健康能量]");
-                                currentEnergy -= cost;
-                            }
-                        }
-                    }
-                }
-                page++;
-            }
-        } catch (Exception e) {
-            Log.i(TAG, "exchangeBenefits err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "queryBubbleTask err:", e);
         }
     }
 
@@ -2491,8 +2354,7 @@ public class AntSports extends ModelTask {
                 return data.optBoolean("canWalk") && starData.optInt("curr") < starData.optInt("count");
             }
         } catch (Exception e) {
-            Log.i(TAG, "canWalkGrid err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "canWalkGrid err:", e);
         }
         return false;
     }
@@ -2509,8 +2371,7 @@ public class AntSports extends ModelTask {
                 return baseMapInfo.optBoolean("newIsLandFlg") && baseMapInfo.optInt("currentPercent") < 100;
             }
         } catch (Exception e) {
-            Log.i(TAG, "canBuild err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "canBuild err:", e);
         }
         return false;
     }
@@ -2556,8 +2417,7 @@ public class AntSports extends ModelTask {
                 }
             }
         } catch (Exception e) {
-            Log.i(TAG, "processSignIn err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "processSignIn err:", e);
         }
     }
 
@@ -2612,8 +2472,7 @@ public class AntSports extends ModelTask {
                 processTaskCenter();
             }
         } catch (Exception e) {
-            Log.i(TAG, "processTaskCenter err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "processTaskCenter err:", e);
         }
     }
 
@@ -2650,8 +2509,7 @@ public class AntSports extends ModelTask {
                 processBrowseTasks();
             }
         } catch (Exception e) {
-            Log.i(TAG, "processBrowseTasks err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "processBrowseTasks err:", e);
         }
     }
 
@@ -2670,8 +2528,7 @@ public class AntSports extends ModelTask {
                 }
             }
         } catch (Exception e) {
-            Log.i(TAG, "queryUserEnergy err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "queryUserEnergy err:", e);
         }
         return 0;
     }
@@ -2694,17 +2551,12 @@ public class AntSports extends ModelTask {
             }
             // 处理基础信息相关任务
             queryBaseInfoAndProcess();
-            // 兑换权益
-            if (QUERY_ITEM_LIST.getValue()) {
-                exchangeBenefits();
-            }
+            // 自动切岛
             if (MapListSwitch.getValue()) {
                 queryMapListSwitch();
             }
-
         } catch (Exception e) {
-            Log.i(TAG, "run err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "run err:", e);
         }
     }
 
@@ -2720,7 +2572,7 @@ public class AntSports extends ModelTask {
 
             //获取岛地图
             JSONObject jsonLandMap = MyUtils.newJSONObject(AntSportsRpcCall.queryMapList());
-            if (MessageUtil.checkSuccess("queryMapList", jsonLandMap)) {
+            if (MessageUtil.checkSuccess(TAG, jsonLandMap)) {
                 JSONObject data = jsonLandMap.optJSONObject("data");
 
                 JSONArray mapList = data != null ? data.optJSONArray("mapList") : null;
@@ -2754,8 +2606,8 @@ public class AntSports extends ModelTask {
                             //if (!status.contains("FINISH") && !newIsLandFlg) {
                             if (!status.contains("FINISH")) {
                                 JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.mapChooseFree(branchId, mapId));
-                                if (MessageUtil.checkSuccess("mapChooseFree", jo)) {
-                                    Log.other("悦动健康🚑️切换到[" + mapName + "](" + mapId + ")#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                                if (MessageUtil.checkSuccess(TAG, jo)) {
+                                    Log.other("悦动健康🚑️切换到[" + mapName + "](" + mapId + ")");
                                     break;
                                 }
                             }
@@ -2766,8 +2618,7 @@ public class AntSports extends ModelTask {
 
             }
         } catch (Exception e) {
-            Log.i(TAG, "queryMapListSwitch err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "queryMapListSwitch err:", e);
         }
     }
 
@@ -2779,13 +2630,12 @@ public class AntSports extends ModelTask {
     private boolean checkAuth() {
         try {
             JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.checkAuth());
-            if (MessageUtil.checkSuccess("NeverLandAuth", jsonResult)) {
+            if (MessageUtil.checkSuccess(TAG, jsonResult)) {
                 JSONObject resultObj = jsonResult.optJSONObject("resultObj");
                 return resultObj != null && resultObj.optBoolean("authStatus");
             }
         } catch (Exception e) {
-            Log.i(TAG, "checkAuth err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "checkAuth err:", e);
         }
         return false;
     }

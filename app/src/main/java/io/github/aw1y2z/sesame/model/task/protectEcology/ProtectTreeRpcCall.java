@@ -3,6 +3,7 @@ package io.github.aw1y2z.sesame.model.task.protectEcology;
 import org.json.JSONObject;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
+import io.github.aw1y2z.sesame.util.StringUtil;
 
 public class ProtectTreeRpcCall {
     private static final String VERSION = "20230501";
@@ -53,7 +54,7 @@ public class ProtectTreeRpcCall {
      */
     public static String doRubickActivity(String actionCode, String activityId, JSONObject paramMap) {
         String args =
-                "[{\"actionCode\":\"" + actionCode + "\",\"activityId\":\"" + activityId + "\",\"paramMap\":" + paramMap + ",\"source\":\"forest\"}]";
+                "[{\"actionCode\":\"" + StringUtil.escapeJson(actionCode) + "\",\"activityId\":\"" + StringUtil.escapeJson(activityId) + "\",\"paramMap\":" + paramMap + ",\"source\":\"forest\"}]";
         return ApplicationHook.requestString("com.alipay.charityactivity.rubick.rpc.h5.doRubickActivity", args);
     }
 }

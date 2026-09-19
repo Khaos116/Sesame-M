@@ -31,6 +31,77 @@ public class UserIdMap {
     public static Set<String> getUserIdSet() {
         return userMap.keySet();
     }
+
+    /**
+     * uid -> 账号序号（从 1 开始）。首次遇到时分配「当前最大序号 + 1」并落盘，
+     * 只增不改、账号删除后序号不回收：否则历史日志里的「账号N」会指向别的账号。
+     */
+    private static final Map<String, Integer> accountIndexMap = new ConcurrentHashMap<>();
+    private static volatile boolean accountIndexLoaded = false;
+
+    private static synchronized void ensureAccountIndexLoaded() {
+        if (accountIndexLoaded) {
+            return;
+        }
+        try {
+            String body = FileUtil.readFromFile(FileUtil.getAccountIndexFile());
+            if (!body.isEmpty()) {
+                Map<String, Integer> loaded = JsonUtil.parseObject(body, new TypeReference<Map<String, Integer>>() {
+                });
+                if (loaded != null) {
+                    accountIndexMap.putAll(loaded);
+                }
+            }
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+        }
+        accountIndexLoaded = true;
+    }
+
+    public static synchronized int getAccountIndex(String userId) {
+        if (userId == null || userId.isEmpty()) {
+            return -1;
+        }
+        ensureAccountIndexLoaded();
+        Integer index = accountIndexMap.get(userId);
+        if (index != null) {
+            return index;
+        }
+        int next = 1;
+        for (Integer used : accountIndexMap.values()) {
+            if (used != null && used >= next) {
+                next = used + 1;
+            }
+        }
+        accountIndexMap.put(userId, next);
+        try {
+            FileUtil.write2File(JsonUtil.toJsonString(accountIndexMap), FileUtil.getAccountIndexFile());
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+        }
+        return next;
+    }
+
+    /**
+     * 日志与界面统一使用的账号简称，如「账号2」；uid 为空或分配失败时返回 null。
+     * <p>已分配过的走无锁快路径（一次 map 查询），适合每条日志调用。
+     */
+    public static String getAccountLabel(String userId) {
+        if (userId == null || userId.isEmpty()) {
+            return null;
+        }
+        try {
+            ensureAccountIndexLoaded();
+            Integer cached = accountIndexMap.get(userId);
+            if (cached != null) {
+                return "账号" + cached;
+            }
+            int index = getAccountIndex(userId);
+            return index > 0 ? "账号" + index : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
     
     public static Collection<UserEntity> getUserEntityCollection() {
         return userMap.values();

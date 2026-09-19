@@ -22,7 +22,6 @@ public class CustomOption extends IdAndName {
         List<CustomOption> list = new ArrayList<>();
         list.add(new CustomOption("doubleClick", "使用限时双击卡和兑换使用31天双击卡"));
         list.add(new CustomOption("robExpandCard", "先现倍率无生效则用最高倍收能量倍卡"));
-        list.add(new CustomOption("shield", "兑换和使用限时保护罩卡"));
         list.add(new CustomOption("stealthCard", "兑换和使用限制隐身卡"));
         //list.add(new CustomOption("energyBombCard", "兑换和使用炸弹卡"));
         return list;

@@ -14,9 +14,13 @@ import android.widget.TextView;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
-import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.github.aw1y2z.sesame.util.compat.XC_MethodHook;
 import io.github.aw1y2z.sesame.util.XHelpers;
@@ -30,7 +34,8 @@ public class SimplePageManager {
     
     private static WeakReference<Context> mContextRef;
     private static ClassLoader mClassLoader;
-    private static volatile Activity topActivity;
+    /** 顶层 Activity 只持弱引用：静态强引用会把已销毁的 Activity 一直留到进程结束；volatile 供后台控制线程读取最新引用 */
+    private static volatile WeakReference<Activity> topActivityRef;
     
     private static final ConcurrentHashMap<String, ActivityFocusHandler> activityFocusHandlerMap = new ConcurrentHashMap<>();
     
@@ -38,11 +43,29 @@ public class SimplePageManager {
     public static final Handler handler = new Handler(Looper.getMainLooper());
     
     private static int taskDuration = 500;
-    // 加 volatile 保证多线程可见性（参考 BaseTask.java 并发设计）
-    private static volatile boolean hasPendingActivityTask = false;
+    // 用 AtomicBoolean 而不是 volatile boolean：原先"判断 + 置位"是两步，多线程下会同时通过
+    private static final AtomicBoolean hasPendingActivityTask = new AtomicBoolean(false);
     private static boolean disable = false;
     
-    private static final ArrayList<WeakReference<Dialog>> dialogs = new ArrayList<>();
+    /** 处理链的最大尝试次数（0 起算，与历史行为一致：共 11 次） */
+    private static final int MAX_ACTIVITY_ATTEMPT = 10;
+    /**
+     * 验证码处理工作线程。
+     * <p>处理过程要遍历视图树、还要"等界面稳定"地 sleep，**绝不能放在主线程**：原实现跑在主线程，
+     * 一次尝试就阻塞 1s 以上，叠加十来次重试足以把宿主界面拖到无响应（后台时滑块解不掉、必然跑满重试，
+     * 就是最严重的场景）。单线程即可——验证码处理本就该串行，也顺带起到限流作用。
+     */
+    private static final ExecutorService captchaWorker = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "Sesame-Captcha");
+        thread.setDaemon(true);
+        return thread;
+    });
+    /** 处理链跑完之前又有新触发（新弹窗 / 新 Activity）：记下来，链结束后补跑一次，保证不漏 */
+    private static final AtomicBoolean rerunRequested = new AtomicBoolean(false);
+    
+    // 对话框列表会被 hook 线程（写）与模块线程（读）同时访问：
+    // CopyOnWriteArrayList 保证遍历期间不会被插入/删除打断（原先 ArrayList 会抛 ConcurrentModificationException）
+    private static final List<WeakReference<Dialog>> dialogs = new CopyOnWriteArrayList<>();
     private static boolean windowMonitorEnabled = false;
 
     /** started 计数大于 0 视为前台；volatile 保证跨线程可见性。 */
@@ -68,7 +91,7 @@ public class SimplePageManager {
     }
     
     public static Activity getTopActivity() {
-        return topActivity;
+        return topActivityRef != null ? topActivityRef.get() : null;
     }
     
     public static void setTaskDuration(int duration) {
@@ -87,7 +110,7 @@ public class SimplePageManager {
         activityFocusHandlerMap.remove(activityClassName);
     }
     
-    public static ArrayList<WeakReference<Dialog>> getDialogs() {
+    public static List<WeakReference<Dialog>> getDialogs() {
         return dialogs;
     }
     
@@ -117,13 +140,8 @@ public class SimplePageManager {
      */
     @SuppressLint("UseCompatLoadingForDrawables")
     public static io.github.aw1y2z.sesame.hook.SimpleViewImage tryGetTopView(String xpath) {
-        // 清理空引用
-        Iterator<WeakReference<Dialog>> iterator = dialogs.iterator();
-        while (iterator.hasNext()) {
-            if (iterator.next().get() == null) {
-                iterator.remove();
-            }
-        }
+        // 清理空引用：CopyOnWriteArrayList 的 removeIf 内部按快照处理，不会与其它线程的写入冲突
+        dialogs.removeIf(ref -> ref.get() == null);
         
         for (WeakReference<Dialog> dialogWeakReference : dialogs) {
             Dialog dialog = dialogWeakReference.get();
@@ -184,11 +202,12 @@ public class SimplePageManager {
                     new XC_MethodHook() {
                         @Override
                         protected void beforeHookedMethod(MethodHookParam param) {
-                            topActivity = (Activity) param.args[0];
+                            Activity activity = (Activity) param.args[0];
+                            topActivityRef = new WeakReference<>(activity);
                             if (mContextRef == null || mContextRef.get() == null) {
-                                mContextRef = new WeakReference<>(topActivity.getApplicationContext());
+                                mContextRef = new WeakReference<>(activity.getApplicationContext());
                             }
-                            mClassLoader = topActivity.getClassLoader();
+                            mClassLoader = activity.getClassLoader();
                             triggerActivity();
                         }
                     }
@@ -345,7 +364,7 @@ public class SimplePageManager {
      * 触发待处理的 Activity 处理器
      */
     private static void triggerPendingActivityHandler(String source) {
-        final Activity activity = topActivity;
+        final Activity activity = getTopActivity();
         if (activity == null) {
             Log.i(TAG, "无法从 " + source + " 触发处理器，未找到顶层 Activity");
             return;
@@ -357,12 +376,15 @@ public class SimplePageManager {
             return;
         }
         
-        if (hasPendingActivityTask) {
-            Log.d(TAG, "跳过从 " + source + " 触发，已有待处理任务");
+        // 判断与置位必须原子：原先"先读后写 volatile"会让两个线程同时通过检查
+        if (!hasPendingActivityTask.compareAndSet(false, true)) {
+            // 已有处理链在跑：不要并发再开一条。原实现每次尝试开始就把标记清掉，触发稍密就会同时跑多条链，
+            // 每条都在主线程阻塞 1s 以上 → 后台场景下宿主被拖死。这里改为整条链独占，只记下"跑完再补一次"。
+            rerunRequested.set(true);
+            Log.d(TAG, "已有处理链在运行，标记补跑（来源: " + source + "）");
             return;
         }
         
-        hasPendingActivityTask = true;
         Log.i(TAG, "从 " + source + " 触发 " + activity.getClass().getName() + " 的处理器");
         triggerActivityActive(activity, handler, 0);
     }
@@ -376,30 +398,87 @@ public class SimplePageManager {
             final int triggerCount
     ) {
         if (disable) {
+            // 原先直接 return 没有复位标记，会让标记永远停在 true，之后每次触发都被"已有待处理任务"跳过
+            releasePendingTask();
             Log.i(TAG, "页面触发管理器已禁用");
             return;
         }
         
-        // 替代协程：主线程延迟执行（复用类内已定义的主线程 Handler）
-        handler.postDelayed(() -> {
-            try {
-                hasPendingActivityTask = false;
-                
-                // 执行处理器逻辑（与原逻辑完全一致）
-                View decorView = activity.getWindow() != null ? activity.getWindow().getDecorView() : null;
-                if (decorView != null && activityFocusHandler.handleActivity(activity, new SimpleViewImage(decorView))) {
-                    return; // 处理成功直接返回，终止重试
+        // 替代协程 delay()：延迟时长保持 taskDuration
+        handler.postDelayed(() -> attemptOnWorker(activity, activityFocusHandler, triggerCount), taskDuration);
+    }
+    
+    /**
+     * 主线程：取一次视图快照，然后把真正的处理交给工作线程（主线程不做任何等待）
+     */
+    private static void attemptOnWorker(
+            final Activity activity,
+            final ActivityFocusHandler activityFocusHandler,
+            final int triggerCount
+    ) {
+        SimpleViewImage root = null;
+        try {
+            View decorView = activity.getWindow() != null ? activity.getWindow().getDecorView() : null;
+            if (decorView != null) {
+                root = new SimpleViewImage(decorView);
+            }
+        } catch (Throwable throwable) {
+            Log.e(TAG, "取 Activity 视图出错: " + activity.getClass().getName(), throwable);
+        }
+        if (root == null) {
+            onAttemptFinished(activity, activityFocusHandler, triggerCount, false);
+            return;
+        }
+        
+        final SimpleViewImage rootView = root;
+        try {
+            captchaWorker.execute(() -> {
+                boolean handled = false;
+                try {
+                    handled = activityFocusHandler.handleActivity(activity, rootView);
+                } catch (Throwable throwable) {
+                    Log.e(TAG, "处理 Activity 出错: " + activity.getClass().getName(), throwable);
                 }
-            } catch (Throwable throwable) {
-                Log.e(TAG, "处理 Activity 出错: " + activity.getClass().getName(), throwable);
-            }
-            
-            // 递归重试（最多10次，与原逻辑一致）
-            if (triggerCount <= 10) {
-                triggerActivityActive(activity, activityFocusHandler, triggerCount + 1);
-            } else {
-                Log.w(TAG, "Activity 事件触发失败次数过多: " + activityFocusHandler.getClass().getName());
-            }
-        }, taskDuration); // 替代协程 delay()，延迟时长保持 taskDuration
+                final boolean done = handled;
+                // 回到主线程再决定：结束本次链，还是继续下一次尝试
+                handler.post(() -> onAttemptFinished(activity, activityFocusHandler, triggerCount, done));
+            });
+        } catch (Throwable throwable) {
+            // 线程池不可用（极罕见）：必须复位标记，否则后续触发会被永久跳过
+            Log.e(TAG, "验证码处理线程不可用: ", throwable);
+            releasePendingTask();
+        }
+    }
+    
+    /**
+     * 一次尝试结束（主线程）：处理成功即结束整条链，否则继续下一次（上限与历史行为一致）
+     */
+    private static void onAttemptFinished(
+            Activity activity,
+            ActivityFocusHandler activityFocusHandler,
+            int triggerCount,
+            boolean handled
+    ) {
+        if (handled) {
+            releasePendingTask();
+            return;
+        }
+        if (triggerCount <= MAX_ACTIVITY_ATTEMPT) {
+            triggerActivityActive(activity, activityFocusHandler, triggerCount + 1);
+        } else {
+            Log.w(TAG, "Activity 事件触发失败次数过多: " + activityFocusHandler.getClass().getName());
+            releasePendingTask();
+        }
+    }
+    
+    /**
+     * 结束本次处理链（复位"有待处理任务"标记）；期间若有被记下的补跑请求，就立刻补跑一次。
+     * <p>补跑只消费一次标记，因此即使处理一直不成功也不会自我循环下去。
+     */
+    private static void releasePendingTask() {
+        hasPendingActivityTask.set(false);
+        if (rerunRequested.compareAndSet(true, false)) {
+            triggerPendingActivityHandler("补跑");
+        }
     }
 }

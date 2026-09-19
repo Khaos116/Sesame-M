@@ -66,24 +66,24 @@ public class ProtectEcology extends ModelTask {
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();
         modelFields.addField(cooperateWater = new BooleanModelField("cooperateWater", "合种 | 浇水", false));
-        modelFields.addField(cooperateWaterList = new SelectAndCountModelField("cooperateWaterList", "合种 | 日浇水量列表", new LinkedHashMap<>(), CooperateUser::getList, "请填写浇水克数(每日)"));
-        modelFields.addField(cooperateWaterTotalLimitList = new SelectAndCountModelField("cooperateWaterTotalLimitList", "合种 | 总浇水量列表", new LinkedHashMap<>(), CooperateUser::getList, "请填写浇水克数(上限总量)"));
+        modelFields.addField(cooperateWaterList = new SelectAndCountModelField("cooperateWaterList", "合种 | 日浇水量列表", new LinkedHashMap<>(), CooperateUser::getList, "请填写浇水克数(每日)").setDependsOn("cooperateWater"));
+        modelFields.addField(cooperateWaterTotalLimitList = new SelectAndCountModelField("cooperateWaterTotalLimitList", "合种 | 总浇水量列表", new LinkedHashMap<>(), CooperateUser::getList, "请填写浇水克数(上限总量)").setDependsOn("cooperateWater"));
         modelFields.addField(protectMarathonType = new ChoiceModelField("protectMarathonType", "碳中和 | 马拉松", ProtectType.NONE, ProtectType.nickNames));
-        modelFields.addField(protectMarathonList = new SelectAndCountModelField("protectMarathonList", "碳中和 | 马拉松列表", new LinkedHashMap<>(), AlipayMarathon::getList, "请填写助力能量克数(上限总量)"));
+        modelFields.addField(protectMarathonList = new SelectAndCountModelField("protectMarathonList", "碳中和 | 马拉松列表", new LinkedHashMap<>(), AlipayMarathon::getList, "请填写助力能量克数(上限总量)").setDependsOn("protectMarathonType"));
         modelFields.addField(protectNewAncientTreeType = new ChoiceModelField("protectNewAncientTreeType", "碳中和 | " + "古树医生", ProtectType.NONE, ProtectType.nickNames));
-        modelFields.addField(protectNewAncientTreeList = new SelectAndCountModelField("protectNewAncientTreeList", "碳中和 | 古树医生列表", new LinkedHashMap<>(), AlipayNewAncientTree::getList, "请填写助力能量克数(上限总量)"));
+        modelFields.addField(protectNewAncientTreeList = new SelectAndCountModelField("protectNewAncientTreeList", "碳中和 | 古树医生列表", new LinkedHashMap<>(), AlipayNewAncientTree::getList, "请填写助力能量克数(上限总量)").setDependsOn("protectNewAncientTreeType"));
         modelFields.addField(protectTree = new BooleanModelField("protectTree", "保护森林 | 植树", false));
-        modelFields.addField(protectTreeList = new SelectAndCountModelField("protectTreeList", "保护森林 | 植树列表", new LinkedHashMap<>(), AlipayTree::getList, "请填写保护次数(上限总量)"));
+        modelFields.addField(protectTreeList = new SelectAndCountModelField("protectTreeList", "保护森林 | 植树列表", new LinkedHashMap<>(), AlipayTree::getList, "请填写保护次数(上限总量)").setDependsOn("protectTree"));
         modelFields.addField(protectReserve = new BooleanModelField("protectReserve", "保护动物 | 保护地", false));
-        modelFields.addField(protectReserveList = new SelectAndCountModelField("reserveList", "保护动物 | 保护地列表", new LinkedHashMap<>(), AlipayReserve::getList, "请填写保护次数(每日)"));
+        modelFields.addField(protectReserveList = new SelectAndCountModelField("reserveList", "保护动物 | 保护地列表", new LinkedHashMap<>(), AlipayReserve::getList, "请填写保护次数(每日)").setDependsOn("protectReserve"));
         modelFields.addField(protectReserveMinNum = new BooleanModelField("protectReserveMinNum", "保护地 | 最少保护", false));
-        modelFields.addField(protectReserveNum = new IntegerModelField("protectReserveNum", "保护地 |最少保护下限", 1));
+        modelFields.addField(protectReserveNum = new IntegerModelField("protectReserveNum", "保护地 |最少保护下限", 1).setDependsOn("protectReserveMinNum"));
         modelFields.addField(protectAnimal = new BooleanModelField("protectAnimal", "保护动物 | 护林员", false));
-        modelFields.addField(protectAnimalList = new SelectModelField("protectAnimalList", "保护动物 | 护林员列表", new HashSet<>(), AlipayAnimal::getList, "请选择需要点亮的护林员"));
+        modelFields.addField(protectAnimalList = new SelectModelField("protectAnimalList", "保护动物 | 护林员列表", new HashSet<>(), AlipayAnimal::getList, "请选择需要点亮的护林员").setDependsOn("protectAnimal"));
         modelFields.addField(protectBeachMinNum = new BooleanModelField("protectBeachMinNum", "保护海洋 | 单个海滩保护", false));
-        modelFields.addField(protectBeachNum = new IntegerModelField("protectBeachNum", "保护海洋 |海滩保护下限", 1));
+        modelFields.addField(protectBeachNum = new IntegerModelField("protectBeachNum", "保护海洋 |海滩保护下限", 1).setDependsOn("protectBeachMinNum"));
         modelFields.addField(protectBeach = new BooleanModelField("protectBeach", "保护海洋 | 海滩", false));
-        modelFields.addField(protectBeachList = new SelectAndCountModelField("protectOceanList", "保护海洋 | 海滩列表", new LinkedHashMap<>(), AlipayBeach::getList, "请填写保护次数(上限总量)"));
+        modelFields.addField(protectBeachList = new SelectAndCountModelField("protectOceanList", "保护海洋 | 海滩列表", new LinkedHashMap<>(), AlipayBeach::getList, "请填写保护次数(上限总量)").setDependsOn("protectBeach"));
         return modelFields;
     }
     
@@ -161,8 +161,7 @@ public class ProtectEcology extends ModelTask {
             
         }
         catch (Throwable t) {
-            Log.i(TAG, "initForest err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "initForest err:", t);
         }
     }
     
@@ -185,8 +184,7 @@ public class ProtectEcology extends ModelTask {
             BeachIdMap.save();
         }
         catch (Throwable t) {
-            Log.i(TAG, "initOcean err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "initOcean err:", t);
         }
     }
     
@@ -209,8 +207,7 @@ public class ProtectEcology extends ModelTask {
             CooperationIdMap.save(userId);
         }
         catch (Throwable t) {
-            Log.i(TAG, "cooperateWater err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "cooperateWater err:", t);
         }
     }
     
@@ -236,8 +233,7 @@ public class ProtectEcology extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "queryCooperatePlant err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryCooperatePlant err:", t);
         }
     }
     
@@ -251,8 +247,7 @@ public class ProtectEcology extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "cooperateWater err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "cooperateWater err:", t);
         }
         return false;
     }
@@ -286,8 +281,7 @@ public class ProtectEcology extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "getEnergySummation err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "getEnergySummation err:", t);
         }
         return 0;
     }
@@ -363,8 +357,7 @@ public class ProtectEcology extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "queryTreeItemsForExchange err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryTreeItemsForExchange err:", t);
         }
         return null;
     }
@@ -416,8 +409,7 @@ public class ProtectEcology extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "queryTreeForExchange err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryTreeForExchange err:", t);
         }
         return exchangeableTree;
     }
@@ -441,8 +433,7 @@ public class ProtectEcology extends ModelTask {
             return true;
         }
         catch (Throwable t) {
-            Log.i(TAG, "exchangeTree err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "exchangeTree err:", t);
         }
         return false;
     }
@@ -459,8 +450,7 @@ public class ProtectEcology extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "applyGoldAnimalCert err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "applyGoldAnimalCert err:", t);
         }
     }
     
@@ -496,8 +486,7 @@ public class ProtectEcology extends ModelTask {
             NewAncientTreeIdMap.save();
         }
         catch (Throwable t) {
-            Log.i(TAG, "protectCarbon err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "protectCarbon err:", t);
         }
     }
     
@@ -545,8 +534,7 @@ public class ProtectEcology extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "marathonQueryActivity err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "marathonQueryActivity err:", t);
         }
     }
     
@@ -594,8 +582,7 @@ public class ProtectEcology extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "carbonQueryActivity err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "carbonQueryActivity err:", t);
         }
     }
     
@@ -619,8 +606,7 @@ public class ProtectEcology extends ModelTask {
             return true;
         }
         catch (Throwable t) {
-            Log.i(TAG, "carbonCharityActivity err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "carbonCharityActivity err:", t);
         }
         return false;
     }
@@ -633,8 +619,7 @@ public class ProtectEcology extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "queryCultivationList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryCultivationList err:", t);
         }
         return null;
     }
@@ -676,8 +661,7 @@ public class ProtectEcology extends ModelTask {
                 }
             }
             catch (Throwable t) {
-                Log.i(TAG, "protectReserveMinNum err:");
-                Log.printStackTrace(TAG, t);
+                Log.err(TAG, "protectReserveMinNum err:", t);
             }
         }
     }
@@ -714,8 +698,7 @@ public class ProtectEcology extends ModelTask {
                 }
             }
             catch (Throwable t) {
-                Log.i(TAG, "protectBeachMinNum err:");
-                Log.printStackTrace(TAG, t);
+                Log.err(TAG, "protectBeachMinNum err:", t);
             }
         }
         ;
@@ -751,8 +734,7 @@ public class ProtectEcology extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "protectBeach err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "protectBeach err:", t);
         }
     }
     
@@ -782,8 +764,7 @@ public class ProtectEcology extends ModelTask {
             return oceanExchangeTree(cultivationCode, projectCode, cultivationName);
         }
         catch (Throwable t) {
-            Log.i(TAG, "queryCultivationDetail err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryCultivationDetail err:", t);
         }
         return false;
     }
@@ -810,8 +791,7 @@ public class ProtectEcology extends ModelTask {
             return true;
         }
         catch (Throwable t) {
-            Log.i(TAG, "oceanExchangeTree err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "oceanExchangeTree err:", t);
         }
         return false;
     }

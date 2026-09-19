@@ -12,14 +12,14 @@ public class ReadingDadaRpcCall {
 
     public static String submitAnswer(String activityId, String outBizId, String questionId, String answer) {
         return ApplicationHook.requestString("com.alipay.reading.game.dada.openDailyAnswer.submitAnswer",
-                "[{\"activityId\":\"" + activityId + "\",\"answer\":\"" + answer + "\",\"dadaVersion\":\"1.3.0\"," +
-                        (StringUtil.isEmpty(outBizId) ? "" : "\"outBizId\":\"" + outBizId + "\",") +
-                        "\"questionId\":\"" + questionId + "\",\"version\":" + VERSION + "}]");
+                "[{\"activityId\":\"" + StringUtil.escapeJson(activityId) + "\",\"answer\":\"" + StringUtil.escapeJson(answer) + "\",\"dadaVersion\":\"1.3.0\"," +
+                        (StringUtil.isEmpty(outBizId) ? "" : "\"outBizId\":\"" + StringUtil.escapeJson(outBizId) + "\",") +
+                        "\"questionId\":\"" + StringUtil.escapeJson(questionId) + "\",\"version\":" + VERSION + "}]");
     }
 
     public static String getQuestion(String activityId) {
         return ApplicationHook.requestString("com.alipay.reading.game.dada.openDailyAnswer.getQuestion",
-                "[{\"activityId\":\"" + activityId + "\",\"dadaVersion\":\"1.3.0\",\"version\":" + VERSION + "}]");
+                "[{\"activityId\":\"" + StringUtil.escapeJson(activityId) + "\",\"dadaVersion\":\"1.3.0\",\"version\":" + VERSION + "}]");
     }
 
 }

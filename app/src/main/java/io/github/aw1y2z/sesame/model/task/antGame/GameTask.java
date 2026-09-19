@@ -2,10 +2,8 @@ package io.github.aw1y2z.sesame.model.task.antGame;
 
 import io.github.aw1y2z.sesame.util.MyUtils;
 
-import static io.github.aw1y2z.sesame.hook.AlipayMiniMarkHelper.getAlipayMiniMark;
 
 import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
-import io.github.aw1y2z.sesame.hook.AlipayMiniMarkHelper;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.AuthCodeHelper;
 import io.github.aw1y2z.sesame.util.Log;
@@ -32,10 +30,6 @@ public enum GameTask {
     Farm_ddply("对对碰乐园", "2021004149679303", "zfb_ddply", "ddply_game_xiaochu_every_5", "zhuangyuan", "1.0.14", 2),
     Forest_slxcc("森林小车车", "2060170000363691", "zfb_slxcc", "slxcc_game_kaiche_every_10", "lianyun_senlin_leyuan", "1.0.1", 3),
     Forest_sljyd("森林救援队(能量雨)", "2021005113684028", "zfb_sljydx", "sljyd_game_xiaochu_every_10", "lianyun_senlin_leyuan", "1.0.1", 3);
-    //Forest_sgbhsd("三国冰河时代", "2021004173661702", "zfb_sgbhsd", "cclyx_sgbhsd_3c_zm10c", "lianyun_senlin_leyuan", "0.94.1", 3);
-
-    //Farm_lhs("灵画师", "2021005122634802", "lhs", "lhs", "lianyun_zhuangyuan_v2", "0.0.89", 3);
-
 
     private final String title;
     private final String appId;
@@ -88,11 +82,18 @@ public enum GameTask {
     private String login() {
         try {
             String authCode = AuthCodeHelper.getAuthCode(appId);
-            String mark = getAlipayMiniMark(appId, version);
+            // 小程序标记（紧邻的 alipayMiniMark 请求头）在当前支付宝版本上必然为空：
+            // 承载它的宿主类 H5HttpUtils 已不存在（AlipayMiniMarkHelper 探测两个候选类名都找不到，
+            // 并会在日志里说明一次）。这里直接用空串，省掉逐游戏的反射调用；
+            // 将来某版支付宝恢复该能力时，把空串换回 AlipayMiniMarkHelper.getAlipayMiniMark(appId, version) 即可。
+            String mark = "";
             String reqId = System.currentTimeMillis() + "_" + new Random().nextInt(350) + 1;
 
             JSONObject bodyJson = new JSONObject();
             bodyJson.put("v", version);
+            // 注：authCode 在当前支付宝版本上必然为 null（AuthCodeHelper 自建实例未走宿主依赖注入，
+            // 其内部 facade 为 null 会抛 NPE），但实测游戏服并不校验该字段、登录仍能拿到 token；
+            // 真正生效的凭据是下面的 header「alipayMiniMark」。若将来出现登录失败，优先怀疑这里。
             bodyJson.put("code", authCode);
             bodyJson.put("pf", "zfb");
             bodyJson.put("reqId", reqId);
@@ -119,17 +120,19 @@ public enum GameTask {
 
             // 处理响应（包含错误流）
             int respCode = conn.getResponseCode();
-            BufferedReader reader = new BufferedReader(new InputStreamReader(
+            StringBuilder responseText = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                     respCode >= 200 && respCode <= 299 ? conn.getInputStream() : conn.getErrorStream(),
                     StandardCharsets.UTF_8
-            ));
-            StringBuilder responseText = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                responseText.append(line);
+            ))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    responseText.append(line);
+                }
+            } finally {
+                // HttpURLConnection 没有 close()，异常路径也必须 disconnect 才能释放连接
+                conn.disconnect();
             }
-            reader.close();
-            conn.disconnect();
 
             //Log.other("login 响应 -> HTTP " + respCode + " " + responseText);
 
@@ -202,6 +205,17 @@ public enum GameTask {
      * @return 成功上报的次数，失败返回已成功的次数
      */
     public int reportSync(String gameType, int eggCount) {
+        return reportSync(gameType, eggCount, null);
+    }
+
+    /**
+     * 同步执行上报任务，可覆盖上报渠道。
+     * <p>金豆乐园场景必须传 {@code "goldenbean"}，
+     * 否则游戏服接受上报但支付宝侧权益不推进。
+     *
+     * @param channelOverride 非空时覆盖 action_finish_channel；为空用枚举默认渠道
+     */
+    public int reportSync(String gameType, int eggCount, String channelOverride) {
         if (eggCount <= 0) {
             return 0;
         }
@@ -214,7 +228,7 @@ public enum GameTask {
 
         int successfulReports = 0;
         for (int i = 1; i <= requiredSuccesses; i++) {
-            if (!executeSingleReport(gameType, i, requiredSuccesses)) {
+            if (!executeSingleReport(gameType, i, requiredSuccesses, channelOverride)) {
                 break;
             }
             successfulReports++;
@@ -236,9 +250,14 @@ public enum GameTask {
      * @param total 总请求次数
      * @return 是否上报成功
      */
-    private boolean executeSingleReport(String gameType,int current, int total) {
+    private boolean executeSingleReport(String gameType, int current, int total) {
+        return executeSingleReport(gameType, current, total, null);
+    }
+
+    private boolean executeSingleReport(String gameType, int current, int total, String channelOverride) {
         try {
-            String mark = getAlipayMiniMark(appId, version);
+            // 同 login()：当前宿主没有 H5HttpUtils，标记必然为空，直接用空串（header 值不变）
+            String mark = "";
             String reqId = System.currentTimeMillis() + "_" + (new Random().nextInt(90) + 10); // 10-99随机数
 
             // 构建请求体
@@ -248,7 +267,8 @@ public enum GameTask {
             bodyJson.put("reqId", reqId);
             bodyJson.put("gid", gid);
             bodyJson.put("action_code", action);
-            bodyJson.put("action_finish_channel", channel);
+            bodyJson.put("action_finish_channel",
+                    channelOverride != null && !channelOverride.isEmpty() ? channelOverride : channel);
             String body = bodyJson.toString();
 
             //Log.other("taskReport 请求体 -> " + body);
@@ -272,17 +292,19 @@ public enum GameTask {
 
             // 处理响应
             int respCode = conn.getResponseCode();
-            BufferedReader reader = new BufferedReader(new InputStreamReader(
+            StringBuilder responseText = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                     respCode >= 200 && respCode <= 299 ? conn.getInputStream() : conn.getErrorStream(),
                     StandardCharsets.UTF_8
-            ));
-            StringBuilder responseText = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                responseText.append(line);
+            ))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    responseText.append(line);
+                }
+            } finally {
+                // HttpURLConnection 没有 close()，异常路径也必须 disconnect 才能释放连接
+                conn.disconnect();
             }
-            reader.close();
-            conn.disconnect();
 
             //Log.other("taskReport 响应 -> HTTP " + respCode + " " + responseText);
 

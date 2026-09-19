@@ -22,7 +22,12 @@ public class Statistics {
     private TimeStatistics month = new TimeStatistics();
     private TimeStatistics day = new TimeStatistics();
     
-    public static void addData(DataType dt, int i) {
+    /**
+     * synchronized：与 save/load/unload 共用 Statistics.class 监视器。
+     * <p>各个模块跑在各自线程上、都会累加同一个计数器，原先的 += 既会丢更新，
+     * 也可能正好撞上 save() 的序列化过程。
+     */
+    public static synchronized void addData(DataType dt, int i) {
         Statistics stat = INSTANCE;
         switch (dt) {
             case COLLECTED:
@@ -53,7 +58,7 @@ public class Statistics {
         }
     }
     
-    public static int getData(TimeType tt, DataType dt) {
+    public static synchronized int getData(TimeType tt, DataType dt) {
         Statistics stat = INSTANCE;
         int data = 0;
         TimeStatistics ts = null;
@@ -127,21 +132,18 @@ public class Statistics {
                 String formatted = JsonUtil.toFormatJsonString(INSTANCE);
                 if (formatted != null && !formatted.equals(json)) {
                     Log.i(TAG, "重新格式化 statistics.json");
-                    Log.system(TAG, "重新格式化 statistics.json");
                     FileUtil.write2File(formatted, statisticsFile);
                 }
             }
             else {
                 JsonUtil.copyMapper().updateValue(INSTANCE, new Statistics());
                 Log.i(TAG, "初始化 statistics.json");
-                Log.system(TAG, "初始化 statistics.json");
                 FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), statisticsFile);
             }
         }
         catch (Throwable t) {
             Log.printStackTrace(TAG, t);
             Log.i(TAG, "统计文件格式有误，已重置统计文件");
-            Log.system(TAG, "统计文件格式有误，已重置统计文件");
             try {
                 JsonUtil.copyMapper().updateValue(INSTANCE, new Statistics());
                 FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatisticsFile());
@@ -171,7 +173,8 @@ public class Statistics {
             Log.system(TAG, "重置 statistics.json");
         }
         else {
-            Log.system(TAG, "保存 statistics.json");
+            // 每次落盘都记一行会淹没有效日志（实测约 75 行/天），降为由「抓包记录」开关控制的调试日志
+            Log.debug(TAG + ", 保存 statistics.json");
         }
         FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatisticsFile());
     }

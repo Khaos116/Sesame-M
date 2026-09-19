@@ -1,57 +1,39 @@
 package io.github.aw1y2z.sesame.util.idMap;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-
-import java.util.Collections;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 import io.github.aw1y2z.sesame.util.FileUtil;
-import io.github.aw1y2z.sesame.util.JsonUtil;
-import io.github.aw1y2z.sesame.util.Log;
 
 public class AntStallTaskListMap {
 
-    private static final Map<String, String> idMap = new ConcurrentHashMap<>();
-
-    private static final Map<String, String> readOnlyIdMap = Collections.unmodifiableMap(idMap);
+    private static final StringMapStore STORE = new StringMapStore(ignoredUserId -> FileUtil.getAntStallTaskListMapFile());
 
     public static Map<String, String> getMap() {
-        return readOnlyIdMap;
+        return STORE.getMap();
     }
 
     public static String get(String key) {
-        return idMap.get(key);
+        return STORE.get(key);
     }
 
-    public synchronized static void add(String key, String value) {
-        idMap.put(key, value);
+    public static void add(String key, String value) {
+        STORE.add(key, value);
     }
 
-    public synchronized static void remove(String key) {
-        idMap.remove(key);
+    public static void remove(String key) {
+        STORE.remove(key);
     }
 
-    public synchronized static void load() {
-        idMap.clear();
-        try {
-            String body = FileUtil.readFromFile(FileUtil.getAntStallTaskListMapFile());
-            if (!body.isEmpty()) {
-                Map<String, String> newMap = JsonUtil.parseObject(body, new TypeReference<Map<String, String>>() {
-                });
-                idMap.putAll(newMap);
-            }
-        } catch (Exception e) {
-            Log.printStackTrace(e);
-        }
+    public static void load() {
+        STORE.load(null);
     }
 
-    public synchronized static boolean save() {
-        return FileUtil.write2File(JsonUtil.toJsonString(idMap), FileUtil.getAntStallTaskListMapFile());
+    public static boolean save() {
+        return STORE.save(null);
     }
 
-    public synchronized static void clear() {
-        idMap.clear();
+    public static void clear() {
+        STORE.clear();
     }
 
 }

@@ -17,7 +17,7 @@ import java.util.Objects;
 public class RuntimeInfo {
     private static final String TAG = RuntimeInfo.class.getSimpleName();
 
-    private static RuntimeInfo instance;
+    private static volatile RuntimeInfo instance;
 
     private final String userId;
 
@@ -29,11 +29,22 @@ public class RuntimeInfo {
         ForestPauseTime
     }
 
+    /**
+     * 原先的"判断 + 新建并赋值"不是原子的：两个线程可能各自 new 一个实例，
+     * 后写入的那个会把先写入的那份（含刚 put 的字段）整体丢掉，表现为配置莫名回退。
+     * 改为「常用路径不加锁 + 只在需要重建时加锁」的双重检查。
+     */
     public static RuntimeInfo getInstance() {
-        if (instance == null || !Objects.equals(instance.userId, UserIdMap.getCurrentUid())) {
-            instance = new RuntimeInfo();
+        RuntimeInfo local = instance;
+        if (local != null && Objects.equals(local.userId, UserIdMap.getCurrentUid())) {
+            return local;
         }
-        return instance;
+        synchronized (RuntimeInfo.class) {
+            if (instance == null || !Objects.equals(instance.userId, UserIdMap.getCurrentUid())) {
+                instance = new RuntimeInfo();
+            }
+            return instance;
+        }
     }
 
     private RuntimeInfo() {
@@ -50,7 +61,7 @@ public class RuntimeInfo {
         joCurrent = current != null ? current : new JSONObject();
     }
 
-    public void save() {
+    public synchronized void save() {
         FileUtil.write2File(joAll.toString(), FileUtil.runtimeInfoFile(userId));
     }
 
@@ -82,13 +93,12 @@ public class RuntimeInfo {
         put(key.name(), value);
     }
 
-    public void put(String key, Object value) {
+    public synchronized void put(String key, Object value) {
         try {
             joCurrent.put(key, value);
             joAll.put(userId, joCurrent);
         } catch (JSONException e) {
-            Log.i(TAG, "put err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "put err:", e);
         }
         save();
     }

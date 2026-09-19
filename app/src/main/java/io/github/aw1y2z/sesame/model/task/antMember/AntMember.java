@@ -66,14 +66,14 @@ public class AntMember extends ModelTask {
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();
         modelFields.addField(AntMemberTask = new BooleanModelField("AntMemberTask", "会员任务", false));
-        modelFields.addField(AutoAntMemberTaskList = new BooleanModelField("AutoAntMemberTaskList", "会员任务 | 自动黑白名单", true));
-        modelFields.addField(AntMemberTaskList = new SelectModelField("AntMemberTaskList", "会员任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntMemberTaskList::getList));
+        modelFields.addField(AutoAntMemberTaskList = new BooleanModelField("AutoAntMemberTaskList", "会员任务 | 自动黑名单", true).setDependsOn("AntMemberTask"));
+        modelFields.addField(AntMemberTaskList = new SelectModelField("AntMemberTaskList", "会员任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntMemberTaskList::getList).setDependsOn("AntMemberTask"));
         modelFields.addField(memberSign = new BooleanModelField("memberSign", "会员签到", false));
         modelFields.addField(memberPointExchangeBenefit = new BooleanModelField("memberPointExchangeBenefit", "会员积分 | 兑换权益", false));
-        modelFields.addField(memberPointExchangeBenefitList = new SelectModelField("memberPointExchangeBenefitList", "会员积分 | 权益列表", new LinkedHashSet<>(), MemberBenefit::getList));
+        modelFields.addField(memberPointExchangeBenefitList = new SelectModelField("memberPointExchangeBenefitList", "会员积分 | 权益列表", new LinkedHashSet<>(), MemberBenefit::getList).setDependsOn("memberPointExchangeBenefit"));
         modelFields.addField(collectSesame = new BooleanModelField("collectSesame", "芝麻粒 | 领取", false));
-        modelFields.addField(AutoMemberCreditSesameTaskList = new BooleanModelField("AutoMemberCreditSesameTaskList", "芝麻粒任务 | 自动黑白名单", true));
-        modelFields.addField(MemberCreditSesameTaskList = new SelectModelField("MemberCreditSesameTaskList", "芝麻粒任务 | 黑名单列表", new LinkedHashSet<>(), AlipayMemberCreditSesameTaskList::getList));
+        modelFields.addField(AutoMemberCreditSesameTaskList = new BooleanModelField("AutoMemberCreditSesameTaskList", "芝麻粒任务 | 自动黑名单", true).setDependsOn("collectSesame"));
+        modelFields.addField(MemberCreditSesameTaskList = new SelectModelField("MemberCreditSesameTaskList", "芝麻粒任务 | 黑名单列表", new LinkedHashSet<>(), AlipayMemberCreditSesameTaskList::getList).setDependsOn("collectSesame"));
         modelFields.addField(SesameGrowthBehavior = new BooleanModelField("SesameGrowthBehavior", "攒芝麻分进度", false));
         modelFields.addField(enableGameCenter = new BooleanModelField("enableGameCenter", "游戏中心 | 得乐园豆", false));
         //modelFields.addField(promise = new BooleanModelField("promise", "生活记录 | 坚持做", false));
@@ -219,28 +219,8 @@ public class AntMember extends ModelTask {
                         return;
                     }
                     
-                    Set<String> currentValues = AntMemberTaskList.getValue();//该处直接返回列表地址
-                    if (currentValues != null) {
-                        for (String task : blackList) {
-                            if (!currentValues.contains(task)) {
-                                AntMemberTaskList.add(task, 0);
-                            }
-                        }
-                        
-                        // 3. 批量移除白名单任务（从现有列表中删除）
-                        for (String task : whiteList) {
-                            if (currentValues.contains(task)) {
-                                currentValues.remove(task);
-                            }
-                        }
-                    }
-                    // 4. 保存配置
-                    if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
-                        Log.record("黑白名单🈲会员任务自动设置: " + AntMemberTaskList.getValue());
-                    }
-                    else {
-                        Log.record("会员任务黑白名单设置失败");
-                    }
+                    // 2~4. 批量写回黑/白名单并保存
+                    MessageUtil.syncTaskBlackList("会员任务", blackList, whiteList, AntMemberTaskList);
                 }
             }
             //初始化MemberCreditSesameTaskListMap
@@ -254,7 +234,7 @@ public class AntMember extends ModelTask {
             blackList.add("完成旧衣回收得现金");
             blackList.add("0.1元起租会员攒粒");
             blackList.add("每日施肥领水果");
-            blackList.add("去玩小游戏");
+            // 注："去玩小游戏" 不再预置拉黑，交由自动拉黑机制判定
             // 可继续添加更多黑名单任务
             
             whiteList = new HashSet<>();// 从黑名单中移除该任务
@@ -329,34 +309,13 @@ public class AntMember extends ModelTask {
                         return;
                     }
                     
-                    Set<String> currentValues = MemberCreditSesameTaskList.getValue();//该处直接返回列表地址
-                    if (currentValues != null) {
-                        for (String task : blackList) {
-                            if (!currentValues.contains(task)) {
-                                MemberCreditSesameTaskList.add(task, 0);
-                            }
-                        }
-                        
-                        // 3. 批量移除白名单任务（从现有列表中删除）
-                        for (String task : whiteList) {
-                            if (currentValues.contains(task)) {
-                                currentValues.remove(task);
-                            }
-                        }
-                    }
-                    // 4. 保存配置
-                    if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
-                        Log.record("黑白名单🈲会员芝麻信用任务芝麻粒自动设置: " + MemberCreditSesameTaskList.getValue());
-                    }
-                    else {
-                        Log.record("会员芝麻信用任务芝麻粒黑白名单设置失败");
-                    }
+                    // 2~4. 批量写回黑/白名单并保存
+                    MessageUtil.syncTaskBlackList("会员芝麻信用任务芝麻粒", blackList, whiteList, MemberCreditSesameTaskList);
                 }
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "initMemberTaskListMap err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "initMemberTaskListMap err:", t);
         }
     }
     
@@ -374,8 +333,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "memberSign err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "memberSign err:", t);
         }
     }
     
@@ -411,8 +369,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "queryPointCert err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryPointCert err:", t);
         }
     }
     
@@ -458,8 +415,7 @@ public class AntMember extends ModelTask {
             while (true);
         }
         catch (Throwable t) {
-            Log.i(TAG, "signPageTaskList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "signPageTaskList err:", t);
         }
     }
     
@@ -480,8 +436,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "queryAllStatusTaskList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryAllStatusTaskList err:", t);
         }
     }
     
@@ -510,8 +465,7 @@ public class AntMember extends ModelTask {
             PromiseSimpleTemplateIdMap.save(UserIdMap.getCurrentUid());
         }
         catch (Throwable t) {
-            Log.i(TAG, "promise err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "promise err:", t);
         }
     }
     
@@ -570,8 +524,7 @@ public class AntMember extends ModelTask {
             return result;
         }
         catch (Throwable t) {
-            Log.i(TAG, "querySingleTemplate err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "querySingleTemplate err:", t);
         }
         return null;
     }
@@ -590,8 +543,7 @@ public class AntMember extends ModelTask {
             Log.other("生活记录📝加入[" + promiseName + "]");
         }
         catch (Throwable t) {
-            Log.i(TAG, "promiseJoin err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "promiseJoin err:", t);
         }
     }
     
@@ -631,8 +583,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "doBrowseTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "doBrowseTask err:", t);
         }
         return doubleCheck;
     }
@@ -685,8 +636,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "doBrowseTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "doBrowseTask err:", t);
         }
         return doubleCheck;
     }
@@ -892,8 +842,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "batchReceivePointBall err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "batchReceivePointBall err:", t);
         }
     }
     
@@ -918,8 +867,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "continueSignIn err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "continueSignIn err:", t);
         }
         return false;
     }
@@ -955,8 +903,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "doTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "doTask err:", t);
         }
     }
     
@@ -986,8 +933,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "queryModularTaskList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryModularTaskList err:", t);
         }
     }
     
@@ -1011,8 +957,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "queryModularTaskList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryModularTaskList err:", t);
         }
     }
     
@@ -1032,8 +977,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "queryPointBallList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryPointBallList err:", t);
         }
     }
     
@@ -1060,8 +1004,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "querySignInBall err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "querySignInBall err:", t);
         }
     }
     
@@ -1089,8 +1032,7 @@ public class AntMember extends ModelTask {
                 Log.record("游戏中心🎮签到成功");
             }
             catch (Throwable th) {
-                Log.i(TAG, "signIn err:");
-                Log.printStackTrace(TAG, th);
+                Log.err(TAG, "signIn err:", th);
             }
             try {
                 String str = AntMemberRpcCall.queryPointBallList();
@@ -1114,8 +1056,7 @@ public class AntMember extends ModelTask {
                 }
             }
             catch (Throwable th) {
-                Log.i(TAG, "batchReceive err:");
-                Log.printStackTrace(TAG, th);
+                Log.err(TAG, "batchReceive err:", th);
             }
         }
         catch (Throwable t) {
@@ -1201,8 +1142,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "memberPointExchangeBenefit err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "memberPointExchangeBenefit err:", t);
         }
     }
 
@@ -1289,8 +1229,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "fetchBenefitsFromNavi err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "fetchBenefitsFromNavi err:", t);
         }
     }
     
@@ -1303,8 +1242,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "exchangeBenefit err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "exchangeBenefit err:", t);
         }
         return false;
     }
@@ -1450,6 +1388,8 @@ public class AntMember extends ModelTask {
         if (Status.hasFlagToday("AntMember::zmlCheckIn")) {
             return;
         }
+        // 领取是否失败：失败时不置今日标记，留给下一轮重试（否则当天不再重试 → 漏领）
+        boolean claimFailed = false;
         try {
             
             String checkInRes = AntMemberRpcCall.alchemyQueryCheckIn("zml");
@@ -1474,17 +1414,24 @@ public class AntMember extends ModelTask {
                                     Log.other("收芝麻粒🙇🏻‍♂️领取[每日签到成功]#获得" + num + "粒");
                                 }
                                 else {
+                                    claimFailed = true;
                                     Log.error(".doSesameAlchemy#" + "签到失败:" + completeRes);
                                 }
                             }
                             catch (Throwable e) {
+                                claimFailed = true;
                                 Log.printStackTrace(TAG + ".doSesameAlchemy.alchemyCheckInComplete", e);
                             }
                         }
                     }
                 }
             }
-            Status.flagToday("AntMember::zmlCheckIn");
+            if (claimFailed) {
+                Log.other("收芝麻粒🙇🏻‍♂️签到领取失败#本轮不置今日标记，稍后重试");
+            }
+            else {
+                Status.flagToday("AntMember::zmlCheckIn");
+            }
         }
         catch (Throwable t) {
             Log.printStackTrace(TAG + ".doSesameZmlCheckIn", t);
@@ -1567,8 +1514,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable th) {
-            Log.i(TAG, "RecommendTask err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "RecommendTask err:", th);
         }
     }
     
@@ -1620,8 +1566,7 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable th) {
-            Log.i(TAG, "OrdinaryTask err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "OrdinaryTask err:", th);
         }
     }
 }

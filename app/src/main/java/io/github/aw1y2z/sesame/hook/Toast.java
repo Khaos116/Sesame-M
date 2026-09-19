@@ -28,13 +28,11 @@ public class Toast {
                     toast.setGravity(toast.getGravity(), toast.getXOffset(), BaseModel.getToastOffsetY().getValue());
                     toast.show();
                 } catch (Throwable t) {
-                    Log.i(TAG, "show.run err:");
-                    Log.printStackTrace(TAG, t);
+                    Log.err(TAG, "show.run err:", t);
                 }
             });
         } catch (Throwable t) {
-            Log.i(TAG, "show err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "show err:", t);
         }
     }
 }

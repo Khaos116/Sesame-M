@@ -29,6 +29,8 @@ public class XHelpers {
     private static final String TAG = "XHelpers";
     private static XposedModule sModule;
     private static final AtomicInteger sHookSeq = new AtomicInteger(0);
+    /** 标记"当前线程正在调用原方法"，避免 hook 里 callOriginal 又回到本 hook 造成递归 */
+    private static final ThreadLocal<Boolean> IN_ORIGINAL_CALL = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     public static void init(XposedModule module) {
         sModule = module;
@@ -56,6 +58,7 @@ public class XHelpers {
         try {
             return cl.loadClass(name);
         } catch (Throwable t) {
+            // 探测型调用：找不到类属正常情况（用于兼容不同版本/机型），静默返回 null，不打日志
             return null;
         }
     }
@@ -203,6 +206,19 @@ public class XHelpers {
                     XC_MethodHook.MethodHookParam param = new XC_MethodHook.MethodHookParam();
                     param.thisObject = chain.getThisObject();
                     param.args = chain.getArgs().toArray();
+                    // 允许 hook 主动调用原方法拿真实结果（见 MethodHookParam.callOriginal）。
+                    // 加线程内重入保护：万一 proceed 又回到本 hook，直接给原实现，不再递归。
+                    param.originalCall = () -> {
+                        if (!IN_ORIGINAL_CALL.get()) {
+                            IN_ORIGINAL_CALL.set(true);
+                            try {
+                                return chain.proceed(param.args);
+                            } finally {
+                                IN_ORIGINAL_CALL.remove();
+                            }
+                        }
+                        return chain.proceed(param.args);
+                    };
                     try {
                         callback.callBefore(param);
                     } catch (Throwable t) {

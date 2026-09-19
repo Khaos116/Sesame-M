@@ -39,6 +39,11 @@ public class goldenbeansRpcCall {
             "ch_url-https://render.alipay.com/p/yuyan/180020010001291350/index.html";
     /** 金豆乐园的 bizType 与 sceneCode 相同 */
     public static final String GAME_BIZ_TYPE = "GOLDENBEAN";
+    /**
+     * 金豆乐园游戏上报渠道：该场景必须使用 {@code "goldenbean"} 作为 action_finish_channel。
+     * <p>渠道不对会导致游戏服接受上报（code=1）但支付宝侧权益不推进。
+     */
+    public static final String GAME_CHANNEL = "goldenbean";
     private static final String GAME_QUERY_VERSION = "10.8.20.8000";
 
     // ===== 任务与动作类型 =====

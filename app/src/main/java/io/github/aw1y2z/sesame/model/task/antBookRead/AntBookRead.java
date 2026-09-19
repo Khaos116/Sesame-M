@@ -49,9 +49,21 @@ public class AntBookRead extends ModelTask {
             queryTask();
             queryTreasureBox();
         } catch (Throwable t) {
-            Log.i(TAG, "start.run err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "start.run err:", t);
         }
+    }
+
+    /**
+     * 从文案里取数字：服务端文案一变，取到的就是空串或非数字，原先直接 Integer.parseInt 会抛
+     * NumberFormatException 并中断整个模块；这里改为返回 -1（调用方按「取不到」处理）。
+     */
+    private static int parseOrMinusOne(String text, String left, String right) {
+        Integer parsed = StringUtil.parseIntOrNull(StringUtil.getSubString(text, left, right));
+        if (parsed == null) {
+            Log.i(TAG, "解析数字失败[" + left + ".." + right + "]: " + text);
+            return -1;
+        }
+        return parsed;
     }
 
     private static void queryTaskCenterPage() {
@@ -62,7 +74,7 @@ public class AntBookRead extends ModelTask {
                 JSONObject data = jo.optJSONObject("data");
                 JSONObject benefitAggBlock = data != null ? data.optJSONObject("benefitAggBlock") : null;
                 String todayPlayDurationText = benefitAggBlock != null ? benefitAggBlock.optString("todayPlayDurationText") : "";
-                int PlayDuration = Integer.parseInt(StringUtil.getSubString(todayPlayDurationText, "今日听读时长", "分钟"));
+                int PlayDuration = parseOrMinusOne(todayPlayDurationText, "今日听读时长", "分钟");
                 if (PlayDuration < 450) {
                     jo = MyUtils.newJSONObject(AntBookReadRpcCall.queryHomePage());
                     if (jo.optBoolean("success")) {
@@ -96,7 +108,7 @@ public class AntBookRead extends ModelTask {
                                         JSONObject energyData = jo.optJSONObject("data");
                                         String tips = energyData != null ? energyData.optString("tips") : "";
                                         if (tips.contains("已得")) {
-                                            energy = Integer.parseInt(StringUtil.getSubString(tips, "已得", "g"));
+                                            energy = parseOrMinusOne(tips, "已得", "g");
                                         }
                                         Log.forest("阅读书籍📚[" + name + "]#累计能量" + energy + "g");
                                     }
@@ -115,8 +127,7 @@ public class AntBookRead extends ModelTask {
                 Log.i(s);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryTaskCenterPage err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryTaskCenterPage err:", t);
         }
     }
 
@@ -185,8 +196,7 @@ public class AntBookRead extends ModelTask {
                 Log.i(s);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryTask err:", t);
         }
     }
 
@@ -200,8 +210,7 @@ public class AntBookRead extends ModelTask {
                 Log.other("阅读任务📖[" + name + "]#" + coinNum);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "collectTaskPrize err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "collectTaskPrize err:", t);
         }
     }
 
@@ -213,8 +222,7 @@ public class AntBookRead extends ModelTask {
 
             }
         } catch (Throwable t) {
-            Log.i(TAG, "taskFinish err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "taskFinish err:", t);
         }
     }
 
@@ -238,8 +246,7 @@ public class AntBookRead extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryTreasureBox err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryTreasureBox err:", t);
         }
     }
 }

@@ -169,7 +169,6 @@ public class ApplicationHook extends XposedModule {
         XHelpers.init(this);
         log(4, TAG, "event=module_loaded api=" + getApiVersion()
                 + " framework=" + getFrameworkName() + " version=" + getFrameworkVersion());
-        markFile("/sdcard/sesame_diag.txt", "onModuleLoaded " + getFrameworkName() + " api=" + getApiVersion());
         try {
             // 读取与 App 共享的日志开关配置，使各分项开关在本进程真正生效
             AppConfig.load();
@@ -182,16 +181,12 @@ public class ApplicationHook extends XposedModule {
             if (app != null) {
                 app.sendBroadcast(new Intent("io.github.aw1y2z.sesame.status"));
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            // 模块激活相关步骤（配置加载/激活标记/激活广播）失败必须可见，否则「模块没生效」毫无线索
+            Log.printStackTrace(TAG + " onModuleLoaded", t);
+        }
     }
 
-    private static void markFile(String path, String line) {
-        try {
-            java.io.FileWriter fw = new java.io.FileWriter(path, true);
-            fw.write(line + " @ " + new java.util.Date() + "\n");
-            fw.close();
-        } catch (Throwable ignored) {}
-    }
 
     @Override
     public void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
@@ -252,7 +247,8 @@ public class ApplicationHook extends XposedModule {
                     try {
                         AlipayMiniMarkHelper.init(classLoader);
                         AuthCodeHelper.init(classLoader);
-                        AuthCodeHelper.getAuthCode("2021005114632037");
+                        // 启动时不再调用 getAuthCode：返回值本就被丢弃，而它在当前支付宝版本上必然失败
+                        //（自建实例未走宿主依赖注入，内部 facade 为 null），只会在日志里留下噪音
                         // initSimplePageManager() 挪到 Service.onCreate 里、版本伪装覆盖 alipayVersion 之后
                         // 再调用（对齐 GR），这样滑块验证初始化用的是最终生效的（可能已伪装的）版本号，
                         // 不是这里刚读到的真实版本——见 doc/MyFix.md 的 VersionHook 移植记录
@@ -276,8 +272,7 @@ public class ApplicationHook extends XposedModule {
                 XHelpers.findAndHookMethod("com.alipay.mobile.nebulaappproxy.api.rpc.H5AppRpcUpdate", classLoader, "matchVersion", classLoader.loadClass(ClassUtil.H5PAGE_NAME), Map.class, String.class, XC_MethodReplacement.returnConstant(false));
                 Log.i(TAG, "hook matchVersion successfully");
             } catch (Throwable t) {
-                Log.i(TAG, "hook matchVersion err:");
-                Log.printStackTrace(TAG, t);
+                Log.err(TAG, "hook matchVersion err:", t);
             }
             try {
                 XHelpers.findAndHookMethod("com.alipay.mobile.quinox.LauncherActivity", classLoader, "onResume", new XC_MethodHook() {
@@ -317,8 +312,7 @@ public class ApplicationHook extends XposedModule {
                 });
                 Log.i(TAG, "hook login successfully");
             } catch (Throwable t) {
-                Log.i(TAG, "hook login err:");
-                Log.printStackTrace(TAG, t);
+                Log.err(TAG, "hook login err:", t);
             }
             try {
                 XHelpers.findAndHookMethod("android.app.Service", classLoader, "onCreate", new XC_MethodHook() {
@@ -343,7 +337,10 @@ public class ApplicationHook extends XposedModule {
                         // 主动通知 App 本模块已被 LSPosed 启用并注入支付宝，用于显示「已激活」
                         try {
                             appService.sendBroadcast(new Intent("io.github.aw1y2z.sesame.status"));
-                        } catch (Throwable ignored) {}
+                        } catch (Throwable t) {
+                            // 广播失败会导致 UI 迟迟显示「未激活」，留一行便于排查
+                            Log.i(TAG, "发送激活状态广播失败: " + t);
+                        }
 
                         Log.i(TAG, "Service onCreate");
                         context = appService.getApplicationContext();
@@ -461,8 +458,7 @@ public class ApplicationHook extends XposedModule {
                                             }
                                         }
                                     } catch (Exception e) {
-                                        Log.i(TAG, "execAtTime err:");
-                                        Log.printStackTrace(TAG, e);
+                                        Log.err(TAG, "execAtTime err:", e);
                                     }
 
                                     execDelayedHandler(checkInterval);
@@ -512,8 +508,7 @@ public class ApplicationHook extends XposedModule {
                 });
                 Log.i(TAG, "hook service onCreate successfully");
             } catch (Throwable t) {
-                Log.i(TAG, "hook service onCreate err:");
-                Log.printStackTrace(TAG, t);
+                Log.err(TAG, "hook service onCreate err:", t);
             }
             try {
                 XHelpers.findAndHookMethod("android.app.Service", classLoader, "onDestroy", new XC_MethodHook() {
@@ -532,33 +527,53 @@ public class ApplicationHook extends XposedModule {
                     }
                 });
             } catch (Throwable t) {
-                Log.i(TAG, "hook service onDestroy err:");
-                Log.printStackTrace(TAG, t);
+                Log.err(TAG, "hook service onDestroy err:", t);
             }
+            // ---- 宿主的前后台询问：默认仍按原逻辑"谎报"，唯独风控/滑块链路在真实后台时如实回答 ----
+            // 原先这四个 hook 一律哄宿主"你在前台"，模块的后台任务（H5/RPC）才跑得动；
+            // 副作用是滑块验证也被判定为可展示，而后台拿不到可见窗口 →
+            // 滑块界面出不来、验证流程一直等用户滑动 → 切回支付宝即卡死。
+            // 现在改为：先问宿主自己拿真值（callOriginal），只有"真在后台 + 询问方是风控/滑块链路"才说实话。
             try {
-                XHelpers.findAndHookMethod("com.alipay.mobile.common.fgbg.FgBgMonitorImpl", classLoader, "isInBackground", XC_MethodReplacement.returnConstant(false));
+                XHelpers.findAndHookMethod("com.alipay.mobile.common.fgbg.FgBgMonitorImpl", classLoader, "isInBackground", new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        param.setResult(answerInBackgroundQuestion(param));
+                    }
+                });
             } catch (Throwable t) {
-                Log.i(TAG, "hook FgBgMonitorImpl method 1 err:");
-                Log.printStackTrace(TAG, t);
+                Log.err(TAG, "hook FgBgMonitorImpl method 1 err:", t);
             }
             try {
-                XHelpers.findAndHookMethod("com.alipay.mobile.common.fgbg.FgBgMonitorImpl", classLoader, "isInBackground", boolean.class, XC_MethodReplacement.returnConstant(false));
+                XHelpers.findAndHookMethod("com.alipay.mobile.common.fgbg.FgBgMonitorImpl", classLoader, "isInBackground", boolean.class, new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        param.setResult(answerInBackgroundQuestion(param));
+                    }
+                });
             } catch (Throwable t) {
-                Log.i(TAG, "hook FgBgMonitorImpl method 2 err:");
-                Log.printStackTrace(TAG, t);
+                Log.err(TAG, "hook FgBgMonitorImpl method 2 err:", t);
             }
             try {
-                XHelpers.findAndHookMethod("com.alipay.mobile.common.fgbg.FgBgMonitorImpl", classLoader, "isInBackgroundV2", XC_MethodReplacement.returnConstant(false));
+                XHelpers.findAndHookMethod("com.alipay.mobile.common.fgbg.FgBgMonitorImpl", classLoader, "isInBackgroundV2", new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        param.setResult(answerInBackgroundQuestion(param));
+                    }
+                });
             } catch (Throwable t) {
-                Log.i(TAG, "hook FgBgMonitorImpl method 3 err:");
-                Log.printStackTrace(TAG, t);
+                Log.err(TAG, "hook FgBgMonitorImpl method 3 err:", t);
             }
             try {
-                XHelpers.findAndHookMethod("com.alipay.mobile.common.transport.utils.MiscUtils", classLoader, "isAtFrontDesk", classLoader.loadClass("android.content.Context"), XC_MethodReplacement.returnConstant(true));
+                XHelpers.findAndHookMethod("com.alipay.mobile.common.transport.utils.MiscUtils", classLoader, "isAtFrontDesk", classLoader.loadClass("android.content.Context"), new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        param.setResult(answerAtFrontDeskQuestion(param));
+                    }
+                });
                 Log.i(TAG, "hook MiscUtils successfully");
             } catch (Throwable t) {
-                Log.i(TAG, "hook MiscUtils err:");
-                Log.printStackTrace(TAG, t);
+                Log.err(TAG, "hook MiscUtils err:", t);
             }
             hooked = true;
             Log.i(TAG, "load success: " + lpparam.packageName);
@@ -582,8 +597,7 @@ public class ApplicationHook extends XposedModule {
                     Log.record("设置定时唤醒:0|000000");
                 }
             } catch (Exception e) {
-                Log.i(TAG, "setWakenAt0 err:");
-                Log.printStackTrace(TAG, e);
+                Log.err(TAG, "setWakenAt0 err:", e);
             }
             List<String> wakenAtTimeList = BaseModel.getWakenAtTimeList().getValue();
             if (wakenAtTimeList != null && !wakenAtTimeList.isEmpty()) {
@@ -606,14 +620,12 @@ public class ApplicationHook extends XposedModule {
                             }
                         }
                     } catch (Exception e) {
-                        Log.i(TAG, "setWakenAtTime err:");
-                        Log.printStackTrace(TAG, e);
+                        Log.err(TAG, "setWakenAtTime err:", e);
                     }
                 }
             }
         } catch (Exception e) {
-            Log.i(TAG, "setWakenAtTimeAlarm err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "setWakenAtTimeAlarm err:", e);
         }
     }
 
@@ -628,8 +640,7 @@ public class ApplicationHook extends XposedModule {
                         Log.record("取消定时唤醒:" + wakenAtTimeKey);
                     }
                 } catch (Exception e) {
-                    Log.i(TAG, "unsetWakenAtTime err:");
-                    Log.printStackTrace(TAG, e);
+                    Log.err(TAG, "unsetWakenAtTime err:", e);
                 }
             }
             try {
@@ -638,12 +649,10 @@ public class ApplicationHook extends XposedModule {
                     Log.record("取消定时唤醒:0|000000");
                 }
             } catch (Exception e) {
-                Log.i(TAG, "unsetWakenAt0 err:");
-                Log.printStackTrace(TAG, e);
+                Log.err(TAG, "unsetWakenAt0 err:", e);
             }
         } catch (Exception e) {
-            Log.i(TAG, "unsetWakenAtTimeAlarm err:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "unsetWakenAtTimeAlarm err:", e);
         }
     }
 
@@ -757,8 +766,7 @@ public class ApplicationHook extends XposedModule {
                         });
                         Log.i(TAG, "hook record request successfully");
                     } catch (Throwable t) {
-                        Log.i(TAG, "hook record request err:");
-                        Log.printStackTrace(TAG, t);
+                        Log.err(TAG, "hook record request err:", t);
                     }
                     try {
                         rpcResponseUnhook = XHelpers.findAndHookMethod("com.alibaba.ariver.engine.common.bridge.internal.DefaultBridgeCallback", classLoader, "sendJSONResponse", classLoader.loadClass(ClassUtil.JSON_OBJECT_NAME), new XC_MethodHook() {
@@ -776,8 +784,7 @@ public class ApplicationHook extends XposedModule {
                         });
                         Log.i(TAG, "hook record response successfully");
                     } catch (Throwable t) {
-                        Log.i(TAG, "hook record response err:");
-                        Log.printStackTrace(TAG, t);
+                        Log.err(TAG, "hook record response err:", t);
                     }
                 }
                 NotificationUtil.start(service);
@@ -794,8 +801,7 @@ public class ApplicationHook extends XposedModule {
             execHandler();
             return true;
         } catch (Throwable th) {
-            Log.i(TAG, "startHandler err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "startHandler err:", th);
             Toast.show("芝麻粒-M加载失败");
             return false;
         }
@@ -841,8 +847,7 @@ public class ApplicationHook extends XposedModule {
                 ModelTask.stopAllTask();
             }
         } catch (Throwable th) {
-            Log.i(TAG, "stopHandler err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "stopHandler err:", th);
         }
     }
 
@@ -970,8 +975,7 @@ public class ApplicationHook extends XposedModule {
             Log.i("setAlarmTask triggerAtMillis:" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(triggerAtMillis) + " operation:" + (operation == null ? "" : operation.toString()));
             return true;
         } catch (Throwable th) {
-            Log.i(TAG, "setAlarmTask err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "setAlarmTask err:", th);
         }
         return false;
     }
@@ -984,10 +988,19 @@ public class ApplicationHook extends XposedModule {
             }
             return true;
         } catch (Throwable th) {
-            Log.i(TAG, "unsetAlarmTask err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "unsetAlarmTask err:", th);
         }
         return false;
+    }
+
+    /**
+     * 替换 RPC 实现（离线模式、诊断、单元测试注入替身用）；传 null 表示回到默认的支付宝 RPC 桥。
+     * <p>不注入时行为与原先完全一致：一律转发给 startHandler 里创建的 {@code rpcBridge}。
+     * <p>注入替身后，各 RpcCall 构造出的请求体（method + data）会原样交给替身，
+     * 因此可以在不连真机的情况下检查请求体本身是否正确。
+     */
+    public static void setRpcBridge(RpcBridge bridge) {
+        rpcBridge = bridge;
     }
 
     public static String requestString(RpcEntity rpcEntity) {
@@ -1058,8 +1071,7 @@ public class ApplicationHook extends XposedModule {
         try {
             context.sendBroadcast(new Intent("com.eg.android.AlipayGphone.sesame.reLogin"));
         } catch (Throwable th) {
-            Log.i(TAG, "sesame sendBroadcast reLogin err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "sesame sendBroadcast reLogin err:", th);
         }
     }
 
@@ -1067,8 +1079,7 @@ public class ApplicationHook extends XposedModule {
         try {
             context.sendBroadcast(new Intent("com.eg.android.AlipayGphone.sesame.restart"));
         } catch (Throwable th) {
-            Log.i(TAG, "sesame sendBroadcast restart err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "sesame sendBroadcast restart err:", th);
         }
     }
 
@@ -1091,8 +1102,7 @@ public class ApplicationHook extends XposedModule {
         try {
             return XHelpers.callMethod(getMicroApplicationContext(), "findServiceByInterface", service);
         } catch (Throwable th) {
-            Log.i(TAG, "getServiceObject err");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "getServiceObject err", th);
         }
         return null;
     }
@@ -1101,8 +1111,7 @@ public class ApplicationHook extends XposedModule {
         try {
             return XHelpers.callMethod(getServiceObject(XHelpers.findClass("com.alipay.mobile.personalbase.service.SocialSdkContactService", classLoader).getName()), "getMyAccountInfoModelByLocal");
         } catch (Throwable th) {
-            Log.i(TAG, "getUserObject err");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "getUserObject err", th);
         }
         return null;
     }
@@ -1114,8 +1123,7 @@ public class ApplicationHook extends XposedModule {
                 return (String) XHelpers.getObjectField(userObject, "userId");
             }
         } catch (Throwable th) {
-            Log.i(TAG, "getUserId err");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "getUserId err", th);
         }
         return null;
     }
@@ -1189,8 +1197,7 @@ public class ApplicationHook extends XposedModule {
                             Log.i(TAG, "broadcast: recv query, send active status");
                             context.sendBroadcast(new Intent("io.github.aw1y2z.sesame.status"));
                         } catch (Throwable th) {
-                            Log.i(TAG, "sesame sendBroadcast status err:");
-                            Log.printStackTrace(TAG, th);
+                            Log.err(TAG, "sesame sendBroadcast status err:", th);
                         }
                         break;
                     case "com.eg.android.AlipayGphone.sesame.rpctest":
@@ -1201,8 +1208,7 @@ public class ApplicationHook extends XposedModule {
                             // Log.record("收到测试消息:\n方法:" + method + "\n数据:" + data + "\n类型:" + type);
                             TestRpc.start(method, data, type);
                         } catch (Throwable th) {
-                            Log.i(TAG, "sesame rpctest err:");
-                            Log.printStackTrace(TAG, th);
+                            Log.err(TAG, "sesame rpctest err:", th);
                         }
                         break;
                     case "com.eg.android.AlipayGphone.sesame.reloadConfig":
@@ -1211,8 +1217,7 @@ public class ApplicationHook extends XposedModule {
                             AppConfig.load();
                             Log.i(TAG, "reload AppConfig from UI");
                         } catch (Throwable th) {
-                            Log.i(TAG, "sesame reloadConfig err:");
-                            Log.printStackTrace(TAG, th);
+                            Log.err(TAG, "sesame reloadConfig err:", th);
                         }
                         break;
                 }
@@ -1229,8 +1234,7 @@ public class ApplicationHook extends XposedModule {
                     broadcastReceiverRegistered = false;
                     Log.i(TAG, "hook unregisterBroadcastReceiver successfully");
                 } catch (Throwable t) {
-                    Log.i(TAG, "hook unregisterBroadcastReceiver err:");
-                    Log.printStackTrace(TAG, t);
+                    Log.err(TAG, "hook unregisterBroadcastReceiver err:", t);
                 }
             }
 
@@ -1251,8 +1255,7 @@ public class ApplicationHook extends XposedModule {
             broadcastReceiverRegistered = true;
             Log.i(TAG, "hook registerBroadcastReceiver successfully");
         } catch (Throwable th) {
-            Log.i(TAG, "hook registerBroadcastReceiver err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "hook registerBroadcastReceiver err:", th);
         }
     }
 
@@ -1283,5 +1286,86 @@ public class ApplicationHook extends XposedModule {
         }
 
         return true;
+    }
+
+    // ----------------------------------------------------------------
+    // 宿主前后台询问的回答
+    // ----------------------------------------------------------------
+
+    /** 是否已提示过"如实回答"（该事件会反复出现，只留一次痕） */
+    private static volatile boolean honestAnswerLogged;
+    /** 是否已提示过"取真实状态失败"（失败原因通常固定，避免刷屏） */
+    private static volatile boolean originalCallFailedLogged;
+
+    /**
+     * 回答宿主的 {@code isInBackground()}：默认仍按原行为谎报 false（"不在后台"），
+     * 只有当宿主**真的**在后台、且询问方是风控/滑块链路时如实回答 true
+     * ——否则宿主会在后台尝试展示滑块界面，界面出不来、验证流程一直等用户滑动，切回支付宝即卡死。
+     */
+    private static boolean answerInBackgroundQuestion(XC_MethodHook.MethodHookParam param) {
+        Boolean reallyInBackground = originalBoolean(param, "isInBackground");
+        if (reallyInBackground != null && reallyInBackground && isRiskControlCaller()) {
+            noteHonestAnswerForRiskControl();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 回答宿主的 {@code isAtFrontDesk()}：默认仍按原行为谎报 true（"在前台"），
+     * 只有当宿主**真的**不在前台、且询问方是风控/滑块链路时如实回答 false。
+     */
+    private static boolean answerAtFrontDeskQuestion(XC_MethodHook.MethodHookParam param) {
+        Boolean atFrontDesk = originalBoolean(param, "isAtFrontDesk");
+        if (atFrontDesk != null && !atFrontDesk && isRiskControlCaller()) {
+            noteHonestAnswerForRiskControl();
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 调用原方法取真实返回值。
+     *
+     * @return 真值；取不到（异常 / 非布尔）时返回 null，调用方按原行为谎报
+     */
+    private static Boolean originalBoolean(XC_MethodHook.MethodHookParam param, String what) {
+        try {
+            Object result = param.callOriginal();
+            return result instanceof Boolean ? (Boolean) result : null;
+        } catch (Throwable t) {
+            if (!originalCallFailedLogged) {
+                originalCallFailedLogged = true;
+                Log.err(TAG, "取 " + what + " 真实前后台状态失败，继续按原行为谎报:", t);
+            }
+            return null;
+        }
+    }
+
+    /**
+     * 询问方是否来自风控/滑块链路（{@code com.alipay.rdssecuritysdk} 等）。
+     * <p>只在**真实后台**时才会走到这里，因此不影响前台热路径；只看最上面若干帧，够用且便宜。
+     */
+    private static boolean isRiskControlCaller() {
+        StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+        int limit = Math.min(stack.length, 12);
+        for (int i = 3; i < limit; i++) {
+            String className = stack[i].getClassName();
+            if (className.startsWith("com.alipay.rdssecuritysdk")
+                    || className.contains("captcha") || className.contains("Captcha")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void noteHonestAnswerForRiskControl() {
+        if (honestAnswerLogged) {
+            return;
+        }
+        honestAnswerLogged = true;
+        // 用 other 日志：该事件是"宿主在后台要展示风控/滑块界面"的直接证据，而 other 日志默认开启、便于核对；
+        // 运行日志（Log.record）受「查看运行日志」开关控制，很多用户是关着的，写在那里等于看不见
+        Log.other("风控/滑块链路在后台询问前后台状态：已如实回答，避免在后台创建滑块界面（界面出不来、切回支付宝卡死）");
     }
 }

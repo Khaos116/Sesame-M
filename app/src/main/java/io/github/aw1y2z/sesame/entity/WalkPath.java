@@ -51,8 +51,7 @@ public class WalkPath extends IdAndName {
                 }
             }
         } catch (Throwable t) {
-            Log.i("WalkPath", "获取主题列表失败:");
-            Log.printStackTrace("WalkPath", t);
+            Log.err("WalkPath", "获取主题列表失败:", t);
         }
         return list;
     }

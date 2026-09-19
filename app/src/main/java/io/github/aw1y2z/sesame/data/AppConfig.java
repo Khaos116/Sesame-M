@@ -131,19 +131,16 @@ public class AppConfig {
                 String formatted = toSaveStr();
                 if (formatted != null && !formatted.equals(json)) {
                     Log.i(TAG, "格式化APP配置");
-                    Log.system(TAG, "格式化APP配置");
                     FileUtil.write2File(formatted, appConfigFile);
                 }
             } else {
                 unload();
                 Log.i(TAG, "初始APP配置");
-                Log.system(TAG, "初始APP配置");
                 FileUtil.write2File(toSaveStr(), appConfigFile);
             }
         } catch (Throwable t) {
             Log.printStackTrace(TAG, t);
             Log.i(TAG, "重置APP配置");
-            Log.system(TAG, "重置APP配置");
             try {
                 unload();
                 FileUtil.write2File(toSaveStr(), appConfigFile);

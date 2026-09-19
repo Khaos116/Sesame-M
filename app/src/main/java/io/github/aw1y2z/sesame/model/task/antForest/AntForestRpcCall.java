@@ -650,7 +650,7 @@ public class AntForestRpcCall {
     // "shareId":"hhJxgLczlae8wY4uIrOdutR4O7FEYDgn0xx0OehP5jt9bxgpIW643h4FnWRjs9uZzng77VUJcjlcZsjGio6MsAtmwxkxkx",
     // "source":"chouchoule"}
     public static String shareComponentRecall(String sceneCode, String shareId) {
-        String requestData = "[{\"iepShareChannelType\":\"qrcode\",\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\"," + "\"shareId\":\"" + shareId + "\",\"source\":\"chouchoule\"}]";
+        String requestData = "[{\"iepShareChannelType\":\"qrcode\",\"requestType\":\"RPC\",\"sceneCode\":\"" + StringUtil.escapeJson(sceneCode) + "\"," + "\"shareId\":\"" + StringUtil.escapeJson(shareId) + "\",\"source\":\"chouchoule\"}]";
         return ApplicationHook.requestString("com.alipay.antiep.shareComponentRecall", requestData);
         
     }
@@ -660,7 +660,7 @@ public class AntForestRpcCall {
     // "shareId":"hhJxgLczlae8wY4uIrOdutR4O7FEYDgn0xx0OehP5jt9bxgpIW643h4FnWRjs9uZzng77VUJcjlcZsjGio6MsAtmwxkxkx",
     // "source":"chouchoule","userId":"2088942477411601"}]}
     public static String confirmShareRecall(String activityId, String p2pSceneCode, String shareId, String userId) {
-        String requestData = "[{\"beSharedBizExtInfo\":{\"drawActivityId\":\"" + activityId + "\",\"inviterUid\":\"" + userId + "\"},\"requestType\":\"RPC\",\"sceneCode\":\"" + p2pSceneCode + "\",\"shareId\":\"" + shareId + "\",\"source\":\"chouchoule\",\"userId\":\"" + userId + "\"}]";
+        String requestData = "[{\"beSharedBizExtInfo\":{\"drawActivityId\":\"" + StringUtil.escapeJson(activityId) + "\",\"inviterUid\":\"" + StringUtil.escapeJson(userId) + "\"},\"requestType\":\"RPC\",\"sceneCode\":\"" + StringUtil.escapeJson(p2pSceneCode) + "\",\"shareId\":\"" + StringUtil.escapeJson(shareId) + "\",\"source\":\"chouchoule\",\"userId\":\"" + StringUtil.escapeJson(userId) + "\"}]";
         return ApplicationHook.requestString("com.alipay.antiep.confirmShareRecall", requestData);
     }
     

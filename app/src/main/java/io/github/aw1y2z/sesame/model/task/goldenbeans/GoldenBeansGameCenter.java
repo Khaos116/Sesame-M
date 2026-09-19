@@ -33,6 +33,7 @@ public final class GoldenBeansGameCenter {
     public static boolean run(int interval) {
         try {
             Set<String> attempted = new HashSet<>();
+            Set<String> failed = new HashSet<>();
             for (int round = 0; round < MAX_ROUND; round++) {
                 JSONObject snapshot = GoldenBeansSupport.parse(goldenbeansRpcCall.fetchGameList());
                 if (!GoldenBeansSupport.ok(snapshot)) {
@@ -76,6 +77,14 @@ public final class GoldenBeansGameCenter {
                 // 无抽奖次数：尝试游戏权益上报
                 int remainingDraws = Math.max(quotaLimit - usedQuota - quotaCanUse, 0);
                 Map<String, GameCandidate> candidates = collect(snapshot);
+                int registered = 0;
+                for (GameCandidate item : candidates.values()) {
+                    if (GameTask.matchAppId(item.appId) != null) {
+                        registered++;
+                    }
+                }
+                Log.goldenBeans("金豆乐园🎯抽奖[可用" + quotaCanUse + "/已用" + usedQuota + "/上限" + quotaLimit
+                        + "]#剩余" + remainingDraws + "#候选" + candidates.size() + "/已登记" + registered);
                 GameCandidate candidate = null;
                 for (GameCandidate item : candidates.values()) {
                     if (Status.hasFlagToday(skipFlag(item))) {
@@ -83,6 +92,7 @@ public final class GoldenBeansGameCenter {
                     }
                     if ((item.hasPendingReward() || remainingDraws > 0)
                             && GameTask.matchAppId(item.appId) != null
+                            && !failed.contains(item.key())
                             && !attempted.contains(item.key() + ":" + remainingDraws)) {
                         candidate = item;
                         break;
@@ -106,10 +116,14 @@ public final class GoldenBeansGameCenter {
                 int remaining = Math.max(candidate.remainingRewards(), remainingDraws);
                 Log.goldenBeans("金豆乐园🎮游玩[" + gameTask.getTitle() + "]#目标[" + remaining + "]");
                 GoldenBeansSupport.pause(interval);
-                int successes = gameTask.reportSync("金豆乐园:" + gameTask.getTitle(), remaining);
+                // 金豆乐园场景必须使用专用上报渠道 "goldenbean"，
+                // 否则游戏服会接受上报（code=1）但支付宝侧权益不推进，表现为"砸蛋/游戏任务无效"
+                int successes = gameTask.reportSync("金豆乐园:" + gameTask.getTitle(), remaining,
+                        goldenbeansRpcCall.GAME_CHANNEL);
                 if (successes <= 0) {
-                    Log.record("金豆乐园⚠️[" + gameTask.getTitle() + "]上报失败");
-                    return false;
+                    failed.add(candidate.key());
+                    Log.record("金豆乐园⚠️[" + gameTask.getTitle() + "]上报失败#本轮跳过该游戏");
+                    continue;
                 }
 
                 JSONObject after = GoldenBeansSupport.parse(goldenbeansRpcCall.fetchGameList());
@@ -133,8 +147,8 @@ public final class GoldenBeansGameCenter {
                     continue;
                 }
                 Status.flagToday(skipFlag(candidate));
-                Log.record("金豆乐园⚠️[" + gameTask.getTitle() + "]状态未推进#今日不再尝试");
-                return false;
+                Log.record("金豆乐园⚠️[" + gameTask.getTitle() + "]状态未推进#今日不再尝试该游戏");
+                continue;
             }
             Log.record("金豆乐园⚠️达到收敛轮次上限[" + MAX_ROUND + "]");
             return false;
@@ -160,10 +174,6 @@ public final class GoldenBeansGameCenter {
         if (source instanceof JSONObject) {
             JSONObject obj = (JSONObject) source;
             String appId = obj.optString("appId", "").trim();
-            String title = obj.optString("title", "").trim();
-            if (title.isEmpty()) {
-                title = appId;
-            }
             JSONArray benefits = obj.optJSONArray("deliveryBenefitList");
             if (!appId.isEmpty() && benefits != null) {
                 for (int i = 0; i < benefits.length(); i++) {
@@ -188,7 +198,6 @@ public final class GoldenBeansGameCenter {
                     GameCandidate candidate = new GameCandidate();
                     candidate.appId = appId;
                     candidate.taskId = taskId;
-                    candidate.title = title;
                     candidate.taskStatus = taskStatus;
                     candidate.rightTimes = Math.max(benefit.optInt("rightTimes", 0), 0);
                     candidate.rightTimesLimit = rightTimesLimit;
@@ -213,7 +222,6 @@ public final class GoldenBeansGameCenter {
     private static final class GameCandidate {
         private String appId = "";
         private String taskId = "";
-        private String title = "";
         private String taskStatus = "";
         private int rightTimes;
         private int rightTimesLimit;

@@ -2,6 +2,8 @@ package io.github.aw1y2z.sesame.hook;
 import fi.iki.elonen.NanoHTTPD;
 import java.util.Map;
 
+import io.github.aw1y2z.sesame.util.StringUtil;
+
 /**
  * OAuth2 授权码处理器
  * 提供获取 OAuth2 授权码的接口（对应原Kotlin的AuthCodeHandler）
@@ -52,8 +54,8 @@ public class AuthCodeHandler implements io.github.aw1y2z.sesame.hook.HttpHandler
             
             // 处理返回结果：非null则成功，否则失败
             if (authCode != null) {
-                // 拼接成功响应JSON（转义双引号，避免语法错误）
-                String successJson = String.format("{\"success\":true,\"authCode\":\"%s\"}", authCode);
+                // 拼接成功响应JSON：值必须先转义（原先注释写着"转义双引号"其实并没有转义）
+                String successJson = String.format("{\"success\":true,\"authCode\":\"%s\"}", StringUtil.escapeJson(authCode));
                 return createResponse(NanoHTTPD.Response.Status.OK, successJson);
             } else {
                 return createResponse(
@@ -64,7 +66,7 @@ public class AuthCodeHandler implements io.github.aw1y2z.sesame.hook.HttpHandler
         } catch (Exception e) {
             // 捕获所有异常，返回带错误信息的500响应
             String errorMsg = e.getMessage() != null ? e.getMessage() : "未知错误";
-            String errorJson = String.format("{\"error\":\"服务器内部错误: %s\"}", errorMsg);
+            String errorJson = String.format("{\"error\":\"服务器内部错误: %s\"}", StringUtil.escapeJson(errorMsg));
             return createResponse(NanoHTTPD.Response.Status.INTERNAL_ERROR, errorJson);
         }
     }

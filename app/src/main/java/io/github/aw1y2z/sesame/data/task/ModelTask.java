@@ -28,7 +28,15 @@ public abstract class ModelTask extends Model {
     private static Thread completionWatcher;
     private static long completionGeneration;
 
-    private static final ThreadPoolExecutor MAIN_THREAD_POOL = new ThreadPoolExecutor(getModelArray().length, Integer.MAX_VALUE, 30L, TimeUnit.SECONDS, new SynchronousQueue<>(), new ThreadPoolExecutor.CallerRunsPolicy());
+    private static final int MODEL_COUNT = Math.max(getModelArray().length, 1);
+
+    /**
+     * 主任务线程池：模型主循环是长任务，每个模型占一条线程（core = 模型数）。
+     * <p>上限取 2 倍模型数：原先 maximumPoolSize 是 Integer.MAX_VALUE，pool 永远不会饱和，
+     * 也就永远是"来一个任务就新建一条线程"，CallerRunsPolicy 形同虚设；改为有限上限后，
+     * 极端情况下才会回退到调用线程执行（原来的兜底语义）。
+     */
+    private static final ThreadPoolExecutor MAIN_THREAD_POOL = new ThreadPoolExecutor(MODEL_COUNT, MODEL_COUNT * 2, 30L, TimeUnit.SECONDS, new SynchronousQueue<>(), new ThreadPoolExecutor.CallerRunsPolicy());
 
     private final Map<String, ChildModelTask> childTaskMap = new ConcurrentHashMap<>();
 

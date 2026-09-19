@@ -73,10 +73,10 @@ public class AntDodo extends ModelTask {
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();
         modelFields.addField(dodoTaskList = new BooleanModelField("dodoTaskList", "物种任务", false));
-        modelFields.addField(AutoAntDodoTaskList = new BooleanModelField("AutoAntDodoTaskList", "物种任务 | 自动黑白名单", true));
-        modelFields.addField(AntDodoTaskList = new SelectModelField("AntDodoTaskList", "物种任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntDodoTaskList::getList));
+        modelFields.addField(AutoAntDodoTaskList = new BooleanModelField("AutoAntDodoTaskList", "物种任务 | 自动黑名单", true).setDependsOn("dodoTaskList"));
+        modelFields.addField(AntDodoTaskList = new SelectModelField("AntDodoTaskList", "物种任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntDodoTaskList::getList).setDependsOn("dodoTaskList"));
         modelFields.addField(useProp = new BooleanModelField("useProp", "使用道具 | 开启", false));
-        modelFields.addField(usePropList = new SelectModelField("usePropList", "使用道具 | 道具列表", new LinkedHashSet<>(), CustomOption::getAntDodoPropList));
+        modelFields.addField(usePropList = new SelectModelField("usePropList", "使用道具 | 道具列表", new LinkedHashSet<>(), CustomOption::getAntDodoPropList).setDependsOn("useProp"));
         modelFields.addField(useCollectTimingType = new ChoiceModelField("useCollectTimingType", "抽卡道具 | 使用时机", TimingType.EVERY_DAY, TimingType.nickNames));
         modelFields.addField(useUniversalCardBookStatusType = new ChoiceModelField("useUniversalCardBookStatusType", "万能卡片 | 图鉴状态类型", BookStatusType.END, BookStatusType.nickNames));
         modelFields.addField(useUniversalCardBookCollectedStatusType = new ChoiceModelField("useUniversalCardBookCollectedStatusType", "万能卡片 | 图鉴收集状态", BookCollectedStatusType.ALL, BookCollectedStatusType.nickNames));
@@ -84,15 +84,15 @@ public class AntDodo extends ModelTask {
         modelFields.addField(useUniversalCardMedalGenerationStatusType = new ChoiceModelField("useUniversalCardMedalGenerationStatusType", "万能卡片 | 勋章合成状态", MedalGenerationStatusType.ALL, MedalGenerationStatusType.nickNames));
         modelFields.addField(useUniversalCardFantasticLevelType = new ChoiceModelField("useUniversalCardFantasticLevelType", "万能卡片 | 最低等级", FantasticLevelType.MAGIC, FantasticLevelType.nickNames));
         modelFields.addField(bookMedal = new BooleanModelField("bookMedal", "图鉴勋章 | 开启", false));
-        modelFields.addField(bookMedalOptions = new SelectModelField("bookMedalOptions", "图鉴勋章 | 选项", new LinkedHashSet<>(), CustomOption::getAntDodoBookMedalOptions));
+        modelFields.addField(bookMedalOptions = new SelectModelField("bookMedalOptions", "图鉴勋章 | 选项", new LinkedHashSet<>(), CustomOption::getAntDodoBookMedalOptions).setDependsOn("bookMedal"));
         modelFields.addField(collectToFriendType = new ChoiceModelField("collectToFriendType", "帮抽卡片 | 动作", CollectToFriendType.NONE, CollectToFriendType.nickNames));
-        modelFields.addField(collectToFriendList = new SelectModelField("collectToFriendList", "帮抽卡片 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
+        modelFields.addField(collectToFriendList = new SelectModelField("collectToFriendList", "帮抽卡片 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("collectToFriendType"));
         modelFields.addField(giftToFriend = new BooleanModelField("giftToFriend", "赠送卡片 | 开启", false));
-        modelFields.addField(giftToFriendBookStatusType = new ChoiceModelField("giftToFriendBookStatusType", "赠送卡片 | " + "图鉴状态类型", BookStatusType.ALL, BookStatusType.nickNames));
-        modelFields.addField(giftToFriendBookCollectedStatusType = new ChoiceModelField("giftToFriendBookCollectedStatusType", "赠送卡片 | 图鉴收集状态", BookCollectedStatusType.ALL, BookCollectedStatusType.nickNames));
-        modelFields.addField(giftToFriendMedalGenerationStatusType = new ChoiceModelField("giftToFriendMedalGenerationStatusType", "赠送卡片 | 勋章合成状态", MedalGenerationStatusType.ALL, MedalGenerationStatusType.nickNames));
-        modelFields.addField(giftToFriendFantasticLevelType = new ChoiceModelField("giftToFriendFantasticLevelType", "赠送卡片 | 最低等级", FantasticLevelType.COMMON, FantasticLevelType.nickNames));
-        modelFields.addField(giftToFriendList = new SelectModelField("giftToFriendList", "赠送卡片 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList, "会赠送所有满足条件的卡片给已选择的好友"));
+        modelFields.addField(giftToFriendBookStatusType = new ChoiceModelField("giftToFriendBookStatusType", "赠送卡片 | " + "图鉴状态类型", BookStatusType.ALL, BookStatusType.nickNames).setDependsOn("giftToFriend"));
+        modelFields.addField(giftToFriendBookCollectedStatusType = new ChoiceModelField("giftToFriendBookCollectedStatusType", "赠送卡片 | 图鉴收集状态", BookCollectedStatusType.ALL, BookCollectedStatusType.nickNames).setDependsOn("giftToFriend"));
+        modelFields.addField(giftToFriendMedalGenerationStatusType = new ChoiceModelField("giftToFriendMedalGenerationStatusType", "赠送卡片 | 勋章合成状态", MedalGenerationStatusType.ALL, MedalGenerationStatusType.nickNames).setDependsOn("giftToFriend"));
+        modelFields.addField(giftToFriendFantasticLevelType = new ChoiceModelField("giftToFriendFantasticLevelType", "赠送卡片 | 最低等级", FantasticLevelType.COMMON, FantasticLevelType.nickNames).setDependsOn("giftToFriend"));
+        modelFields.addField(giftToFriendList = new SelectModelField("giftToFriendList", "赠送卡片 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList, "会赠送所有满足条件的卡片给已选择的好友").setDependsOn("giftToFriend"));
         return modelFields;
     }
 
@@ -131,8 +131,7 @@ public class AntDodo extends ModelTask {
                 giftToFriend();
             }
         } catch (Throwable t) {
-            Log.i(TAG, "AntoDodo.start.run err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "AntoDodo.start.run err:", t);
         }
     }
 
@@ -191,33 +190,12 @@ public class AntDodo extends ModelTask {
                         return;
                     }
 
-                    // 2. 批量添加黑名单任务（确保存在）
-                    Set<String> currentValues = AntDodoTaskList.getValue();//该处直接返回列表地址
-                    if (currentValues != null) {
-                        for (String task : blackList) {
-                            if (!currentValues.contains(task)) {
-                                AntDodoTaskList.add(task, 0);
-                            }
-                        }
-
-                        // 3. 批量移除白名单任务（从现有列表中删除）
-                        for (String task : whiteList) {
-                            if (currentValues.contains(task)) {
-                                currentValues.remove(task);
-                            }
-                        }
-                    }
-                    // 4. 保存配置
-                    if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
-                        Log.record("黑白名单🈲神奇物种任务自动设置: " + AntDodoTaskList.getValue());
-                    } else {
-                        Log.record("神奇物种任务黑白名单设置失败");
-                    }
+                    // 2~4. 批量写回黑/白名单并保存
+                    MessageUtil.syncTaskBlackList("神奇物种任务", blackList, whiteList, AntDodoTaskList);
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "initAntDodoTaskListMap err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "initAntDodoTaskListMap err:", t);
         }
     }
 
@@ -239,8 +217,7 @@ public class AntDodo extends ModelTask {
             String endDate = jo.optString("endDate") + " 23:59:59";
             return Log.timeToStamp(endDate);
         } catch (Throwable t) {
-            Log.i(TAG, "getEndDateTime err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "getEndDateTime err:", t);
         }
         return 0;
     }
@@ -265,8 +242,7 @@ public class AntDodo extends ModelTask {
                 Status.flagToday("dodo::collect");
             }
         } catch (Throwable t) {
-            Log.i(TAG, "collect err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "collect err:", t);
         }
     }
 
@@ -301,8 +277,7 @@ public class AntDodo extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "collectAnimalCard err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "collectAnimalCard err:", t);
         }
     }
 
@@ -350,8 +325,7 @@ public class AntDodo extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "taskList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "taskList err:", t);
         }
     }
 
@@ -369,8 +343,7 @@ public class AntDodo extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "finishTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "finishTask err:", t);
         }
         return false;
     }
@@ -383,8 +356,7 @@ public class AntDodo extends ModelTask {
                 Log.forest("神奇物种🦕领取[" + taskTitle + "]奖励");
             }
         } catch (Throwable t) {
-            Log.i(TAG, "receiveTaskAward err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "receiveTaskAward err:", t);
         }
     }
 
@@ -436,8 +408,7 @@ public class AntDodo extends ModelTask {
                 break;
             } while (true);
         } catch (Throwable th) {
-            Log.i(TAG, "propList err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "propList err:", th);
         }
     }
 
@@ -474,8 +445,7 @@ public class AntDodo extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "usePropUniversalCard err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "usePropUniversalCard err:", t);
         }
         return false;
     }
@@ -559,8 +529,7 @@ public class AntDodo extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryUniversalAnimal err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryUniversalAnimal err:", t);
         }
         return animal;
     }
@@ -582,8 +551,7 @@ public class AntDodo extends ModelTask {
             checkAnimalAndGiftToFriend(animal);
             return true;
         } catch (Throwable t) {
-            Log.i(TAG, "consumeProp err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "consumeProp err:", t);
         }
         return false;
     }
@@ -603,8 +571,7 @@ public class AntDodo extends ModelTask {
             checkAnimalAndGiftToFriend(animal);
             return true;
         } catch (Throwable th) {
-            Log.i(TAG, "consumeProp err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "consumeProp err:", th);
         }
         return false;
     }
@@ -654,8 +621,7 @@ public class AntDodo extends ModelTask {
 
             }
         } catch (Throwable t) {
-            Log.i(TAG, "collectHelpFriend err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "collectHelpFriend err:", t);
         }
     }
 
@@ -713,8 +679,7 @@ public class AntDodo extends ModelTask {
                 }
             } while (hasMore);
         } catch (Throwable t) {
-            Log.i(TAG, "generateBookMedal err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "generateBookMedal err:", t);
         }
     }
 
@@ -752,8 +717,7 @@ public class AntDodo extends ModelTask {
             }
             giftToFriend(animal, targetUserId);
         } catch (Throwable t) {
-            Log.i(TAG, "checkAnimalAndGiftToFriend err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "checkAnimalAndGiftToFriend err:", t);
         }
     }
 
@@ -813,8 +777,7 @@ public class AntDodo extends ModelTask {
                 }
             } while (hasMore);
         } catch (Throwable t) {
-            Log.i(TAG, "giftToFriend err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "giftToFriend err:", t);
         }
     }
 
@@ -852,8 +815,7 @@ public class AntDodo extends ModelTask {
                 }
             }
         } catch (Throwable th) {
-            Log.i(TAG, "giftToFriend err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "giftToFriend err:", th);
         }
     }
 
@@ -870,8 +832,7 @@ public class AntDodo extends ModelTask {
                 return true;
             }
         } catch (Throwable th) {
-            Log.i(TAG, "giftToFriend err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "giftToFriend err:", th);
         }
         return false;
     }

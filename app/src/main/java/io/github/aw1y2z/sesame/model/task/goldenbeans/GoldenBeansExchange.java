@@ -163,6 +163,8 @@ public final class GoldenBeansExchange {
                 Log.goldenBeans("金豆芝麻粒换豆⚠️响应缺少有效beanDelta#不记录额度");
                 return;
             }
+            // 豆已换出：先记当日额度再回查。原先放在回查之后，回查失败即不记额度 → 会重复换豆/超单日上限
+            Status.setIntFlagToday(FLAG_SESAME_BEAN_AMOUNT, exchangedToday + beanDelta);
 
             // 兑换成功即记账，后续回查失败不能恢复已经消耗的单日额度。
             Status.setIntFlagToday(FLAG_SESAME_BEAN_AMOUNT, exchangedToday + beanDelta);

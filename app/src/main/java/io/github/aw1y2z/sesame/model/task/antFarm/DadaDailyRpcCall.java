@@ -1,6 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.antFarm;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
+import io.github.aw1y2z.sesame.util.StringUtil;
 
 /**
  * @author Constanline
@@ -15,7 +16,7 @@ public class DadaDailyRpcCall {
     
     public static String submit(String activityId, String answer, Long questionId) {
         return ApplicationHook.requestString("com.alipay.reading.game.dadaDaily.submit",
-                "[{\"activityId\":" + activityId + ",\"answer\":\"" + answer + "\",\"dadaVersion\":\"1.3.0\"," +
+                "[{\"activityId\":" + activityId + ",\"answer\":\"" + StringUtil.escapeJson(answer) + "\",\"dadaVersion\":\"1.3.0\"," +
                 "\"questionId\":" + questionId + ",\"version\":1}]");
     }
 }

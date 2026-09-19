@@ -82,11 +82,11 @@ public class Status {
      */
     private Long fishLastExecTime = 0L;
     
-    public static Boolean hasFlagToday(String tag) {
+    public static synchronized Boolean hasFlagToday(String tag) {
         return INSTANCE.flagLogList.contains(tag);
     }
     
-    public static void flagToday(String tag) {
+    public static synchronized void flagToday(String tag) {
         if (!hasFlagToday(tag)) {
             INSTANCE.flagLogList.add(tag);
             save();
@@ -98,7 +98,7 @@ public class Status {
     }
     
     //在写入status中时，重要数据提前记录Uid,一定程度上避免因支付宝账号切换导致标记到下一个账号的少数情况
-    public static void flagToday(String tag, String taskUid) {
+    public static synchronized void flagToday(String tag, String taskUid) {
         if (!hasFlagToday(tag)) {
             if (taskUid.equals(UserIdMap.getCurrentUid())) {
                 INSTANCE.flagLogList.add(tag);
@@ -110,7 +110,7 @@ public class Status {
     /**
      * 读取当日整型标记（不存在时返回 0）
      */
-    public static int getIntFlagToday(String tag) {
+    public static synchronized int getIntFlagToday(String tag) {
         Integer value = INSTANCE.intFlagLogList.get(tag);
         return value == null ? 0 : value;
     }
@@ -118,13 +118,13 @@ public class Status {
     /**
      * 写入当日整型标记（用于累计类额度，如芝麻粒换豆当日已兑换金豆数）
      */
-    public static void setIntFlagToday(String tag, int value) {
+    public static synchronized void setIntFlagToday(String tag, int value) {
         INSTANCE.intFlagLogList.put(tag, value);
         save();
     }
     
     // 清除单个指定Flag
-    public static void clearFlag(String tag) {
+    public static synchronized void clearFlag(String tag) {
         if (INSTANCE.flagLogList.contains(tag)) {
             INSTANCE.flagLogList.remove(tag);
             save(); // 清除后需保存状态，避免下次加载时恢复
@@ -132,14 +132,14 @@ public class Status {
     }
     
     //根据助力场景记录助力次数
-    public static void forestHuntHelpToday(String taskType, int count, String taskUid) {
+    public static synchronized void forestHuntHelpToday(String taskType, int count, String taskUid) {
         if (taskUid.equals(UserIdMap.getCurrentUid())) {
             INSTANCE.forestHuntHelpLogList.put(taskType, count);
             save();
         }
     }
     
-    public static Integer getforestHuntHelpToday(String taskType) {
+    public static synchronized Integer getforestHuntHelpToday(String taskType) {
         Integer count = INSTANCE.forestHuntHelpLogList.get(taskType);
         if (count == null) {
             return 0;
@@ -150,12 +150,12 @@ public class Status {
     }
     
     //记录完成任务次数
-    public static void rpcRequestListToday(String taskName, int count) {
+    public static synchronized void rpcRequestListToday(String taskName, int count) {
         INSTANCE.forestHuntHelpLogList.put(taskName, count);
         save();
     }
     
-    public static Integer getrpcRequestListToday(String taskName) {
+    public static synchronized Integer getrpcRequestListToday(String taskName) {
         Integer count = INSTANCE.forestHuntHelpLogList.get(taskName);
         if (count == null) {
             return 0;
@@ -165,7 +165,7 @@ public class Status {
         }
     }
     
-    public static void wateredFriendToday(String id) {
+    public static synchronized void wateredFriendToday(String id) {
         Integer count = INSTANCE.wateredFriendLogList.get(id);
         if (count == null) {
             count = 0; // 首次被浇水，次数初始化为0
@@ -175,7 +175,7 @@ public class Status {
     }
     //Log.forest("统计被水🍯
     //Log.forest("统计浇水🚿
-    public static void getWateredFriendToday() {
+    public static synchronized void getWateredFriendToday() {
         // 1. 基础统计：浇水好友数量（Map的key数量）
         int friendCount = INSTANCE.wateredFriendLogList.size();
         // 2. 统计总浇水量（遍历Map累加所有value）
@@ -200,7 +200,7 @@ public class Status {
         }
         
         // 4. 输出汇总统计信息
-        Log.forest("统计被水🍯共计被"+friendCount+"个好友浇水"+ totalWaterAmount+"次#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+        Log.forest("统计被水🍯共计被"+friendCount+"个好友浇水"+ totalWaterAmount+"次");
     
         // 5. 从ConfigV2读取wateredFriendList配置值
         Map<String, Integer> configWateredFriendList = null;
@@ -213,8 +213,7 @@ public class Status {
                 }
             }
         } catch (Exception e) {
-            Log.i(TAG, "获取wateredFriendList配置失败:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "获取wateredFriendList配置失败:", e);
         }
         
         // 6. 如果配置存在且不为空，输出预计统计和差别
@@ -229,7 +228,7 @@ public class Status {
                     configTotalWaterAmount += configWaterAmount;
                 }
             }
-            Log.forest("统计被水🍯预计被"+configFriendCount+"个好友浇水"+ configTotalWaterAmount+"次#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+            Log.forest("统计被水🍯预计被"+configFriendCount+"个好友浇水"+ configTotalWaterAmount+"次");
 
             // 6.2 对比配置和实际浇水情况，输出差别
             for (Map.Entry<String, Integer> entry : configWateredFriendList.entrySet()) {
@@ -261,7 +260,7 @@ public class Status {
         }
     }
 
-    public static void fillWateredFriendList() {
+    public static synchronized void fillWateredFriendList() {
         // 1. 获取当前被浇水的好友数据
         Map<String, Integer> currentData = INSTANCE.wateredFriendLogList;
         if (currentData == null || currentData.isEmpty()) {
@@ -280,8 +279,7 @@ public class Status {
                 }
             }
         } catch (Exception e) {
-            Log.i(TAG, "获取wateredFriendList配置失败:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "获取wateredFriendList配置失败:", e);
         }
 
         // 3. 如果配置为空，创建一个新的LinkedHashMap
@@ -336,24 +334,25 @@ public class Status {
                     wateredFriendField.setObjectValue(configWateredFriendList);
                     String currentUid = UserIdMap.getCurrentUid();
                     ConfigV2.save(currentUid, true);
-                    Log.forest("填入被水🍯完成新增" + addedCount + "个更新" + updatedCount + "个清除" + removedCount + "个#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                    Log.forest("填入被水🍯完成新增" + addedCount + "个更新" + updatedCount + "个清除" + removedCount + "个");
                 }
             }
         } catch (Exception e) {
-            Log.i(TAG, "保存wateredFriendList配置失败:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "保存wateredFriendList配置失败:", e);
         }
     }
     
-    public static void wateringFriendToday(String id) {
+    public static synchronized void wateringFriendToday(String id) {
         Integer count = INSTANCE.wateringFriendLogList.get(id);
         if (count == null) {
             count = 0; // 首次被浇水，次数初始化为0
         }
         INSTANCE.wateringFriendLogList.put(id, count + 1);
+        // 与 wateredFriendToday 对齐：不落盘的话进程被重启后「今日浇水」统计会丢失
+        save();
     }
     
-    public static void getWateringFriendToday() {
+    public static synchronized void getWateringFriendToday() {
         // 1. 基础统计：浇水好友数量（Map的key数量）
         int friendCount = INSTANCE.wateringFriendLogList.size();
         // 2. 统计总浇水量（遍历Map累加所有value）
@@ -378,7 +377,7 @@ public class Status {
         }
         
         // 4. 输出汇总统计信息
-        Log.forest("统计浇水🚿共计给"+friendCount+"个好友浇水"+ totalWaterAmount+"次#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+        Log.forest("统计浇水🚿共计给"+friendCount+"个好友浇水"+ totalWaterAmount+"次");
         
         // 5. 从ConfigV2读取waterFriendList配置值
         Map<String, Integer> configWaterFriendList = null;
@@ -391,8 +390,7 @@ public class Status {
                 }
             }
         } catch (Exception e) {
-            Log.i(TAG, "获取waterFriendList配置失败:");
-            Log.printStackTrace(TAG, e);
+            Log.err(TAG, "获取waterFriendList配置失败:", e);
         }
         
         // 6. 如果配置存在且不为空，输出预计统计和差别
@@ -407,7 +405,7 @@ public class Status {
                     configTotalWaterAmount += configWaterAmount;
                 }
             }
-            Log.forest("统计浇水🚿预计给"+configFriendCount+"个好友浇水"+ configTotalWaterAmount+"次#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+            Log.forest("统计浇水🚿预计给"+configFriendCount+"个好友浇水"+ configTotalWaterAmount+"次");
 
             // 6.2 对比配置和实际浇水情况，输出差别
             for (Map.Entry<String, Integer> entry : configWaterFriendList.entrySet()) {
@@ -426,7 +424,7 @@ public class Status {
         }
     }
     
-    public static Boolean canWaterFriendToday(String id, int newCount) {
+    public static synchronized Boolean canWaterFriendToday(String id, int newCount) {
         Integer count = INSTANCE.waterFriendLogList.get(id);
         if (count == null) {
             return true;
@@ -434,14 +432,14 @@ public class Status {
         return count < newCount;
     }
     
-    public static void waterFriendToday(String id, int count, String taskUid) {
+    public static synchronized void waterFriendToday(String id, int count, String taskUid) {
         if (taskUid.equals(UserIdMap.getCurrentUid())) {
             INSTANCE.waterFriendLogList.put(id, count);
             save();
         }
     }
     
-    public static int getVitalityExchangeBenefitCountToday(String skuId) {
+    public static synchronized int getVitalityExchangeBenefitCountToday(String skuId) {
         Integer exchangedCount = INSTANCE.vitality_ExchangeBenefitLogList.get(skuId);
         if (exchangedCount == null) {
             exchangedCount = 0;
@@ -449,17 +447,17 @@ public class Status {
         return exchangedCount;
     }
     
-    public static Boolean canVitalityExchangeBenefitToday(String skuId, int count) {
+    public static synchronized Boolean canVitalityExchangeBenefitToday(String skuId, int count) {
         return !hasFlagToday("forest::exchangeLimit::" + skuId) && getVitalityExchangeBenefitCountToday(skuId) < count;
     }
     
-    public static void vitalityExchangeBenefitToday(String skuId) {
+    public static synchronized void vitalityExchangeBenefitToday(String skuId) {
         int count = getVitalityExchangeBenefitCountToday(skuId) + 1;
         INSTANCE.vitality_ExchangeBenefitLogList.put(skuId, count);
         save();
     }
     
-    public static int getGameCenterBuyMallItemCountToday(String skuId) {
+    public static synchronized int getGameCenterBuyMallItemCountToday(String skuId) {
         Integer buyedCount = INSTANCE.gameCenterBuyMallItemList.get(skuId);
         if (buyedCount == null) {
             buyedCount = 0;
@@ -467,47 +465,47 @@ public class Status {
         return buyedCount;
     }
     
-    public static Boolean canGameCenterBuyMallItemToday(String skuId, int count) {
+    public static synchronized Boolean canGameCenterBuyMallItemToday(String skuId, int count) {
         return !hasFlagToday("farm::buyLimit::" + skuId) && getGameCenterBuyMallItemCountToday(skuId) < count;
     }
     
-    public static void gameCenterBuyMallItemToday(String skuId) {
+    public static synchronized void gameCenterBuyMallItemToday(String skuId) {
         int count = getGameCenterBuyMallItemCountToday(skuId) + 1;
         INSTANCE.gameCenterBuyMallItemList.put(skuId, count);
         save();
     }
     
-    public static int getExchangeReserveCountToday(int id) {
+    public static synchronized int getExchangeReserveCountToday(int id) {
         Integer count = INSTANCE.exchangeReserveLogList.get(id);
         return count == null ? 0 : count;
     }
     
-    public static Boolean canExchangeReserveToday(int id, int count) {
+    public static synchronized Boolean canExchangeReserveToday(int id, int count) {
         return getExchangeReserveCountToday(id) < count;
     }
     
-    public static void exchangeReserveToday(int id) {
+    public static synchronized void exchangeReserveToday(int id) {
         int count = getExchangeReserveCountToday(id) + 1;
         INSTANCE.exchangeReserveLogList.put(id, count);
         save();
     }
     
-    public static Boolean canMemberPointExchangeBenefitToday(String benefitId) {
+    public static synchronized Boolean canMemberPointExchangeBenefitToday(String benefitId) {
         return !INSTANCE.memberPointExchangeBenefitLogList.contains(benefitId);
     }
     
-    public static void memberPointExchangeBenefitToday(String benefitId) {
+    public static synchronized void memberPointExchangeBenefitToday(String benefitId) {
         if (canMemberPointExchangeBenefitToday(benefitId)) {
             INSTANCE.memberPointExchangeBenefitLogList.add(benefitId);
             save();
         }
     }
     
-    public static Boolean canAncientTreeToday(String cityCode) {
+    public static synchronized Boolean canAncientTreeToday(String cityCode) {
         return !INSTANCE.ancientTreeCityCodeList.contains(cityCode);
     }
     
-    public static void ancientTreeToday(String cityCode) {
+    public static synchronized void ancientTreeToday(String cityCode) {
         Status stat = INSTANCE;
         if (!stat.ancientTreeCityCodeList.contains(cityCode)) {
             stat.ancientTreeCityCodeList.add(cityCode);
@@ -520,11 +518,11 @@ public class Status {
         return count == null ? 0 : count;
     }
     
-    public static Boolean canFeedFriendToday(String id, int countLimit) {
+    public static synchronized Boolean canFeedFriendToday(String id, int countLimit) {
         return !hasFlagToday("farm::feedFriendAnimalLimit") && getFeedFriendCountToday(id) < countLimit;
     }
     
-    public static void feedFriendToday(String id) {
+    public static synchronized void feedFriendToday(String id) {
         int count = getFeedFriendCountToday(id) + 1;
         INSTANCE.feedFriendLogList.put(id, count);
         save();
@@ -535,24 +533,24 @@ public class Status {
         return count == null ? 0 : count;
     }
     
-    public static Boolean canVisitFriendToday(String id, int countLimit) {
+    public static synchronized Boolean canVisitFriendToday(String id, int countLimit) {
         countLimit = Math.max(countLimit, 0);
         countLimit = Math.min(countLimit, 3);
         return !hasFlagToday("farm::visitFriendLimit::" + id) && getVisitFriendCountToday(id) < countLimit;
     }
     
-    public static void visitFriendToday(String id) {
+    public static synchronized void visitFriendToday(String id) {
         int count = getVisitFriendCountToday(id) + 1;
         INSTANCE.visitFriendLogList.put(id, count);
         save();
     }
     
-    public static void visitFriendToday(String id, int count) {
+    public static synchronized void visitFriendToday(String id, int count) {
         INSTANCE.visitFriendLogList.put(id, count);
         save();
     }
     
-    public static boolean canStallHelpToday(String id) {
+    public static synchronized boolean canStallHelpToday(String id) {
         Integer count = INSTANCE.stallHelpedCountLogList.get(id);
         if (count == null) {
             return true;
@@ -560,7 +558,7 @@ public class Status {
         return count < 3;
     }
     
-    public static void stallHelpToday(String id, boolean limited) {
+    public static synchronized void stallHelpToday(String id, boolean limited) {
         Integer count = INSTANCE.stallHelpedCountLogList.get(id);
         if (count == null) {
             count = 0;
@@ -575,16 +573,16 @@ public class Status {
         save();
     }
     
-    public static Boolean canUseAccelerateToolToday() {
+    public static synchronized Boolean canUseAccelerateToolToday() {
         return !hasFlagToday("farm::useFarmToolLimit::" + "ACCELERATE" + "TOOL") && INSTANCE.useAccelerateToolCount < 8;
     }
     
-    public static void useAccelerateToolToday() {
+    public static synchronized void useAccelerateToolToday() {
         INSTANCE.useAccelerateToolCount += 1;
         save();
     }
     
-    public static Boolean canUseSpecialFoodToday() {
+    public static synchronized Boolean canUseSpecialFoodToday() {
         AntFarm task = ModelTask.getModel(AntFarm.class);
         if (task == null) {
             return false;
@@ -596,42 +594,47 @@ public class Status {
         return INSTANCE.useSpecialFoodCount < countLimit;
     }
     
-    public static void useSpecialFoodToday() {
+    public static synchronized void useSpecialFoodToday() {
         INSTANCE.useSpecialFoodCount += 1;
         save();
     }
     
-    public static Boolean canOrchardShareP2PToday(String friendUserId) {
+    public static synchronized Boolean canOrchardShareP2PToday(String friendUserId) {
         return !hasFlagToday("orchard::shareP2PLimit") && !hasFlagToday("orchard::shareP2PLimit::" + friendUserId) && !INSTANCE.orchardShareP2PLogList.contains(friendUserId);
     }
     
-    public static void orchardShareP2PToday(String friendUserId) {
+    public static synchronized void orchardShareP2PToday(String friendUserId) {
         if (canOrchardShareP2PToday(friendUserId)) {
             INSTANCE.orchardShareP2PLogList.add(friendUserId);
             save();
         }
     }
     
-    public static Boolean canStallShareP2PToday(String friendUserId) {
+    public static synchronized Boolean canStallShareP2PToday(String friendUserId) {
         return !hasFlagToday("stall::shareP2PLimit") && !hasFlagToday("stall::shareP2PLimit::" + friendUserId) && !INSTANCE.stallShareP2PLogList.contains(friendUserId);
     }
     
-    public static void stallShareP2PToday(String friendUserId) {
+    public static synchronized void stallShareP2PToday(String friendUserId) {
         if (canStallShareP2PToday(friendUserId)) {
             INSTANCE.stallShareP2PLogList.add(friendUserId);
             save();
         }
     }
     
-    public static boolean canDoubleToday() {
+    public static synchronized boolean canDoubleToday() {
         AntForestV2 task = ModelTask.getModel(AntForestV2.class);
         if (task == null) {
+            return false;
+        }
+        // 双击卡使用次数配置已停用（AntForestV2 里对应的 addField 被注释）→ 字段必为 null，
+        // 按"当日不能再双击"处理，避免 NPE（与其它双击卡配置的停用语义保持一致）
+        if (task.getDoubleCountLimit() == null || task.getDoubleCountLimit().getValue() == null) {
             return false;
         }
         return INSTANCE.doubleTimes < task.getDoubleCountLimit().getValue();
     }
     
-    public static void DoubleToday() {
+    public static synchronized void DoubleToday() {
         INSTANCE.doubleTimes += 1;
         save();
     }
@@ -641,14 +644,14 @@ public class Status {
      *
      * @return true是，false否
      */
-    public static boolean canGreenFinancePointFriend() {
+    public static synchronized boolean canGreenFinancePointFriend() {
         return !INSTANCE.greenFinancePointFriend;
     }
     
     /**
      * 绿色经营-收好友金币完了
      */
-    public static void greenFinancePointFriend() {
+    public static synchronized void greenFinancePointFriend() {
         Status stat = INSTANCE;
         if (!stat.greenFinancePointFriend) {
             stat.greenFinancePointFriend = true;
@@ -661,7 +664,7 @@ public class Status {
      *
      * @return true是，false否
      */
-    public static boolean canGreenFinancePrizesMap() {
+    public static synchronized boolean canGreenFinancePrizesMap() {
         int week = TimeUtil.getWeekNumber(new Date());
         return !INSTANCE.greenFinancePrizesSet.contains(week);
     }
@@ -669,7 +672,7 @@ public class Status {
     /**
      * 绿色经营-评级任务完了
      */
-    public static void greenFinancePrizesMap() {
+    public static synchronized void greenFinancePrizesMap() {
         int week = TimeUtil.getWeekNumber(new Date());
         Status stat = INSTANCE;
         if (!stat.greenFinancePrizesSet.contains(week)) {
@@ -681,14 +684,14 @@ public class Status {
     /**
      * 金豆-是否已领取任务奖励
      */
-    public static boolean canGoldenBeansTaskReceive(String taskId) {
+    public static synchronized boolean canGoldenBeansTaskReceive(String taskId) {
         return !INSTANCE.goldenBeansTaskReceivedSet.contains(taskId);
     }
 
     /**
      * 金豆-任务奖励已领取
      */
-    public static void goldenBeansTaskReceived(String taskId) {
+    public static synchronized void goldenBeansTaskReceived(String taskId) {
         Status stat = INSTANCE;
         if (!stat.goldenBeansTaskReceivedSet.contains(taskId)) {
             stat.goldenBeansTaskReceivedSet.add(taskId);
@@ -710,21 +713,18 @@ public class Status {
                 String formatted = JsonUtil.toFormatJsonString(INSTANCE);
                 if (formatted != null && !formatted.equals(json)) {
                     Log.i(TAG, "重新格式化 status.json");
-                    Log.system(TAG, "重新格式化 status.json");
                     FileUtil.write2File(formatted, FileUtil.getStatusFile(currentUid));
                 }
             }
             else {
                 JsonUtil.copyMapper().updateValue(INSTANCE, new Status());
                 Log.i(TAG, "初始化 status.json");
-                Log.system(TAG, "初始化 status.json");
                 FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatusFile(currentUid));
             }
         }
         catch (Throwable t) {
             Log.printStackTrace(TAG, t);
             Log.i(TAG, "状态文件格式有误，已重置");
-            Log.system(TAG, "状态文件格式有误，已重置");
             try {
                 JsonUtil.copyMapper().updateValue(INSTANCE, new Status());
                 FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatusFile(currentUid));
@@ -762,7 +762,8 @@ public class Status {
             Log.system(TAG, "重置 status.json");
         }
         else {
-            Log.system(TAG, "保存 status.json");
+            // 每次落盘都记一行会淹没有效日志（实测约 68 行/天），降为由「抓包记录」开关控制的调试日志
+            Log.debug(TAG + ", 保存 status.json");
         }
         long lastSaveTime = INSTANCE.saveTime;
         try {
@@ -775,9 +776,13 @@ public class Status {
         }
     }
     
-    public static Boolean updateDay(Calendar nowCalendar) {
+    public static synchronized Boolean updateDay(Calendar nowCalendar) {
         if (TimeUtil.isLessThanSecondOfDays(INSTANCE.saveTime, nowCalendar.getTimeInMillis())) {
             Status.unload();
+            // 跨天：解禁超期的"自动拉黑"任务，给它们一次重试机会
+            MessageUtil.sweepExpiredBlackList();
+            // 跨天：释放原先预置拉黑的技术性不可自动化项，交给自动拉黑机制判定
+            MessageUtil.sweepReleasedDefaults();
             return true;
         }
         else {

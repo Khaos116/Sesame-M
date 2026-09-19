@@ -7,6 +7,7 @@ import org.json.JSONObject;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.RandomUtil;
+import io.github.aw1y2z.sesame.util.StringUtil;
 
 import java.util.Set;
 
@@ -173,7 +174,7 @@ public class AntOceanRpcCall {
     }
     
     public static String submitAnswer(String answer, String questionId) {
-        return ApplicationHook.requestString("com.alipay.reading.game.dada.openDailyAnswer.submitAnswer", "[{\"activityId\":\"363\",\"answer\":\"" + answer + "\",\"dadaVersion\":\"1.3.0\"," + "\"outBizId" + "\":\"ANTOCEAN_DATI_PINTU_722_new\",\"questionId\":\"" + questionId + "\",\"version" +
+        return ApplicationHook.requestString("com.alipay.reading.game.dada.openDailyAnswer.submitAnswer", "[{\"activityId\":\"363\",\"answer\":\"" + StringUtil.escapeJson(answer) + "\",\"dadaVersion\":\"1.3.0\"," + "\"outBizId" + "\":\"ANTOCEAN_DATI_PINTU_722_new\",\"questionId\":\"" + StringUtil.escapeJson(questionId) + "\",\"version" +
                                                                                                           "\":\"1\"}]");
     }
     

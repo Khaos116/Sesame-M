@@ -109,11 +109,11 @@ public class AntOrchard extends ModelTask {
         ModelFields modelFields = new ModelFields();
         modelFields.addField(executeInterval = new IntegerModelField("executeInterval", "执行间隔(毫秒)", 500, 500, null));
         modelFields.addField(orchardListTask = new BooleanModelField("orchardListTask", "农场任务", false));
-        modelFields.addField(AutoAntOrchardTaskList = new BooleanModelField("AutoAntOrchardTaskList", "农场任务 | 自动黑白名单", true));
-        modelFields.addField(AntOrchardTaskList = new SelectModelField("AntOrchardTaskList", "农场任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntOrchardTaskList::getList));
+        modelFields.addField(AutoAntOrchardTaskList = new BooleanModelField("AutoAntOrchardTaskList", "农场任务 | 自动黑名单", true).setDependsOn("orchardListTask"));
+        modelFields.addField(AntOrchardTaskList = new SelectModelField("AntOrchardTaskList", "农场任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntOrchardTaskList::getList).setDependsOn("orchardListTask"));
         modelFields.addField(orchardSpreadManure = new BooleanModelField("orchardSpreadManure", "农场施肥 | 开启", false));
-        modelFields.addField(useBatchSpread = new BooleanModelField("useBatchSpread", "一键施肥5次", false));
-        modelFields.addField(orchardSpreadManureSceneList = new SelectAndCountModelField("orchardSpreadManureSceneList", "农场施肥 | 场景列表", new LinkedHashMap<>(), AlipayPlantScene::getList, "请填写每日施肥次数"));
+        modelFields.addField(useBatchSpread = new BooleanModelField("useBatchSpread", "一键施肥5次", false).setDependsOn("orchardSpreadManure"));
+        modelFields.addField(orchardSpreadManureSceneList = new SelectAndCountModelField("orchardSpreadManureSceneList", "农场施肥 | 场景列表", new LinkedHashMap<>(), AlipayPlantScene::getList, "请填写每日施肥次数").setDependsOn("orchardSpreadManure"));
         modelFields.addField(drawGameCenterAward = new BooleanModelField("drawGameCenterAward", "农场乐园 | 游戏宝箱", true));
         //modelFields.addField(driveAnimalType = new ChoiceModelField("driveAnimalType", "驱赶小鸡 | 动作", DriveAnimalType.NONE, DriveAnimalType.nickNames));
         //modelFields.addField(driveAnimalList = new SelectModelField("driveAnimalList", "驱赶小鸡 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
@@ -121,7 +121,7 @@ public class AntOrchard extends ModelTask {
         //modelFields.addField(doNotHireList = new SelectModelField("doNotHireList", "捉鸡除草 | 不捉鸡列表", new LinkedHashSet<>(), AlipayUser::getList));
         //modelFields.addField(doNotWeedingList = new SelectModelField("doNotWeedingList", "捉鸡除草 | 不除草列表", new LinkedHashSet<>(), AlipayUser::getList));
         modelFields.addField(assistFriend = new BooleanModelField("assistFriend", "分享助力 | 开启", false));
-        modelFields.addField(assistFriendList = new SelectModelField("assistFriendList", "分享助力 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
+        modelFields.addField(assistFriendList = new SelectModelField("assistFriendList", "分享助力 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("assistFriend"));
         return modelFields;
     }
 
@@ -170,8 +170,7 @@ public class AntOrchard extends ModelTask {
             }
 
         } catch (Throwable t) {
-            Log.i(TAG, "start.run err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "start.run err:", t);
         }
     }
 
@@ -233,8 +232,7 @@ public class AntOrchard extends ModelTask {
 
             return true;
         } catch (Throwable t) {
-            Log.i(TAG, "orchardIndex err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "orchardIndex err:", t);
             return false;
         }
     }
@@ -280,8 +278,7 @@ public class AntOrchard extends ModelTask {
                 }
             }
         } catch (Throwable th) {
-            Log.i(TAG, "queryOptionalPlay err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "queryOptionalPlay err:", th);
         }
     }
 
@@ -290,16 +287,14 @@ public class AntOrchard extends ModelTask {
             //初始化AntOrchardTaskListMap
             AntOrchardTaskListMap.load();
             // 1. 定义黑名单（需要添加的任务）和白名单（需要移除的任务）
+            // 注：浏览/外跳类不再预置拉黑，交由自动拉黑机制判定；
+            // 需真实完成或存在风险的（旧衣回收、数码回收、下载APP、快手、签到领现金）保留
             Set<String> blackList = new HashSet<>();
             blackList.add("完成1笔旧衣回收");
-            blackList.add("逛助农好货得肥料");
-            blackList.add("逛一逛快手");
             blackList.add("下载蚂蚁阿福看健康攻略");
-            blackList.add("逛一逛签到领现金");
-            blackList.add("钓鱼1次");
-            blackList.add("逛一逛闪购外卖");
             blackList.add("完成1单手机数码回收");
-            blackList.add("逛好物最高得1500肥料");
+            blackList.add("逛一逛快手");
+            blackList.add("逛一逛签到领现金");
             // 可继续添加更多黑名单任务
 
             Set<String> whiteList = new HashSet<>();// 从黑名单中移除该任务
@@ -340,33 +335,12 @@ public class AntOrchard extends ModelTask {
                         return;
                     }
 
-                    // 2. 批量添加黑名单任务（确保存在）
-                    Set<String> currentValues = AntOrchardTaskList.getValue();//该处直接返回列表地址
-                    if (currentValues != null) {
-                        for (String task : blackList) {
-                            if (!currentValues.contains(task)) {
-                                AntOrchardTaskList.add(task, 0);
-                            }
-                        }
-
-                        // 3. 批量移除白名单任务（从现有列表中删除）
-                        for (String task : whiteList) {
-                            if (currentValues.contains(task)) {
-                                currentValues.remove(task);
-                            }
-                        }
-                    }
-                    // 4. 保存配置
-                    if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
-                        Log.record("黑白名单🈲芭芭农场肥料任务自动设置: " + AntOrchardTaskList.getValue());
-                    } else {
-                        Log.record("农场肥料任务黑白名单设置失败");
-                    }
+                    // 2~4. 批量写回黑/白名单并保存
+                    MessageUtil.syncTaskBlackList("芭芭农场肥料任务", blackList, whiteList, AntOrchardTaskList);
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "initAntOrchardTaskListMap err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "initAntOrchardTaskListMap err:", t);
         }
     }
 
@@ -387,8 +361,7 @@ public class AntOrchard extends ModelTask {
             }
             PlantSceneIdMap.save();
         } catch (Throwable t) {
-            Log.i(TAG, "initPlantScene err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "initPlantScene err:", t);
         }
     }
 
@@ -425,8 +398,7 @@ public class AntOrchard extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "handleEnableScenes err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "handleEnableScenes err:", t);
         }
     }
 
@@ -453,8 +425,7 @@ public class AntOrchard extends ModelTask {
                 fertilizerProgress = seedStage.optInt("totalValue");
             }
         } catch (Throwable t) {
-            Log.i(TAG, "handleTaoBaoData err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "handleTaoBaoData err:", t);
         }
     }
 
@@ -496,8 +467,7 @@ public class AntOrchard extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "orchardSpreadManure err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "orchardSpreadManure err:", t);
         }
     }
 
@@ -531,8 +501,7 @@ public class AntOrchard extends ModelTask {
             }
             return true;
         } catch (Throwable t) {
-            Log.i(TAG, "doSpreadManure err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "doSpreadManure err:", t);
             return false;
         }
     }
@@ -611,8 +580,7 @@ public class AntOrchard extends ModelTask {
                     return false;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "canSpreadManure err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "canSpreadManure err:", t);
             return false;
         }
     }
@@ -626,8 +594,7 @@ public class AntOrchard extends ModelTask {
             String result = AntOrchardRpcCall.switchPlantScene(sceneName);
             return MessageUtil.checkResultCode(TAG, MyUtils.newJSONObject(result));
         } catch (Throwable t) {
-            Log.i(TAG, "switchPlantScene err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "switchPlantScene err:", t);
             return false;
         }
     }
@@ -651,8 +618,7 @@ public class AntOrchard extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "querySpreadManureActivity err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "querySpreadManureActivity err:", t);
         }
     }
 
@@ -685,8 +651,7 @@ public class AntOrchard extends ModelTask {
             // 触发已完成任务的奖励
             triggerTbTask();
         } catch (Throwable t) {
-            Log.i(TAG, "orchardListTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "orchardListTask err:", t);
         }
     }
 
@@ -724,8 +689,7 @@ public class AntOrchard extends ModelTask {
                 Status.flagToday("orchardSign", userId);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "handleSignTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "handleSignTask err:", t);
         }
     }
 
@@ -762,8 +726,7 @@ public class AntOrchard extends ModelTask {
                 // 处理已完成的任务奖励（已在triggerTbTask中统一处理）
             }
         } catch (Throwable t) {
-            Log.i(TAG, "handleTaskList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "handleTaskList err:", t);
         }
     }
 
@@ -847,8 +810,7 @@ public class AntOrchard extends ModelTask {
             }
             return true;
         } catch (Throwable t) {
-            Log.i(TAG, "finishOrchardTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "finishOrchardTask err:", t);
             return false;
         }
     }
@@ -894,8 +856,7 @@ public class AntOrchard extends ModelTask {
                 Log.record("获取任务列表失败: " + jo.optString("resultDesc"));
             }
         } catch (Throwable t) {
-            Log.i(TAG, "triggerTbTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "triggerTbTask err:", t);
         }
     }
 
@@ -951,8 +912,7 @@ public class AntOrchard extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "drawLotteryPlus err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "drawLotteryPlus err:", t);
         }
     }
 
@@ -980,8 +940,7 @@ public class AntOrchard extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "extraInfoGet err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "extraInfoGet err:", t);
         }
     }
 
@@ -1017,8 +976,7 @@ public class AntOrchard extends ModelTask {
                 TimeUtil.sleep(5000);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "orchardAssistFriend err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "orchardAssistFriend err:", t);
         }
     }
 
@@ -1047,8 +1005,7 @@ public class AntOrchard extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "querySubplotsActivity err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "querySubplotsActivity err:", t);
         }
     }
 
@@ -1094,8 +1051,7 @@ public class AntOrchard extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "handleWishActivity err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "handleWishActivity err:", t);
         }
     }
 
@@ -1139,8 +1095,7 @@ public class AntOrchard extends ModelTask {
                 querySubplotsActivity("CAMP_TAKEOVER"); // 重新查询状态
             }
         } catch (Throwable t) {
-            Log.i(TAG, "handleCampTakeoverActivity err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "handleCampTakeoverActivity err:", t);
         }
     }
 
@@ -1172,8 +1127,7 @@ public class AntOrchard extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryYebRevenueDetail err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryYebRevenueDetail err:", t);
         }
     }
 
@@ -1204,7 +1158,7 @@ public class AntOrchard extends ModelTask {
                                 }
 
                                 String jackpotMessage = jackpot ? "（触发大奖）" : "";
-                                Log.farm("砸出肥料🎖️" + manureCount + "g" + unsmashedGoldenEggsString + jackpotMessage + "#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                                Log.farm("砸出肥料🎖️" + manureCount + "g" + unsmashedGoldenEggsString + jackpotMessage + "");
                             }
                         }
                     }
@@ -1217,8 +1171,7 @@ public class AntOrchard extends ModelTask {
                 TimeUtil.sleep(500);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "smashedGoldenEgg err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "smashedGoldenEgg err:", t);
         }
     }
 
@@ -1255,8 +1208,7 @@ public class AntOrchard extends ModelTask {
             }
             Status.flagToday("orchardWidgetDailyAward", userId);
         } catch (Throwable t) {
-            Log.i(TAG, "receiveOrchardVisitAward err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "receiveOrchardVisitAward err:", t);
         }
     }
 
@@ -1409,8 +1361,7 @@ public class AntOrchard extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "limitedTimeChallenge err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "limitedTimeChallenge err:", t);
         }
     }
 

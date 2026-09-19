@@ -386,17 +386,7 @@ public class AntSportsRpcCall {
         String arg = "[{\"sportsAuthed\":true}]";
         return ApplicationHook.requestString("com.alipay.neverland.biz.rpc.queryBubbleTask", arg);
     }
-    
-    public static String queryItemList(int page) {
-        String arg = "[{\"page\":" + page + "}]";
-        return ApplicationHook.requestString("com.alipay.neverland.biz.rpc.queryItemList", arg);
-    }
-    
-    public static String createOrder(String benefitId, String itemId) {
-        String arg = "[{\"benefitId\":\"" + benefitId + "\",\"itemId\":\"" + itemId + "\"}]";
-        return ApplicationHook.requestString("com.alipay.neverland.biz.rpc.createOrder", arg);
-    }
-    
+
     public static String queryMapInfo(String branchId, String mapId) {
         String arg = "[{\"branchId\":\"" + branchId + "\",\"drilling\":false,\"mapId\":\"" + mapId + "\"}]";
         return ApplicationHook.requestString("com.alipay.neverland.biz.rpc.queryMapInfo", arg);

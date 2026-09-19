@@ -198,7 +198,6 @@ public class ConfigV2 {
                 String formatted = INSTANCE.toSaveStr();
                 if (formatted != null && !formatted.equals(json)) {
                     Log.i(TAG, "格式化配置: " + userName);
-                    Log.system(TAG, "格式化配置: " + userName);
                     FileUtil.write2File(formatted, configV2File);
                 }
             } else {
@@ -207,20 +206,17 @@ public class ConfigV2 {
                     String json = FileUtil.readFromFile(defaultConfigV2File);
                     JsonUtil.copyMapper().readerForUpdating(INSTANCE).readValue(json);
                     Log.i(TAG, "复制新配置: " + userName);
-                    Log.system(TAG, "复制新配置: " + userName);
                     FileUtil.write2File(json, configV2File);
                 } else {
                     INSTANCE.setModelFieldsMap(null);
                     unload();
                     Log.i(TAG, "初始新配置: " + userName);
-                    Log.system(TAG, "初始新配置: " + userName);
                     FileUtil.write2File(INSTANCE.toSaveStr(), configV2File);
                 }
             }
         } catch (Throwable t) {
             Log.printStackTrace(TAG, t);
             Log.i(TAG, "重置配置: " + userName);
-            Log.system(TAG, "重置配置: " + userName);
             INSTANCE.setModelFieldsMap(null);
             unload();
             if (configV2File != null) {

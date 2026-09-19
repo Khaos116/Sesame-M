@@ -38,12 +38,10 @@ public class OldRpcBridge implements RpcBridge {
             h5PageClazz = loader.loadClass(ClassUtil.H5PAGE_NAME);
             Log.i(TAG, "rpc loadClass successfully");
         } catch (ClassNotFoundException t) {
-            Log.i(TAG, "rpc loadClass err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "rpc loadClass err:", t);
             throw new RuntimeException(t);
         } catch (Throwable t) {
-            Log.i(TAG, "rpc loadClass err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "rpc loadClass err:", t);
             throw t;
         }
         if (rpcCallMethod == null) {

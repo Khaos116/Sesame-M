@@ -48,6 +48,9 @@ public final class GoldenBeansTasks {
         this.autoBlacklist = autoBlacklist;
     }
 
+    /** 本次签到是否失败（失败时不计入"已完成"，避免提前置 FLAG_TASKS_DONE 导致当天不再重试） */
+    private boolean signFailed;
+
     /**
      * 处理单个入口。
      *
@@ -64,21 +67,27 @@ public final class GoldenBeansTasks {
                 return false;
             }
 
+            // 签到/弹窗属于该入口的"待推进项"：失败时本入口即为未完成，否则当天不会再重试
+            boolean resolved = true;
+
             if (signEnabled) {
                 JSONObject signedSync = doSign(indexJo, entry, interval);
                 if (signedSync != null) {
                     indexJo = signedSync;
                 }
+                if (signFailed) {
+                    resolved = false;
+                }
             }
 
-            if (popupEnabled) {
-                clickPopup(indexJo, entry, interval);
+            if (popupEnabled && !clickPopup(indexJo, entry, interval)) {
+                resolved = false;
             }
 
             if (taskEnabled) {
-                return runTaskList(entry, interval);
+                return runTaskList(entry, interval) && resolved;
             }
-            return true;
+            return resolved;
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "processEntry err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
@@ -92,6 +101,7 @@ public final class GoldenBeansTasks {
      * @return 签到后的同步响应，供后续弹窗与任务使用
      */
     private JSONObject doSign(JSONObject indexJo, GoldenBeansEntry entry, int interval) {
+        signFailed = false;
         try {
             JSONObject signInfo = indexJo.optJSONObject("signInfo");
             if (signInfo == null) {
@@ -110,12 +120,14 @@ public final class GoldenBeansTasks {
                 }
                 String signKey = sign.optString("signKey", "").trim();
                 if (signKey.isEmpty()) {
+                    signFailed = true;
                     Log.goldenBeans("金豆[" + entry.alias + "]签到⚠️缺少服务端signKey");
                     return null;
                 }
                 JSONObject signResponse = GoldenBeansSupport.parse(
                         goldenbeansRpcCall.checkInOf(entry.bizType, entry.source, signKey));
                 if (!GoldenBeansSupport.ok(signResponse)) {
+                    signFailed = true;
                     Log.goldenBeans("金豆[" + entry.alias + "]签到⚠️失败["
                             + GoldenBeansSupport.describe(signResponse) + "]");
                     return null;
@@ -135,24 +147,30 @@ public final class GoldenBeansTasks {
                     String awardText = awardCount > 0 ? "#获得[" + awardCount + "豆]" : "";
                     Log.goldenBeans("金豆[" + entry.alias + "]签到📅" + dayInfo + awardText);
                 } else {
+                    // 已提交签到但服务端未确认：视为未完成，下轮重试（重试只会得到"已签到"，无副作用）
+                    signFailed = true;
                     Log.goldenBeans("金豆[" + entry.alias + "]签到⚠️未通过服务端状态确认");
                 }
                 return syncResponse;
             }
             Log.goldenBeans("金豆[" + entry.alias + "]签到📅今日已签到");
         } catch (Throwable th) {
+            signFailed = true;
             Log.i(GoldenBeansSupport.TAG, "doSign err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
         }
         return null;
     }
 
-    /** 营销弹窗触发（浏览类动作） */
-    private void clickPopup(JSONObject indexJo, GoldenBeansEntry entry, int interval) {
+    /** 营销弹窗触发（浏览类动作）
+     *
+     * @return 触发是否成功；失败时该入口不计入"已完成"，下轮还会重试
+     */
+    private boolean clickPopup(JSONObject indexJo, GoldenBeansEntry entry, int interval) {
         try {
             JSONObject marketingTask = indexJo.optJSONObject("marketingPopupTask");
             if (marketingTask == null) {
-                return;
+                return true;
             }
             String taskId = marketingTask.optString("taskId", "").trim();
             String triggerType = marketingTask.optString("triggerType", "").trim();
@@ -161,14 +179,14 @@ public final class GoldenBeansTasks {
             }
             if (taskId.isEmpty()) {
                 Log.goldenBeans("金豆[" + entry.alias + "]弹窗⚠️缺少服务端taskId");
-                return;
+                return true;
             }
             JSONObject triggerResponse = GoldenBeansSupport.parse(goldenbeansRpcCall.fireOf(
                     entry.bizType, entry.source, taskId, triggerType));
             if (!GoldenBeansSupport.ok(triggerResponse)) {
                 Log.goldenBeans("金豆[" + entry.alias + "]弹窗⚠️触发失败[" + taskId + "]"
                         + GoldenBeansSupport.describe(triggerResponse));
-                return;
+                return false;
             }
             GoldenBeansSupport.pause(interval);
             JSONObject syncResponse = GoldenBeansSupport.parse(goldenbeansRpcCall.pullOf(
@@ -176,11 +194,14 @@ public final class GoldenBeansTasks {
             if (GoldenBeansSupport.ok(syncResponse)) {
                 Log.goldenBeans("金豆[" + entry.alias + "]弹窗🖱️点击[" + taskId + "]");
             } else {
+                // 触发请求已发出，仅回查失败：不再重试，避免重复触发
                 Log.goldenBeans("金豆[" + entry.alias + "]弹窗⚠️回查失败[" + taskId + "]");
             }
+            return true;
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "clickPopup err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
+            return false;
         }
     }
 
@@ -228,6 +249,7 @@ public final class GoldenBeansTasks {
                 if (isBlacklisted(blacklistKey, taskName)) {
                     if (STATUS_FINISHED.equals(taskStatus) || STATUS_TO_RECEIVE.equals(taskStatus)) {
                         GoldenBeansSupport.pause(interval);
+                        // 领奖失败要计入未完成，否则会提前置 FLAG_TASKS_DONE（与下面非黑名单分支保持一致）
                         if (claimAward(entry, taskId, taskName)) {
                             changed = true;
                         } else {
@@ -460,20 +482,9 @@ public final class GoldenBeansTasks {
                 return;
             }
 
-            // 补齐默认黑名单任务
-            Set<String> currentValues = taskListField.getValue();
-            if (currentValues != null) {
-                for (String task : defaultKeys) {
-                    if (!currentValues.contains(task)) {
-                        taskListField.add(task, 0);
-                    }
-                }
-            }
-            if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
-                Log.record("黑白名单🈲金豆夺宝任务自动设置: " + taskListField.getValue());
-            } else {
-                Log.record("黑白名单⚠️金豆夺宝任务设置失败");
-            }
+            // 2~4. 批量写回黑/白名单并保存（与其它模块统一走同一执行器；本模块没有预置白名单）
+            Set<String> whiteList = new LinkedHashSet<>();
+            MessageUtil.syncTaskBlackList("金豆夺宝任务", defaultKeys, whiteList, taskListField);
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "initTaskListMap err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);

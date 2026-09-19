@@ -4,6 +4,8 @@ import io.github.aw1y2z.sesame.hook.AlipayMiniMarkHelper;
 import fi.iki.elonen.NanoHTTPD;
 import java.util.Map;
 
+import io.github.aw1y2z.sesame.util.StringUtil;
+
 /**
  * 支付宝小程序标记处理器
  * 提供获取支付宝小程序标记的接口（对应原Kotlin的AlipayMiniMarkHandler）
@@ -55,8 +57,8 @@ public class AlipayMiniMarkHandler implements io.github.aw1y2z.sesame.hook.HttpH
             
             // 处理返回结果：非空则成功，否则失败
             if (miniMark != null && !miniMark.trim().isEmpty()) {
-                // 拼接成功响应JSON（转义双引号，避免语法错误）
-                String successJson = String.format("{\"success\":true,\"alipayMiniMark\":\"%s\"}", miniMark);
+                // 拼接成功响应JSON：值必须先转义（原先注释写着"转义双引号"其实并没有转义）
+                String successJson = String.format("{\"success\":true,\"alipayMiniMark\":\"%s\"}", StringUtil.escapeJson(miniMark));
                 return createResponse(NanoHTTPD.Response.Status.OK, successJson);
             } else {
                 return createResponse(
@@ -67,7 +69,7 @@ public class AlipayMiniMarkHandler implements io.github.aw1y2z.sesame.hook.HttpH
         } catch (Exception e) {
             // 捕获所有异常，返回带错误信息的500响应
             String errorMsg = e.getMessage() != null ? e.getMessage() : "未知错误";
-            String errorJson = String.format("{\"error\":\"服务器内部错误: %s\"}", errorMsg);
+            String errorJson = String.format("{\"error\":\"服务器内部错误: %s\"}", StringUtil.escapeJson(errorMsg));
             return createResponse(NanoHTTPD.Response.Status.INTERNAL_ERROR, errorJson);
         }
     }

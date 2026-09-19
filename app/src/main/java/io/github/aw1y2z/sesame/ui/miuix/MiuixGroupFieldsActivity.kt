@@ -146,21 +146,28 @@ private sealed interface GroupFieldsRow {
 
 @Composable
 fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, groupCode: String, group: ModelGroup) {
-    // 只在分组变化时构建一次扁平行列表；字段对象由 ConfigV2 单例持有，引用稳定。
-    val rows = remember(group) {
+    // 父字段开关/选项变化后，依赖其显示的子字段需重新计算可见性，
+    // 用 depVersion 作为 remember 键触发扁平行列表重建。
+    var depVersion by remember { mutableStateOf(0) }
+    // 字段对象由 ConfigV2 单例持有，引用稳定；仅当分组或依赖版本变化时才重建。
+    val rows = remember(group, depVersion) {
         val list = ArrayList<GroupFieldsRow>()
         Model.getGroupModelConfig(group).values.forEach { mc ->
             val fields = mc.fields.values.toList()
             if (fields.isEmpty()) return@forEach
             list.add(GroupFieldsRow.Header(key = "header:${mc.getCode()}", title = mc.name ?: ""))
-            fields.forEachIndexed { index, field ->
+            // 过滤：依赖父字段但父未激活的子字段
+            val visibleFields = fields.filter { f ->
+                f.isVisible(mc)
+            }
+            visibleFields.forEachIndexed { index, field ->
                 list.add(
                     GroupFieldsRow.Field(
                         key = "field:${mc.getCode()}:${field.code}",
                         modelCode = mc.getCode(),
                         field = field,
                         first = index == 0,
-                        last = index == fields.lastIndex
+                        last = index == visibleFields.lastIndex
                     )
                 )
             }
@@ -191,7 +198,8 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                         activity = activity,
                         userId = userId,
                         groupCode = groupCode,
-                        row = row
+                        row = row,
+                        onDependencyChanged = { depVersion++ }
                     )
                 }
             }
@@ -208,7 +216,8 @@ private fun GroupFieldRow(
     activity: MiuixGroupFieldsActivity,
     userId: String?,
     groupCode: String,
-    row: GroupFieldsRow.Field
+    row: GroupFieldsRow.Field,
+    onDependencyChanged: () -> Unit
 ) {
     val shape = when {
         row.first && row.last -> RoundedCornerShape(16.dp)
@@ -245,7 +254,7 @@ private fun GroupFieldRow(
             }
             else -> {
                 // 只写内存，落盘统一在 saveAndFinish() / onBackPressed() 完成
-                FieldItem(field = field)
+                FieldItem(field = field, onFieldChanged = onDependencyChanged)
             }
         }
     }

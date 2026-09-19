@@ -4,6 +4,7 @@ import com.elvishew.xlog.LogLevel;
 import com.elvishew.xlog.Logger;
 import com.elvishew.xlog.XLog;
 import com.elvishew.xlog.flattener.PatternFlattener;
+import com.elvishew.xlog.printer.Printer;
 import com.elvishew.xlog.printer.file.FilePrinter;
 import com.elvishew.xlog.printer.file.backup.NeverBackupStrategy;
 import com.elvishew.xlog.printer.file.clean.NeverCleanStrategy;
@@ -17,6 +18,7 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 public class Log {
 
@@ -63,16 +65,21 @@ public class Log {
      */
     private static final Map<String, Logger> LOGGER_CACHE = new ConcurrentHashMap<>();
 
+    /**
+     * 同一账号同一类型（如 runtime 的 5 个 tag）共用一个 FilePrinter：多个 printer 写同一文件会行交错、浪费后台线程。
+     */
+    private static final Map<String, Printer> PRINTER_CACHE = new ConcurrentHashMap<>();
+
     private static Logger getUserLogger(String type, String tag, String pattern) {
         String userId = UserIdMap.getCurrentUid();
-        String key = type + "::" + tag + "::" + (userId == null || userId.isEmpty() ? "default" : userId);
-        return LOGGER_CACHE.computeIfAbsent(key, k -> XLog.tag(tag).printers(
-                new FilePrinter.Builder(FileUtil.getUserLogDirectory(userId).getPath())
+        String user = userId == null || userId.isEmpty() ? "default" : userId;
+        return LOGGER_CACHE.computeIfAbsent(type + "::" + tag + "::" + user, k -> XLog.tag(tag).printers(
+                PRINTER_CACHE.computeIfAbsent(type + "::" + user, pk -> new FilePrinter.Builder(FileUtil.getUserLogDirectory(userId).getPath())
                         .fileNameGenerator(new CustomDateFileNameGenerator(type))
                         .backupStrategy(new NeverBackupStrategy())
                         .cleanStrategy(new NeverCleanStrategy())
                         .flattener(new PatternFlattener(pattern))
-                        .build()).build());
+                        .build())).build());
     }
 
     private static Logger runtimeLogger() {
@@ -100,10 +107,6 @@ public class Log {
         return getUserLogger("record", "RECORD", "{d HH:mm:ss.SSS} {m}");
     }
 
-    private static Logger systemLogger() {
-        return getUserLogger("system", "SYSTEM", "{d HH:mm:ss.SSS} {t}: {m}");
-    }
-
     private static Logger debugLogger() {
         return getUserLogger("debug", "DEBUG", "{d HH:mm:ss.SSS} {t}: {m}");
     }
@@ -128,11 +131,63 @@ public class Log {
         return getUserLogger("error", "ERROR", "{d HH:mm:ss.SSS} {t}: {m}");
     }
 
+    /**
+     * 统一日志写入口：在消息前加上账号简称（账号1、账号2…），便于多账号下区分日志来源。
+     * <p>序号由 {@code UserIdMap} 首次出现时分配并持久化，与配置页显示的账号序号一致；
+     * 日志里**不写 uid、也不写昵称**，避免日志被分享/导出时把账号信息带出去。
+     * <p>简称在调用线程读取；uid 为空时保持原样。查看器按「时间 tag: 正文」解析，
+     * 前缀会落在正文里，不影响解析。
+     */
+    private static String withUser(String msg) {
+        try {
+            String label = io.github.aw1y2z.sesame.util.idMap.UserIdMap.getAccountLabel(
+                    io.github.aw1y2z.sesame.util.idMap.UserIdMap.getCurrentUid());
+            return StringUtil.isEmpty(label) ? msg : "[" + label + "]" + msg;
+        } catch (Throwable t) {
+            return msg;
+        }
+    }
+
+    /**
+     * 模块日志双写（运行日志 + 分类文件）：只写开关打开的一侧，消息统一带 uid 前缀。
+     */
+    private static void writeModuleLog(String s, boolean toRuntime, Supplier<Logger> runtimeTarget,
+                                       boolean toFile, Supplier<Logger> fileTarget) {
+        if (!toRuntime && !toFile) {
+            return;
+        }
+        String msg = withUser(s);
+        if (toRuntime) {
+            runtimeTarget.get().i(msg);
+        }
+        if (toFile) {
+            fileTarget.get().i(msg);
+        }
+    }
+
+    /**
+     * 错误日志双写（异常日志 + 运行日志）：消息统一带 uid 前缀。
+     */
+    private static void writeError(String s) {
+        boolean toError = io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog();
+        boolean toRuntime = io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog();
+        if (!toError && !toRuntime) {
+            return;
+        }
+        String msg = withUser(s);
+        if (toError) {
+            errorLogger().i(msg);
+        }
+        if (toRuntime) {
+            runtimeLogger().i(msg);
+        }
+    }
+
     public static void i(String s) {
         if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
             return;
         }
-        runtimeLogger().i(s);
+        runtimeLogger().i(withUser(s));
     }
 
     public static void i(String tag, String s) {
@@ -172,7 +227,7 @@ public class Log {
         countModuleLog();
         // 记录日志(record)已停用,只按「查看运行日志」开关写入运行日志
         if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
-            runtimeLogger().i(str);
+            runtimeLogger().i(withUser(str));
         }
     }
 
@@ -180,67 +235,51 @@ public class Log {
         record("[" + TAG + "]: " + msg);
     }
 
+    /**
+     * system 记录(配置加载/保存/重置等)：统一并入运行日志，不再单独写 system.&lt;date&gt;.log。
+     * <p>这些调用点旁边本就有一条内容相同的 Log.i，单独建文件只是重复副本，
+     * 而且查看器里也没有对应的日志类目。仍受「查看运行日志」开关控制。
+     */
     public static void system(String tag, String s) {
-        // system 记录(配置加载/保存/重置等)同样受「查看运行日志」开关控制,
-        // 避免关闭运行日志后仍持续写入 system 日志
         if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
             return;
         }
-        systemLogger().i(tag + ", " + s);
+        runtimeLogger().i(withUser(tag + ", " + s));
     }
 
     public static void forest(String s) {
         countModuleLog();
-        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
-            runtimeForestLogger().i(s);
-        }
-        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableForestLog()) {
-            forestLogger().i(s);
-        }
+        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog(), Log::runtimeForestLogger,
+                io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableForestLog(), Log::forestLogger);
     }
 
     public static void goldenBeans(String s) {
         countModuleLog();
-        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
-            runtimeGoldenBeansLogger().i(s);
-        }
-        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableGoldenBeansLog()) {
-            goldenBeansLogger().i(s);
-        }
+        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog(), Log::runtimeGoldenBeansLogger,
+                io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableGoldenBeansLog(), Log::goldenBeansLogger);
     }
 
     public static void farm(String s) {
         countModuleLog();
-        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
-            runtimeFarmLogger().i(s);
-        }
-        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableFarmLog()) {
-            farmLogger().i(s);
-        }
+        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog(), Log::runtimeFarmLogger,
+                io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableFarmLog(), Log::farmLogger);
     }
 
     public static void other(String s) {
         countModuleLog();
-        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
-            runtimeOtherLogger().i(s);
-        }
-        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableOtherLog()) {
-            otherLogger().i(s);
-        }
+        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog(), Log::runtimeOtherLogger,
+                io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableOtherLog(), Log::otherLogger);
     }
 
     public static void debug(String s) {
         if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableDebugLog()) {
             return;
         }
-        debugLogger().d(s);
+        debugLogger().d(withUser(s));
     }
 
     public static void error(String s) {
-        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog()) {
-            errorLogger().i(s);
-        }
-        i(s);
+        writeError(s);
     }
 
     public static void error(String TAG, String msg) {
@@ -248,27 +287,28 @@ public class Log {
     }
 
     public static void printStackTrace(Throwable t) {
-        String str = android.util.Log.getStackTraceString(t);
-        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog()) {
-            errorLogger().i(str);
-        }
-        i(str);
+        writeError(android.util.Log.getStackTraceString(t));
     }
 
     public static void printStackTrace(String tag, Throwable t) {
-        String str = tag + ", " + android.util.Log.getStackTraceString(t);
-        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog()) {
-            errorLogger().i(str);
-        }
-        i(str);
+        writeError(tag + ", " + android.util.Log.getStackTraceString(t));
+    }
+
+    /**
+     * 记录异常：一次调用同时写异常日志与运行日志，替代成对出现的
+     * {@code Log.i(TAG, "xxx err:"); Log.printStackTrace(TAG, t);}。
+     * <p>原先那种写法会占两行、只写其中一行时不易察觉，且运行日志里同一个异常会出现两行。
+     *
+     * @param tag 标签（通常传 TAG）
+     * @param msg 说明，如 "answerQuestion err:"
+     * @param t   异常
+     */
+    public static void err(String tag, String msg, Throwable t) {
+        writeError(tag + ", " + msg + "\n" + android.util.Log.getStackTraceString(t));
     }
 
     public static void printStackTrace(String TAG, String msg, Throwable th) {
-        String str = "[" + TAG + "] Throwable error: " + android.util.Log.getStackTraceString(th);
-        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog()) {
-            errorLogger().i(str + "[" + msg + "]");
-        }
-        i(str);
+        writeError("[" + TAG + "] Throwable error: " + android.util.Log.getStackTraceString(th) + "[" + msg + "]");
     }
 
     public static String getLogFileName(String logName) {

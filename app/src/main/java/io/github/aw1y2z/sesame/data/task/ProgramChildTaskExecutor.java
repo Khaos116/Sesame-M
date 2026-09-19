@@ -11,6 +11,9 @@ public class ProgramChildTaskExecutor implements ChildTaskExecutor {
 
     private final Map<String, ThreadPoolExecutor> groupChildTaskExecutorMap = new ConcurrentHashMap<>();
 
+    /** 每组允许同时运行的最大子任务线程数（原先上限是 Integer.MAX_VALUE，等于无限起线程） */
+    private static final int MAX_CHILD_TASK_THREADS = 16;
+
     @Override
     public Boolean addChildTask(ModelTask.ChildModelTask childTask) {
         ThreadPoolExecutor threadPoolExecutor = getChildGroupThreadPool(childTask.getGroup());
@@ -104,7 +107,10 @@ public class ProgramChildTaskExecutor implements ChildTaskExecutor {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             threadPoolExecutor = groupChildTaskExecutorMap.compute(group, (keyInner, valueInner) -> {
                 if (valueInner == null) {
-                    valueInner = new ThreadPoolExecutor(0, Integer.MAX_VALUE, 30L, TimeUnit.SECONDS, new SynchronousQueue<>(), new ThreadPoolExecutor.CallerRunsPolicy());
+                    // 子任务有时效性，必须立即开始，所以保留 SynchronousQueue（不排队）；
+                    // 但上限不能是 Integer.MAX_VALUE——那等于"每个子任务新建一条线程"。
+                    // 改为有限上限后，超出部分由 CallerRunsPolicy 在提交线程内执行（背压，仍然立即执行不排队）。
+                    valueInner = new ThreadPoolExecutor(1, MAX_CHILD_TASK_THREADS, 30L, TimeUnit.SECONDS, new SynchronousQueue<>(), new ThreadPoolExecutor.CallerRunsPolicy());
                 }
                 return valueInner;
             });
@@ -112,7 +118,7 @@ public class ProgramChildTaskExecutor implements ChildTaskExecutor {
             synchronized (groupChildTaskExecutorMap) {
                 threadPoolExecutor = groupChildTaskExecutorMap.get(group);
                 if (threadPoolExecutor == null) {
-                    threadPoolExecutor = new ThreadPoolExecutor(0, Integer.MAX_VALUE, 30L, TimeUnit.SECONDS, new SynchronousQueue<>(), new ThreadPoolExecutor.CallerRunsPolicy());
+                    threadPoolExecutor = new ThreadPoolExecutor(1, MAX_CHILD_TASK_THREADS, 30L, TimeUnit.SECONDS, new SynchronousQueue<>(), new ThreadPoolExecutor.CallerRunsPolicy());
                     groupChildTaskExecutorMap.put(group, threadPoolExecutor);
                 }
             }

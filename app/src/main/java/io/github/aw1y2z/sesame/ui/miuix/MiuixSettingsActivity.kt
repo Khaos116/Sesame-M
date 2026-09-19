@@ -232,7 +232,7 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
  * 避免每次拨开关、每次提交输入都做一次「全量序列化 + 写盘 + 备份检查」。
  */
 @Composable
-fun FieldItem(field: ModelField<*>) {
+fun FieldItem(field: ModelField<*>, onFieldChanged: (() -> Unit)? = null) {
     // 用字段名唯一标识展开状态，避免 LazyColumn 复用导致错位
     val fieldKey = "${field.type}:${field.name}"
     var expanded by remember { mutableStateOf(false) }
@@ -247,6 +247,7 @@ fun FieldItem(field: ModelField<*>) {
                 onCheckedChange = {
                     checked = it
                     field.setObjectValue(it)
+                    onFieldChanged?.invoke()
                 }
             )
         }
@@ -429,6 +430,7 @@ fun FieldItem(field: ModelField<*>) {
                             field.setObjectValue(sel)
                             expanded = false
                             expandedFieldKey = null
+                            onFieldChanged?.invoke()
                         })
                     }
                 }

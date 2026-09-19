@@ -11,6 +11,8 @@ import android.widget.TextView;
  */
 public class ViewHierarchyAnalyzer {
     private static final String TAG = "ViewHierarchyAnalyzer";
+    /** 层次结构 dump 是否已打印过（见 findActualSliderView） */
+    private static volatile boolean hierarchyLogged;
     
     private ViewHierarchyAnalyzer() {
         // 私有构造函数，防止实例化工具类
@@ -73,9 +75,14 @@ public class ViewHierarchyAnalyzer {
         }
         ViewGroup parentView = (ViewGroup) originView.getParent();
         
-        Log.d(TAG, "========= 分析滑块父视图层次结构 =========");
-        logViewHierarchy(parentView, 0);
-        Log.d(TAG, "========= 视图层次结构分析结束 =========");
+        // 层次结构 dump 只做一次：javadoc 里承诺的"第一次尝试时记录"原先并未实现，
+        // 而验证码失败会重试十次，每次把整棵树（含逐节点资源名查询）再打一遍纯属浪费
+        if (!hierarchyLogged) {
+            hierarchyLogged = true;
+            Log.d(TAG, "========= 分析滑块父视图层次结构 =========");
+            logViewHierarchy(parentView, 0);
+            Log.d(TAG, "========= 视图层次结构分析结束 =========");
+        }
         
         // 在父容器内开始递归搜索滑块视图。
         View slider = findSliderInGroup(parentView);

@@ -99,30 +99,30 @@ public class AntStall extends ModelTask {
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();
         modelFields.addField(openShopType = new ChoiceModelField("openShopType", "摆摊 | 动作", OpenShopType.NONE, OpenShopType.nickNames));
-        modelFields.addField(openShopList = new SelectModelField("openShopList", "摆摊 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
+        modelFields.addField(openShopList = new SelectModelField("openShopList", "摆摊 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("openShopType"));
         modelFields.addField(closeShop = new BooleanModelField("closeShop", "收摊 | 开启", false));
-        modelFields.addField(closeShopTime = new IntegerModelField("closeShopTime", "收摊 | 摆摊时长(分钟)", 120, 1, 1440));
+        modelFields.addField(closeShopTime = new IntegerModelField("closeShopTime", "收摊 | 摆摊时长(分钟)", 120, 1, 1440).setDependsOn("closeShop"));
         modelFields.addField(pasteTicketType = new ChoiceModelField("pasteTicketType", "贴罚单 | 动作", PasteTicketType.NONE, PasteTicketType.nickNames));
-        modelFields.addField(pasteTicketList = new SelectModelField("pasteTicketList", "贴罚单 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
+        modelFields.addField(pasteTicketList = new SelectModelField("pasteTicketList", "贴罚单 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("pasteTicketType"));
         modelFields.addField(throwManureType = new ChoiceModelField("throwManureType", "丢肥料 | 动作", ThrowManureType.NONE, ThrowManureType.nickNames));
-        modelFields.addField(throwManureList = new SelectModelField("throwManureList", "丢肥料 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
+        modelFields.addField(throwManureList = new SelectModelField("throwManureList", "丢肥料 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("throwManureType"));
         modelFields.addField(manualCollectManure = new BooleanModelField("manualCollectManure", "收肥料 | 手动收取", false));
         modelFields.addField(sendBackShop = new BooleanModelField("sendBackShop", "请走小摊 | 开启", false));
-        modelFields.addField(sendBackShopTime = new IntegerModelField("sendBackShopTime", "请走小摊 | 允许摆摊时长(分钟)", 121));
-        modelFields.addField(sendBackShopWhiteList = new SelectModelField("sendBackShopWhiteList", "请走小摊 | 白名单(超时也不赶)", new LinkedHashSet<>(), AlipayUser::getList));
-        modelFields.addField(sendBackShopBlackList = new SelectModelField("sendBackShopBlackList", "请走小摊 | 黑名单(不超时也赶)", new LinkedHashSet<>(), AlipayUser::getList));
+        modelFields.addField(sendBackShopTime = new IntegerModelField("sendBackShopTime", "请走小摊 | 允许摆摊时长(分钟)", 121).setDependsOn("sendBackShop"));
+        modelFields.addField(sendBackShopWhiteList = new SelectModelField("sendBackShopWhiteList", "请走小摊 | 白名单(超时也不赶)", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("sendBackShop"));
+        modelFields.addField(sendBackShopBlackList = new SelectModelField("sendBackShopBlackList", "请走小摊 | 黑名单(不超时也赶)", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("sendBackShop"));
         modelFields.addField(inviteOpenShopType = new ChoiceModelField("inviteOpenShopType", "邀请摆摊 | 动作", InviteOpenShopType.NONE, InviteOpenShopType.nickNames));
-        modelFields.addField(inviteOpenShopList = new SelectModelField("inviteOpenShopList", "邀请摆摊 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
+        modelFields.addField(inviteOpenShopList = new SelectModelField("inviteOpenShopList", "邀请摆摊 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("inviteOpenShopType"));
         modelFields.addField(taskList = new BooleanModelField("taskList", "新村任务 | 加速产币", false));
-        modelFields.addField(AutoAntStallTaskList = new BooleanModelField("AutoAntStallTaskList", "新村任务 | 自动黑白名单", true));
-        modelFields.addField(AntStallTaskList = new SelectModelField("AntStallTaskList", "新村任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntStallTaskList::getList));
-        modelFields.addField(doTaskOnce = new BooleanModelField("doTaskOnce", "新村任务仅执行一次", false));
+        modelFields.addField(AutoAntStallTaskList = new BooleanModelField("AutoAntStallTaskList", "新村任务 | 自动黑名单", true).setDependsOn("taskList"));
+        modelFields.addField(AntStallTaskList = new SelectModelField("AntStallTaskList", "新村任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntStallTaskList::getList).setDependsOn("taskList"));
+        modelFields.addField(doTaskOnce = new BooleanModelField("doTaskOnce", "新村任务仅执行一次", false).setDependsOn("taskList"));
         modelFields.addField(donate = new BooleanModelField("donate", "助力就业岗位", false));
         modelFields.addField(nextVillage = new BooleanModelField("nextVillage", "解锁新村新店", false));
         modelFields.addField(inviteRegister = new BooleanModelField("inviteRegister", "邀请开通 | 开启", false));
-        modelFields.addField(inviteRegisterList = new SelectModelField("inviteRegisterList", "邀请开通 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
+        modelFields.addField(inviteRegisterList = new SelectModelField("inviteRegisterList", "邀请开通 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("inviteRegister"));
         modelFields.addField(assistFriend = new BooleanModelField("assistFriend", "分享助力 | 开启", false));
-        modelFields.addField(assistFriendList = new SelectModelField("assistFriendList", "分享助力 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
+        modelFields.addField(assistFriendList = new SelectModelField("assistFriendList", "分享助力 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("assistFriend"));
         return modelFields;
     }
     
@@ -178,8 +178,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "AntStall.start.run err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "AntStall.start.run err:", t);
         }
     }
     
@@ -210,8 +209,7 @@ public class AntStall extends ModelTask {
             return jo;
         }
         catch (Throwable t) {
-            Log.i(TAG, "querySelfHome err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "querySelfHome err:", t);
         }
         return null;
     }
@@ -245,8 +243,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "selfHomeHandler err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "selfHomeHandler err:", t);
         }
     }
     
@@ -294,37 +291,13 @@ public class AntStall extends ModelTask {
                         return;
                     }
                     // 2. 批量添加黑名单任务（确保存在）
-                    Set<String> currentValues = AntStallTaskList.getValue();//该处直接返回列表地址
-                    if (currentValues != null) {
-                        for (String task : blackList) {
-                            if (!currentValues.contains(task)) {
-                                AntStallTaskList.add(task, 0);
-                            }
-                        }
-                    }
-                    currentValues = AntStallTaskList.getValue();//该处直接返回列表地址
-                    if (currentValues != null) {
-                        
-                        // 3. 批量移除白名单任务（从现有列表中删除）
-                        for (String task : whiteList) {
-                            if (currentValues.contains(task)) {
-                                currentValues.remove(task);
-                            }
-                        }
-                    }
-                    // 4. 保存配置
-                    if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
-                        Log.record("黑白名单🈲新村任务自动设置: " + AntStallTaskList.getValue());
-                    }
-                    else {
-                        Log.record("新村任务黑白名单设置失败");
-                    }
+                    // 2~4. 批量写回黑/白名单并保存
+                    MessageUtil.syncTaskBlackList("新村任务", blackList, whiteList, AntStallTaskList);
                 }
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "initAntStallTaskListMap err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "initAntStallTaskListMap err:", t);
         }
     }
     
@@ -341,8 +314,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "settleReceivable err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "settleReceivable err:", t);
         }
     }
     
@@ -362,8 +334,7 @@ public class AntStall extends ModelTask {
             inviteOpenShop(seatId);
         }
         catch (Throwable t) {
-            Log.i(TAG, "sendBack err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "sendBack err:", t);
         }
     }
     
@@ -401,8 +372,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "inviteOpenShop err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "inviteOpenShop err:", t);
         }
     }
     
@@ -462,8 +432,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "sendBack err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "sendBack err:", t);
         }
     }
     
@@ -490,8 +459,7 @@ public class AntStall extends ModelTask {
             
         }
         catch (Throwable t) {
-            Log.i(TAG, "settle err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "settle err:", t);
         }
     }
     
@@ -537,8 +505,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "closeShop err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "closeShop err:", t);
         }
     }
     
@@ -559,8 +526,7 @@ public class AntStall extends ModelTask {
             rankCoinDonate(shopIds);
         }
         catch (Throwable t) {
-            Log.i(TAG, "openShop err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "openShop err:", t);
         }
     }
     
@@ -590,8 +556,7 @@ public class AntStall extends ModelTask {
             friendHomeOpenShop(seats, shopIds);
         }
         catch (Throwable t) {
-            Log.i(TAG, "rankCoinDonate err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "rankCoinDonate err:", t);
         }
     }
     
@@ -604,8 +569,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "openShop err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "openShop err:", t);
         }
         return false;
     }
@@ -659,8 +623,7 @@ public class AntStall extends ModelTask {
                 }
             }
             catch (Throwable t) {
-                Log.i(TAG, "friendHomeOpenShop err:");
-                Log.printStackTrace(TAG, t);
+                Log.err(TAG, "friendHomeOpenShop err:", t);
             }
         }
     }
@@ -680,8 +643,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "closeShop err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "closeShop err:", t);
         }
     }
     
@@ -740,8 +702,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "taskList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "taskList err:", t);
         }
     }
     
@@ -807,8 +768,7 @@ public class AntStall extends ModelTask {
                             }
                         }
                         catch (Throwable t) {
-                            Log.i(TAG, "taskList for err:");
-                            Log.printStackTrace(TAG, t);
+                            Log.err(TAG, "taskList for err:", t);
                         }
                     }
                     return true;
@@ -816,8 +776,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "doStallTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "doStallTask err:", t);
         }
         return false;
     }
@@ -849,8 +808,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "signToday err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "signToday err:", t);
         }
     }
     
@@ -862,8 +820,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "receiveTaskAward err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "receiveTaskAward err:", t);
         }
     }
     
@@ -876,8 +833,7 @@ public class AntStall extends ModelTask {
             return MessageUtil.checkSuccess(TAG, jo);
         }
         catch (Throwable t) {
-            Log.i(TAG, "finishTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "finishTask err:", t);
         }
         return false;
     }
@@ -913,8 +869,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "inviteRegister err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "inviteRegister err:", t);
         }
     }
     
@@ -932,8 +887,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "shareP2P err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "shareP2P err:", t);
         }
         return null;
     }
@@ -973,8 +927,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "assistFriend err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "assistFriend err:", t);
         }
     }
     
@@ -1005,8 +958,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "projectList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "projectList err:", t);
         }
     }
     
@@ -1029,8 +981,7 @@ public class AntStall extends ModelTask {
             return projectDonate(projectId);
         }
         catch (Throwable t) {
-            Log.i(TAG, "projectDetail err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "projectDetail err:", t);
         }
         return false;
     }
@@ -1057,8 +1008,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "projectDonate err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "projectDonate err:", t);
         }
         return false;
     }
@@ -1087,8 +1037,7 @@ public class AntStall extends ModelTask {
             Status.flagToday("stall::donate");
         }
         catch (Throwable t) {
-            Log.i(TAG, "canDonateToday err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "canDonateToday err:", t);
         }
         return false;
     }
@@ -1114,8 +1063,7 @@ public class AntStall extends ModelTask {
             return true;
         }
         catch (Throwable t) {
-            Log.i(TAG, "unlockNewVillage err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "unlockNewVillage err:", t);
         }
         return false;
     }
@@ -1127,8 +1075,7 @@ public class AntStall extends ModelTask {
             return donateCount >= donateLimit;
         }
         catch (Throwable t) {
-            Log.i(TAG, "canUnlockNewVillage err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "canUnlockNewVillage err:", t);
         }
         return false;
     }
@@ -1139,8 +1086,7 @@ public class AntStall extends ModelTask {
             return MessageUtil.checkResultCode(TAG, jo);
         }
         catch (Throwable t) {
-            Log.i(TAG, "nextVillage err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "nextVillage err:", t);
         }
         return false;
     }
@@ -1169,8 +1115,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "collectManure err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "collectManure err:", t);
         }
     }
     
@@ -1187,8 +1132,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable th) {
-            Log.i(TAG, "throwManure err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "throwManure err:", th);
         }
         finally {
             TimeUtil.sleep(1000);
@@ -1236,8 +1180,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
-            Log.i(TAG, "throwManure err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "throwManure err:", t);
         }
     }
     
@@ -1249,7 +1192,9 @@ public class AntStall extends ModelTask {
             return;
         }
         try {
-            while (true) {
+            // 兜底：最多处理 50 个好友。服务端若反复返回同一个（或无法贴罚单的）好友，
+            // while(true) 会一直空转并不断发起 RPC；达到上限时不置「今日已贴完」标记，剩余额度留待下一轮
+            for (int i = 0; i < 50; i++) {
                 JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.nextTicketFriend());
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     return;
@@ -1264,10 +1209,10 @@ public class AntStall extends ModelTask {
                 }
                 pasteTicket(jo.optString("friendUserId"));
             }
+            Log.i(TAG, "pasteTicket 达到单轮上限(50)，本轮停止，剩余额度留待下一轮");
         }
         catch (Throwable th) {
-            Log.i(TAG, "pasteTicket err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "pasteTicket err:", th);
         }
     }
     
@@ -1303,8 +1248,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable th) {
-            Log.i(TAG, "pasteTicket err:");
-            Log.printStackTrace(TAG, th);
+            Log.err(TAG, "pasteTicket err:", th);
         }
     }
     

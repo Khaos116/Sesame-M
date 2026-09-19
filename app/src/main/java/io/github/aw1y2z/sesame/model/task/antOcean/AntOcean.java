@@ -78,17 +78,17 @@ public class AntOcean extends ModelTask {
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();
         modelFields.addField(queryTaskList = new BooleanModelField("queryTaskList", "海洋任务", false));
-        modelFields.addField(AutoAntOceanAntiepTaskList = new BooleanModelField("AutoAntOceanAntiepTaskList", "海洋任务 | 自动黑白名单", true));
-        modelFields.addField(AntOceanAntiepTaskList = new SelectModelField("AntOceanAntiepTaskList", "海洋任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntOceanAntiepTaskList::getList));
+        modelFields.addField(AutoAntOceanAntiepTaskList = new BooleanModelField("AutoAntOceanAntiepTaskList", "海洋任务 | 自动黑名单", true).setDependsOn("queryTaskList"));
+        modelFields.addField(AntOceanAntiepTaskList = new SelectModelField("AntOceanAntiepTaskList", "海洋任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntOceanAntiepTaskList::getList).setDependsOn("queryTaskList"));
         modelFields.addField(cleanOceanType = new ChoiceModelField("cleanOceanType", "清理海域 | 动作", CleanOceanType.NONE, CleanOceanType.nickNames));
-        modelFields.addField(cleanOceanList = new SelectModelField("cleanOceanList", "清理海域 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
+        modelFields.addField(cleanOceanList = new SelectModelField("cleanOceanList", "清理海域 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("cleanOceanType"));
         modelFields.addField(exchangeUniversalPiece = new BooleanModelField("exchangeUniversalPiece", "万能拼图 | 制作", false));
         modelFields.addField(useUniversalPiece = new BooleanModelField("useUniversalPiece", "万能拼图 | 使用", false));
         modelFields.addField(replica = new BooleanModelField("replica", "潘多拉海域", false));
         modelFields.addField(antfishEnable = new BooleanModelField("antfishEnable", "海洋摸鱼 | 开启摸鱼", false));
-        modelFields.addField(antfishAutoTask = new BooleanModelField("antfishAutoTask", "海洋摸鱼 | 摸鱼任务", false));
-        modelFields.addField(AutoAntOceanFishBlackList = new BooleanModelField("AutoAntOceanFishBlackList", "海洋摸鱼 | 自动黑名单", true));
-        modelFields.addField(AntOceanFishBlackList = new SelectModelField("AntOceanFishBlackList", "摸鱼任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntOceanFishBlackList::getList));
+        modelFields.addField(antfishAutoTask = new BooleanModelField("antfishAutoTask", "海洋摸鱼 | 摸鱼任务", false).setDependsOn("antfishEnable"));
+        modelFields.addField(AutoAntOceanFishBlackList = new BooleanModelField("AutoAntOceanFishBlackList", "海洋摸鱼 | 自动黑名单", true).setDependsOn("antfishAutoTask"));
+        modelFields.addField(AntOceanFishBlackList = new SelectModelField("AntOceanFishBlackList", "摸鱼任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntOceanFishBlackList::getList).setDependsOn("antfishAutoTask"));
         return modelFields;
     }
 
@@ -145,8 +145,7 @@ public class AntOcean extends ModelTask {
             }
 
         } catch (Throwable t) {
-            Log.i(TAG, "AntOcean.start.run err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "AntOcean.start.run err:", t);
         }
     }
 
@@ -162,8 +161,7 @@ public class AntOcean extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryOceanStatus err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryOceanStatus err:", t);
         }
         return false;
     }
@@ -173,8 +171,9 @@ public class AntOcean extends ModelTask {
             //初始化AntOceanAntiepTaskListMap
             AntOceanAntiepTaskListMap.load();
             // 1. 定义黑名单（需要添加的任务）和白名单（需要移除的任务）
+            // 注：battleTile 类实验任务（如"随机任务：玩一玩得拼图"）不再预置拉黑，
+            // 交由自动拉黑机制判定（释放清单见 MessageUtil.sweepReleasedDefaults）
             Set<String> blackList = new HashSet<>();
-            blackList.add("随机任务：玩一玩得拼图");
             // 可继续添加更多黑名单任务
 
             Set<String> whiteList = new HashSet<>();// 从黑名单中移除该任务
@@ -213,36 +212,16 @@ public class AntOcean extends ModelTask {
                         return;
                     }
 
-                    // 2. 批量添加黑名单任务（确保存在）
-                    Set<String> currentValues = AntOceanAntiepTaskList.getValue();//该处直接返回列表地址
-                    if (currentValues != null) {
-                        for (String task : blackList) {
-                            if (!currentValues.contains(task)) {
-                                AntOceanAntiepTaskList.add(task, 0);
-                            }
-                        }
-
-                        // 3. 批量移除白名单任务（从现有列表中删除）
-                        for (String task : whiteList) {
-                            if (currentValues.contains(task)) {
-                                currentValues.remove(task);
-                            }
-                        }
-                    }
-                    // 4. 保存配置
-                    if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
-                        Log.record("黑白名单🈲海洋普通任务自动设置: " + AntOceanAntiepTaskList.getValue());
-                    } else {
-                        Log.record("神奇海洋普通任务黑白名单设置失败");
-                    }
+                    // 2~4. 批量写回黑/白名单并保存
+                    MessageUtil.syncTaskBlackList("海洋普通任务", blackList, whiteList, AntOceanAntiepTaskList);
                 }
             }
 
             //初始化AntOceanFishBlackListMap
             AntOceanFishBlackListMap.load();
             // 1. 定义黑名单（需要添加的任务）和白名单（需要移除的任务）
+            // 注：小游戏类任务（如"玩一玩向僵尸开炮"）不再预置拉黑，交由自动拉黑机制判定
             blackList = new HashSet<>();
-            blackList.add("玩一玩向僵尸开炮");
             // 可继续添加更多黑名单任务
             whiteList = new HashSet<>();// 从黑名单中移除该任务
             //whiteList.add("逛一芝麻树");
@@ -283,33 +262,12 @@ public class AntOcean extends ModelTask {
                         return;
                     }
 
-                    // 2. 批量添加黑名单任务（确保存在）
-                    Set<String> currentValues = AntOceanFishBlackList.getValue();//该处直接返回列表地址
-                    if (currentValues != null) {
-                        for (String task : blackList) {
-                            if (!currentValues.contains(task)) {
-                                AntOceanFishBlackList.add(task, 0);
-                            }
-                        }
-
-                        // 3. 批量移除白名单任务（从现有列表中删除）
-                        for (String task : whiteList) {
-                            if (currentValues.contains(task)) {
-                                currentValues.remove(task);
-                            }
-                        }
-                    }
-                    // 4. 保存配置
-                    if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
-                        Log.record("黑白名单🈲海洋去摸鱼任务自动设置: " + AntOceanFishBlackList.getValue());
-                    } else {
-                        Log.record("海洋去摸鱼任务黑白名单设置失败");
-                    }
+                    // 2~4. 批量写回黑/白名单并保存
+                    MessageUtil.syncTaskBlackList("海洋去摸鱼任务", blackList, whiteList, AntOceanFishBlackList);
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "initAntOceanAntiepTaskListMap err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "initAntOceanAntiepTaskListMap err:", t);
         }
     }
 
@@ -343,8 +301,7 @@ public class AntOcean extends ModelTask {
 
             queryMiscInfo();
         } catch (Throwable t) {
-            Log.i(TAG, "queryHomePage err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryHomePage err:", t);
         }
     }
 
@@ -376,8 +333,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "collectEnergy err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "collectEnergy err:", t);
         }
     }
 
@@ -394,8 +350,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "cleanOcean err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "cleanOcean err:", t);
         }
     }
 
@@ -415,11 +370,10 @@ public class AntOcean extends ModelTask {
             String taskId = "Ocean|" + UserId;
             if (!hasChildTask(taskId)) {
                 addChildTask(new ChildModelTask(taskId, "Ocean", this::queryHomePage, canCleanLaterTime));
-                Log.record("神奇海洋🐳蹲添加蹲点在[" + TimeUtil.getCommonDate(canCleanLaterTime) + "]执行清理海洋#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                Log.record("神奇海洋🐳蹲添加蹲点在[" + TimeUtil.getCommonDate(canCleanLaterTime) + "]执行清理海洋");
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryHomePage err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryHomePage err:", t);
         }
     }
 
@@ -433,8 +387,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "ipOpenSurprise err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "ipOpenSurprise err:", t);
         }
     }
 
@@ -449,8 +402,7 @@ public class AntOcean extends ModelTask {
             //检测是否能开启限时挑战
             createSeaAreaExtraCollect();
         } catch (Throwable t) {
-            Log.i(TAG, "combineFish err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "combineFish err:", t);
         }
     }
 
@@ -480,8 +432,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "checkReward err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "checkReward err:", t);
         }
     }
 
@@ -510,8 +461,7 @@ public class AntOcean extends ModelTask {
 
             queryReplicaTaskList();
         } catch (Throwable t) {
-            Log.i(TAG, "queryReplicaHome err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryReplicaHome err:", t);
         }
     }
 
@@ -524,8 +474,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "collectReplicaAsset err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "collectReplicaAsset err:", t);
         }
     }
 
@@ -539,8 +488,7 @@ public class AntOcean extends ModelTask {
                 Log.forest("神奇海洋🐳迎回[" + name + "]");
             }
         } catch (Throwable t) {
-            Log.i(TAG, "unLockReplicaPhase err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "unLockReplicaPhase err:", t);
         }
     }
 
@@ -566,8 +514,7 @@ public class AntOcean extends ModelTask {
                 receiveReplicaTaskAward(taskType, taskTitle);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryReplicaTaskList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryReplicaTaskList err:", t);
         }
     }
 
@@ -579,8 +526,7 @@ public class AntOcean extends ModelTask {
                 Log.forest("神奇海洋🐳领取[" + taskTitle + "]奖励#获得[潘多拉能量*" + incAwardCount + "]");
             }
         } catch (Throwable t) {
-            Log.i(TAG, "receiveReplicaTaskAward err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "receiveReplicaTaskAward err:", t);
         }
     }
 
@@ -597,8 +543,7 @@ public class AntOcean extends ModelTask {
             }
             switchOceanChapter();
         } catch (Throwable t) {
-            Log.i(TAG, "queryMiscInfo err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryMiscInfo err:", t);
         }
     }
 
@@ -614,13 +559,12 @@ public class AntOcean extends ModelTask {
                 JSONObject Extrajo = MyUtils.newJSONObject(AntOceanRpcCall.createSeaAreaExtraCollect());
                 if (MessageUtil.checkResultCode(TAG, Extrajo)) {
                     if (Extrajo.has("seaAreaExtraCollectVO")) {
-                        Log.forest("神奇海洋🐳开启了神秘海域#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                        Log.forest("神奇海洋🐳开启了神秘海域");
                     }
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "createSeaAreaExtraCollect err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "createSeaAreaExtraCollect err:", t);
         }
     }
 
@@ -636,7 +580,7 @@ public class AntOcean extends ModelTask {
                 JSONObject Extrajo = MyUtils.newJSONObject(AntOceanRpcCall.createSeaAreaExtraCollect());
                 if (MessageUtil.checkResultCode(TAG, Extrajo)) {
                     if (Extrajo.has("seaAreaExtraCollectVO")) {
-                        Log.forest("神奇海洋🐳开启了神秘海域#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                        Log.forest("神奇海洋🐳开启了神秘海域");
                     }
                 }
             }
@@ -684,8 +628,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "querySeaAreaDetailList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "querySeaAreaDetailList err:", t);
         }
     }
 
@@ -704,7 +647,7 @@ public class AntOcean extends ModelTask {
                 JSONObject Extrajo = MyUtils.newJSONObject(Extrastr == null ? "{}" : Extrastr);
                 if (MessageUtil.checkResultCode(TAG, Extrajo)) {
                     if (Extrajo.has("seaAreaExtraCollectVO")) {
-                        Log.forest("神奇海洋🐳开启了神秘海域#[" + UserIdMap.getShowName(UserIdMap.getCurrentUid()) + "]");
+                        Log.forest("神奇海洋🐳开启了神秘海域");
                     }
                 }
             }
@@ -715,8 +658,7 @@ public class AntOcean extends ModelTask {
                 AntOceanRpcCall.repairSeaArea();
             }
         } catch (Throwable t) {
-            Log.i(TAG, "querySeaAreaDetailList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "querySeaAreaDetailList err:", t);
         }
     }
 
@@ -727,8 +669,7 @@ public class AntOcean extends ModelTask {
                 AntOceanRpcCall.repairSeaArea();
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryOceanPropList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryOceanPropList err:", t);
         }
     }
 
@@ -767,8 +708,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "switchOceanChapter err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "switchOceanChapter err:", t);
         }
     }
 
@@ -838,8 +778,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryUserRanking err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryUserRanking err:", t);
         }
     }
 
@@ -860,8 +799,7 @@ public class AntOcean extends ModelTask {
                 TimeUtil.sleep(1000);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "cleanFriendOcean err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "cleanFriendOcean err:", t);
         }
     }
 
@@ -892,8 +830,7 @@ public class AntOcean extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "cleanFriendOcean err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "cleanFriendOcean err:", t);
         }
         return false;
     }
@@ -938,8 +875,7 @@ public class AntOcean extends ModelTask {
                 receiveTaskAward(sceneCode, taskType, taskTitle);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "queryTaskList err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "queryTaskList err:", t);
         }
     }
 
@@ -949,14 +885,13 @@ public class AntOcean extends ModelTask {
             JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.receiveTaskAward(sceneCode, taskType));
             TimeUtil.sleep(500);
             //检查并标记黑名单任务
-            //MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOceanAntiepTaskList", taskTitle, jo);
+            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOceanAntiepTaskList", taskTitle, jo);
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 String awardCount = jo.optString("incAwardCount");
                 Log.forest("海洋任务🎖️领取[" + taskTitle + "]奖励#获得[" + awardCount + "块拼图]");
             }
         } catch (Throwable t) {
-            Log.i(TAG, "receiveTaskAward err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "receiveTaskAward err:", t);
         }
     }
 
@@ -992,8 +927,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "finishOceanTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "finishOceanTask err:", t);
         }
         return false;
     }
@@ -1022,8 +956,7 @@ public class AntOcean extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "answerQuestion err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "answerQuestion err:", t);
         }
         return false;
     }
@@ -1048,8 +981,7 @@ public class AntOcean extends ModelTask {
                 duplicatePieceNum -= exchangeNum * 10;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "exchangeUniversalPiece error:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "exchangeUniversalPiece error:", t);
         }
     }
 
@@ -1063,8 +995,7 @@ public class AntOcean extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "exchangeUniversalPiece error:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "exchangeUniversalPiece error:", t);
         }
         return false;
     }
@@ -1088,7 +1019,8 @@ public class AntOcean extends ModelTask {
                 int holdsNum = oceanPropVO.optInt("holdsNum");
                 int pageNum = 0;
                 boolean hasMore = true;
-                while (holdsNum > 0 && hasMore) {
+                // 兜底：最多翻 50 页。原先只看 hasMore，服务端若恒返回 true 且每页都没消耗，会无限翻页发 RPC
+                while (holdsNum > 0 && hasMore && pageNum < 50) {
                     // 查询鱼列表的JSON数据
                     pageNum++;
                     jo = MyUtils.newJSONObject(AntOceanRpcCall.queryFishList(pageNum));
@@ -1106,12 +1038,16 @@ public class AntOcean extends ModelTask {
                     if (fishVOS == null) {
                         return;
                     }
-                    holdsNum -= useUniversalPiece(fishVOS, holdsNum);
+                    int used = useUniversalPiece(fishVOS, holdsNum);
+                    if (used <= 0) {
+                        // 本页没有可用拼图（或替换失败）：持有数不会减少，继续翻页也是空转，直接结束
+                        break;
+                    }
+                    holdsNum -= used;
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "useUniversalPiece error:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "useUniversalPiece error:", t);
         }
     }
 
@@ -1126,8 +1062,7 @@ public class AntOcean extends ModelTask {
                 count += useUniversalPiece(fishVO, holdsNum - count);
             }
         } catch (Throwable t) {
-            Log.i(TAG, "useUniversalPiece error:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "useUniversalPiece error:", t);
         }
         return count;
     }
@@ -1158,8 +1093,7 @@ public class AntOcean extends ModelTask {
                 return assetsDetails.length();
             }
         } catch (Throwable t) {
-            Log.i(TAG, "useUniversalPiece error:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "useUniversalPiece error:", t);
         }
         return 0;
     }
@@ -1176,8 +1110,7 @@ public class AntOcean extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "useUniversalPiece error:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "useUniversalPiece error:", t);
         }
         return false;
     }
@@ -1217,8 +1150,7 @@ public class AntOcean extends ModelTask {
 
 
         } catch (Throwable t) {
-            Log.i(TAG, "antfishRun err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "antfishRun err:", t);
         }
     }
 
@@ -1240,8 +1172,7 @@ public class AntOcean extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "antfishQueryStatus err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "antfishQueryStatus err:", t);
         }
         return false;
     }
@@ -1321,8 +1252,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "antfishQueryHomePage err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "antfishQueryHomePage err:", t);
         }
     }
 
@@ -1355,8 +1285,7 @@ public class AntOcean extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "antfishFinishTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "antfishFinishTask err:", t);
         }
         return false;
     }
@@ -1387,8 +1316,7 @@ public class AntOcean extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "rescueFish err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "rescueFish err:", t);
         }
         return false;
     }
@@ -1454,8 +1382,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
-            Log.i(TAG, "antfishHandleTasks err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "antfishHandleTasks err:", t);
         }
     }
 
@@ -1472,8 +1399,7 @@ public class AntOcean extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "antfishFinishTask err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "antfishFinishTask err:", t);
         }
         return false;
     }
@@ -1496,8 +1422,7 @@ public class AntOcean extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
-            Log.i(TAG, "antfishReceiveTaskAward err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "antfishReceiveTaskAward err:", t);
         }
         return false;
     }
@@ -1612,8 +1537,7 @@ public class AntOcean extends ModelTask {
             }
 
         } catch (Throwable t) {
-            Log.i(TAG, "antfishDrawFish err:");
-            Log.printStackTrace(TAG, t);
+            Log.err(TAG, "antfishDrawFish err:", t);
         }
     }
 

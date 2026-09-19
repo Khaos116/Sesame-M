@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,6 +44,7 @@ import io.github.aw1y2z.sesame.data.ModelField
 import io.github.aw1y2z.sesame.data.ModelFields
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectAndCountModelField
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectAndCountOneModelField
+import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectOneModelField
 import io.github.aw1y2z.sesame.entity.IdAndName
@@ -51,8 +53,10 @@ import io.github.aw1y2z.sesame.util.Log
 import io.github.aw1y2z.sesame.util.ToastUtil
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.preference.CheckboxPreference
 import top.yukonga.miuix.kmp.preference.RadioButtonPreference
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.roundToInt
@@ -204,6 +208,11 @@ fun SelectionEditContent(
         else options.filter { it.name.contains(searchQuery, ignoreCase = true) || it.id.contains(searchQuery) }
     }
 
+    // 选中项自动置顶
+    val sortedOptions = remember(filteredOptions, sel) {
+        filteredOptions.sortedByDescending { it.id in sel }
+    }
+
     val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
 
     fun applyAndSave() {
@@ -304,8 +313,8 @@ fun SelectionEditContent(
                     modifier = Modifier.fillMaxWidth(),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
-                    items(count = filteredOptions.size, key = { idx -> filteredOptions[idx].id }) { idx ->
-                        val opt = filteredOptions[idx]
+                    items(count = sortedOptions.size, key = { idx -> sortedOptions[idx].id }) { idx ->
+                        val opt = sortedOptions[idx]
                         val isChecked = sel.contains(opt.id)
                         Row(
                             modifier = Modifier
@@ -360,7 +369,7 @@ fun SelectionEditContent(
                             }
                         }
                     }
-                    if (filteredOptions.isNotEmpty()) {
+                    if (sortedOptions.isNotEmpty()) {
                         item {
                             Spacer(Modifier.height(8.dp))
                         }
