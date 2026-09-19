@@ -5,6 +5,8 @@
 
 ## 2026-09-19
 
+- fix（未提交）：补看遗漏的第三个账号日报 `rpc-failures.2026-09-18.2088942846628038.json`（50 次）：① 好友浇水 `transferEnergy` `ENERGY_INSUFFICIENT` 36 次——原先落入 default 分支继续浇下一个好友，现在自己能量不足即结束本轮浇水；② 1009“系统繁忙”（`neverland.queryItemList`）不再拉起支付宝，`showVerification()` 只在消息含“验证”/`cheating traffic` 时触发（暂停 24 小时的旧行为不变）。
+- feat（未提交）：森林新增「找能量」`findEnergyCollect`（默认关，需同时开「收集能量」）：调用 `alipay.antforest.forest.h5.takeLook` 逐个获取推荐好友，进主页交给现有 `collectUserEnergy` 收取；接口与流程对照 AG，来源见详细记录。朋友文件里的「升级发财树领红包」未移植（见详细记录）。
 - fix（未提交）：复核 09-19 两个账号异常日报（70+21 次）。① `receiveFarmTaskAward` 102“服务器正在开小差”（`cclyx_3bei_xjcmx_2`、`cclyx_sgbhsd_1c_zm3c`、`cclyx_3bei_dgls_2`、`cclyx_wdhysj_1cV2`、`IP_chouchoule_juankuan`，连续多日每天 8~12 次）：同任务当天第 5 次起退避改 6 小时，前 4 次仍 5/5/30/30 分钟，不永久拉黑；② 我的快递 `KUAIDI_VITALITY` 领奖（无原因，两账号共 15 次，09-17 为 13 次）：失败后当天不再重复领，成功行为不变。暂不处理：48 网络错误（01:50~01:53 集中，已有退避）；`energyRain*` 1009（风控，已暂停 24 小时）；`donation` 218“自营项目没有指定标的物”（1 次，配置项问题，证据不足）；`walk.go`“走慢一点”（业务限速，3 次）；`B_FREE_SEAT`、`TARGET_USER_PROTECT_BY_ENERGY_SHIELD`（正常业务提示）；金豆/`ORCHARD`/`loanpromoweb signin.query` 无原因各 1~3 次（后者较 09-17 的 19 次已大幅下降），证据不足。
 - feat（未提交）：版本伪装 `VersionHook` 默认开启，默认版本 10.6.58.8000 / 1881（对齐 GR2026 `AppConfig` 默认值，高于新接口最低支持 10.3.96.8100；AG 无此功能）。仅对**新建**的 `version_config.json` 生效——已存在的配置文件（含旧默认的 `enableVersionHook=false`）不改，需在扩展页手动打开或删除该文件。改版本后需重启支付宝。
 - feat（未提交）：`RpcRequestGuard` 遇风控 1009/“验证后继续”暂停时调用 `ApplicationHook.showVerification()`，把支付宝拉到前台让验证界面弹出（账号切换中不拉，10 分钟内只拉一次）；`check_rpc_guard.py` 补充：首次触发拉起、已暂停不重复、48 网络错误不拉起。
@@ -94,6 +96,23 @@
 
 ## 详细记录（自 doc/MyFix.md 迁移）
 
+### 2026-09-19（续）：移植「找能量」，评估朋友文件的其它新功能
+
+**来源**：朋友给的 `找能量AntForestV2.java`（GR 系反编译代码，包名 `io.github.lazyimmortal.sesame`，6250 行，不能与 M 直接 diff）。按 `ModelField` id 对比，多出 10 项：找能量 `findEnergyCollect`、收能量个人模式 `forcePersonalMode`、升级发财树领红包 `autoMoneyTree`、养绿植赢免单 `autoPlant`、养绿植会员积分 `autoPlantMemberPoint`、IP联名馆 `autoExchangeIPProps`、活力值秒杀 `autoExchangeVitalitySeckill`、不复活能量好友列表 `dontProtectList`、组队动态浇水 `enableRankingTopUp`、能量雨组队模式 `energyRainInTeam`。已有功能的逻辑改动未逐处比对。在 AG、GR2026、Sure-Xu、M 中，只有「找能量」在 AG 有实现；养绿植、IP联名馆、活力值秒杀、能量雨组队四项四处都搜不到。
+
+**移植的「找能量」**（以 AG `collectEnergyByTakeLook` / `AntForestRpcCall.takeLook` 为准，不搬朋友文件的反编译实现）：
+- `AntForestRpcCall.takeLook(skipUsers, takeLookStart)`：方法 `alipay.antforest.forest.h5.takeLook`，`source` 取 AG 默认的 `chInfo_ch_appid-60000002`，版本档位对照 AG（>10.6.10 用 `20260107`，>10.5.88 用 `20240403`，其余 `20230501`），跟随伪装后的版本号。M 的 `RpcEntity` 没有 headers，AG 请求头里的 `source`/`ags-source` 未带。
+- `AntForestV2.findAndCollectEnergy()`：最多 50 次；服务端返回空 `friendId`、非 `FRIEND` 动作、`takeLookEnd`、连续 3 次重复/自己即停；`hasErrorWait` 或响应失败即停；对每个好友调用现有 `collectUserEnergy(friendId, home, "ordinary")`，因此炸弹阈值、能量罩、`dontCollectMap` 全部复用；有能量罩的好友与 `dontCollectMap` 一起放进 `skipUsers`（值 `baohuzhao`，同 AG/朋友文件），让服务端不再推荐；每个好友间隔 500ms。挂在 `run()` 好友排行榜遍历之后。开关默认关闭，且要求「收集能量」已开。
+- 审查后修正（外部审查意见逐条核对，均成立；另按第二轮意见：主页为空对象时不计入浏览数也不清零重复计数，重复/自己跳过前停顿 300ms；`collectUserEnergy` 在“全收”下每次多查一次 `queryHomePage` 是原有逻辑，未改）：`repeat` 连续重复计数在成功浏览后未清零，会被累计到 3 次提前结束，已清零；`hasShield` 在好友主页缺 `now` 时会把已过期的罩判为生效，改为 `hasActiveProp`，`now<=0` 退回本机时间；炸弹卡好友与能量罩好友一样加入 `skipUsers`（AG 为 `hasShield||hasBomb`），避免被反复推荐；`findEnergyCollect` 加 `setDependsOn("collectEnergy")`，关闭「收集能量」时配置页隐藏该开关。
+- 跳过的：AG 的 `queryCombineBiz` 预曝光、`takeLookEnd` 结束上报、结束后 `take_look_end_task_list` 领奖、80 次上限（取朋友文件的 50）、异常冷却。原因：没有验证这些对收益有实质影响，先保证主流程；需要时按 AG 补。
+- 朋友文件的 `findEnergyCollectDirect` 没搬：它自己重写了炸弹/能量罩判断并使用裸 `getLong/getString`，且依赖的 `shield_skip::` 标记在 M 里没有任何代码写入。
+
+**发财树未移植**：AG 的「摇钱树」（`AntOrchard.receiveMoneyTreeReward`，`moneyTree.trigger`）M 已有等价实现（`AntOrchard.queryYebRevenueDetail` → `AntOrchardRpcCall.triggerYebMoneyTree`，同一接口和参数），无需移植。朋友文件里的「升级发财树领红包」是另一个模块 `model.task.moneyTree.MoneyTreeManager`，源码不在该文件内，GR2026/AG 里也没有，无法移植；需朋友提供 `MoneyTreeManager` 及其 RpcCall。
+
+**三项必查**：GMT+8——无新增日期计算；JSON 创建——`MyUtils.newJSONObject`，响应用 `MessageUtil.checkResultCode` 校验；JSON 读取——全部 `opt*`，无裸 `.get*()`；`skipUsers.put`/`takeLook` 请求体构造属于创建，`JSONException` 由外层 `catch (Throwable)` 处理。无新增例外。
+
+**验证**：编译通过。未做真机验证——`takeLook` 在 M 版本档位下是否可用、返回字段（`friendId`/`actionType`/`takeLookEnd`）是否与 AG 一致均未验证；未新增回归检查（`AntForestV2` 过大，现有 stub 方式不适合）。找能量是主动请求，可能提高风控概率，故默认关闭。
+
 ### 2026-09-19：异常日报复核、风控验证拉起、版本伪装默认开启、庄园/运动子任务隔离
 
 **日报复核（两个账号 70+21 次）**：
@@ -107,6 +126,8 @@
 - 只对**新建**的 `version_config.json` 生效；已存在的文件（含旧默认 `enableVersionHook=false`）不改，需在扩展页手动打开或删除文件。静态初始值仍为 false，配置加载前的 `getPackageInfo` 不会被误伪装。
 - 改版本后需重启支付宝（版本号在进程启动时读取），不能遇到 1009 时临时伪装。
 - 伪装只影响下发哪种验证码，不保证不触发风控；也没有验证过服务端对该版本一定下发简单滑块，也可能因版本与其它请求头不一致引入新的风控信号。**未真机验证**。
+
+**第三个账号日报（2088942846628038，09-18，50 次）**：`transferEnergy` `ENERGY_INSUFFICIENT` 36 次（00:57~23:01，已修，见上）；`receiveFarmTaskAward` 102 `IP_chouchoule_juankuan` 3 次（已被 5/5/30 分钟退避覆盖，未到第 5 次，不触发 6 小时档）；`donation` 218 1 次（与另两个账号同一配置问题，暂不处理）；`greenmatrix.love.teamWater` `WATER_ENERGY_NOT_ENOUGH` 3 次、`walk.joinPath` “路线未授权” 3 次、`donate.walk.exchange` `AE0310515401` 2 次、`queryPointCert` `INVALID_MEMBER_GRADE` 1 次：次数少、属业务状态，暂不处理；`neverland.queryItemList` 1009“系统繁忙”1 次：确认该 1009 并非验证提示，收窄 `showVerification()` 触发条件（`check_rpc_guard.py` 增加该断言）。日报文件中文在终端显示乱码，按方法名/错误码及 UTF-8 解码判读。
 
 **子任务隔离与步数同步**：
 - 庄园 `AntFarm.run()`、运动 `AntSports.run()` 各子任务分别隔离（新增 `step()`），单个子任务抛异常只记日志并跳过自己。

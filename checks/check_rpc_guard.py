@@ -442,6 +442,8 @@ public class GuardCheck {
             assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1;
             guard("com.alipay.antfarm.feedAnimal").record(json("{\"error\":48}"));
             assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1 : "network errors must not launch";
+            guard("com.alipay.neverland.biz.rpc.queryItemList").record(json("{\"error\":\"1009\",\"errorMessage\":\"系统繁忙，请稍后再试。\"}"));
+            assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1 : "1009 busy must not launch";
         }
         reset();
         String enter = "com.alipay.antfarm.enterFarm";

@@ -25,14 +25,18 @@ import java.util.stream.IntStream;
 public class AntForestRpcCall {
     
     private static String VERSION = "";
+    /** 找能量接口版本，档位对照 AG 的 AntForestRpcCall（>10.6.10 用最新，其余同 VERSION 档） */
+    private static String TAKE_LOOK_VERSION = "20230501";
     
     public static void init() {
         AlipayVersion alipayVersion = ApplicationHook.getAlipayVersion();
         if (alipayVersion.compareTo(new AlipayVersion("10.6.10.8000")) > 0) {
             VERSION = "20250818";
+            TAKE_LOOK_VERSION = "20260107";
         }
         else if (alipayVersion.compareTo(new AlipayVersion("10.5.88.8000")) > 0) {
             VERSION = "20240403";
+            TAKE_LOOK_VERSION = "20240403";
         }
         else if (alipayVersion.compareTo(new AlipayVersion("10.3.96.8100")) > 0) {
             VERSION = "20230501";
@@ -80,6 +84,19 @@ public class AntForestRpcCall {
     public static String queryFriendHomePage(String userId) {
         return ApplicationHook.requestString("alipay.antforest.forest.h5.queryFriendHomePage",
                 "[{\"canRobFlags" + "\":\"F,F,F,F,F\",\"configVersionMap\":{\"redPacketConfig\":0,\"wateringBubbleConfig\":\"10\"}," + "\"source\":\"chInfo_ch_appcenter__chsub_9patch\",\"userId\":\"" + userId + "\"," + "\"version\":\"" + VERSION + "\"}]", 3, 1000);
+    }
+    
+    /** 找能量：服务端每次返回一个推荐好友（friendId），skipUsers 里的用户不再推荐。对照 AG AntForestRpcCall.takeLook。 */
+    public static String takeLook(JSONObject skipUsers, boolean takeLookStart) throws JSONException {
+        JSONObject arg = new JSONObject();
+        arg.put("contactsStatus", "N");
+        arg.put("exposedUserId", "");
+        arg.put("skipUsers", skipUsers);
+        arg.put("source", "chInfo_ch_appid-60000002");
+        arg.put("takeLookEnd", false);
+        arg.put("takeLookStart", takeLookStart);
+        arg.put("version", TAKE_LOOK_VERSION);
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.takeLook", new JSONArray().put(arg).toString());
     }
     
     public static RpcEntity getCollectEnergyRpcEntity(String bizType, String userId, long bubbleId) {

@@ -184,6 +184,7 @@ public class AntForestV2 extends ModelTask {
     @Getter
     private IntegerModelField doubleCountLimit;
     private IntegerModelField CollectBombEnergyLimit;
+    private BooleanModelField findEnergyCollect;
     private BooleanModelField useEnergyRainLimit;
     private BooleanModelField doubleCardConstant;
     private ChoiceModelField helpFriendCollectType;
@@ -267,6 +268,7 @@ public class AntForestV2 extends ModelTask {
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();
         modelFields.addField(collectEnergy = new BooleanModelField("collectEnergy", "收集能量", false));
+        modelFields.addField(findEnergyCollect = new BooleanModelField("findEnergyCollect", "找能量", false).setDependsOn("collectEnergy"));
         modelFields.addField(dontCollectList = new SelectModelField("dontCollectList", "不收取能量列表", new LinkedHashSet<>(), AlipayUser::getList));
         modelFields.addField(batchRobEnergy = new BooleanModelField("batchRobEnergy", "一键收取", false));
         modelFields.addField(CollectSelfEnergyType = new ChoiceModelField("CollectSelfEnergyType", "收单个能量球 | " + "方式", CollectSelfType.ALL, CollectSelfType.nickNames));
@@ -444,6 +446,10 @@ public class AntForestV2 extends ModelTask {
                 selfHomeObject = collectSelfEnergy();
             } catch (Throwable t) {
                 Log.err(TAG, "queryEnergyRanking err:", t);
+            }
+
+            if (findEnergyCollect.getValue() && collectEnergy.getValue()) {
+                findAndCollectEnergy();
             }
 
             if (!TaskCommon.IS_ENERGY_TIME && selfHomeObject != null) {
@@ -972,6 +978,78 @@ public class AntForestV2 extends ModelTask {
             Log.printStackTrace(t);
         }
         return userHomeObject;
+    }
+
+    /** 指定道具（shield 能量罩 / energyBombCard 炸弹卡）是否仍在生效；serverTime 取好友主页的 now，缺失时退回本机时间 */
+    private static boolean hasActiveProp(JSONObject userHomeObject, String propGroup) {
+        long serverTime = userHomeObject.optLong("now");
+        if (serverTime <= 0) {
+            serverTime = System.currentTimeMillis();
+        }
+        JSONArray props = userHomeObject.optJSONArray("usingUserPropsNew");
+        for (int i = 0; props != null && i < props.length(); i++) {
+            JSONObject prop = props.optJSONObject(i);
+            if (prop != null && propGroup.equals(prop.optString("propGroup")) && prop.optLong("endTime") > serverTime) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 找能量：反复请求服务端推荐的好友，进主页交给 collectUserEnergy 收取。
+     * 对照 AG AntForest.collectEnergyByTakeLook 与 GR 朋友版 findAndCollectEnergy；
+     * 未移植 AG 的 queryCombineBiz 预曝光、takeLookEnd 结束上报及结束后任务列表。
+     */
+    private void findAndCollectEnergy() {
+        try {
+            Log.record("找能量：开始");
+            JSONObject skipUsers = MyUtils.newJSONObject();
+            for (String userId : dontCollectMap) {
+                skipUsers.put(userId, "baohuzhao");
+            }
+            Set<String> visited = new HashSet<>();
+            int repeat = 0;
+            int browsed = 0;
+            for (int i = 0; i < 50 && !hasErrorWait; i++) {
+                JSONObject result = MyUtils.newJSONObject(AntForestRpcCall.takeLook(skipUsers, i == 0));
+                // AG 的 ResChecker 把 success==true 也算成功；M 的 checkResultCode 只认 resultCode，这里两者都放行
+                if (!result.optBoolean("success") && !MessageUtil.checkResultCode(TAG, result)) {
+                    break;
+                }
+                String friendId = result.optString("friendId");
+                String actionType = result.optString("actionType");
+                boolean ended = result.optBoolean("takeLookEnd");
+                if (friendId.isEmpty() || (!actionType.isEmpty() && !"FRIEND".equals(actionType))) {
+                    break;
+                }
+                if (Objects.equals(friendId, selfId) || !visited.add(friendId)) {
+                    if (ended || ++repeat >= 3) {
+                        break;
+                    }
+                    TimeUtil.sleep(300);
+                    continue;
+                }
+                JSONObject userHomeObject = queryFriendHome(friendId);
+                // queryFriendHome 解析失败时返回空对象而非 null，按 length 判断才是真的打开了主页
+                if (userHomeObject != null && userHomeObject.length() > 0) {
+                    browsed++;
+                    repeat = 0; // 只统计连续重复，成功浏览后清零（对照 AG consecutiveEmpty）
+                    collectUserEnergy(friendId, userHomeObject, "ordinary");
+                    // 能量罩/炸弹卡好友的能量可能没被摘走，不告诉服务端会被反复推荐（对照 AG hasShield||hasBomb）
+                    if (hasActiveProp(userHomeObject, "shield") || hasActiveProp(userHomeObject, "energyBombCard")) {
+                        skipUsers.put(friendId, "baohuzhao");
+                    }
+                }
+                if (ended) {
+                    break;
+                }
+                TimeUtil.sleep(500);
+            }
+            Log.record("找能量：完成，共浏览 " + browsed + " 个好友");
+        } catch (Throwable t) {
+            Log.printStackTrace(TAG, t);
+        }
     }
 
     private JSONObject collectSelfEnergy() {
@@ -2150,6 +2228,11 @@ public class AntForestV2 extends ModelTask {
                     case "WATERING_TIMES_LIMIT":
                         Log.record("好友浇水🚿今日给[" + UserIdMap.getMaskName(userId) + "]浇水已达上限");
                         wateredTimes = 3;
+                        break label;
+                    case "ENERGY_INSUFFICIENT":
+                        // 自己能量不够时后面的好友也必然失败（日报单账号 36 次），本轮停止浇水
+                        Log.record("好友浇水🚿能量不足，本轮停止浇水");
+                        isContinue = false;
                         break label;
                     case "WATERING_USER_LIMIT":
                         Log.record("好友浇水🚿给[" + UserIdMap.getMaskName(userId) + "]浇水，" + jo.optString("resultDesc"));

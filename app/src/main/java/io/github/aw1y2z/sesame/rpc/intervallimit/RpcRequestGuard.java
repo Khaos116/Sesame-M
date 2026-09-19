@@ -183,7 +183,10 @@ public final class RpcRequestGuard {
             if (RpcFailurePolicy.isRiskDenied(code, message) || message.contains("验证后继续")
                     || message.contains("滑动验证") || message.contains("cheating traffic")) {
                 pause = RpcFailurePolicy.RISK_DENIED_MS;
-                io.github.aw1y2z.sesame.hook.ApplicationHook.showVerification();
+                // 只在提示要验证时拉起支付宝；09-18 日报里 neverland 的 1009 是“系统繁忙”，不需要验证
+                if (message.contains("验证") || message.contains("cheating traffic")) {
+                    io.github.aw1y2z.sesame.hook.ApplicationHook.showVerification();
+                }
             } else if ("48".equals(code) || "TRANSPORT_ERROR".equals(code)) {
                 pause = core ? (failures < 3 ? MINUTE : 5 * MINUTE)
                         : (failures == 1 ? 5 * MINUTE : failures == 2 ? 30 * MINUTE : DAY);
