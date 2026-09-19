@@ -29,11 +29,40 @@ public final class RpcRequestGuard {
     private final boolean core;
     private final boolean knownUnsupported;
 
+    private static final java.util.ArrayList<Object[]> RECENT = new java.util.ArrayList<>();
+    private static final int RECENT_MAX = 8;
+
+    private static void noteRecent(String method) {
+        synchronized (RECENT) {
+            RECENT.add(new Object[]{method, System.currentTimeMillis()});
+            if (RECENT.size() > RECENT_MAX) {
+                RECENT.remove(0);
+            }
+        }
+    }
+
+    /** 最近发出的 n 个请求（新的在前），如 “a.b.c(2秒前) < d.e.f(9秒前)”，给验证码弹窗归因用。 */
+    public static String recentRequests(int n) {
+        StringBuilder sb = new StringBuilder();
+        long now = System.currentTimeMillis();
+        synchronized (RECENT) {
+            for (int i = RECENT.size() - 1; i >= 0 && RECENT.size() - i <= n; i--) {
+                if (sb.length() > 0) {
+                    sb.append(" < ");
+                }
+                Object[] item = RECENT.get(i);
+                sb.append(item[0]).append('(').append(Math.max(0, (now - (Long) item[1]) / 1000)).append("秒前)");
+            }
+        }
+        return sb.length() == 0 ? "无" : sb.toString();
+    }
+
     public RpcRequestGuard(RpcEntity request) {
         this.request = request;
         reportDirectory = FileUtil.getCurrentUserLogDirectory();
         state = RuntimeInfo.getInstance();
         String method = request.getRequestMethod();
+        noteRecent(method);
         JSONObject args;
         try {
             args = new JSONArray(request.getRequestData()).optJSONObject(0);

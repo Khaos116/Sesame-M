@@ -69,6 +69,7 @@ public abstract class BaseCaptchaHandler {
             SimpleViewImage slideTextInDialog = findSlideTextInDialog();
             if (slideTextInDialog == null) {
                 // Log.captcha(TAG, "未找到滑动验证文本，跳过处理");
+                CaptchaTriggerStats.scanActivity(activity); // 界面上若有别的验证文字（如对准图片的拼图）记一条，30 秒内同来源只记一次
                 return false; // 未找到关键视图，返回 false 让其他处理器尝试
             }
             Log.record("滑动验证🆘发现滑动验证文本:" + slideTextInDialog.getText()+"");

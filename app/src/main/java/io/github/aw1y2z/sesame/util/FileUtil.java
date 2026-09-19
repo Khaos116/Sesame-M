@@ -681,6 +681,10 @@ public class FileUtil {
         return getLogFile("goldenbeans");
     }
 
+    public static File getCaptchaLogFile() {
+        return getLogFile("captcha");
+    }
+
     public static File getErrorLogFile() {
         return getLogFile("error");
     }

@@ -110,7 +110,7 @@ public class ApplicationHook extends XposedModule {
     private static String realAlipayVersion = "";
 
     /**
-     * 获取伪装后的版本号（默认开启，可在扩展功能页关闭）。
+     * 获取伪装后的版本号（默认关闭，可在扩展功能页开启）。
      * 开启时返回伪装版本名欺骗服务器，使其认为安装了低版本，从而避免高版本特有的拼图验证。
      * 对齐 GR2026 main_my ApplicationHook.java#getEffectiveVersion，见 doc/MyFix.md 的移植记录。
      */
@@ -258,7 +258,7 @@ public class ApplicationHook extends XposedModule {
                     super.afterHookedMethod(param);
                 }
             });
-            // 注册版本伪装 Hook（默认开启，通过 VersionHook 统一管理），必须在 attach 钩子实际
+            // 注册版本伪装 Hook（默认关闭，通过 VersionHook 统一管理），必须在 attach 钩子实际
             // 触发、读取 getPackageInfo 之前完成注册，才能让上面的 realAlipayVersion/alipayVersion
             // 初始化也吃到伪装结果——这里只是注册拦截器，真正是否生效仍受 sEnableVersionHook 门控
             try {
@@ -384,6 +384,10 @@ public class ApplicationHook extends XposedModule {
                                 Log.record("模块版本：" + modelVersion + "（交流更新QQ群：694474777）");
                                 Log.record("编译时间：" + BuildConfig.BUILD_TIME);
                                 Log.record(VersionHook.diagnostics());
+                                String captchaSummary = CaptchaTriggerStats.summary();
+                                if (!captchaSummary.isEmpty()) {
+                                    Log.record(captchaSummary);
+                                }
                                 Log.record("开始执行" + MyUtils.recordUserName(getUserId()));
                                 try {
                                     int checkInterval = BaseModel.getCheckInterval().getValue();

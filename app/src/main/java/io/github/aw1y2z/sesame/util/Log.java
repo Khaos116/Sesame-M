@@ -95,6 +95,10 @@ public class Log {
         return getUserLogger("runtime", "GOLDENBEANS", "{d HH:mm:ss.SSS} {t}: {m}");
     }
 
+    private static Logger runtimeCaptchaLogger() {
+        return getUserLogger("runtime", "CAPTCHA", "{d HH:mm:ss.SSS} {t}: {m}");
+    }
+
     private static Logger runtimeFarmLogger() {
         return getUserLogger("runtime", "FARM", "{d HH:mm:ss.SSS} {t}: {m}");
     }
@@ -117,6 +121,10 @@ public class Log {
 
     private static Logger goldenBeansLogger() {
         return getUserLogger("goldenbeans", "GOLDENBEANS", "{d HH:mm:ss.SSS} {t}: {m}");
+    }
+
+    private static Logger captchaLogger() {
+        return getUserLogger("captcha", "CAPTCHA", "{d HH:mm:ss.SSS} {t}: {m}");
     }
 
     private static Logger farmLogger() {
@@ -264,6 +272,15 @@ public class Log {
         countModuleLog();
         writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog(), Log::runtimeGoldenBeansLogger,
                 io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableGoldenBeansLog(), Log::goldenBeansLogger);
+    }
+
+    /**
+     * 验证码弹窗触发记录（类型、来源、运行中模块、最近请求、界面文字），单独一类日志便于统计哪些功能会触发验证。
+     * 不调用 countModuleLog：验证弹窗不是模块动作，不能让“本轮无操作”提示失效。
+     */
+    public static void captcha(String s) {
+        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog(), Log::runtimeCaptchaLogger,
+                io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableCaptchaLog(), Log::captchaLogger);
     }
 
     public static void farm(String s) {

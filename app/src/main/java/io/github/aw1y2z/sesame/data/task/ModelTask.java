@@ -73,6 +73,15 @@ public abstract class ModelTask extends Model {
 
     };
 
+    /** 当前正在执行主任务的模块名，验证码弹窗归因用。 */
+    public static java.util.List<String> runningTaskNames() {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        for (ModelTask task : MAIN_TASK_MAP.keySet()) {
+            names.add(task.getName());
+        }
+        return names;
+    }
+
     public ModelTask() {
     }
 

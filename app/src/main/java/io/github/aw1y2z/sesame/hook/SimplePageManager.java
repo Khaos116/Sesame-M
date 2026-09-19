@@ -338,6 +338,7 @@ public class SimplePageManager {
                         protected void afterHookedMethod(MethodHookParam param) {
                             Dialog dialog = (Dialog) param.thisObject;
                             addDialogIfNotExists(dialog, "CaptchaDialog.show()");
+                            CaptchaTriggerStats.recordDialog(dialog);
                         }
                     }
             );

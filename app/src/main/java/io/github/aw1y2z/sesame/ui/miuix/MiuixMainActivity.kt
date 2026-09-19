@@ -601,6 +601,14 @@ fun LogsTab(activity: MiuixMainActivity, currentAccount: String) {
             activity.broadcastReloadConfig()
             if (!it) FileUtil.clearLog("other")
         }
+        var captcha by remember { mutableStateOf(AppConfig.INSTANCE.enableCaptchaLog ?: true) }
+        LogSwitchRow("验证记录", captcha, onClick = { openLog(activity, LogType.CAPTCHA) }) {
+            captcha = it
+            AppConfig.INSTANCE.enableCaptchaLog = it
+            AppConfig.save()
+            activity.broadcastReloadConfig()
+            if (!it) FileUtil.clearLog("captcha")
+        }
     }
     Spacer(Modifier.height(16.dp))
 

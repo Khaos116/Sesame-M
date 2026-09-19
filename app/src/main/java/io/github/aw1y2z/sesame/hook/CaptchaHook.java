@@ -177,7 +177,7 @@ public class CaptchaHook {
     /**
      * 收集对话框信息（复用原有逻辑）
      */
-    private static void collectDialogInfo(Dialog dialog, StringBuilder info) {
+    static void collectDialogInfo(Dialog dialog, StringBuilder info) {
         // 获取上下文
         try {
             Field mContextField = dialog.getClass().getSuperclass().getDeclaredField("mContext");

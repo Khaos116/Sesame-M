@@ -5,6 +5,9 @@
 
 ## 2026-09-19
 
+- feat（未提交）：新增独立日志类型「验证记录」，统计哪些功能会触发弹出验证码。`Log.captcha`（不计入 `countModuleLog`）写 `captcha.日期.log`，同时以 `CAPTCHA` tag 写运行日志；日志页与首页开关新增「验证记录」（`AppConfig.enableCaptchaLog` 默认开）。`CaptchaTriggerStats` 在 `CaptchaDialog.show()` 之后（以及处理器在 Activity 里找不到“向右滑动验证”但界面有验证文字时）记一行：类型（向右滑动/对准图片拼图/未识别）、来源、**当时运行中的模块**（`ModelTask.runningTaskNames`）、**最近 5 个 RPC**（`RpcRequestGuard.recentRequests`）、界面文字；同来源同类型 30 秒去重；每轮执行开头打印“验证码触发统计(本进程)：模块 N次”。归因是推断（弹窗前最近的请求/运行中的模块是嫌疑对象），手动在支付宝里操作触发的验证会显示“无运行中模块”；计数进程重启清零，事件本身都在日志里。只观测，不点击/拖动/关闭弹窗。未真机验证。
+- fix（未提交）：版本伪装默认改回关闭。1.1.5 默认开启并做了定向提前伪装，真机日志（18:01，184719 包）显示日志模块早读被改写（`早期伪装(日志模块)2次`）、之后 173 次读取全部被改写，但弹出的仍是需对准图片的滑块——通过 `PackageManager` 伪装版本对验证码类型无效，主动向服务端谎报版本有风险却无收益。`enableVersionHook` 缺省 `false`、`sEarlyFake` 缺省 `false`；新建配置写 `defaultOffApplied` 标记；`loadVersionConfig` 一次性把没有该标记、且正好是 1.1.5 自动写入的默认值（开启 + 10.6.58.8000 + 1881）的配置改回关闭并打标记（用户改过版本名/版本号的不动；在 1.1.5 手动开启且没改默认值的也会被关一次，需在扩展页重新开启）；移除“旧默认自动迁移为开启”；扩展页说明改为默认关闭、不建议开启。诊断日志保留。**发现的显示问题（未修）**：日志里“实际版本”会显示伪装值，疑似系统缓存了 `PackageInfo` 对象而我们就地改写，只影响该行显示。
+- feat（未提交）：庄园多阶段饲料任务每轮打印进度日志 `庄园饲料任务[标题]阶段 x/y，待领 Ng，状态 S`（同一状态只打一次）。用户反馈界面仍显示 180/240、右边“可领取”从 30g 变 60g：界面的 180/240 是**已领取额**，做完没领的显示在“可领取”，180+60=240 即 8 阶段已做满，光看界面分不清阶段是否做满，加日志便于核对。仅日志，无逻辑改动。
 - fix `0c409ef7`：庄园多阶段饲料任务先做完所有阶段再领奖，待领额按累计减已领计算（对照 AG）。用户反馈饲料任务停在 180/240、没做完 8 阶段，而 AG 会做到 240/240 一次领 240g。日志（1.1.5，18:18 编译）里庄园阶段只有“还有待领取的饲料”，无任何“饲料任务🧾完成”：上一版按轮执行只是 GR 的“做一阶段→领 30g”加了循环，`receiveFarmTaskAward` 用 `awardCount + foodStock > foodStockLimit` 判断容量，领不了就停，任务卡在“有奖没领、也不做下一阶段”。现：① 按轮执行时，FINISHED 状态的多阶段任务（`rightsTimesLimit>1`、`rightsTimes<limit`）**先继续 `doFarmTask` 把所有阶段做完**，不做一阶段就领一阶段（用户明确要求“完成任务就行，不用马上领，用了饲料再领”，也与 AG 最终 240/240 一次领一致），奖励累积；阶段做不了时才退回领奖，避免服务端不允许时卡死；全部阶段做完（`rightsTimes==limit`）或喂鸡腾出容量后由领奖路径/既有 `checkUnReceiveTaskAward` 一起领；仅按轮执行生效，`checkUnReceiveTaskAward` 的单独领奖遍历行为不变；② 容量判断和入账改用待领额 `pendingAward = awardCount − alreadyReceiveStageAwardCount`（AG `getMultiStageAccumulatedAward`），原先拿累计总额（如 240g）判断，会把放得下的待领奖励误判成超上限；差值为 0 时退回 `awardCount`，单阶段任务行为不变；③ `alreadyTried` 按“动作(do/receive/stage)+状态+进度+待领额”去重；④ 最大轮数 10→20。**不确定**：服务端是否允许有待领奖励时继续 `doFarmTask`（AG 走这条路径，未在 M 实测）；`alreadyReceiveStageAwardCount` 的语义按 AG 的用法推断。未真机验证，无回归覆盖。
 - fix `03b52936`：定向提前伪装没生效——调用方识别失败。真机日志（`runtime.2026-09-19.<账号>`，1.1.5，18:18 编译）显示 `提前伪装=开`、开关就绪前早读 12 次、`早期伪装(日志模块)0次`，来源栏又变回 `VectorChain/VectorNativeHooker` 框架帧：`callerFrames` 只在栈顶 24 帧里找最后一个 hook 机制帧，多层 hook 嵌套（LSPatch 加载器等）时框架帧超过窗口，于是把框架帧当成调用方，`fromLoggingModule` 认不出 `com.alipay.mobile.common.logging.`。改为扫描整个栈、按类名跳过 hook 机制帧（`org.matrix.vector`/`org.lsposed`/`LSPatch_`/`libxposed`）、反射/`ApplicationPackageManager` 帧和本模块帧（R8 短名类不含 `.` 一律跳过；`io.github.aw1y2z` 包）；来源样本相同的只留一条，每种类型上限由 3 提到 6，便于看全 12 次早读的来源。仍是假设：日志模块识别出来后是否真能改变验证码类型，取决于 `LogContextImpl` 缓存的版本是否就是那个。未真机验证。
 - fix `dddb5807`：日志查看器切换 tag 筛选或修改搜索文本后回到列表顶部。`MiuixLogViewerActivity.LogScreen` 里 `listState` 与筛选条件互不相干，过滤结果变了但滚动位置保留，停在结果中间；加 `LaunchedEffect(selectedTag, searchQuery) { listState.requestScrollToItem(0) }`（列表顶部是最新一条，与既有 `updateEntries` 的“跟回顶部”一致，用 `requestScrollToItem` 也不受列表因结果为空被移除/重建的影响）。搜索输入每敲一个字也会回顶，属预期。未真机验证，无回归覆盖（Compose UI）。
@@ -109,6 +112,19 @@
 - `6a31c9e1` feat: 新增全局自动切号功能（账号轮询，最小间隔2小时）
 
 ## 详细记录（自 doc/MyFix.md 迁移）
+
+### 2026-09-19（续）：版本伪装改回默认关闭，新增「验证记录」日志类型
+
+**版本伪装的最终结论**：1.1.5 起默认开启，并经过诊断日志、`Flags` 重载、定向提前伪装等多轮修正。最后一份真机日志（未认证小号，18:01，184719 包，`提前伪装=开`）：开关就绪前 8 次读取是真实版本，`早期伪装(日志模块)2次`，之后 `已伪装173次`、`PackageInfoFlags重载1次`——从支付宝进程的角度看它读到的自身版本几乎全程是 10.6.58.8000，但弹出的仍是需对准图片的滑块。结论：**这台设备/账号上，通过 `PackageManager` 伪装版本不能让服务端改发“滑到最右”的验证码**；类型更可能由服务端按账号风险/设备指纹决定（未认证小号本来就容易走更难的验证），或者服务端看的版本来自我们没伪装的渠道（请求头/UA）。因此改回默认关闭；诊断日志、`Flags` 重载、调用方识别等代码保留。
+- 一次性回退：`defaultOffApplied` 标记区分“1.1.5 自动写入的默认值”和“用户改过的配置”，见上方摘要；这是启发式，在 1.1.5 手动开启且没改默认值的用户会被关一次。
+- 已知小问题未修：日志“实际版本”行显示伪装值（疑似系统缓存 `PackageInfo` 被就地改写）。
+- 没做的：自己处理对准图片的滑块（需要图像识别找缺口，工作量大、成功率不确定）；遇到验证就暂停触发它的功能——用户明确说触发验证的功能（庄园使用美食/亲密家庭请客）**不能暂停**，手动验证一次后功能就恢复，所以只做统计，不做暂停。
+
+**「验证记录」日志类型**：用户要求统计哪些功能会触发弹出验证以便优化，并要求单独一个日志类型方便查看。
+- 接入点（对照金豆记录）：`AppConfig.enableCaptchaLog`（默认开）、`Log.captchaLogger`/`runtimeCaptchaLogger`/`Log.captcha`、`FileUtil.getCaptchaLogFile`、`LogType.CAPTCHA`（日志页）、首页 `LogsTab` 的开关行；运行日志里以 `CAPTCHA` tag 出现，可用 tag 筛选。`Log.captcha` 不调用 `countModuleLog`，避免验证弹窗让“本轮无操作”提示失效。
+- 事件内容：`验证码弹窗🔍类型[…]#来源[…]#运行中模块[…]#最近请求[…]#文字[…]`。类型按界面文字判定：含“向右滑动验证”=可自动处理；含拼图/对准/缺口/拖动/滑块/图片=对准图片拼图（无法自动处理）；其它=未识别。来源=`CaptchaDialog`（安全 SDK 的弹窗，`SimplePageManager` 已有的 `show()` hook 之后调用）或 `Activity:<类名>`（处理器在 Activity 里没找到“向右滑动验证”但界面有验证相关文字，可能是 H5 里的拼图）。同来源同类型 30 秒去重（处理器重试、Activity 反复 resume）。`RpcRequestGuard` 构造时记录最近 8 个请求方法与时间，`recentRequests(n)` 取最近 n 个。
+- 局限：归因是推断——弹窗前最近的请求和运行中的模块只是嫌疑对象；手动操作触发的验证显示为“无运行中模块”；统计计数进程重启清零（每个事件本身在日志里可再统计）；依赖 `CaptchaDialog.show()` hook 与 Activity 文字扫描，若拼图验证走了别的类且界面没有“验证/拼图/滑块/缺口”文字则记不到。未真机验证。
+- 三项必查：无日期/JSON 创建，读取无 JSON；GMT+8 无关。回归：十项通过（含 `check_rpc_guard`、`check_standalone_no_xposed_class`）。
 
 ### 2026-09-19（续）：多阶段饲料任务改为先做完再领、伪装调用方识别修复、日志页切换 tag 回顶部
 
