@@ -9,6 +9,7 @@ import io.github.aw1y2z.sesame.data.ModelFields;
 import io.github.aw1y2z.sesame.data.ModelGroup;
 import io.github.aw1y2z.sesame.data.TokenConfig;
 import io.github.aw1y2z.sesame.data.ViewAppInfo;
+import io.github.aw1y2z.sesame.data.modelFieldExt.ChoiceModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.EmptyModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.StringModelField;
@@ -44,8 +45,17 @@ public class AnswerAI extends Model {
         return ModelGroup.OTHER;
     }
 
-    /** 当前生效的自定义AI实现；未配置时为 null，表示不调用AI */
-    private static volatile CustomAI customAI;
+    /** 当前生效的 AI 实现；未配置时为 null，表示不调用AI */
+    private static volatile AnswerAIInterface answerAI;
+
+    /**
+     * AI 类型。字段 id 沿用旧版的 "useGeminiAI"、取值 1 仍是 GEMINI，已经选了 GEMINI 的用户升级后配置不丢。
+     * 【GeminiAI 海外用户正在使用，不能删除】上游重构为 CustomAI 时删掉了它，合并时被误删过一次，见 CHANGELOG 2026-09-19。
+     */
+    private final ChoiceModelField aiType = new ChoiceModelField("useGeminiAI", "AI类型", AIType.CUSTOM, AIType.nickNames);
+
+    /** 沿用旧版字段 id，保留用户已填的 Gemini 令牌 */
+    private final StringModelField setGeminiAIToken = new StringModelField("useGeminiAIToken", "GeminiAI | 设置令牌", "");
 
     private final StringModelField customAIUrl = new StringModelField("customAIUrl", "自定义AI | 接口地址(根地址,如/v1)", "");
     private final StringModelField customAIModel = new StringModelField("customAIModel", "自定义AI | 模型名", "");
@@ -56,6 +66,8 @@ public class AnswerAI extends Model {
     @Override
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();
+        modelFields.addField(aiType);
+        modelFields.addField(setGeminiAIToken);
         modelFields.addField(customAIUrl);
         modelFields.addField(customAIModel);
         modelFields.addField(customAIKey);
@@ -67,9 +79,15 @@ public class AnswerAI extends Model {
     @Override
     public void boot(ClassLoader classLoader) {
         enable = getEnableField().getValue();
-        customAI = new CustomAI(customAIUrl.getValue(), customAIModel.getValue(), customAIKey.getValue(), customAIMaxTokens.getValue());
-        if (!customAI.isConfigured()) {
-            customAI = null;
+        if (aiType.getValue() == AIType.GEMINI) {
+            answerAI = new GeminiAI(setGeminiAIToken.getValue());
+            return;
+        }
+        CustomAI custom = new CustomAI(customAIUrl.getValue(), customAIModel.getValue(), customAIKey.getValue(), customAIMaxTokens.getValue());
+        if (custom.isConfigured()) {
+            answerAI = custom;
+        } else {
+            answerAI = null;
             Log.record("AI🧠接口地址/模型名/令牌未填齐，答题不会调用AI，将直接使用题库或首个选项");
         }
     }
@@ -140,8 +158,9 @@ public class AnswerAI extends Model {
             Log.record("知识问答🧠题目[" + trimForLog(text, LOG_TITLE_MAX_LENGTH)
                     + "]#共" + answerList.size() + "项" + trimForLog(answerList.toString(), LOG_OPTIONS_MAX_LENGTH));
             // enable 是 Boolean，配置缺失时为 null，用 TRUE.equals 避免拆箱 NPE
-            if (Boolean.TRUE.equals(enable) && customAI != null) {
-                Integer answer = customAI.getAnswer(text, answerList);
+            AnswerAIInterface ai = answerAI;
+            if (Boolean.TRUE.equals(enable) && ai != null) {
+                Integer answer = ai.getAnswer(text, answerList);
                 if (answer != null && answer >= 0 && answer < answerList.size()) {
                     answerStr = answerList.get(answer);
                     Log.record("智能回答🧠[" + answerStr + "]");
@@ -172,6 +191,16 @@ public class AnswerAI extends Model {
             Log.printStackTrace(TAG, t);
         }
         return answerStr;
+    }
+
+    public interface AIType {
+
+        /** 自定义 AI（上游 CustomAI）；占用旧版 TONGYI 的 0 号位，通义千问已随上游移除 */
+        int CUSTOM = 0;
+        /** GeminiAI：海外用户正在使用，不能删除 */
+        int GEMINI = 1;
+
+        String[] nickNames = {"自定义AI", "GEMINI"};
     }
 
 }

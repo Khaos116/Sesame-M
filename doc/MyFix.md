@@ -10,6 +10,8 @@
 2. **JSON 读取禁止裸 `.get*()`（`getString`/`getInt`/`getLong`/`getDouble`/`getBoolean`/`getJSONObject`/`getJSONArray`/不带类型后缀的 `get`），一律用对应的 `.opt*()` + 空指针防护**。背景：全仓库约 1986 处调用点的转换任务已在 2026-09-14 完成（见 CHANGELOG.md 记录），裸 `get*()` 在字段缺失/服务端返回结构变化时会直接抛异常导致任务崩掉，`opt*()` 返回 null/默认值后自己判空更稳。新写的代码、从 GR/AG/Sure-Xu 合并进来的代码，只要有 `org.json.JSONObject`/`JSONArray` 取值，一律按这个规范来，不要重新引入裸 `get*()`。
 3. **JSON 创建统一按 MyUtils 处理**。业务字符串转对象使用 `MyUtils.newJSONObject(raw)`，并验证必要字段和成功状态；无效输入返回空对象不能视为成功。严格解析路径迁移时必须保留失败语义，确需直接构造时记录位置和理由。数组解析保留异常防护，不机械替换集合/空数组构造。此处指 `org.json`，不是 Gson。
 
+5. **`GeminiAI` 不能删除**（`model/normal/answerAI/GeminiAI.java` 及其 `AnswerAIInterface`）。海外用户正在使用；上游 MIUIX-api102 重构 AI 答题为 `CustomAI` 时删掉了它，合并时如再遇到“上游删除 GeminiAI/TongyiAI”的冲突，必须保留 GeminiAI 并让 `AnswerAI` 继续提供 GEMINI 选项（配置 id `useGeminiAI`=1、`useGeminiAIToken` 不能改，否则用户已选的类型和令牌丢失）。通义千问已随上游移除，不必恢复。
+
 4. **独立 App 进程（`MiuixMainActivity`/`MiuixSettingsActivity` 等 `ui/` 包下的代码，以及它们能直接调用到的 `util/` 工具方法）绝对不能引用 `ApplicationHook`（或任何继承 `io.github.libxposed.api.XposedModule` 的类）**。背景：`XposedModule` 是 `compileOnly` 依赖，运行时类只有真被 LSPosed 注入进支付宝进程后宿主框架才提供；独立 App 自己的进程里这个类根本不存在，一碰就在类校验阶段抛 `NoClassDefFoundError`——这是 `Error` 不是 `Exception`，`catch(Exception e)` 包不住，直接崩溃闪退（见 CHANGELOG.md 2026-09-15 `PermissionUtil.checkBatteryPermissions()` 那次踩坑记录）。独立 App 需要的任何数据/状态，走 `AppConfig`（跨进程共享配置）、直接读账号目录下的文件，或者广播/`Handler`，不要图省事直接调 `ApplicationHook.getXxx()`。
 
 ## 附录：GR2026 MyUtils.java 逐项说明（背景参考，非本次改动记录）

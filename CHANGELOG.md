@@ -5,7 +5,8 @@
 
 ## 2026-09-19
 
-- merge：合并 `origin/MIUIX-api102`（4f975462 → d51b841f，7 个上游提交）到 `my_dev`，9 个文件冲突（含上游删除 `GeminiAI`/`TongyiAI`、新增 `CustomAI` 通用 AI 答题）；三项必查、九项回归 + `check_standalone_no_xposed_class` 通过，`audit_regressions` 中两处针对已删 `GeminiAI` 的检查移除。详见详细记录。
+- merge：合并 `origin/MIUIX-api102`（4f975462 → d51b841f，7 个上游提交）到 `my_dev`，9 个文件冲突（含上游删除 `GeminiAI`/`TongyiAI`、新增 `CustomAI` 通用 AI 答题）；三项必查、九项回归 + `check_standalone_no_xposed_class` 通过。详见详细记录。
+- fix：**恢复被合并误删的 `GeminiAI`**（海外用户正在使用，不能删除）。`GeminiAI`/`AnswerAIInterface`/`audit_regressions` 的 `GeminiAI` 检查及 `Answers.java.in` 全部恢复；`AnswerAI` 重新提供「AI类型」选项（字段 id 沿用 `useGeminiAI`，`GEMINI`=1，令牌沿用 `useGeminiAIToken`，已选 Gemini 的配置不丢），`CustomAI` 实现 `AnswerAIInterface` 作为另一选项（`CUSTOM`=0，占旧通义千问的 0 号位，通义千问不恢复）。规则写入 `doc/MyFix.md` 第 5 条与 `AGENTS.md`，合并时不得再删。
 - fix（未提交）：补看遗漏的第三个账号日报 `rpc-failures.2026-09-18.2088942846628038.json`（50 次）：① 好友浇水 `transferEnergy` `ENERGY_INSUFFICIENT` 36 次——原先落入 default 分支继续浇下一个好友，现在自己能量不足即结束本轮浇水；② 1009“系统繁忙”（`neverland.queryItemList`）不再拉起支付宝，`showVerification()` 只在消息含“验证”/`cheating traffic` 时触发（暂停 24 小时的旧行为不变）。
 - feat（未提交）：森林新增「找能量」`findEnergyCollect`（默认关，需同时开「收集能量」）：调用 `alipay.antforest.forest.h5.takeLook` 逐个获取推荐好友，进主页交给现有 `collectUserEnergy` 收取；接口与流程对照 AG，来源见详细记录。朋友文件里的「升级发财树领红包」未移植（见详细记录）。
 - fix（未提交）：复核 09-19 两个账号异常日报（70+21 次）。① `receiveFarmTaskAward` 102“服务器正在开小差”（`cclyx_3bei_xjcmx_2`、`cclyx_sgbhsd_1c_zm3c`、`cclyx_3bei_dgls_2`、`cclyx_wdhysj_1cV2`、`IP_chouchoule_juankuan`，连续多日每天 8~12 次）：同任务当天第 5 次起退避改 6 小时，前 4 次仍 5/5/30/30 分钟，不永久拉黑；② 我的快递 `KUAIDI_VITALITY` 领奖（无原因，两账号共 15 次，09-17 为 13 次）：失败后当天不再重复领，成功行为不变。暂不处理：48 网络错误（01:50~01:53 集中，已有退避）；`energyRain*` 1009（风控，已暂停 24 小时）；`donation` 218“自营项目没有指定标的物”（1 次，配置项问题，证据不足）；`walk.go`“走慢一点”（业务限速，3 次）；`B_FREE_SEAT`、`TARGET_USER_PROTECT_BY_ENERGY_SHIELD`（正常业务提示）；金豆/`ORCHARD`/`loanpromoweb signin.query` 无原因各 1~3 次（后者较 09-17 的 19 次已大幅下降），证据不足。
@@ -98,6 +99,8 @@
 ## 详细记录（自 doc/MyFix.md 迁移）
 
 ### 2026-09-19（续）：合并 MIUIX-api102 至 d51b841f
+
+**更正（合并提交 `458b043a` 之后）**：下文“`GeminiAI`/`TongyiAI` 跟随上游删除”以及“`audit_regressions` 移除两项检查、`CustomAI.parseAnswerIndex` 无覆盖”的处理是错误的——`GeminiAI` 海外正在使用。已在后续提交中恢复 `GeminiAI`、`AnswerAIInterface`、被移除的两项回归检查与 `Answers.java.in`，`AnswerAI` 同时支持 GEMINI 与自定义AI（`CustomAI`），`GeminiAI` 的答案匹配重新有回归覆盖；只有通义千问保持删除。教训：上游删除文件时要先确认该文件是否仍有人在用，而不是只看仓库内有没有引用。
 
 上游 7 个提交：庄园捐蛋排位赛不存在时 fallback 到公益捐蛋、农场施肥场景显示名（main→果树、yeb→金钱树）、亲密家庭若干修复、森林合种浇水顺序与空值保护、保护合种浇水量计算、AI 答题重构为可自填的通用接口（`CustomAI`）、日志路径触达 libxposed 类导致 App 闪退。
 

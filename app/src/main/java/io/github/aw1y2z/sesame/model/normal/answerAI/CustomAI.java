@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
  * 请求体 {@code {"model":..,"messages":[{role,content}],"stream":false,"max_tokens":..}}，响应取
  * {@code choices[0].message.content}。通义兼容模式、DeepSeek、硅基流动、自建网关等均适用。
  */
-public class CustomAI {
+public class CustomAI implements AnswerAIInterface {
 
     private static final String TAG = CustomAI.class.getSimpleName();
 
