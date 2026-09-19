@@ -52,7 +52,7 @@ public class VersionHook {
     /** 走 getPackageInfo(String, PackageInfoFlags)（API 33+）重载读取的次数，只统计不改写 */
     private static final AtomicInteger sFlagsReads = new AtomicInteger();
     private static final List<String> sSamples = Collections.synchronizedList(new ArrayList<>());
-    private static final int MAX_SAMPLES = 6;
+    private static final int MAX_SAMPLES_PER_KIND = 3;
     private static volatile boolean sConfigLoaded = false;
     private static volatile boolean sSamplesPrinted = false;
     private static volatile boolean sFakedLogged = false;
@@ -125,27 +125,44 @@ public class VersionHook {
         }
     }
 
-    /** 记下读取来源（去掉本模块/Xposed/反射帧后的前 3 个调用方），最多 MAX_SAMPLES 条；启动早期不直接打日志，避免日志系统未就绪 */
+    /**
+     * 记下读取来源。R8 会把本模块的 hook 框架类改成 yb2/ac2 这类名字，按包名过滤不掉，
+     * 所以改成：在栈顶 20 帧里找到最后一个 hook 机制帧（LSPosed/Vector/libxposed/被 hook 的
+     * ApplicationPackageManager），取它之后的 4 帧作为真正的调用方。
+     * 每种类型（早读/已伪装/关闭…）各留 MAX_SAMPLES_PER_KIND 条；启动早期只缓存不直接打日志，避免日志系统未就绪。
+     */
     private static void sample(String kind) {
-        if (sSamples.size() >= MAX_SAMPLES) {
-            return;
+        synchronized (sSamples) {
+            int same = 0;
+            for (String existing : sSamples) {
+                if (existing.startsWith(kind + "@")) {
+                    same++;
+                }
+            }
+            if (same >= MAX_SAMPLES_PER_KIND) {
+                return;
+            }
+        }
+        StackTraceElement[] stack = new Throwable().getStackTrace();
+        int start = 0;
+        for (int i = 0; i < Math.min(stack.length, 20); i++) {
+            String c = stack[i].getClassName();
+            if (c.contains("LSPHooker") || c.contains("VectorChain") || c.startsWith("org.lsposed")
+                    || c.startsWith("io.github.libxposed") || c.startsWith("android.app.ApplicationPackageManager")) {
+                start = i + 1;
+            }
         }
         StringBuilder callers = new StringBuilder();
         int n = 0;
-        for (StackTraceElement e : new Throwable().getStackTrace()) {
-            String c = e.getClassName();
-            if (c.startsWith("io.github.aw1y2z") || c.startsWith("de.robv") || c.startsWith("io.github.libxposed")
-                    || c.startsWith("org.lsposed") || c.startsWith("java.lang.reflect") || c.contains("LSPHooker")
-                    || c.startsWith("android.app.ApplicationPackageManager")) {
+        for (int i = start; i < stack.length && n < 4; i++) {
+            String c = stack[i].getClassName();
+            if (c.startsWith("java.lang.reflect")) {
                 continue;
             }
             if (n++ > 0) {
                 callers.append('<');
             }
-            callers.append(c.substring(c.lastIndexOf('.') + 1)).append('.').append(e.getMethodName());
-            if (n >= 3) {
-                break;
-            }
+            callers.append(c).append('.').append(stack[i].getMethodName());
         }
         sSamples.add(kind + "@" + callers);
     }
