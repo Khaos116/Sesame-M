@@ -147,6 +147,9 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     var searchQuery by remember { mutableStateOf("") }
     // Runtime 页面额外支持 tag 过滤
     var selectedTag by remember { mutableStateOf<String?>(null) }
+    // 切换 tag 筛选或修改搜索文本后回到列表顶部（最新一条）：过滤结果变了，原来的滚动位置已经没有意义，
+    // 保留的话会停在结果中间，或者结果很少时露出空白
+    LaunchedEffect(selectedTag, searchQuery) { listState.requestScrollToItem(0) }
     fun updateEntries(updated: List<LogEntry>, reset: Boolean = false) {
         // 在替换数据前读取位置；index 0 是最新一条，排在列表顶部。
         val followTop = reset || entries.isEmpty() || !listState.canScrollBackward
