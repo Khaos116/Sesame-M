@@ -334,7 +334,12 @@ public class AntFarm extends ModelTask {
             }
 
             if (competition.getValue()) {
-                competition();
+                if (!competition()) {
+                    // 排位赛不存在时，fallback 到公益捐蛋
+                    if (donationType.getValue() != DonationType.ZERO) {
+                        donation();
+                    }
+                }
             } else if (donationType.getValue() != DonationType.ZERO) {
                 donation();
             }
@@ -1078,11 +1083,11 @@ public class AntFarm extends ModelTask {
         return false;
     }
 
-    private void competition() {
+    private boolean competition() {
         try {
             JSONObject jo = new JSONObject(AntFarmRpcCall.enterDonationCompetitionRank());
             if (!MessageUtil.checkMemo(TAG, jo)) {
-                return;
+                return false;
             }
             if (jo.has("exitDonationCompetition")) {
                 boolean exitDonationCompetition = jo.optBoolean("exitDonationCompetition");
@@ -1117,17 +1122,17 @@ public class AntFarm extends ModelTask {
 
             if (!jo.has("donationRankHomeInfo")) {
                 Log.record("捐蛋排位🥚未查询到捐赠排行信息");
-                return;
+                return false;
             }
             JSONObject donationRankHomeInfo = jo.getJSONObject("donationRankHomeInfo");
             if (!donationRankHomeInfo.has("userDonationRankList")) {
                 Log.record("捐蛋排位🥚未查询到捐赠排行信息");
-                return;
+                return false;
             }
             JSONArray userDonationRankList = donationRankHomeInfo.optJSONArray("userDonationRankList");
             if (userDonationRankList == null || userDonationRankList.length() == 0) {
                 Log.record("捐蛋排位🥚奖励列表为空");
-                return;
+                return false;
             }
             if (desStarNum == 0) {
                 Log.record("捐蛋排位🥚目标星级为0跳过保底捐蛋逻辑");
@@ -1304,6 +1309,7 @@ public class AntFarm extends ModelTask {
         } catch (Throwable t) {
             Log.err(TAG, "competition err:", t);
         }
+        return true;
     }
 
     //偷榜捐蛋
