@@ -1803,6 +1803,12 @@ public class AntFarm extends ModelTask {
                 if (taskStatus == TaskStatus.RECEIVED || (Mode != null && taskStatus != Mode)) {
                     continue;
                 }
+                // 多阶段任务（如 8 阶段×30g）把进度打出来：界面上的“180/240”是已领取额，做完但没领的部分显示在
+                // 右边“可领取”，光看界面分不清阶段有没有做满。同一状态只打一次
+                if (Mode == null && taskJo.optInt("rightsTimesLimit", 1) > 1 && !alreadyTried(taskJo, "log")) {
+                    Log.record("庄园饲料任务[" + title + "]阶段 " + taskJo.optInt("rightsTimes", 0) + "/"
+                            + taskJo.optInt("rightsTimesLimit", 1) + "，待领 " + pendingAward(taskJo) + "g，状态 " + taskStatus);
+                }
                 if (taskStatus == TaskStatus.TODO) {
                     if (isUnsupportedFarmTask(taskJo.optString("bizKey"))) {
                         continue;
