@@ -10,7 +10,7 @@ static Field<Integer> protectNewAncientTreeType=protectMarathonType;
 static Field<Map<String,Integer>> protectNewAncientTreeList=protectMarathonList;
 static class MyUtils {static JSONObject newJSONObject(String s){return new JSONObject(s);}}
 static class MessageUtil {static boolean checkResultCode(String tag,JSONObject j){return true;}}
-static class Log {static void i(String a,String b){} static void printStackTrace(String a,Throwable t){System.out.println(t.getClass().getSimpleName());}}
+static class Log {static void i(String a,String b){} static void printStackTrace(String a,Throwable t){System.out.println(t.getClass().getSimpleName());} static void err(String a,String b,Throwable t){System.out.println(t.getClass().getSimpleName());}}
 static class ProtectTreeRpcCall {static String response;static String doRubickActivity(String a,String b,JSONObject c){return response;}}
 static Boolean carbonCharityActivity(String action,String id,int n){calls.add(n);return donationSucceeds;}
 @@DONATIONS@@

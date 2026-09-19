@@ -145,6 +145,7 @@ public class Log {
     public static void debug(String s) { lastDebug = s; }
     public static void printStackTrace(Throwable t) { }
     public static void printStackTrace(String tag, Throwable t) { }
+    public static void err(String tag, String msg, Throwable t) { lastError = tag + ", " + msg; }
 }
 """)
     write("hook/ApplicationHook.java", """

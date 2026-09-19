@@ -4,7 +4,7 @@ static String TAG="test";static List<Integer> pages=new ArrayList<>();static cla
 static class Status{static boolean canGreenFinancePointFriend(){return true;}static void greenFinancePointFriend(){}}
 static class TimeUtil{static void sleep(long n){}}
 static class MyUtils{static JSONObject newJSONObject(String s){return new JSONObject(s);}}
-static class Log{static void record(String s){}static void other(String s){}static void i(String a,String b){}static void printStackTrace(Throwable t){}static void printStackTrace(String s,Throwable t){}}
+static class Log{static void record(String s){}static void other(String s){}static void i(String a,String b){}static void printStackTrace(Throwable t){}static void printStackTrace(String s,Throwable t){}static void err(String a,String b,Throwable t){}}
 static class JsonUtil{static Object getValueByPathObject(JSONObject j,String s){return null;}static String getValueByPath(JSONObject j,String s){return "";}}
 static class GreenFinanceRpcCall{
 static int guests; static boolean lastPage; static int next=-1;

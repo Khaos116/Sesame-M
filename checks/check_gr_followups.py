@@ -45,6 +45,7 @@ public class FollowupCheck {
         static void farm(String s) { }
         static void i(String s, String msg) { errors++; }
         static void printStackTrace(String tag, Throwable t) { throw new AssertionError(t); }
+        static void err(String tag, String msg, Throwable t) { errors++; }
     }
     static class MessageUtil {
         static boolean checkMemo(String tag, JSONObject jo) {

@@ -18,5 +18,5 @@ public static void main(String[]a){
 }
 class GoldenBeansEntry {String alias="farm",bizType="MASTER",source="babafarm",taskSceneCode="scene";static GoldenBeansEntry ALCHEMY=new GoldenBeansEntry();}
 class GoldenBeansSupport {static String TAG="";static JSONObject parse(String s){return new JSONObject(s);}static boolean ok(JSONObject j){return j.optBoolean("success");}static String describe(JSONObject j){return "";}static void pause(int i){}}
-class Log {static void goldenBeans(String s){}static void record(String s){}static void i(String a,String b){}static void printStackTrace(String a,Throwable b){throw new RuntimeException(b);}}
+class Log {static void goldenBeans(String s){}static void record(String s){}static void i(String a,String b){}static void printStackTrace(String a,Throwable b){throw new RuntimeException(b);}static void err(String a,String b,Throwable t){}}
 class goldenbeansRpcCall {static String TASK_TYPE_EXCHANGE="exchange";static int syncs;static String pullOf(String a,String b,String...c){syncs++;return new JSONObject().put("success",true).put("taskList",new JSONArray().put(new JSONObject().put("sceneCode","scene").put("taskId","task").put("taskStatus",syncs==1?"TODO":"FINISHED"))).toString();}}
