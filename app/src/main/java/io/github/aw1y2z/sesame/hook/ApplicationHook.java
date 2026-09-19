@@ -17,6 +17,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.os.Process;
 
 import io.github.aw1y2z.sesame.util.compat.XC_MethodHook;
 
@@ -95,6 +96,11 @@ public class ApplicationHook extends XposedModule {
 
     // 新增：全局静态变量，存储当前进程名
     public static String processName; // 供其他方法（如 startIfNeeded）调用
+
+    /** 模块 App 自己的包名：须与 app/build.gradle 的 applicationId 一致，用于校验广播发送方 */
+    private static final String MODULE_PACKAGE_NAME = "io.github.aw1y2z.sesame";
+    /** adb shell 的 uid：`adb shell am broadcast` 以它发送，放行以便命令行调试 */
+    private static final int SHELL_UID = 2000;
 
     @Getter
     private static Context context = null; // 全局上下文，对应 Kotlin 的 appContext
@@ -195,17 +201,8 @@ public class ApplicationHook extends XposedModule {
                         AuthCodeHelper.init(classLoader);
                         // 启动时不再调用 getAuthCode：返回值本就被丢弃，而它在当前支付宝版本上必然失败
                         //（自建实例未走宿主依赖注入，内部 facade 为 null），只会在日志里留下噪音
-                        // ========== 关键改动：异步执行 initSimplePageManager，不阻塞 ==========
-                        // 用线程直接执行（项目中大量使用 Thread 方式，贴合风格）
-                        //new Thread(() -> {
-                        //    try {
+                        // 直接同步调用：此前试过的异步写法未采用，勿据旧注释以为此处不阻塞
                         initSimplePageManager();
-                        //     } catch (Throwable t) {
-                        // 复用项目日志风格，捕获异步执行异常
-                        //         Log.i(TAG, "initSimplePageManager async err:");
-                        //         Log.printStackTrace(TAG, t);
-                        //     }
-                        // }, "InitSimplePageManager-Thread").start();
                     } catch (Exception e) {
                         Log.printStackTrace(e);
                     }
@@ -824,10 +821,6 @@ public class ApplicationHook extends XposedModule {
         return rpcBridge.requestString(method, data, relation);
     }
 
-    /*public static String requestString(String method, String data, String relation, Long time) {
-        return rpcBridge.requestString(method, data, relation, time);
-    }*/
-
     public static String requestString(String method, String data, int tryCount, int retryInterval) {
         return rpcBridge.requestString(method, data, tryCount, retryInterval);
     }
@@ -835,10 +828,6 @@ public class ApplicationHook extends XposedModule {
     public static String requestString(String method, String data, String relation, int tryCount, int retryInterval) {
         return rpcBridge.requestString(method, data, relation, tryCount, retryInterval);
     }
-
-    /*public static String requestString(String method, String data, String relation, Long time, int tryCount, int retryInterval) {
-        return rpcBridge.requestString(method, data, relation, time, tryCount, retryInterval);
-    }*/
 
     public static RpcEntity requestObject(RpcEntity rpcEntity) {
         return rpcBridge.requestObject(rpcEntity, 3, -1);
@@ -856,10 +845,6 @@ public class ApplicationHook extends XposedModule {
         return rpcBridge.requestObject(method, data, relation);
     }
 
-    /*public static RpcEntity requestObject(String method, String data, String relation, Long time) {
-        return rpcBridge.requestObject(method, data, relation, time);
-    }*/
-
     public static RpcEntity requestObject(String method, String data, int tryCount, int retryInterval) {
         return rpcBridge.requestObject(method, data, tryCount, retryInterval);
     }
@@ -867,10 +852,6 @@ public class ApplicationHook extends XposedModule {
     public static RpcEntity requestObject(String method, String data, String relation, int tryCount, int retryInterval) {
         return rpcBridge.requestObject(method, data, relation, tryCount, retryInterval);
     }
-
-    /*public static RpcEntity requestObject(String method, String data, String relation, Long time, int tryCount, int retryInterval) {
-        return rpcBridge.requestObject(method, data, relation, time, tryCount, retryInterval);
-    }*/
 
     public static void reLoginByBroadcast() {
         try {
@@ -948,19 +929,16 @@ public class ApplicationHook extends XposedModule {
         });
     }
 
-    /*public static Boolean reLogin() {
-        Object authService = getExtServiceByInterface("com.alipay.mobile.framework.service.ext.security.AuthService");
-        if ((Boolean) XHelpers.callMethod(authService, "rpcAuth")) {
-            return true;
-        }
-        Log.record("重新登录失败");
-        return false;
-    }*/
-
     private class AlipayBroadcastReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
+            // Receiver 为运行时注册，Android 13+ 必须 RECEIVER_EXPORTED（模块 App 与支付宝是不同
+            // UID，跨进程送达只能靠导出），所以"任意应用都能触发 restart/reLogin"只能在此按 uid 拦
+            if (!isTrustedBroadcastSender(context, this)) {
+                Log.record("广播来源不在白名单，已忽略#" + action);
+                return;
+            }
             Log.i("sesame broadcast action:" + action + " intent:" + intent);
             if (action != null) {
                 switch (action) {
@@ -1022,6 +1000,56 @@ public class ApplicationHook extends XposedModule {
                         break;
                 }
             }
+        }
+    }
+
+    /**
+     * 校验广播发送方是否可信。
+     * <p>
+     * 该 Receiver 由运行时注册，Android 13 起必须带 {@code RECEIVER_EXPORTED}：模块 App
+     * （{@code io.github.aw1y2z.sesame}）与支付宝是两个不同 UID，跨进程送达只能靠导出，
+     * 所以"任意应用都能触发 restart / reLogin"只能在收到广播后按发送方 uid 拦。
+     * <p>
+     * 白名单：本进程（支付宝自己发的，含由系统代发的 PendingIntent）、模块 App、adb shell（调试用）。
+     * <p>
+     * 发送方 uid 取自 {@code BroadcastReceiver.getSentFromUid()}——该 API 自 Android 14（API 34）起
+     * 提供。低版本无从判定，直接放行以免误伤；Android 14+ 上若返回 {@code Process.INVALID_UID}
+     * （广播由系统代发时取不到来源）同样放行并记日志，因为闹钟触发的定时执行走的就是这条路径，
+     * 收紧会让定时任务失效。
+     *
+     * @return true 表示可信，继续处理
+     */
+    private static boolean isTrustedBroadcastSender(Context context, BroadcastReceiver receiver) {
+        try {
+            // 发送方 uid 只有 Android 14+ 的 getSentFromUid 能取到；低版本无从判定，放行保持原行为
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                return true;
+            }
+            int uid = receiver.getSentFromUid();
+            if (uid == Process.myUid() || uid == SHELL_UID) {
+                return true;
+            }
+            if (uid == Process.INVALID_UID) {
+                // 系统代发的广播（如闹钟到点触发 PendingIntent 的定时执行）取不到来源；
+                // 这里放行以免定时任务失效，是本校验唯一的松口
+                Log.record("广播来源无法判定，按放行处理");
+                return true;
+            }
+            String[] packages = context.getPackageManager().getPackagesForUid(uid);
+            if (packages != null) {
+                for (String pkg : packages) {
+                    if (MODULE_PACKAGE_NAME.equals(pkg)) {
+                        return true;
+                    }
+                }
+            }
+            Log.record("广播发送方不可信，已忽略#uid=" + uid);
+            return false;
+        } catch (Throwable t) {
+            // 校验本身出错时放行：宁可退回改动前的行为，也不让 restart/reloadConfig 这类正常
+            // 流程因校验异常而失效（出错原因已记日志，便于排查）
+            Log.err(TAG, "校验广播发送方失败:", t);
+            return true;
         }
     }
 

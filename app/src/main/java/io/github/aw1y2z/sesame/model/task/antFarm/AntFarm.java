@@ -339,8 +339,10 @@ public class AntFarm extends ModelTask {
 
             if (competition.getValue()) {
                 if (!competition()) {
-                    // 排位赛不存在时，fallback 到公益捐蛋
+                    // 仅「确认当天没有排位活动」才回退公益捐蛋；接口异常/数据缺失/20:01 后跳过都返回 true，
+                    // 不会走到这里（否则当天已为排位捐过蛋，晚上还会再捐一次公益）
                     if (donationType.getValue() != DonationType.ZERO) {
+                        Log.record("捐蛋排位🥚当天无排位活动，回退公益捐蛋");
                         donation();
                     }
                 }
@@ -1087,11 +1089,26 @@ public class AntFarm extends ModelTask {
         return false;
     }
 
+    /**
+     * 排位赛捐蛋。
+     * <p>
+     * 返回值语义**只表示"当天是否有排位活动"**，调用方据此决定是否回退公益捐蛋：
+     * <ul>
+     *   <li>{@code false}：接口调用成功，但完全没有排位首页数据 → 确认当天无排位活动，可回退公益捐蛋</li>
+     *   <li>{@code true}：排位通道"已处理"——包含正常捐蛋、以及<b>不该回退</b>的几种情况：
+     *       接口失败/服务端繁忙(102)、排位数据缺失、榜单为空、20:01 后按规则跳过捐蛋</li>
+     * </ul>
+     * <p>
+     * 之所以把后者也算 {@code true}：它们只代表"这次没捐成"或"这次不该捐"，而不是"没有排位活动"。
+     * 若在这些情况下回退，会在当天已经为排位捐过蛋之后，晚上（20:01 后必然命中）再捐一次公益蛋；
+     * 接口抖动同样会每天多捐一次。两者都消耗同一个爱心蛋余额（{@code harvestBenevolenceScore}）。
+     */
     private boolean competition() {
         try {
             JSONObject jo = new JSONObject(AntFarmRpcCall.enterDonationCompetitionRank());
             if (!MessageUtil.checkMemo(TAG, jo)) {
-                return false;
+                // 接口失败/繁忙：查不到不等于不存在，不回退公益捐蛋
+                return true;
             }
             if (jo.has("exitDonationCompetition")) {
                 boolean exitDonationCompetition = jo.optBoolean("exitDonationCompetition");
@@ -1125,18 +1142,19 @@ public class AntFarm extends ModelTask {
             String CurrentUserId = UserIdMap.getCurrentUid();
 
             if (!jo.has("donationRankHomeInfo")) {
-                Log.record("捐蛋排位🥚未查询到捐赠排行信息");
+                // 接口成功却没有排位首页 = 当天没有排位活动，这是唯一的回退信号
+                Log.record("捐蛋排位🥚接口成功但无排位首页，判定当天无排位活动");
                 return false;
             }
             JSONObject donationRankHomeInfo = jo.getJSONObject("donationRankHomeInfo");
             if (!donationRankHomeInfo.has("userDonationRankList")) {
-                Log.record("捐蛋排位🥚未查询到捐赠排行信息");
-                return false;
+                Log.record("捐蛋排位🥚有排位首页但缺榜单，不回退公益捐蛋");
+                return true;
             }
             JSONArray userDonationRankList = donationRankHomeInfo.optJSONArray("userDonationRankList");
             if (userDonationRankList == null || userDonationRankList.length() == 0) {
-                Log.record("捐蛋排位🥚奖励列表为空");
-                return false;
+                Log.record("捐蛋排位🥚奖励列表为空，不回退公益捐蛋");
+                return true;
             }
             if (desStarNum == 0) {
                 Log.record("捐蛋排位🥚目标星级为0跳过保底捐蛋逻辑");
@@ -1178,8 +1196,9 @@ public class AntFarm extends ModelTask {
                 int hour = now.get(java.util.Calendar.HOUR_OF_DAY);
                 int minute = now.get(java.util.Calendar.MINUTE);
                 if (hour > 20 || (hour == 20 && minute >= 1)) {
+                    // 排位依然存在，只是 20:01 后不再捐蛋 → 返回 true，避免被上层当成"无排位活动"回退公益捐蛋
                     Log.record("捐蛋排位🥚每日20:01后不执行捐蛋操作");
-                    return false;
+                    return true;
                 }
 
 

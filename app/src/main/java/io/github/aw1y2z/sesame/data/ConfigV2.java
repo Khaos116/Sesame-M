@@ -115,7 +115,7 @@ public class ConfigV2 {
         return (T) getModelField(modelCode, fieldCode);
     }*/
 
-    public static Boolean isModify(String userId) {
+    public static synchronized Boolean isModify(String userId) {
         String json = null;
         File configV2File;
         if (StringUtil.isEmpty(userId)) {

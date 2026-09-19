@@ -99,7 +99,6 @@ public class BaseModel extends Model {
         modelFields.addField(timeoutRestart);
         modelFields.addField(backupConfigDays);
         modelFields.addField(newRpc);
-        modelFields.addField(newRpc);
         modelFields.addField(debugMode);
         modelFields.addField(rpcRequestList);
         modelFields.addField(rpcRequestTaskList);
@@ -201,10 +200,10 @@ public class BaseModel extends Model {
                 // 【可选】这里添加解析后的业务逻辑，比如获取JSON中的字段
                 String methodName = taskRpcJo.getString("methodName"); // 假设JSON中有method字段
                 String requestData = taskRpcJo.getString("requestData");     // 假设JSON中有data字段
-                Log.debug("自主调用🈸RPC["+taskRpcName+"]第" + (taskRpcNameTodayCount+1)+"["+taskRpcCount+"]次\n方法：" + methodName + "\n参数：" + requestData);
+                Log.debug("自主调用🈸RPC["+taskRpcName+"]第" + (taskRpcNameTodayCount+1)+"["+taskRpcCount+"]次\n方法：" + methodName + "\n参数：" + StringUtil.truncate(requestData, 200));
                 //调用接口执行请求
                 String taskRpcResult = ApplicationHook.requestString(methodName, requestData);
-                Log.debug("自主调用🈸RPC["+taskRpcName+"]返回\n数据：" + taskRpcResult);
+                Log.debug("自主调用🈸RPC["+taskRpcName+"]返回\n数据：" + StringUtil.truncate(taskRpcResult, 200));
             }
             catch (JSONException e) {
                 // 捕获JSON解析异常，打印日志而不是崩溃
