@@ -110,7 +110,7 @@ public class ApplicationHook extends XposedModule {
     private static String realAlipayVersion = "";
 
     /**
-     * 获取伪装后的版本号（默认关闭，需用户在扩展功能页手动开启）。
+     * 获取伪装后的版本号（默认开启，可在扩展功能页关闭）。
      * 开启时返回伪装版本名欺骗服务器，使其认为安装了低版本，从而避免高版本特有的拼图验证。
      * 对齐 GR2026 main_my ApplicationHook.java#getEffectiveVersion，见 doc/MyFix.md 的移植记录。
      */
@@ -258,7 +258,7 @@ public class ApplicationHook extends XposedModule {
                     super.afterHookedMethod(param);
                 }
             });
-            // 注册版本伪装 Hook（默认关闭，通过 VersionHook 统一管理），必须在 attach 钩子实际
+            // 注册版本伪装 Hook（默认开启，通过 VersionHook 统一管理），必须在 attach 钩子实际
             // 触发、读取 getPackageInfo 之前完成注册，才能让上面的 realAlipayVersion/alipayVersion
             // 初始化也吃到伪装结果——这里只是注册拦截器，真正是否生效仍受 sEnableVersionHook 门控
             try {
@@ -1126,6 +1126,27 @@ public class ApplicationHook extends XposedModule {
             Log.err(TAG, "getUserId err", th);
         }
         return null;
+    }
+
+    private static volatile long lastVerificationLaunch;
+
+    /** 风控要求验证（1009 等）：把支付宝拉到前台让验证界面弹出，由自动滑块处理；10 分钟内只拉一次。 */
+    public static void showVerification() {
+        if (mainHandler == null || AccountSwitchController.isBusy()) return;
+        long now = System.currentTimeMillis();
+        if (now - lastVerificationLaunch < 10 * 60_000L) return;
+        lastVerificationLaunch = now;
+        mainHandler.post(() -> {
+            try {
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setClassName(ClassUtil.PACKAGE_NAME, ClassUtil.CURRENT_USING_ACTIVITY);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(intent);
+                Log.record("风控验证🔐已将支付宝切到前台，等待验证界面弹出");
+            } catch (Throwable t) {
+                Log.err(TAG, "showVerification err:", t);
+            }
+        });
     }
 
     public static void reLogin() {

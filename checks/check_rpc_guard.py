@@ -160,6 +160,8 @@ public class ApplicationHook {
     public static void setOffline(boolean v) { offline = v; }
     public static int loginBroadcasts;
     public static void reLoginByBroadcast() { loginBroadcasts++; }
+    public static int verificationLaunches;
+    public static void showVerification() { verificationLaunches++; }
     public static ClassLoader getClassLoader() { return ApplicationHook.class.getClassLoader(); }
 }
 """)
@@ -386,6 +388,19 @@ public class GuardCheck {
             }
         }
         reset();
+        {
+            String args = "[{\"sceneCode\":\"ANTFARM\",\"taskSceneCode\":\"ANTFARM_DAILY_DRAW_TASK\",\"taskId\":\"t\"}]";
+            JSONObject busy = new JSONObject().put("success", false).put("resultCode", "102").put("memo", "服务器正在开小差，请稍后再试～");
+            for (long duration : new long[]{5*MIN, 5*MIN, 30*MIN, 30*MIN, 6*60*MIN}) {
+                assert !guard(awardMethod, args).shouldSkip();
+                guard(awardMethod, args).record(busy);
+                now += duration - 1;
+                assert guard(awardMethod, args).shouldSkip() : "award busy pause too short: " + duration;
+                now++;
+                assert !guard(awardMethod, args).shouldSkip();
+            }
+        }
+        reset();
         guard("com.alipay.antfarm.feedAnimal").record(json("{\"success\":false,\"resultCode\":102,\"memo\":\"服务器正在开小差，请稍后再试～\"}"));
         assert !guard("com.alipay.antfarm.feedAnimal").shouldSkip();
         for (String response : new String[]{"{\"success\":false,\"resultCode\":102,\"memo\":\"other business reason\"}",
@@ -418,6 +433,16 @@ public class GuardCheck {
         String other = "com.alipay.antiep.receiveTaskAward";
         pauses(farm, "[{}]", MIN, MIN, 5*MIN);
         pauses(forest, "[{}]", MIN, MIN, 5*MIN);
+        reset();
+        {
+            int before = io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches;
+            guard("alipay.antforest.forest.h5.startEnergyRain").record(json("{\"error\":\"1009\",\"errorMessage\":\"为保障您的正常访问，请进行验证后继续。\"}"));
+            assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1 : "1009 must bring Alipay to front";
+            guard("alipay.antforest.forest.h5.startEnergyRain").record(json("{\"error\":\"1009\"}")); // already paused: no second launch
+            assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1;
+            guard("com.alipay.antfarm.feedAnimal").record(json("{\"error\":48}"));
+            assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1 : "network errors must not launch";
+        }
         reset();
         String enter = "com.alipay.antfarm.enterFarm";
         guard(enter, "[{\"sceneCode\":\"ANTFARM\",\"userId\":\"friend\"}]").record(json("{\"error\":48}"));

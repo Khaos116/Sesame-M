@@ -134,7 +134,7 @@ fun ExtensionsScreen(activity: MiuixExtensionsActivity) {
             CardColumn {
                 Text(
                     "向支付宝服务端伪造一个更低的客户端版本号，用来规避高版本才有的拼图验证码风控。" +
-                        "这是主动欺骗服务端的行为，不是本地跳过判断，默认关闭，开启前请确认你了解风险。",
+                        "这是主动欺骗服务端的行为，不是本地跳过判断，默认开启（10.6.58.8000），不需要请关闭；修改后需重启支付宝生效。",
                     fontSize = 12.sp,
                     color = MiuixTheme.colorScheme.primary
                 )

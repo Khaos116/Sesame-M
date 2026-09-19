@@ -19,6 +19,7 @@ import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.model.extensions.ExtensionsHandle;
 import io.github.aw1y2z.sesame.model.task.antOrchard.AntOrchard;
 import io.github.aw1y2z.sesame.model.task.antOrchard.AntOrchardRpcCall;
+import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 import io.github.aw1y2z.sesame.util.*;
 import io.github.aw1y2z.sesame.util.idMap.AntFarmDoFarmTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.AntMemberTaskListMap;
@@ -1474,7 +1475,13 @@ public class AntMember extends ModelTask {
                         //TimeUtil.sleep(2000);
                         String forestTaskResponse = AntMemberRpcCall.forestTask();
                         TimeUtil.sleep(500);
-                        String forestreceiveTaskAward = AntMemberRpcCall.forestreceiveTaskAward();
+                        // 设备日报：KUAIDI_VITALITY 领奖每轮都失败（无原因，每天 11+ 次），失败后当天不再重复领
+                        if (!Status.hasFlagToday("antMember::kuaidiForestAward")) {
+                            JSONObject forestAward = MyUtils.newJSONObject(AntMemberRpcCall.forestreceiveTaskAward());
+                            if (RpcRequestGuard.isFailure(forestAward) && !"RPC_SKIPPED".equals(forestAward.optString("error"))) {
+                                Status.flagToday("antMember::kuaidiForestAward");
+                            }
+                        }
                     }
                     else if ("WELFARE_PLUS_ANT_OCEAN".equals(taskCode)) {
                         //String oceanHomePageResponse = AntMemberRpcCall.queryoceanHomePage();

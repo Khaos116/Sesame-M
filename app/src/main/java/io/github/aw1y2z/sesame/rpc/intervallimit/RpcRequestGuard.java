@@ -183,13 +183,16 @@ public final class RpcRequestGuard {
             if (RpcFailurePolicy.isRiskDenied(code, message) || message.contains("验证后继续")
                     || message.contains("滑动验证") || message.contains("cheating traffic")) {
                 pause = RpcFailurePolicy.RISK_DENIED_MS;
+                io.github.aw1y2z.sesame.hook.ApplicationHook.showVerification();
             } else if ("48".equals(code) || "TRANSPORT_ERROR".equals(code)) {
                 pause = core ? (failures < 3 ? MINUTE : 5 * MINUTE)
                         : (failures == 1 ? 5 * MINUTE : failures == 2 ? 30 * MINUTE : DAY);
             } else if (RpcFailurePolicy.kind(code) == RpcFailurePolicy.Kind.SYSTEM_ERROR
                     || ("com.alipay.antfarm.receiveFarmTaskAward".equals(request.getRequestMethod())
                     && "102".equals(code) && message.startsWith("服务器正在开小差"))) {
-                pause = core ? (failures < 3 ? 5 * MINUTE : 30 * MINUTE)
+                // Same task id busy 5+ times in a day (seen daily on DAILY_DRAW_TIMES tasks): retry every 6h, not every run.
+                boolean farmAward = "com.alipay.antfarm.receiveFarmTaskAward".equals(request.getRequestMethod());
+                pause = core ? (failures < 3 ? 5 * MINUTE : farmAward && failures >= 5 ? 6 * 60 * MINUTE : 30 * MINUTE)
                         : RpcFailurePolicy.SYSTEM_ERROR_MS;
             } else if (!core && failures >= 3) {
                 pause = DAY;

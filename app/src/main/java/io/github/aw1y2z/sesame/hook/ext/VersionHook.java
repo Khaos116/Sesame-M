@@ -20,14 +20,19 @@ import io.github.aw1y2z.sesame.util.compat.XC_MethodHook;
  * 对齐 GR2026 main_my hook/ext/VersionHook.java（提交 3013cb36），API 从传统 Xposed
  * （XposedHelpers/XC_MethodHook）换成 M 自己的兼容层（XHelpers/compat.XC_MethodHook）。
  * <p>
- * 默认关闭。启用后会让支付宝服务端认为客户端是伪装的低版本，用于规避高版本才有的
+ * 默认开启（版本 10.6.58.8000，可在扩展页关闭/修改，重启支付宝生效）。启用后会让支付宝服务端认为客户端是伪装的低版本，用于规避高版本才有的
  * 拼图验证码风控——这是主动欺骗服务端的行为，不是单纯跳过本地判断分支，用户需知悉
- * 风险后再手动开启，见 doc/MyFix.md 的移植记录。
+ * 风险，见 doc/MyFix.md 的移植记录。
  */
 public class VersionHook {
 
-    private static String sCachedVersionName = "";
-    private static long sCachedVersionCode = 0;
+    /** 默认伪装版本（对齐 GR2026 AppConfig 默认值 10.6.58.8000 / 1881，高于新接口最低支持的 10.3.96.8100） */
+    private static final String DEFAULT_VERSION_NAME = "10.6.58.8000";
+    private static final long DEFAULT_VERSION_CODE = 1881L;
+
+    private static String sCachedVersionName = DEFAULT_VERSION_NAME;
+    private static long sCachedVersionCode = DEFAULT_VERSION_CODE;
+    // 配置文件加载前保持 false：早于 loadVersionConfig 的 getPackageInfo 不应被误伪装；默认开启由配置文件承载
     private static boolean sEnableVersionHook = false;
     private static boolean isVersionHookRegistered = false;
 
@@ -47,9 +52,9 @@ public class VersionHook {
             File configFile = new File(configDir, "version_config.json");
             if (!configFile.exists()) {
                 JSONObject defaultConfig = MyUtils.newJSONObject();
-                defaultConfig.put("enableVersionHook", false);
-                defaultConfig.put("versionName", "");
-                defaultConfig.put("versionCode", 0);
+                defaultConfig.put("enableVersionHook", true);
+                defaultConfig.put("versionName", DEFAULT_VERSION_NAME);
+                defaultConfig.put("versionCode", DEFAULT_VERSION_CODE);
                 FileUtil.write2File(defaultConfig.toString(), configFile);
                 Log.record("已创建版本配置文件");
             }
@@ -70,9 +75,9 @@ public class VersionHook {
             }
             JSONObject config = MyUtils.newJSONObject(content);
 
-            sEnableVersionHook = config.optBoolean("enableVersionHook", false);
-            sCachedVersionName = config.optString("versionName", "");
-            sCachedVersionCode = config.optLong("versionCode", 0);
+            sEnableVersionHook = config.optBoolean("enableVersionHook", true);
+            sCachedVersionName = config.optString("versionName", DEFAULT_VERSION_NAME);
+            sCachedVersionCode = config.optLong("versionCode", DEFAULT_VERSION_CODE);
 
             Log.i("VersionHook", "配置加载完成: enabled=" + sEnableVersionHook
                     + ", name=" + sCachedVersionName + ", code=" + sCachedVersionCode);
@@ -129,14 +134,14 @@ public class VersionHook {
             return "";
         }
         return (sCachedVersionName != null && !sCachedVersionName.isEmpty())
-                ? sCachedVersionName : "10.6.58.8000";
+                ? sCachedVersionName : DEFAULT_VERSION_NAME;
     }
 
     public static long getFakeVersionCode() {
         if (!sEnableVersionHook) {
             return 0;
         }
-        return sCachedVersionCode > 0 ? sCachedVersionCode : 1881L;
+        return sCachedVersionCode > 0 ? sCachedVersionCode : DEFAULT_VERSION_CODE;
     }
 
     // ==================== 版本伪装 Hook ====================

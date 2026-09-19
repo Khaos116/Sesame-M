@@ -5,6 +5,9 @@
 
 ## 2026-09-19
 
+- fix（未提交）：复核 09-19 两个账号异常日报（70+21 次）。① `receiveFarmTaskAward` 102“服务器正在开小差”（`cclyx_3bei_xjcmx_2`、`cclyx_sgbhsd_1c_zm3c`、`cclyx_3bei_dgls_2`、`cclyx_wdhysj_1cV2`、`IP_chouchoule_juankuan`，连续多日每天 8~12 次）：同任务当天第 5 次起退避改 6 小时，前 4 次仍 5/5/30/30 分钟，不永久拉黑；② 我的快递 `KUAIDI_VITALITY` 领奖（无原因，两账号共 15 次，09-17 为 13 次）：失败后当天不再重复领，成功行为不变。暂不处理：48 网络错误（01:50~01:53 集中，已有退避）；`energyRain*` 1009（风控，已暂停 24 小时）；`donation` 218“自营项目没有指定标的物”（1 次，配置项问题，证据不足）；`walk.go`“走慢一点”（业务限速，3 次）；`B_FREE_SEAT`、`TARGET_USER_PROTECT_BY_ENERGY_SHIELD`（正常业务提示）；金豆/`ORCHARD`/`loanpromoweb signin.query` 无原因各 1~3 次（后者较 09-17 的 19 次已大幅下降），证据不足。
+- feat（未提交）：版本伪装 `VersionHook` 默认开启，默认版本 10.6.58.8000 / 1881（对齐 GR2026 `AppConfig` 默认值，高于新接口最低支持 10.3.96.8100；AG 无此功能）。仅对**新建**的 `version_config.json` 生效——已存在的配置文件（含旧默认的 `enableVersionHook=false`）不改，需在扩展页手动打开或删除该文件。改版本后需重启支付宝。
+- feat（未提交）：`RpcRequestGuard` 遇风控 1009/“验证后继续”暂停时调用 `ApplicationHook.showVerification()`，把支付宝拉到前台让验证界面弹出（账号切换中不拉，10 分钟内只拉一次）；`check_rpc_guard.py` 补充：首次触发拉起、已暂停不重复、48 网络错误不拉起。
 - fix（未提交）：庄园 `AntFarm.run()`、运动 `AntSports.run()` 的各子任务分别隔离（新增 `step()`），单个子任务抛出异常只记日志并跳过自己，不再中断本轮后续任务。
 - feat（未提交）：运动同步步数——当前步数超过 18000 不再同步（readDailyStep hook 与主动推送均跳过）。
 - fix（未提交）：运动同步步数不再被异常打断——`steps.query` 查询失败/被保护暂停时不再让整轮运动任务提前 return，仍继续推送步数；推送遇到临时异常不再当天放弃，下一轮重试（仅接口不存在才标记当天跳过）。
@@ -90,6 +93,29 @@
 - `6a31c9e1` feat: 新增全局自动切号功能（账号轮询，最小间隔2小时）
 
 ## 详细记录（自 doc/MyFix.md 迁移）
+
+### 2026-09-19：异常日报复核、风控验证拉起、版本伪装默认开启、庄园/运动子任务隔离
+
+**日报复核（两个账号 70+21 次）**：
+- 庄园 `receiveFarmTaskAward` 102“服务器正在开小差”，同五个任务连续多日每天 8~12 次：同任务当天第 5 次起退避改 6 小时，前 4 次仍 5/5/30/30 分钟，不永久拉黑（`RpcRequestGuard`）。
+- 我的快递 `KUAIDI_VITALITY` 领奖失败（无原因，共 15 次）：失败后当天不再重复领（`Status` 标记 `antMember::kuaidiForestAward`，`AntMember.java`），成功行为不变；`RPC_SKIPPED`（被 guard 暂停）不计为失败。
+- 暂不处理：48 网络错误（已有退避）；`energyRain*` 1009（风控，已暂停 24 小时）；`donation` 218（配置项问题，证据不足）；`walk.go` “走慢一点”（业务限速）；`B_FREE_SEAT`、`TARGET_USER_PROTECT_BY_ENERGY_SHIELD`（正常业务提示）；金豆/`ORCHARD`/`loanpromoweb signin.query` 无原因 1~3 次（证据不足）。
+
+**风控验证拉起**：`RpcRequestGuard` 遇 1009/“验证后继续”/“滑动验证”/`cheating traffic` 暂停 24 小时后，调用 `ApplicationHook.showVerification()` 把支付宝首页拉到前台，让验证界面弹出；账号切换中不拉，10 分钟内只拉一次。此前只暂停不拉起，后台时验证页不出现。验证页出现后的处理沿用既有 `SimplePageManager` → `Captcha1Handler`/`Captcha2Handler` → `BaseCaptchaHandler`（仅识别“向右滑动验证”，直接拖到最右）。`check_rpc_guard.py` 新增：首次触发拉起、已暂停不重复、48 网络错误不拉起。**未验证**：拉起后验证页是否出现在 `XRiverActivity`/`AlipayLogin`；验证通过后 24 小时暂停不会提前解除。
+
+**版本伪装默认开启**：`VersionHook` 默认 `10.6.58.8000` / `1881`，与 GR2026 `AppConfig` 默认值一致。GR `strings2.xml` 写明“自动过简单滑块需要支付宝版本在 10.6.58 及以下”，所以这是该功能声称支持的最高版本（不是最低版本；新接口最低版本 10.3.96.8100 与验证码无关）。AG 无此功能。取舍：
+- 只对**新建**的 `version_config.json` 生效；已存在的文件（含旧默认 `enableVersionHook=false`）不改，需在扩展页手动打开或删除文件。静态初始值仍为 false，配置加载前的 `getPackageInfo` 不会被误伪装。
+- 改版本后需重启支付宝（版本号在进程启动时读取），不能遇到 1009 时临时伪装。
+- 伪装只影响下发哪种验证码，不保证不触发风控；也没有验证过服务端对该版本一定下发简单滑块，也可能因版本与其它请求头不一致引入新的风控信号。**未真机验证**。
+
+**子任务隔离与步数同步**：
+- 庄园 `AntFarm.run()`、运动 `AntSports.run()` 各子任务分别隔离（新增 `step()`），单个子任务抛异常只记日志并跳过自己。
+- `RpcRequestGuard` 请求键对 `enterFarm` 补充 `userId`/`farmId`，好友庄园 enterFarm 失败不再暂停自己庄园。
+- 运动同步步数：当前步数超过 18000 不再同步（`readDailyStep` hook 与主动推送均跳过）；`steps.query` 失败/被保护暂停不再让整轮提前 return，推送遇临时异常下一轮重试（仅接口不存在才标记当天跳过）。
+
+**三项必查**：GMT+8——无新增日期计算，日标记沿用 `Status.hasFlagToday`/`flagToday`；JSON 创建——新增解析均走 `MyUtils.newJSONObject`，并用 `RpcRequestGuard.isFailure` 校验失败；JSON 读取——新增均为 `optString`，无裸 `.get*()`；版本配置读写沿用 `opt*`。无新增例外。
+
+**验证**：`:app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin` 通过；九项 Python 回归在最后一次代码改动后全部通过（其中 `check_merge_config`、`check_rpc_guard`、`audit_regressions` 因内存问题重跑过一次）。中途一次因系统虚拟内存提交额度不足（errno=1455）失败，停掉 Gradle daemon 后重跑通过。未跑 `assembleNormalRelease`、未真机验证、未提交。
 
 ### 2026-09-17（续）：每日异常报告复核及绿色经营签到场景隔离
 
