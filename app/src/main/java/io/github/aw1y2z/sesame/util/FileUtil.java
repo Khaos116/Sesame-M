@@ -559,13 +559,32 @@ public class FileUtil {
         return wuaFile;
     }
     
+    /**
+     * 导出文件名：log/&lt;userId&gt;/ 下的日志文件在扩展名前带上账号（如 runtime.2026-09-19.2088702045701743.log），
+     * 多个账号导出到同一个下载目录时不会重名，也能看出是谁导出的；与异常统计文件 rpc-failures.日期.账号.json 的命名一致。
+     * 文件名里已含账号（异常统计）、或取不到账号（default）时保持原名。日志内容里仍不写 uid/昵称。
+     */
+    static String exportName(File file) {
+        String name = file.getName();
+        File dir = file.getParentFile();
+        if (dir == null || !LOG_DIRECTORY_FILE.equals(dir.getParentFile())) {
+            return name;
+        }
+        String userId = dir.getName();
+        if ("default".equals(userId) || name.contains(userId)) {
+            return name;
+        }
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) + "." + userId + name.substring(dot) : name + "." + userId;
+    }
+
     public static File exportFile(File file) {
         String exportDirStr = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) + File.separator + CONFIG_DIRECTORY_NAME;
         File exportDir = new File(exportDirStr);
         if (!exportDir.exists()) {
             exportDir.mkdirs();
         }
-        File exportFile = getFile(exportDir, file.getName());
+        File exportFile = getFile(exportDir, exportName(file));
         if (FileUtil.copyTo(file, exportFile)) {
             return exportFile;
         }
