@@ -24,13 +24,15 @@ import io.github.aw1y2z.sesame.util.compat.XC_MethodHook;
  * 对齐 GR2026 main_my hook/ext/VersionHook.java（提交 3013cb36），API 从传统 Xposed
  * （XposedHelpers/XC_MethodHook）换成 M 自己的兼容层（XHelpers/compat.XC_MethodHook）。
  * <p>
- * 默认开启（版本 10.6.58.8000，可在扩展页关闭/修改，重启支付宝生效）。启用后会让支付宝服务端认为客户端是伪装的低版本，用于规避高版本才有的
+ * 默认关闭（1.1.5 曾默认开启，实测无效已改回；见 CHANGELOG）。手动开启后可在扩展页改版本，重启支付宝生效。启用后会让支付宝服务端认为客户端是伪装的低版本，用于规避高版本才有的
  * 拼图验证码风控——这是主动欺骗服务端的行为，不是单纯跳过本地判断分支，用户需知悉
  * 风险，见 doc/MyFix.md 的移植记录。
  */
 public class VersionHook {
 
     /** 默认伪装版本（对齐 GR2026 AppConfig 默认值 10.6.58.8000 / 1881，高于新接口最低支持的 10.3.96.8100） */
+    /** 标记“已按 1.1.5 之后的默认关闭处理过”，用于一次性把 1.1.5 自动打开的配置改回关闭 */
+    private static final String KEY_DEFAULT_OFF_APPLIED = "defaultOffApplied";
     private static final String DEFAULT_VERSION_NAME = "10.6.58.8000";
     private static final long DEFAULT_VERSION_CODE = 1881L;
 
@@ -57,10 +59,10 @@ public class VersionHook {
     private static volatile boolean sSamplesPrinted = false;
     private static volatile boolean sFakedLogged = false;
     /**
-     * 启动早期（配置未加载）时，是否对日志模块的读取提前伪装。缺省为开：读不到配置（首次运行、文件读取失败）
-     * 就按默认开启、默认版本 10.6.58.8000 处理；只有配置文件里明确关闭时 preloadEarlyEnable 才把它关掉。
+     * 启动早期（配置未加载）时，是否对日志模块的读取提前伪装。缺省为关：读不到配置就不伪装；
+     * 只有配置文件里 enableVersionHook 与 earlyEnable 都为真时 preloadEarlyEnable 才把它打开。
      */
-    private static volatile boolean sEarlyFake = true;
+    private static volatile boolean sEarlyFake = false;
     private static final AtomicInteger sEarlyFaked = new AtomicInteger();
     private static final String LOGGING_CALLER_PREFIX = "com.alipay.mobile.common.logging.";
     /** 配置文件里的 "earlyEnable"（缺省为真）：用户手写成 false 时，saveVersionConfig 覆盖写文件要带回去，否则会被抹掉 */
@@ -84,7 +86,8 @@ public class VersionHook {
             File configFile = new File(configDir, "version_config.json");
             if (!configFile.exists()) {
                 JSONObject defaultConfig = MyUtils.newJSONObject();
-                defaultConfig.put("enableVersionHook", true);
+                defaultConfig.put("enableVersionHook", false);
+                defaultConfig.put(KEY_DEFAULT_OFF_APPLIED, true);
                 defaultConfig.put("versionName", DEFAULT_VERSION_NAME);
                 defaultConfig.put("versionCode", DEFAULT_VERSION_CODE);
                 FileUtil.write2File(defaultConfig.toString(), configFile);
@@ -107,19 +110,24 @@ public class VersionHook {
             }
             JSONObject config = MyUtils.newJSONObject(content);
 
-            sEnableVersionHook = config.optBoolean("enableVersionHook", true);
+            sEnableVersionHook = config.optBoolean("enableVersionHook", false);
             sCachedVersionName = config.optString("versionName", DEFAULT_VERSION_NAME);
             sCachedVersionCode = config.optLong("versionCode", DEFAULT_VERSION_CODE);
             sEarlyEnableConfigured = config.optBoolean("earlyEnable", true);
 
-            // ≤1.1.4 自动建的配置是“关闭、版本名空、版本号 0”，从没被用户改过；1.1.5 起默认开启，
-            // 而 ensureVersionConfig 只在文件不存在时才写默认值，不迁移的话老用户永远是关闭状态
-            if (!sEnableVersionHook && sCachedVersionName.isEmpty() && sCachedVersionCode <= 0) {
-                sEnableVersionHook = true;
-                sCachedVersionName = DEFAULT_VERSION_NAME;
-                sCachedVersionCode = DEFAULT_VERSION_CODE;
-                saveVersionConfig();
-                Log.record("版本伪装配置为旧版默认（关闭且未填写），已迁移为默认开启 " + DEFAULT_VERSION_NAME);
+            // 1.1.5 曾把“默认开启”写进配置（旧的“关闭且未填写”配置被自动迁移为开启 10.6.58.8000/1881），
+            // 实测对验证码类型没有效果，默认改回关闭：没有 defaultOffApplied 标记、且正好是 1.1.5 自动写入的默认值
+            // （开启 + 10.6.58.8000 + 1881）的配置视为没被用户主动设置过，一次性改回关闭并打标记；
+            // 用户自己改过版本名/版本号或已带标记的配置不动
+            if (!config.has(KEY_DEFAULT_OFF_APPLIED)) {
+                if (sEnableVersionHook && DEFAULT_VERSION_NAME.equals(sCachedVersionName)
+                        && sCachedVersionCode == DEFAULT_VERSION_CODE) {
+                    sEnableVersionHook = false;
+                    saveVersionConfig();
+                    Log.record("版本伪装已改回默认关闭（1.1.5 自动开启的配置，实测无效）；需要请在扩展页手动开启");
+                } else {
+                    saveVersionConfig();
+                }
             }
 
             Log.i("VersionHook", "配置加载完成: enabled=" + sEnableVersionHook
@@ -223,6 +231,7 @@ public class VersionHook {
             config.put("enableVersionHook", sEnableVersionHook);
             config.put("versionName", sCachedVersionName);
             config.put("versionCode", sCachedVersionCode);
+            config.put(KEY_DEFAULT_OFF_APPLIED, true);
             if (!sEarlyEnableConfigured) {
                 config.put("earlyEnable", false);
             }
@@ -402,8 +411,8 @@ public class VersionHook {
     }
 
     /**
-     * 启动早期（Application.attach 之前）按配置文件决定是否“提前伪装”：默认开启（sEarlyFake 缺省为真），
-     * 文件不存在或读取失败都保持开启；文件存在时要求 enableVersionHook 为真（旧版自动建的“关闭且未填写”配置会在 loadVersionConfig 迁移为开启，
+     * 启动早期（Application.attach 之前）按配置文件决定是否“提前伪装”：默认关闭（sEarlyFake 缺省为假），
+     * 文件不存在或读取失败都保持关闭；文件存在时要求 enableVersionHook 为真（旧版自动建的“关闭且未填写”配置会在 loadVersionConfig 迁移为开启，
      * 这里同样按开启看待）且 earlyEnable 不为 false。只影响支付宝日志模块的那次读取（见 handleRead），
      * 不像“全部早读都伪装”那样波及 quinox 升级检查等启动逻辑。
      */
@@ -416,7 +425,11 @@ public class VersionHook {
             JSONObject config = MyUtils.newJSONObject(FileUtil.readFromFile(configFile));
             String name = config.optString("versionName", "");
             long code = config.optLong("versionCode", 0);
-            boolean enabled = config.optBoolean("enableVersionHook", true) || (name.isEmpty() && code <= 0);
+            // 与 loadVersionConfig 的一次性回退保持一致：没有 defaultOffApplied 标记的配置里，1.1.5 自动写入的
+            // 默认值（开启 + 默认版本）在本次启动会被改回关闭，这里同样按关闭看待
+            boolean autoEnabledByOldDefault = !config.has(KEY_DEFAULT_OFF_APPLIED)
+                    && DEFAULT_VERSION_NAME.equals(name) && code == DEFAULT_VERSION_CODE;
+            boolean enabled = config.optBoolean("enableVersionHook", false) && !autoEnabledByOldDefault;
             sEarlyEnableConfigured = config.optBoolean("earlyEnable", true);
             if (!name.isEmpty()) {
                 sCachedVersionName = name;
