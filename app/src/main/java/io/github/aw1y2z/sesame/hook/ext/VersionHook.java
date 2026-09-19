@@ -52,7 +52,7 @@ public class VersionHook {
     /** 走 getPackageInfo(String, PackageInfoFlags)（API 33+）重载读取的次数，只统计不改写 */
     private static final AtomicInteger sFlagsReads = new AtomicInteger();
     private static final List<String> sSamples = Collections.synchronizedList(new ArrayList<>());
-    private static final int MAX_SAMPLES_PER_KIND = 3;
+    private static final int MAX_SAMPLES_PER_KIND = 6;
     private static volatile boolean sConfigLoaded = false;
     private static volatile boolean sSamplesPrinted = false;
     private static volatile boolean sFakedLogged = false;
@@ -132,43 +132,31 @@ public class VersionHook {
     }
 
     /**
-     * 真正的调用方帧（最多 max 个）。R8 会把本模块的 hook 框架类改成 yb2/ac2 这类名字，按包名过滤不掉，
-     * 所以在栈顶 20 帧里找最后一个 hook 机制帧（LSPosed/Vector/LSPatch/libxposed/被 hook 的
-     * ApplicationPackageManager），取它之后的帧。
+     * 真正的调用方帧（最多 max 个）：扫描整个调用栈，跳过 hook 机制帧（LSPosed/Vector/LSPatch/libxposed）、
+     * 反射/系统包管理帧和本模块自己的帧。
+     * 不能用“栈顶 N 帧里找最后一个 hook 帧”的做法：多层 hook 嵌套（LSPatch 加载器等）时框架帧能超过 N 帧，
+     * 窗口内找不到就会把框架帧当成调用方（真机日志已出现，导致日志模块读取识别失败）；
+     * R8 会把本模块的类改成 yb2/ac2 这种不带包名的短名，所以类名不含 '.' 的一律当作本模块帧跳过。
      */
     private static List<StackTraceElement> callerFrames(int max) {
         StackTraceElement[] stack = new Throwable().getStackTrace();
-        int start = 0;
-        for (int i = 0; i < Math.min(stack.length, 24); i++) {
-            String c = stack[i].getClassName();
-            if (c.contains("LSPHooker") || c.contains("VectorChain") || c.contains("VectorNativeHooker")
-                    || c.startsWith("LSPatch_") || c.startsWith("org.lsposed") || c.startsWith("org.matrix.vector")
-                    || c.startsWith("io.github.libxposed") || c.startsWith("android.app.ApplicationPackageManager")) {
-                start = i + 1;
-            }
-        }
         List<StackTraceElement> frames = new ArrayList<>();
-        for (int i = start; i < stack.length && frames.size() < max; i++) {
-            if (!stack[i].getClassName().startsWith("java.lang.reflect")) {
-                frames.add(stack[i]);
+        for (int i = 0; i < stack.length && frames.size() < max; i++) {
+            String c = stack[i].getClassName();
+            if (c.indexOf('.') < 0 || c.contains("LSPHooker") || c.startsWith("LSPatch_")
+                    || c.startsWith("org.matrix.vector") || c.startsWith("org.lsposed")
+                    || c.startsWith("io.github.libxposed") || c.startsWith("io.github.aw1y2z")
+                    || c.startsWith("java.lang.reflect") || c.startsWith("dalvik.system")
+                    || c.startsWith("android.app.ApplicationPackageManager")) {
+                continue;
             }
+            frames.add(stack[i]);
         }
         return frames;
     }
 
-    /** 每种类型各留 MAX_SAMPLES_PER_KIND 条读取来源；启动早期只缓存不直接打日志，避免日志系统未就绪。 */
+    /** 每种类型各留 MAX_SAMPLES_PER_KIND 条读取来源（相同来源只留一条）；启动早期只缓存不直接打日志，避免日志系统未就绪。 */
     private static void sample(String kind) {
-        synchronized (sSamples) {
-            int same = 0;
-            for (String existing : sSamples) {
-                if (existing.startsWith(kind + "@")) {
-                    same++;
-                }
-            }
-            if (same >= MAX_SAMPLES_PER_KIND) {
-                return;
-            }
-        }
         StringBuilder callers = new StringBuilder();
         for (StackTraceElement e : callerFrames(4)) {
             if (callers.length() > 0) {
@@ -176,7 +164,21 @@ public class VersionHook {
             }
             callers.append(e.getClassName()).append('.').append(e.getMethodName());
         }
-        sSamples.add(kind + "@" + callers);
+        String entry = kind + "@" + callers;
+        synchronized (sSamples) {
+            if (sSamples.contains(entry)) {
+                return;
+            }
+            int same = 0;
+            for (String existing : sSamples) {
+                if (existing.startsWith(kind + "@")) {
+                    same++;
+                }
+            }
+            if (same < MAX_SAMPLES_PER_KIND) {
+                sSamples.add(entry);
+            }
+        }
     }
 
     /**
