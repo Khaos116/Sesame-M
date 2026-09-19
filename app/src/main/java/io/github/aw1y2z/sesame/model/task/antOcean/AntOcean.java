@@ -896,6 +896,10 @@ public class AntOcean extends ModelTask {
 
     // 海洋答题任务
     private static Boolean answerQuestion() {
+        // 与海洋其它任务一致：当天成功过就不再重复请求（服务端的 answered 只作兜底）
+        if (Status.hasFlagToday("Ocean::ANSWER_QUESTION")) {
+            return false;
+        }
         try {
             JSONObject jo = new JSONObject(AntOceanRpcCall.getQuestion());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -917,6 +921,7 @@ public class AntOcean extends ModelTask {
             jo = new JSONObject(AntOceanRpcCall.submitAnswer(answer, questionId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Log.record("海洋答题成功");
+                Status.flagToday("Ocean::ANSWER_QUESTION");
                 return true;
             }
         } catch (Throwable t) {

@@ -210,7 +210,7 @@ public class BaseModel extends Model {
                 // 捕获JSON解析异常，打印日志而不是崩溃
                 e.printStackTrace();
                 // 可选：记录错误日志，或跳过当前无效的JSON字符串
-                Log.debug("JSON解析失败，字符串内容：" + taskRpcRequestMethodAndData);
+                Log.debug("JSON解析失败，字符串内容：" + StringUtil.truncate(taskRpcRequestMethodAndData, 200));
             }
         }
     }

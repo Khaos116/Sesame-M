@@ -82,6 +82,25 @@ public class StringUtil {
     }
 
     /**
+     * 截断超长文本（用于日志）：超过 maxLength 时保留前 maxLength 字并附上总字数。
+     * <p>
+     * 不做空白压缩，避免把 JSON、多行文案挤成一行而丢失结构；要压缩空白请先自行处理。
+     * maxLength 非正数时原样返回，防止 substring 越界。
+     *
+     * @param text      原文本；为 null 时返回空串
+     * @param maxLength 保留的最大字数
+     */
+    public static String truncate(String text, int maxLength) {
+        if (text == null) {
+            return "";
+        }
+        if (maxLength <= 0 || text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength) + "…(共" + text.length() + "字)";
+    }
+
+    /**
      * 剥掉标题末尾的 "(n/N)" 次数后缀，如「XX(2/10)」→「XX」。
      * <p>权限类任务上报时标题会被拼上次数后缀，而黑名单检查用的是纯标题；
      * 不归一化会导致写进黑名单的键永远匹配不上、拉黑失效。

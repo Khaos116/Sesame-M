@@ -3791,7 +3791,7 @@ public class AntFarm extends ModelTask {
             // 最终发送早安消息
             JSONObject resp4 = new JSONObject(AntFarmRpcCall.deliverMsgSend(ownerGroupId, userIds, content, deliverId));
             if (MessageUtil.checkMemo(TAG, resp4)) {
-                Log.farm("家庭任务🌈[道早安]" + content);
+                Log.farm("家庭任务🌈[道早安]" + StringUtil.truncate(content, 200));
                 Status.flagToday("antFarm::deliverMsgSend");
             }
         } catch (Throwable t) {

@@ -81,7 +81,9 @@ public class PermissionUtil {
             if (context == null) {
                 return false;
             }
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // 必须 catch Throwable：模块 App 自己的进程里没有 libxposed，触达 ApplicationHook
+            // 抛的是 NoClassDefFoundError（Error），catch Exception 接不住会把界面搞崩
             return false;
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -132,7 +134,8 @@ public class PermissionUtil {
             if (context == null) {
                 return false;
             }
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // 同 checkAlarmPermissions：ApplicationHook 在 App 进程里会抛 Error，必须 catch Throwable
             return false;
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

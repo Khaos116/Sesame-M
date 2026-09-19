@@ -13,6 +13,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.EmptyModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.StringModelField;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.ToastUtil;
 
 import java.util.List;
@@ -119,11 +120,7 @@ public class AnswerAI extends Model {
         if (text == null) {
             return "";
         }
-        String result = text.replaceAll("\\s+", " ").trim();
-        if (result.length() <= maxLength) {
-            return result;
-        }
-        return result.substring(0, maxLength) + "…(共" + result.length() + "字)";
+        return StringUtil.truncate(text.replaceAll("\\s+", " ").trim(), maxLength);
     }
 
     /**

@@ -46,7 +46,7 @@ public class TokenConfig {
     // ecoLife
     private final Set<Map<String, String> > dishImageList = new HashSet<>();
     
-    public static String getCustomWalkPathId(Set<String> customWalkPathIdListSet) {
+    public static synchronized String getCustomWalkPathId(Set<String> customWalkPathIdListSet) {
         String pathId = INSTANCE.customWalkPathIdQueue.poll();
         if (pathId != null) {
             save();
@@ -59,12 +59,12 @@ public class TokenConfig {
         return null;
     }
     
-    public static Boolean addCustomWalkPathIdQueue(String pathId) {
+    public static synchronized Boolean addCustomWalkPathIdQueue(String pathId) {
         INSTANCE.customWalkPathIdQueue.add(pathId);
         return save();
     }
     
-    public static Boolean clearCustomWalkPathIdQueue() {
+    public static synchronized Boolean clearCustomWalkPathIdQueue() {
         TokenConfig tokenConfig = INSTANCE;
         if (!tokenConfig.customWalkPathIdQueue.isEmpty()) {
             tokenConfig.customWalkPathIdQueue.clear();
@@ -73,13 +73,13 @@ public class TokenConfig {
         return true;
     }
     
-    public static String getAnswer(String question) {
+    public static synchronized String getAnswer(String question) {
         Calendar calendar = TimeUtil.getToday();
         long timeMillis = calendar.getTimeInMillis();
         return  INSTANCE.answerList.get(timeMillis + "::" + question);
     }
     
-    public static void saveAnswer(String question, String answer) {
+    public static synchronized void saveAnswer(String question, String answer) {
         Calendar todayCalendar = TimeUtil.getToday();
         long todayTimeMillis = todayCalendar.getTimeInMillis();
         long tomorrowTimeMillis = todayTimeMillis + TimeUnit.DAYS.toMillis(1);
@@ -110,7 +110,7 @@ public class TokenConfig {
         save();
     }
     
-    public static Map<String, String> getRandomDishImage() {
+    public static synchronized Map<String, String> getRandomDishImage() {
         List<Map<String, String> > list = new ArrayList<>(INSTANCE.dishImageList);
         if (list.isEmpty()) {
             return null;
@@ -120,10 +120,12 @@ public class TokenConfig {
         return checkDishImage(dishImage) ? dishImage : null;
     }
     
-    public static void saveDishImage(Map<String, String> dishImage) {
+    public static synchronized void saveDishImage(Map<String, String> dishImage) {
         if (!checkDishImage(dishImage)) {
             return;
         }
+        // 先按磁盘内容刷新：「清空光盘行动图片」在 UI 进程执行，不重读会把刚清掉的又写回去
+        reloadDishImageList();
         TokenConfig tokenConfig = INSTANCE;
         if (!tokenConfig.dishImageList.contains(dishImage)) {
             tokenConfig.dishImageList.add(dishImage);
@@ -131,12 +133,13 @@ public class TokenConfig {
         }
     }
     
-    public static int getDishImageCount() {
-        load();
+    public static synchronized int getDishImageCount() {
+        // 以磁盘为准：UI 询问数量时本进程的副本可能已被另一进程的「清空」改过
+        reloadDishImageList();
         return INSTANCE.dishImageList.size();
     }
     
-    public static Boolean clearDishImage() {
+    public static synchronized Boolean clearDishImage() {
         TokenConfig.INSTANCE.dishImageList.clear();
         return save();
     }
@@ -152,7 +155,36 @@ public class TokenConfig {
                && !Objects.equals(beforeMealsImageId, afterMealsImageId);
     }
     
-    public static Boolean save() {
+    /**
+     * 用磁盘上的内容刷新内存里的 dishImageList。
+     * <p>
+     * 「清空光盘行动图片」由模块 App 的 UI 进程执行，而图片的写入发生在注入进程（支付宝），
+     * 两个进程各持一份内存副本：不重新读盘的话，注入进程后续 save() 会把 UI 侧刚清掉的
+     * 图片又整份写回去，表现为「清空无效」。
+     * <p>
+     * 这里显式 clear + addAll，不依赖 Jackson 更新已有对象时的集合合并语义（后者只增不减）。
+     */
+    private static void reloadDishImageList() {
+        try {
+            File tokenConfigFile = FileUtil.getTokenConfigFile();
+            if (!tokenConfigFile.exists()) {
+                return;
+            }
+            TokenConfig fromDisk = JsonUtil.parseObject(FileUtil.readFromFile(tokenConfigFile), TokenConfig.class);
+            if (fromDisk == null) {
+                return;
+            }
+            Set<Map<String, String>> diskList = fromDisk.getDishImageList();
+            INSTANCE.dishImageList.clear();
+            if (diskList != null) {
+                INSTANCE.dishImageList.addAll(diskList);
+            }
+        } catch (Throwable t) {
+            Log.printStackTrace(TAG, t);
+        }
+    }
+    
+    public static synchronized Boolean save() {
         Log.record("保存Token配置");
         return FileUtil.setTokenConfigFile(toSaveStr());
     }
