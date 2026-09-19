@@ -115,8 +115,9 @@ public class ExtensionsHandle {
             String treeName = exchangeableTree.getString("treeName");
             String tips = "不可合种";
             if (exchangeableTree.optBoolean("canCoexchange", false)) {
-                tips = "可以合种-合种类型："
-                        + exchangeableTree.getJSONObject("extendInfo").getString("cooperate_template_id_list");
+                JSONObject extendInfo = exchangeableTree.optJSONObject("extendInfo");
+                String cooperateTypes = extendInfo == null ? "" : extendInfo.optString("cooperate_template_id_list", "");
+                tips = StringUtil.isEmpty(cooperateTypes) ? "可以合种" : "可以合种-合种类型：" + cooperateTypes;
             }
             Log.forest("新树上苗🌱[" + region + "-" + treeName + "]#" + currentBudget + "株-" + tips);
         } catch (Throwable t) {

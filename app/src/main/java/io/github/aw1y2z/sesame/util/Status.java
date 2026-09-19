@@ -21,6 +21,9 @@ public class Status {
     private static final String TAG = Status.class.getSimpleName();
     
     public static final Status INSTANCE = new Status();
+
+    /** 帮喂好友/家庭成员：当日总次数已达上限（服务端返回 resultCode=391），全局标记 */
+    public static final String FLAG_FEED_FRIEND_ANIMAL_LIMIT = "farm::feedFriendAnimalLimit";
     
     // forest
     private final Map<String, Integer> waterFriendLogList = new HashMap<>();
@@ -510,7 +513,7 @@ public class Status {
     }
     
     public static synchronized Boolean canFeedFriendToday(String id, int countLimit) {
-        return !hasFlagToday("farm::feedFriendAnimalLimit") && getFeedFriendCountToday(id) < countLimit;
+        return !hasFlagToday(FLAG_FEED_FRIEND_ANIMAL_LIMIT) && getFeedFriendCountToday(id) < countLimit;
     }
     
     public static synchronized void feedFriendToday(String id) {

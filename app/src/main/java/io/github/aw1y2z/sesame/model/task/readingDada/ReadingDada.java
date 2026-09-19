@@ -37,10 +37,12 @@ public class ReadingDada {
             JSONObject jo = new JSONObject(s);
             if ("200".equals(jo.getString("resultCode"))) {
                 JSONArray jsonArray = jo.getJSONArray("options");
-                String answer = AnswerAI.getAnswer(jo.getString("title"), JsonUtil.jsonArrayToList(jsonArray));
-                if (answer == null || answer.isEmpty()) {
-                    answer = jsonArray.getString(0);
+                if (jsonArray.length() == 0) {
+                    Log.record("答题跳过：选项为空");
+                    return false;
                 }
+                // title 用 optString：缺该字段时不应让整条答题失败（AI 仍可凭选项作答）
+                String answer = AnswerAI.getAnswer(jo.optString("title"), JsonUtil.jsonArrayToList(jsonArray));
                 s = ReadingDadaRpcCall.submitAnswer(activityId, outBizId, jo.getString("questionId"), answer);
                 jo = new JSONObject(s);
                 if ("200".equals(jo.getString("resultCode"))) {

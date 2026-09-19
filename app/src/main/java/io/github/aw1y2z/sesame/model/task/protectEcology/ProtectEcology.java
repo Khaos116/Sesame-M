@@ -215,12 +215,23 @@ public class ProtectEcology extends ModelTask {
             jo = jo.getJSONObject("cooperatePlant");
             String name = jo.getString("name");
             CooperationIdMap.add(cooperationId, name);
+            Integer waterNum = cooperateWaterList.getValue().get(cooperationId);
+            if (waterNum == null) {
+                // 未在「合种 | 日浇水量列表」里勾选该合种，静默跳过
+                return;
+            }
             int waterDayLimit = jo.getInt("waterDayLimit");
             int energyCount = getEnergyCount(userId, cooperationId, waterDayLimit);
-            if (energyCount > 0 && energyCount <= userCurrentEnergy) {
-                if (cooperateWater(userId, cooperationId, energyCount, name)) {
-                    TimeUtil.sleep(300);
-                }
+            if (energyCount <= 0) {
+                Log.record("合种浇水🚿跳过[" + name + "]#可浇量不足10g(日目标" + waterNum + "g,当日上限" + waterDayLimit + "g)");
+                return;
+            }
+            if (energyCount > userCurrentEnergy) {
+                Log.record("合种浇水🚿跳过[" + name + "]#能量不足,需" + energyCount + "g,当前" + userCurrentEnergy + "g");
+                return;
+            }
+            if (cooperateWater(userId, cooperationId, energyCount, name)) {
+                TimeUtil.sleep(300);
             }
         }
         catch (Throwable t) {
@@ -248,12 +259,13 @@ public class ProtectEcology extends ModelTask {
         if (waterNum == null) {
             return 0;
         }
+        // 本次可浇量取三者最小值：日目标剩余、当日上限、总量上限剩余
         int dayWater = getEnergySummation("D", cooperationId, userId);
-        int allWater = getEnergySummation("A", cooperationId, userId);
         int energyCount = Math.min(waterNum - dayWater, waterDayLimit);
         Integer limitNum = cooperateWaterTotalLimitList.getValue().get(cooperationId);
         if (limitNum != null) {
-            energyCount = Math.min(waterNum, limitNum - allWater);
+            int allWater = getEnergySummation("A", cooperationId, userId);
+            energyCount = Math.min(energyCount, limitNum - allWater);
         }
         return energyCount < 10 ? 0 : energyCount;
     }

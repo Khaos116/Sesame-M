@@ -122,20 +122,27 @@ public class Log {
                     .build()).build();
 
     /**
+     * 当前账号简称（账号1、账号2…），由 {@code UserIdMap} 在 uid 变化时写入；未知时为 null。
+     * <p>刻意缓存成普通字段，而不是每条日志回头去问 UserIdMap：本模块的 UI 进程里没有
+     * libxposed API，而 UserIdMap 引用了 ApplicationHook（继承 XposedModule），在 UI 进程里
+     * 触达它可能抛 NoClassDefFoundError 把界面搞崩。日志是全项目最高频的调用，
+     * 不能背这个依赖。
+     */
+    private static volatile String accountLabel = null;
+
+    public static void setAccountLabel(String label) {
+        accountLabel = StringUtil.isEmpty(label) ? null : label;
+    }
+
+    /**
      * 统一日志写入口：在消息前加上账号简称（账号1、账号2…），便于多账号下区分日志来源。
      * <p>序号由 {@code UserIdMap} 首次出现时分配并持久化，与配置页显示的账号序号一致；
      * 日志里**不写 uid、也不写昵称**，避免日志被分享/导出时把账号信息带出去。
-     * <p>简称在调用线程读取；uid 为空时保持原样。查看器按「时间 tag: 正文」解析，
-     * 前缀会落在正文里，不影响解析。
+     * <p>查看器按「时间 tag: 正文」解析，前缀会落在正文里，不影响解析。
      */
     private static String withUser(String msg) {
-        try {
-            String label = io.github.aw1y2z.sesame.util.idMap.UserIdMap.getAccountLabel(
-                    io.github.aw1y2z.sesame.util.idMap.UserIdMap.getCurrentUid());
-            return StringUtil.isEmpty(label) ? msg : "[" + label + "]" + msg;
-        } catch (Throwable t) {
-            return msg;
-        }
+        String label = accountLabel;
+        return label == null ? msg : "[" + label + "]" + msg;
     }
 
     /**

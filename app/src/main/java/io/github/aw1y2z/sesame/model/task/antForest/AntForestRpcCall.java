@@ -14,7 +14,6 @@ import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -622,25 +621,14 @@ public class AntForestRpcCall {
         return ApplicationHook.requestString("com.alipay.antpwgrowth.flowHubEntrance", requestData);
     }
     
-    //组队合种浇水
-    //{"energyCount":128,"sToken":"1764761409764_57219282","source":"chInfo_ch_appcenter__chsub_9patch","teamId":"0ar6zza141pa1x11ghiy01bkiwtb5500"}
-    public static String partnerteamWater(String partnerteamWater, int partnerteamWaterNum) {
-        //随机一个8位16进制数
-        SecureRandom sr = new SecureRandom();
-        String hex8 = String.format("%08x", sr.nextInt());
-        String sToken = System.currentTimeMillis() + "_" + hex8;
-        String requestData = "[{\"energyCount\":" + partnerteamWaterNum + ",\"sToken\":\"" + sToken + "\",\"source\":\"chInfo_ch_appcenter__chsub_9patch\",\"teamId\":\"" + partnerteamWater + "\"}]";
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.teamWater", requestData);
-    }
-    
     //真爱合种查询
     public static String loveteamHome() {
         String requestData = "[{\"source\":\"chInfo_ch_appcenter__chsub_9patch\"}]";
         return ApplicationHook.requestString("alipay.greenmatrix.rpc.h5.love.loveHome", requestData);
     }
     
-    public static String loveteamWater(String loveteamWater, int loveteamWaterNum) {
-        String requestData = "[{\"donateNum\":" + loveteamWaterNum + ",\"source\":\"chInfo_ch_appcenter__chsub_9patch" + "\",\"teamId\":\"" + loveteamWater + "\"}]";
+    public static String loveteamWater(String teamId, int waterNum) {
+        String requestData = "[{\"donateNum\":" + waterNum + ",\"source\":\"chInfo_ch_appcenter__chsub_9patch" + "\",\"teamId\":\"" + teamId + "\"}]";
         return ApplicationHook.requestString("alipay.greenmatrix.rpc.h5.love.teamWater", requestData);
     }
     
