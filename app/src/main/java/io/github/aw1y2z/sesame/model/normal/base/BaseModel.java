@@ -217,7 +217,7 @@ public class BaseModel extends Model {
             catch (Throwable e) {
                 // 捕获异常，打印日志而不是崩溃
                 Log.printStackTrace(e);
-                Log.debug("JSON解析失败，字符串内容：" + taskRpcRequestMethodAndData);
+                Log.debug("JSON解析失败，字符串内容：" + StringUtil.truncate(taskRpcRequestMethodAndData, 200));
             }
         }
     }

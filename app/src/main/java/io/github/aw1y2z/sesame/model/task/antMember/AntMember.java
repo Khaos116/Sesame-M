@@ -726,7 +726,9 @@ public class AntMember extends ModelTask {
                     // 提交答案
                     JSONObject pushJo = MyUtils.newJSONObject(AntMemberRpcCall.pushDailyQuizAnswer(behaviorId, bizDate, answerId, questionId, "RIGHT"));
                     if (MessageUtil.checkResultCode(TAG, pushJo)) {
-                        Log.other("攒芝麻分🎖️[每日答题成功] " + questionContent + " | 答案=" + answerContent + "(" + answerId + ")" + (subTitle.isEmpty() ? "" : " | " + subTitle));
+                        Log.other("攒芝麻分🎖️[每日答题成功] " + StringUtil.truncate(questionContent, 200)
+                                + " | 答案=" + StringUtil.truncate(answerContent, 200) + "(" + answerId + ")"
+                                + (subTitle.isEmpty() ? "" : " | " + subTitle));
                     }
                 }
                 

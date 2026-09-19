@@ -62,7 +62,10 @@ public class ExtensionsHandle {
             return Class.forName("io.github.aw1y2z.sesame.model.extensions.ExtensionsHandleAlpha")
                     .getMethod("handleAlphaRequest", String.class, String.class, Object.class)
                     .invoke(null, type, fun, data);
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // catch Throwable 而非 Exception：类缺失/构造失败/静态初始化异常都可能是 Error
+            // （ExtensionAlpha 未打包、字段初始化抛 NoClassDefFoundError 等），
+            // 调用方 AntSports.walk 等没有外层 try，漏出去会打断任务主循环
             return null;
         }
     }

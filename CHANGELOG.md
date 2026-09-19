@@ -5,6 +5,7 @@
 
 ## 2026-09-19
 
+- merge：再次合并 `origin/MIUIX-api102`（d51b841f → 93140f06，1 个上游提交“修复光盘行动图片清空失效并收紧异常捕获与日志截断”）到 `my_dev`，2 个文件冲突（`TokenConfig`、`BaseModel`）；三项必查无问题，十项回归通过，`GeminiAI` 未受影响。详见详细记录。
 - merge：合并 `origin/MIUIX-api102`（4f975462 → d51b841f，7 个上游提交）到 `my_dev`，9 个文件冲突（含上游删除 `GeminiAI`/`TongyiAI`、新增 `CustomAI` 通用 AI 答题）；三项必查、九项回归 + `check_standalone_no_xposed_class` 通过。详见详细记录。
 - fix：**恢复被合并误删的 `GeminiAI`**（海外用户正在使用，不能删除）。`GeminiAI`/`AnswerAIInterface`/`audit_regressions` 的 `GeminiAI` 检查及 `Answers.java.in` 全部恢复；`AnswerAI` 重新提供「AI类型」选项（字段 id 沿用 `useGeminiAI`，`GEMINI`=1，令牌沿用 `useGeminiAIToken`，已选 Gemini 的配置不丢），`CustomAI` 实现 `AnswerAIInterface` 作为另一选项（`CUSTOM`=0，占旧通义千问的 0 号位，通义千问不恢复）。规则写入 `doc/MyFix.md` 第 5 条与 `AGENTS.md`，合并时不得再删。「测试响应」按钮改为按当前选中的 AI 类型测试（选 GEMINI 测 Gemini 令牌，否则测自定义AI）。按钮文案改为「AI答题 | 测试响应」；`AnswerAI.boot()` 在「AI答」未开启时直接返回，不再打印“接口地址/模型名/令牌未填齐”（上游原有的日志噪音）。两类 AI 字段仍平铺显示，未做按类型折叠。
 - fix（未提交）：补看遗漏的第三个账号日报 `rpc-failures.2026-09-18.2088942846628038.json`（50 次）：① 好友浇水 `transferEnergy` `ENERGY_INSUFFICIENT` 36 次——原先落入 default 分支继续浇下一个好友，现在自己能量不足即结束本轮浇水；② 1009“系统繁忙”（`neverland.queryItemList`）不再拉起支付宝，`showVerification()` 只在消息含“验证”/`cheating traffic` 时触发（暂停 24 小时的旧行为不变）。
@@ -97,6 +98,19 @@
 - `6a31c9e1` feat: 新增全局自动切号功能（账号轮询，最小间隔2小时）
 
 ## 详细记录（自 doc/MyFix.md 迁移）
+
+### 2026-09-19（续）：合并 MIUIX-api102 至 93140f06
+
+上游 1 个提交：光盘行动图片「清空」跨进程失效修复（`TokenConfig` 读取数量前先从磁盘重载）、异常捕获收紧、日志用新增的 `StringUtil.truncate` 截断（`BaseModel`、`AntMember`、`AntOcean`、`AntFarm`、`AnswerAI`），`PermissionUtil`、`ExtensionsHandle` 小改。
+
+冲突及取舍：
+- `TokenConfig`：my_dev 在 `getDishImageCount` 前新增了 `writeDishImage`/`writeDishImageWithRandomIds`（对齐 GR2026），上游把 `getDishImageCount` 改为 `synchronized` 并先 `reloadDishImageList()`。两侧改动位置相邻，属假冲突：保留 my_dev 两个新方法，`getDishImageCount` 取上游写法。
+- `BaseModel`：上游 `catch (JSONException e)` + `e.printStackTrace()` + 截断日志；my_dev 已把解析换成 `MyUtils.newJSONObject`，不再抛 `JSONException`，若照搬会因“从未抛出的受检异常”编译失败。保留 `catch (Throwable e)` + `Log.printStackTrace(e)`，日志采用上游的 `StringUtil.truncate(..., 200)`。
+- 自动合并的 `AnswerAI`（`trimForLog` 改用 `StringUtil.truncate`）已核对：`GeminiAI`/`useGeminiAI`/`useGeminiAIToken` 与 AI 类型选项完整保留；`AntMember` 里 `kuaidiForestAward` 改动保留。
+
+三项必查（对上游新增行做了检索）：GMT+8——无日历/日期/时区代码；JSON 创建——无直接 `new JSONObject(raw)`；JSON 读取——无裸 `.get*()`，无对 `opt*` 结果的未判空链式调用。无新增例外。
+
+验证：`:app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin` 通过；十项回归（含 `check_standalone_no_xposed_class.py`）全部通过。未真机验证、未打包。
 
 ### 2026-09-19（续）：合并 MIUIX-api102 至 d51b841f
 
