@@ -99,10 +99,21 @@ public class AnswerAI extends Model {
      * 网络请求放到子线程，避免在主线程阻塞或抛 NetworkOnMainThreadException。
      */
     private void testConnection() {
-        CustomAI tempAI = new CustomAI(customAIUrl.getValue(), customAIModel.getValue(), customAIKey.getValue(), customAIMaxTokens.getValue());
-        if (!tempAI.isConfigured()) {
-            showToast("请先填写接口地址、模型名与令牌");
-            return;
+        // 测试当前选中的 AI 类型：选了 GEMINI 就测 Gemini，否则测自定义AI
+        final AnswerAIInterface tempAI;
+        if (aiType.getValue() == AIType.GEMINI) {
+            if (setGeminiAIToken.getValue().trim().isEmpty()) {
+                showToast("请先填写 GeminiAI 令牌");
+                return;
+            }
+            tempAI = new GeminiAI(setGeminiAIToken.getValue());
+        } else {
+            CustomAI custom = new CustomAI(customAIUrl.getValue(), customAIModel.getValue(), customAIKey.getValue(), customAIMaxTokens.getValue());
+            if (!custom.isConfigured()) {
+                showToast("请先填写接口地址、模型名与令牌");
+                return;
+            }
+            tempAI = custom;
         }
         showToast("正在测试AI接口...");
         new Thread(() -> {
