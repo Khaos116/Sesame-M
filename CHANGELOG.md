@@ -5,6 +5,10 @@
 
 ## 2026-09-19
 
+- fix（未提交）：庄园 `AntFarm.run()`、运动 `AntSports.run()` 的各子任务分别隔离（新增 `step()`），单个子任务抛出异常只记日志并跳过自己，不再中断本轮后续任务。
+- feat（未提交）：运动同步步数——当前步数超过 18000 不再同步（readDailyStep hook 与主动推送均跳过）。
+- fix（未提交）：运动同步步数不再被异常打断——`steps.query` 查询失败/被保护暂停时不再让整轮运动任务提前 return，仍继续推送步数；推送遇到临时异常不再当天放弃，下一轮重试（仅接口不存在才标记当天跳过）。
+- fix（未提交）：`RpcRequestGuard` 请求键对 `enterFarm` 补充 `userId`/`farmId`，好友庄园 enterFarm 失败（繁忙/网络）不再暂停自己庄园的 enterFarm 导致整轮庄园任务被跳过；补充回归。
 - merge `6b8c1236`：合并 `origin/MIUIX-api102`（至 4f975462）到 `my_dev`，解决 20 个文件冲突；修复合并后 `AntFarm.competition()` 在 20:01 后跳过分支 `return;` 缺返回值的编译错误（改为 `return true;`），Java/Kotlin 编译通过。
 
 ## 2026-09-17

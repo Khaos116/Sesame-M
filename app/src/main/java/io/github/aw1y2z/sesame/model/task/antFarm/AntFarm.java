@@ -215,217 +215,274 @@ public class AntFarm extends ModelTask {
             }
 
             //初始任务列表
-            if (!Status.hasFlagToday("BlackList::initAntFarm")) {
-                initAntFarmTaskListMap(AutoAntFarmDoFarmTaskList.getValue(), AutoAntFarmDrawMachineTaskList.getValue(), drawMachine.getValue());
-                Status.flagToday("BlackList::initAntFarm");
-            }
+            step("初始任务列表", () -> {
+                if (!Status.hasFlagToday("BlackList::initAntFarm")) {
+                    initAntFarmTaskListMap(AutoAntFarmDoFarmTaskList.getValue(), AutoAntFarmDrawMachineTaskList.getValue(), drawMachine.getValue());
+                    Status.flagToday("BlackList::initAntFarm");
+                }
+            });
 
-            if (rewardFriend.getValue()) {
-                rewardFriend();
-            }
+            step("奖励好友", () -> {
+                if (rewardFriend.getValue()) {
+                    rewardFriend();
+                }
+            });
 
-            if (sendBackAnimalType.getValue() != SendBackAnimalType.NONE) {
-                sendBackAnimal();
-            }
+            step("遣返小鸡", () -> {
+                if (sendBackAnimalType.getValue() != SendBackAnimalType.NONE) {
+                    sendBackAnimal();
+                }
+            });
 
-            if (!AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)) {
-                if ("ORCHARD".equals(ownerAnimal.locationType)) {
-                    Log.farm("庄园通知📣[你家的小鸡给拉去除草了！]");
-                    JSONObject joRecallAnimal = MyUtils.newJSONObject(AntFarmRpcCall.orchardRecallAnimal(ownerAnimal.animalId, ownerAnimal.currentFarmMasterUserId));
-                    int manureCount = joRecallAnimal.optInt("manureCount");
-                    Log.farm("召回小鸡📣收获[" + manureCount + "g肥料]");
-                } else {
-                    syncAnimalStatusAtOtherFarm(ownerAnimal.currentFarmId);
-                    boolean guest = false;
-                    switch (SubAnimalType.valueOf(ownerAnimal.subAnimalType)) {
-                        case GUEST:
-                            guest = true;
-                            Log.record("小鸡到好友家去做客了");
-                            break;
-                        case NORMAL:
-                            Log.record("小鸡太饿，离家出走了");
-                            break;
-                        case PIRATE:
-                            Log.record("小鸡外出探险了");
-                            break;
-                        case WORK:
-                            Log.record("小鸡出去工作啦");
-                            break;
-                        default:
-                            Log.record("小鸡不在庄园" + " " + ownerAnimal.subAnimalType);
-                    }
+            step("小鸡不在家处理", () -> {
+                if (!AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)) {
+                    if ("ORCHARD".equals(ownerAnimal.locationType)) {
+                        Log.farm("庄园通知📣[你家的小鸡给拉去除草了！]");
+                        JSONObject joRecallAnimal = MyUtils.newJSONObject(AntFarmRpcCall.orchardRecallAnimal(ownerAnimal.animalId, ownerAnimal.currentFarmMasterUserId));
+                        int manureCount = joRecallAnimal.optInt("manureCount");
+                        Log.farm("召回小鸡📣收获[" + manureCount + "g肥料]");
+                    } else {
+                        syncAnimalStatusAtOtherFarm(ownerAnimal.currentFarmId);
+                        boolean guest = false;
+                        switch (SubAnimalType.valueOf(ownerAnimal.subAnimalType)) {
+                            case GUEST:
+                                guest = true;
+                                Log.record("小鸡到好友家去做客了");
+                                break;
+                            case NORMAL:
+                                Log.record("小鸡太饿，离家出走了");
+                                break;
+                            case PIRATE:
+                                Log.record("小鸡外出探险了");
+                                break;
+                            case WORK:
+                                Log.record("小鸡出去工作啦");
+                                break;
+                            default:
+                                Log.record("小鸡不在庄园" + " " + ownerAnimal.subAnimalType);
+                        }
 
-                    boolean hungry = false;
-                    String userName = UserIdMap.getMaskName(AntFarmRpcCall.farmId2UserId(ownerAnimal.currentFarmId));
-                    switch (AnimalFeedStatus.valueOf(ownerAnimal.animalFeedStatus)) {
-                        case HUNGRY:
-                            hungry = true;
-                            Log.record("小鸡在[" + userName + "]的庄园里挨饿");
-                            break;
+                        boolean hungry = false;
+                        String userName = UserIdMap.getMaskName(AntFarmRpcCall.farmId2UserId(ownerAnimal.currentFarmId));
+                        switch (AnimalFeedStatus.valueOf(ownerAnimal.animalFeedStatus)) {
+                            case HUNGRY:
+                                hungry = true;
+                                Log.record("小鸡在[" + userName + "]的庄园里挨饿");
+                                break;
 
-                        case EATING:
-                            Log.record("小鸡在[" + userName + "]的庄园里吃得津津有味");
-                            break;
-                    }
+                            case EATING:
+                                Log.record("小鸡在[" + userName + "]的庄园里吃得津津有味");
+                                break;
+                        }
 
-                    boolean recall = false;
-                    switch ((int) recallAnimalType.getValue()) {
-                        case RecallAnimalType.ALWAYS:
-                            recall = true;
-                            break;
-                        case RecallAnimalType.WHEN_THIEF:
-                            recall = !guest;
-                            break;
-                        case RecallAnimalType.WHEN_HUNGRY:
-                            recall = hungry;
-                            break;
-                    }
-                    if (recall) {
-                        recallAnimal(ownerAnimal.animalId, ownerAnimal.currentFarmId, ownerFarmId, userName);
-                        syncAnimalStatus(ownerFarmId);
+                        boolean recall = false;
+                        switch ((int) recallAnimalType.getValue()) {
+                            case RecallAnimalType.ALWAYS:
+                                recall = true;
+                                break;
+                            case RecallAnimalType.WHEN_THIEF:
+                                recall = !guest;
+                                break;
+                            case RecallAnimalType.WHEN_HUNGRY:
+                                recall = hungry;
+                                break;
+                        }
+                        if (recall) {
+                            recallAnimal(ownerAnimal.animalId, ownerAnimal.currentFarmId, ownerFarmId, userName);
+                            syncAnimalStatus(ownerFarmId);
+                        }
                     }
                 }
-            }
+            });
 
-            if (receiveFarmToolReward.getValue()) {
-                listFarmTool();
-                receiveToolTaskReward();
-            }
+            step("道具奖励", () -> {
+                if (receiveFarmToolReward.getValue()) {
+                    listFarmTool();
+                    receiveToolTaskReward();
+                }
+            });
 
-            if (recordFarmGame.getValue()) {
-                long currentTimeMillis = System.currentTimeMillis();
-                for (String time : farmGameTime.getValue()) {
-                    if (TimeUtil.checkInTimeRange(currentTimeMillis, time)) {
-                        recordFarmGame(GameType.starGame);
-                        recordFarmGame(GameType.jumpGame);
-                        recordFarmGame(GameType.flyGame);
-                        recordFarmGame(GameType.hitGame);
-                        break;
+            step("庄园游戏", () -> {
+                if (recordFarmGame.getValue()) {
+                    long currentTimeMillis = System.currentTimeMillis();
+                    for (String time : farmGameTime.getValue()) {
+                        if (TimeUtil.checkInTimeRange(currentTimeMillis, time)) {
+                            recordFarmGame(GameType.starGame);
+                            recordFarmGame(GameType.jumpGame);
+                            recordFarmGame(GameType.flyGame);
+                            recordFarmGame(GameType.hitGame);
+                            break;
+                        }
                     }
                 }
-            }
+            });
 
-            if (gameCenterBuyMallItem.getValue()) {
-                gameCenterBuyMallItem();
-            }
-
-            if (kitchen.getValue()) {
-                collectDailyFoodMaterial(ownerUserId);
-                collectDailyLimitedFoodMaterial();
-                // 新增：判断小鸡是否在睡觉，如果在睡觉则跳过厨房操作
-                if (AnimalFeedStatus.SLEEPY.name().equals(ownerAnimal.animalFeedStatus)) {
-                    Log.record("小鸡正在睡觉🛌，跳过小鸡厨房👨🏻‍🍳制作");
-                } else {
-                    cook(ownerUserId);
+            step("游戏中心兑换", () -> {
+                if (gameCenterBuyMallItem.getValue()) {
+                    gameCenterBuyMallItem();
                 }
-            }
+            });
 
-            if (chickenDiary.getValue()) {
-                queryChickenDiary("");
-                queryChickenDiaryList();
-            }
-
-            if (useNewEggTool.getValue()) {
-                useFarmTool(ownerFarmId, ToolType.NEWEGGTOOL);
-                syncAnimalStatus(ownerFarmId);
-            }
-
-            if (harvestProduce.getValue() && benevolenceScore >= 1) {
-                Log.record("有可收取的爱心鸡蛋");
-                harvestProduce(ownerFarmId);
-            }
-
-            if (competition.getValue()) {
-                if (!competition()) {
-                    // 排位赛不存在时，fallback 到公益捐蛋
-                    if (donationType.getValue() != DonationType.ZERO) {
-                        donation();
+            step("小鸡厨房", () -> {
+                if (kitchen.getValue()) {
+                    collectDailyFoodMaterial(ownerUserId);
+                    collectDailyLimitedFoodMaterial();
+                    // 新增：判断小鸡是否在睡觉，如果在睡觉则跳过厨房操作
+                    if (AnimalFeedStatus.SLEEPY.name().equals(ownerAnimal.animalFeedStatus)) {
+                        Log.record("小鸡正在睡觉🛌，跳过小鸡厨房👨🏻‍🍳制作");
+                    } else {
+                        cook(ownerUserId);
                     }
                 }
-            } else if (donationType.getValue() != DonationType.ZERO) {
-                donation();
-            }
+            });
 
-            if (receiveFarmTaskAward.getValue()) {
-                listFarmTask(TaskStatus.TODO);
-                listFarmTask(TaskStatus.FINISHED);
-            }
-
-            if (AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)) {
-                if (AnimalFeedStatus.HUNGRY.name().equals(ownerAnimal.animalFeedStatus)) {
-                    Log.record("小鸡在挨饿");
-                    if (feedAnimal.getValue()) {
-                        feedAnimal(ownerFarmId);
-                    }
-                } else if (AnimalFeedStatus.EATING.name().equals(ownerAnimal.animalFeedStatus)) {
-                    if (useAccelerateTool.getValue()) {
-                        useAccelerateTool();
-                        TimeUtil.sleep(1000);
-                    }
-                    //使用加饭卡
-                    if (useBigEaterTool.getValue()) {
-                        useFarmTool(ownerFarmId, AntFarm.ToolType.BIG_EATER_TOOL);
-                    }
-                    if (feedAnimal.getValue()) {
-                        autoFeedAnimal();
-                        TimeUtil.sleep(1000);
-                    }
+            step("小鸡日记", () -> {
+                if (chickenDiary.getValue()) {
+                    queryChickenDiary("");
+                    queryChickenDiaryList();
                 }
+            });
 
-                checkUnReceiveTaskAward();
-            }
+            step("新蛋卡", () -> {
+                if (useNewEggTool.getValue()) {
+                    useFarmTool(ownerFarmId, ToolType.NEWEGGTOOL);
+                    syncAnimalStatus(ownerFarmId);
+                }
+            });
+
+            step("收爱心鸡蛋", () -> {
+                if (harvestProduce.getValue() && benevolenceScore >= 1) {
+                    Log.record("有可收取的爱心鸡蛋");
+                    harvestProduce(ownerFarmId);
+                }
+            });
+
+            step("捐蛋", () -> {
+                if (competition.getValue()) {
+                    if (!competition()) {
+                        // 排位赛不存在时，fallback 到公益捐蛋
+                        if (donationType.getValue() != DonationType.ZERO) {
+                            donation();
+                        }
+                    }
+                } else if (donationType.getValue() != DonationType.ZERO) {
+                    donation();
+                }
+            });
+
+            step("饲料任务", () -> {
+                if (receiveFarmTaskAward.getValue()) {
+                    listFarmTask(TaskStatus.TODO);
+                    listFarmTask(TaskStatus.FINISHED);
+                }
+            });
+
+            step("喂鸡", () -> {
+                if (AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)) {
+                    if (AnimalFeedStatus.HUNGRY.name().equals(ownerAnimal.animalFeedStatus)) {
+                        Log.record("小鸡在挨饿");
+                        if (feedAnimal.getValue()) {
+                            feedAnimal(ownerFarmId);
+                        }
+                    } else if (AnimalFeedStatus.EATING.name().equals(ownerAnimal.animalFeedStatus)) {
+                        if (useAccelerateTool.getValue()) {
+                            useAccelerateTool();
+                            TimeUtil.sleep(1000);
+                        }
+                        //使用加饭卡
+                        if (useBigEaterTool.getValue()) {
+                            useFarmTool(ownerFarmId, AntFarm.ToolType.BIG_EATER_TOOL);
+                        }
+                        if (feedAnimal.getValue()) {
+                            autoFeedAnimal();
+                            TimeUtil.sleep(1000);
+                        }
+                    }
+
+                    checkUnReceiveTaskAward();
+                }
+            });
 
             // 小鸡换装
-            if (ornamentsDressUp.getValue()) {
-                ornamentsDressUp();
-            }
+            step("小鸡换装", () -> {
+                if (ornamentsDressUp.getValue()) {
+                    ornamentsDressUp();
+                }
+            });
 
             // 到访小鸡送礼
-            visitAnimal();
+            step("到访小鸡送礼", () -> {
+                visitAnimal();
+            });
 
             // 送麦子
-            visitFriend();
+            step("送麦子", () -> {
+                visitFriend();
+            });
 
             // 帮好友喂鸡
-            if (feedFriendAnimal.getValue()) {
-                feedFriend();
-            }
+            step("帮好友喂鸡", () -> {
+                if (feedFriendAnimal.getValue()) {
+                    feedFriend();
+                }
+            });
 
             // 通知好友赶鸡
-            if (notifyFriendType.getValue() != NotifyFriendType.NONE) {
-                notifyFriend();
-            }
+            step("通知好友赶鸡", () -> {
+                if (notifyFriendType.getValue() != NotifyFriendType.NONE) {
+                    notifyFriend();
+                }
+            });
 
             // 抽抽乐
-            if (drawMachine.getValue()) {
-                drawMachineGroups();
+            step("抽抽乐", () -> {
+                if (drawMachine.getValue()) {
+                    drawMachineGroups();
 
-            }
+                }
+            });
 
             // 雇佣小鸡
-            if (hireAnimalType.getValue() != HireAnimalType.NONE) {
-                hireAnimal();
-            }
+            step("雇佣小鸡", () -> {
+                if (hireAnimalType.getValue() != HireAnimalType.NONE) {
+                    hireAnimal();
+                }
+            });
             
             /*  注释掉有问题的代码
              if (getFeedType.getValue() != GetFeedType.NONE) {
                 letsGetChickenFeedTogether();
             }*/
 
-            if (family.getValue()) {
-                family();
-            }
+            step("家庭", () -> {
+                if (family.getValue()) {
+                    family();
+                }
+            });
 
             // 开宝箱
-            if (drawGameCenterAward.getValue()) {
-                drawGameCenterAward();
-            }
+            step("开宝箱", () -> {
+                if (drawGameCenterAward.getValue()) {
+                    drawGameCenterAward();
+                }
+            });
 
             // 小鸡睡觉&起床
-            animalSleepAndWake();
+            step("小鸡睡觉&起床", () -> {
+                animalSleepAndWake();
+            });
 
         } catch (Throwable t) {
             Log.err(TAG, "AntFarm.start.run err:", t);
+        }
+    }
+
+    // 单个子任务抛异常只跳过自己，不影响 run() 后面的其它庄园任务
+    private void step(String name, Runnable action) {
+        try {
+            action.run();
+        } catch (Throwable t) {
+            Log.err(TAG, "run[" + name + "] err:", t);
         }
     }
 

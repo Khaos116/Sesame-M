@@ -58,6 +58,8 @@ public class AntSports extends ModelTask {
     private static final String TAG = AntSports.class.getSimpleName();
 
     private int tmpStepCount = -1;
+    // 真实步数超过该值就不再同步/篡改
+    private static final int SKIP_SYNC_STEP = 18000;
     private BooleanModelField walk;
     private ChoiceModelField PathThemeMapList;
     private BooleanModelField walkMinimumCompleteCount;
@@ -162,7 +164,7 @@ public class AntSports extends ModelTask {
                     int hour = Integer.parseInt(Log.getFormatTime().split(":")[0]);
                     int originStep = (Integer) param.getResult();
                     int step = tmpStepCount();
-                    if (hour >= earliestSyncStepTime.getValue() && originStep < step) {
+                    if (hour >= earliestSyncStepTime.getValue() && originStep <= SKIP_SYNC_STEP && originStep < step) {
                         param.setResult(step);
                     }
                 }
@@ -187,57 +189,63 @@ public class AntSports extends ModelTask {
         try {
             int hour = Integer.parseInt(Log.getFormatTime().split(":")[0]);
             // 主动推送使用独立标记 sport::syncStepPush，失败/废弃都不再影响 readDailyStep hook
-            if (!Status.hasFlagToday("sport::syncStepPush") && hour >= earliestSyncStepTime.getValue()) {
-                JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep());
-                if (!MessageUtil.checkResultCode(TAG, jo)) {
-                    return;
-                }
-                int stepCount = jo.optInt("stepCount");
-                addChildTask(new ChildModelTask("syncStep", () -> {
-                    int step = tmpStepCount();
-                    if (stepCount < step) {
-                        // a(int, boolean, String) 是【实例方法】。旧实现为两步：
-                        //   XHelpers.callMethod(XHelpers.callStaticMethod(RpcManager.class, "a"), "a", {step, false, "system"})
-                        // 即先用静态无参 a() 取单例，再在该实例上调用；此前误写成 Method.invoke(null, …) 传 null 接收者 → null receiver NPE
-                        try {
-                            ClassLoader classLoader = ApplicationHook.getClassLoader();
-                            if (syncStepByRpcManager(classLoader, step)) {
-                                Toast.show("同步步数🏃🏻‍♂️[" + step + "步]");
-                                Log.other("同步步数🏃🏻‍♂️[" + step + "步]");
-                                Status.flagToday("sport::syncStepPush");
-                            } else {
-                                Log.record("同步运动步数失败:" + step);
+            step("同步步数", () -> {
+                if (!Status.hasFlagToday("sport::syncStepPush") && hour >= earliestSyncStepTime.getValue()) {
+                    // 查询失败/被暂停只影响“是否已达标”的判断，不能阻断同步步数和本轮其余运动任务
+                    JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep());
+                    int stepCount = MessageUtil.checkResultCode(TAG, jo) ? jo.optInt("stepCount") : 0;
+                    addChildTask(new ChildModelTask("syncStep", () -> {
+                        int step = tmpStepCount();
+                        if (stepCount <= SKIP_SYNC_STEP && stepCount < step) {
+                            // a(int, boolean, String) 是【实例方法】。旧实现为两步：
+                            //   XHelpers.callMethod(XHelpers.callStaticMethod(RpcManager.class, "a"), "a", {step, false, "system"})
+                            // 即先用静态无参 a() 取单例，再在该实例上调用；此前误写成 Method.invoke(null, …) 传 null 接收者 → null receiver NPE
+                            try {
+                                ClassLoader classLoader = ApplicationHook.getClassLoader();
+                                if (syncStepByRpcManager(classLoader, step)) {
+                                    Toast.show("同步步数🏃🏻‍♂️[" + step + "步]");
+                                    Log.other("同步步数🏃🏻‍♂️[" + step + "步]");
+                                    Status.flagToday("sport::syncStepPush");
+                                } else {
+                                    Log.record("同步运动步数失败:" + step);
+                                }
+                            } catch (Throwable t) {
+                                // XHelpers 会把 NoSuchMethodException 包装进 RuntimeException，这里统一处理
+                                if (t.getCause() instanceof NoSuchMethodException) {
+                                    Log.record("同步步数主动推送⚠️接口已不可用（新版支付宝移除），已跳过；readDailyStep hook 不受影响");
+                                    // 接口确定不存在才当天不再重试；其余异常保持未标记，下一轮继续同步
+                                    Status.flagToday("sport::syncStepPush");
+                                } else {
+                                    Log.record("同步步数主动推送⚠️异常，下一轮重试");
+                                    Log.printStackTrace(TAG, t);
+                                }
                             }
-                        } catch (Throwable t) {
-                            // XHelpers 会把 NoSuchMethodException 包装进 RuntimeException，这里统一处理
-                            if (t.getCause() instanceof NoSuchMethodException) {
-                                Log.record("同步步数主动推送⚠️接口已不可用（新版支付宝移除），已跳过；readDailyStep hook 不受影响");
-                            } else {
-                                Log.record("同步步数主动推送⚠️异常，已跳过；readDailyStep hook 不受影响");
-                                Log.printStackTrace(TAG, t);
-                            }
-                            // 标记已尝试，避免每次运行都重试刷日志（readDailyStep hook 已能独立工作）
-                            Status.flagToday("sport::syncStepPush");
                         }
-                    }
-                }));
-            }
+                    }));
+                }
+            });
 
-            if (walk.getValue()) {
-                walk(syncStepCount.getValue());
-            }
+            step("行走", () -> {
+                if (walk.getValue()) {
+                    walk(syncStepCount.getValue());
+                }
+            });
 
             //初始任务列表
-            if (!Status.hasFlagToday("BlackList::initAntSports")) {
-                initAntSportsTaskListMap(AutoAntSportsTaskList.getValue(), sportsTasks.getValue());
-                Status.flagToday("BlackList::initAntSports");
-            }
+            step("初始任务列表", () -> {
+                if (!Status.hasFlagToday("BlackList::initAntSports")) {
+                    initAntSportsTaskListMap(AutoAntSportsTaskList.getValue(), sportsTasks.getValue());
+                    Status.flagToday("BlackList::initAntSports");
+                }
+            });
 
             //初始化行走主题列表
-            if (!Status.hasFlagToday("WalkPathTheme::init")) {
-                initWalkPathThemeMap();
-                Status.flagToday("WalkPathTheme::init");
-            }
+            step("初始化行走主题列表", () -> {
+                if (!Status.hasFlagToday("WalkPathTheme::init")) {
+                    initWalkPathThemeMap();
+                    Status.flagToday("WalkPathTheme::init");
+                }
+            });
 
             //if (donateCharityCoinType.getValue() != DonateCharityCoinType.ZERO) {
             //    queryProjectList();
@@ -247,40 +255,61 @@ public class AntSports extends ModelTask {
             //    coinExchangeItem("AMS2024032927086104");
            // }
 
-            if (minExchangeCount.getValue() > 0) {
-                queryWalkStep();
-            }
+            step("行走捐", () -> {
+                if (minExchangeCount.getValue() > 0) {
+                    queryWalkStep();
+                }
+            });
 
-            if (tiyubiz.getValue()) {
-                userTaskGroupQuery("SPORTS_DAILY_SIGN_GROUP");
-                userTaskGroupQuery("SPORTS_DAILY_GROUP");
-                userTaskRightsReceive();
-                pathFeatureQuery();
-                //{"error":3000,"errorMessage":"系统出错，正在排查","errorNo":3,"errorTip":"3000"}
-                //participate();
-            }
+            step("文体中心", () -> {
+                if (tiyubiz.getValue()) {
+                    userTaskGroupQuery("SPORTS_DAILY_SIGN_GROUP");
+                    userTaskGroupQuery("SPORTS_DAILY_GROUP");
+                    userTaskRightsReceive();
+                    pathFeatureQuery();
+                    //{"error":3000,"errorMessage":"系统出错，正在排查","errorNo":3,"errorTip":"3000"}
+                    //participate();
+                }
+            });
 
-            if (club.getValue()) {
-                queryClubHome();
-            }
+            step("抢好友", () -> {
+                if (club.getValue()) {
+                    queryClubHome();
+                }
+            });
 
-            if (sportsTasks.getValue()) {
-                sportsTasks();
-            }
+            step("运动任务", () -> {
+                if (sportsTasks.getValue()) {
+                    sportsTasks();
+                }
+            });
 
-            if (receiveCoinAsset.getValue()) {
-                receiveCoinAsset();
-                AntSportsRpcCall.pickAllEnergyBall();
-            }
+            step("运动币", () -> {
+                if (receiveCoinAsset.getValue()) {
+                    receiveCoinAsset();
+                    AntSportsRpcCall.pickAllEnergyBall();
+                }
+            });
 
             //执行悦动健康岛
             //if (neverLand.getValue() && checkAuth()) {
-            if (neverLand.getValue()) {
-                neverlandrun();
-            }
+            step("悦动健康岛", () -> {
+                if (neverLand.getValue()) {
+                    neverlandrun();
+                }
+            });
 
         } catch (Throwable t) {
             Log.err(TAG, "start.run err:", t);
+        }
+    }
+
+    // 单个子任务抛异常只跳过自己，不影响 run() 后面的其它运动任务
+    private void step(String name, Runnable action) {
+        try {
+            action.run();
+        } catch (Throwable t) {
+            Log.err(TAG, "run[" + name + "] err:", t);
         }
     }
 

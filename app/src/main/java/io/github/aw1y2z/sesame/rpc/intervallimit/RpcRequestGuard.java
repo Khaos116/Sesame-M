@@ -56,6 +56,10 @@ public final class RpcRequestGuard {
         // Preserve existing keys for requests without sceneId.
         String sceneId = args.optString("sceneId");
         if (!sceneId.isEmpty()) identity.put("sceneId").put(sceneId);
+        // enterFarm serves own farm and every friend farm; a friend's failure must not pause own farm.
+        if ("com.alipay.antfarm.enterFarm".equals(method)) {
+            identity.put("userId").put(args.optString("userId")).put("farmId").put(args.optString("farmId"));
+        }
         key = "RpcRequestGuard.v1." + identity;
         knownUnsupported = isKnownUnsupported(method, args);
     }

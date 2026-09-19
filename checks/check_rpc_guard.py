@@ -418,6 +418,11 @@ public class GuardCheck {
         String other = "com.alipay.antiep.receiveTaskAward";
         pauses(farm, "[{}]", MIN, MIN, 5*MIN);
         pauses(forest, "[{}]", MIN, MIN, 5*MIN);
+        reset();
+        String enter = "com.alipay.antfarm.enterFarm";
+        guard(enter, "[{\"sceneCode\":\"ANTFARM\",\"userId\":\"friend\"}]").record(json("{\"error\":48}"));
+        assert guard(enter, "[{\"sceneCode\":\"ANTFARM\",\"userId\":\"friend\"}]").shouldSkip();
+        assert !guard(enter, "[{\"sceneCode\":\"ANTFARM\",\"userId\":\"self\"}]").shouldSkip(); // friend failure must not pause own farm
         pauses("com.alipay.antfarm.orchardRecallAnimal", "[{\"sceneCode\":\"ORCHARD\"}]", MIN);
         pauses("com.alipay.reading.game.dadaDaily.submit", "[{\"activityId\":100}]", MIN, MIN, 5*MIN);
         pauses("com.alipay.reading.game.dadaDaily.submit", "[{\"activityId\":200}]", 5*MIN, 30*MIN, DAY);
