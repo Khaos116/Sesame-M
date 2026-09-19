@@ -6,6 +6,10 @@ import android.content.pm.PackageInfo;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import io.github.aw1y2z.sesame.entity.AlipayVersion;
 import io.github.aw1y2z.sesame.util.ClassUtil;
@@ -37,6 +41,28 @@ public class VersionHook {
     private static boolean isVersionHookRegistered = false;
 
     private static AlipayVersion sAlipayVersion;
+
+    // ---- 诊断：判断支付宝自己读版本号时有没有真的被改写（见 diagnostics()）----
+    /** 配置文件加载前支付宝读取自身版本的次数（此时开关还是关，拿到的是真实版本） */
+    private static final AtomicInteger sEarlyReads = new AtomicInteger();
+    /** 已改写成伪装版本的次数 */
+    private static final AtomicInteger sFakedReads = new AtomicInteger();
+    /** 配置已加载但开关是关的次数 */
+    private static final AtomicInteger sOffReads = new AtomicInteger();
+    /** 走 getPackageInfo(String, PackageInfoFlags)（API 33+）重载读取的次数，只统计不改写 */
+    private static final AtomicInteger sFlagsReads = new AtomicInteger();
+    private static final List<String> sSamples = Collections.synchronizedList(new ArrayList<>());
+    private static final int MAX_SAMPLES = 6;
+    private static volatile boolean sConfigLoaded = false;
+    private static volatile boolean sSamplesPrinted = false;
+    private static volatile boolean sFakedLogged = false;
+    private static volatile boolean sEarlyEnabled = false;
+    /** 配置文件里手写的 "earlyEnable"：saveVersionConfig 覆盖写文件时要带回去，否则用户手动加的开关会被抹掉 */
+    private static volatile boolean sEarlyEnableConfigured = false;
+    /** 当前线程正在读真实版本（readRealVersionName）时不改写 */
+    private static final ThreadLocal<Boolean> sReadingReal = new ThreadLocal<>();
+    /** 标记当前线程正处在 int 重载里，避免把它内部委托到 Flags 重载的那次重复统计 */
+    private static final ThreadLocal<Boolean> sInIntOverload = new ThreadLocal<>();
 
     private VersionHook() {
     }
@@ -78,12 +104,71 @@ public class VersionHook {
             sEnableVersionHook = config.optBoolean("enableVersionHook", true);
             sCachedVersionName = config.optString("versionName", DEFAULT_VERSION_NAME);
             sCachedVersionCode = config.optLong("versionCode", DEFAULT_VERSION_CODE);
+            sEarlyEnableConfigured = config.optBoolean("earlyEnable", false);
+
+            // ≤1.1.4 自动建的配置是“关闭、版本名空、版本号 0”，从没被用户改过；1.1.5 起默认开启，
+            // 而 ensureVersionConfig 只在文件不存在时才写默认值，不迁移的话老用户永远是关闭状态
+            if (!sEnableVersionHook && sCachedVersionName.isEmpty() && sCachedVersionCode <= 0) {
+                sEnableVersionHook = true;
+                sCachedVersionName = DEFAULT_VERSION_NAME;
+                sCachedVersionCode = DEFAULT_VERSION_CODE;
+                saveVersionConfig();
+                Log.record("版本伪装配置为旧版默认（关闭且未填写），已迁移为默认开启 " + DEFAULT_VERSION_NAME);
+            }
 
             Log.i("VersionHook", "配置加载完成: enabled=" + sEnableVersionHook
                     + ", name=" + sCachedVersionName + ", code=" + sCachedVersionCode);
         } catch (Throwable t) {
             Log.i("VersionHook", "加载配置失败: " + t.getMessage());
+        } finally {
+            sConfigLoaded = true;
         }
+    }
+
+    /** 记下读取来源（去掉本模块/Xposed/反射帧后的前 3 个调用方），最多 MAX_SAMPLES 条；启动早期不直接打日志，避免日志系统未就绪 */
+    private static void sample(String kind) {
+        if (sSamples.size() >= MAX_SAMPLES) {
+            return;
+        }
+        StringBuilder callers = new StringBuilder();
+        int n = 0;
+        for (StackTraceElement e : new Throwable().getStackTrace()) {
+            String c = e.getClassName();
+            if (c.startsWith("io.github.aw1y2z") || c.startsWith("de.robv") || c.startsWith("io.github.libxposed")
+                    || c.startsWith("org.lsposed") || c.startsWith("java.lang.reflect") || c.contains("LSPHooker")
+                    || c.startsWith("android.app.ApplicationPackageManager")) {
+                continue;
+            }
+            if (n++ > 0) {
+                callers.append('<');
+            }
+            callers.append(c.substring(c.lastIndexOf('.') + 1)).append('.').append(e.getMethodName());
+            if (n >= 3) {
+                break;
+            }
+        }
+        sSamples.add(kind + "@" + callers);
+    }
+
+    /**
+     * 每轮执行时打印一行：开关/Hook 是否注册、支付宝读取自身版本的各种情况计数，第一次带上读取来源。
+     * 判读：“已伪装”为 0 说明支付宝根本没经过我们改写；“开关就绪前”很多说明它启动时就读走了真实版本；
+     * “PackageInfoFlags 重载”非 0 说明它走了我们没改写的重载。
+     */
+    public static String diagnostics() {
+        StringBuilder sb = new StringBuilder("版本伪装诊断：开关=").append(sEnableVersionHook ? "开" : "关")
+                .append("，Hook=").append(isVersionHookRegistered ? "已注册" : "未注册").append(sEarlyEnabled ? "，提前生效=是" : "")
+                .append("，支付宝读取自身版本：开关就绪前").append(sEarlyReads.get()).append("次(真实版本)")
+                .append("，已伪装").append(sFakedReads.get()).append("次")
+                .append("，开关关闭时").append(sOffReads.get()).append("次")
+                .append("，PackageInfoFlags重载").append(sFlagsReads.get()).append("次");
+        if (!sSamplesPrinted && !sSamples.isEmpty()) {
+            sSamplesPrinted = true;
+            synchronized (sSamples) {
+                sb.append("；来源：").append(String.join(" | ", sSamples));
+            }
+        }
+        return sb.toString();
     }
 
     public static void saveVersionConfig() {
@@ -93,6 +178,9 @@ public class VersionHook {
             config.put("enableVersionHook", sEnableVersionHook);
             config.put("versionName", sCachedVersionName);
             config.put("versionCode", sCachedVersionCode);
+            if (sEarlyEnableConfigured) {
+                config.put("earlyEnable", true);
+            }
             FileUtil.write2File(config.toString(), configFile);
         } catch (Throwable t) {
             Log.record("保存版本配置失败: " + t.getMessage());
@@ -156,6 +244,7 @@ public class VersionHook {
             Log.i("VersionHook", "Hook 已注册，跳过重复注册");
             return;
         }
+        preloadEarlyEnable();
 
         try {
             XHelpers.findAndHookMethod(
@@ -165,50 +254,129 @@ public class VersionHook {
                     String.class,
                     int.class,
                     new XC_MethodHook() {
-                        private boolean logged = false;
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            // 只对支付宝自己的包名置位：支付宝会频繁探测微信/QQ 等是否安装，未安装时原方法抛
+                            // NameNotFoundException，XHelpers 此时不会执行 afterHookedMethod，置位就再也清不掉，
+                            // 这个线程之后走 Flags 重载的伪装会被永久跳过。查自己的包不会抛这个异常。
+                            if (param.args.length > 0 && ClassUtil.PACKAGE_NAME.equals(param.args[0])) {
+                                sInIntOverload.set(Boolean.TRUE);
+                            }
+                        }
 
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) {
-                            if (!sEnableVersionHook) {
-                                return;
-                            }
-
-                            Object info = param.getResult();
-                            if (info == null) {
-                                return;
-                            }
-
-                            String pkg = (String) XHelpers.getObjectField(info, "packageName");
-                            if (!ClassUtil.PACKAGE_NAME.equals(pkg)) {
-                                return;
-                            }
-
-                            String versionName = getFakeVersionName();
-                            long versionCode = getFakeVersionCode();
-                            XHelpers.setObjectField(info, "versionName", versionName);
-                            try {
-                                PackageInfo.class.getMethod("setLongVersionCode", long.class)
-                                        .invoke(info, versionCode);
-                            } catch (Throwable ignored) {
-                                XHelpers.setObjectField(info, "versionCode", (int) versionCode);
-                            }
-
-                            param.setResult(info);
-
-                            if (!logged) {
-                                Log.record("版本伪装已生效: " + versionName
-                                        + " (code=" + versionCode + ")");
-                                logged = true;
-                            }
+                            sInIntOverload.remove();
+                            handleRead(param, false);
                         }
                     }
             );
 
             isVersionHookRegistered = true;
             Log.i("VersionHook", "getPackageInfo Hook 注册成功");
+            hookFlagsOverload(classLoader);
         } catch (Throwable t) {
             Log.i("VersionHook", "版本Hook注册失败: " + t.getMessage());
             Log.printStackTrace("VersionHook", t);
+        }
+    }
+
+    /**
+     * API 33+ 的 getPackageInfo(String, PackageInfoFlags) 重载：新代码走这个，只 hook int 重载会被绕开。
+     * int 重载内部委托到这里时跳过（int 重载返回后会改写同一个对象，这里再改是重复）。
+     */
+    private static void hookFlagsOverload(ClassLoader classLoader) {
+        try {
+            Class<?> flags = Class.forName("android.content.pm.PackageManager$PackageInfoFlags");
+            XHelpers.findAndHookMethod("android.app.ApplicationPackageManager", classLoader, "getPackageInfo",
+                    String.class, flags, new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            if (Boolean.TRUE.equals(sInIntOverload.get())) {
+                                return;
+                            }
+                            handleRead(param, true);
+                        }
+                    });
+        } catch (Throwable t) {
+            // API < 33 没有这个类，属正常
+            Log.i("VersionHook", "未挂 PackageInfoFlags 重载: " + t.getClass().getSimpleName());
+        }
+    }
+
+    /** 两个重载共用：读到的是支付宝自己的包信息时，按开关改写版本名/版本号，并累计诊断计数。 */
+    private static void handleRead(XC_MethodHook.MethodHookParam param, boolean viaFlags) {
+        if (Boolean.TRUE.equals(sReadingReal.get())) {
+            return; // 模块自己要读真实版本（readRealVersionName）
+        }
+        Object info = param.getResult();
+        if (info == null) {
+            return;
+        }
+        String pkg = (String) XHelpers.getObjectField(info, "packageName");
+        if (!ClassUtil.PACKAGE_NAME.equals(pkg)) {
+            return;
+        }
+        if (viaFlags) {
+            sFlagsReads.incrementAndGet();
+        }
+        String via = viaFlags ? "/Flags" : "/int";
+        if (!sEnableVersionHook) {
+            (sConfigLoaded ? sOffReads : sEarlyReads).incrementAndGet();
+            sample((sConfigLoaded ? "关闭" : "早读") + via);
+            return;
+        }
+        String versionName = getFakeVersionName();
+        long versionCode = getFakeVersionCode();
+        XHelpers.setObjectField(info, "versionName", versionName);
+        try {
+            PackageInfo.class.getMethod("setLongVersionCode", long.class).invoke(info, versionCode);
+        } catch (Throwable ignored) {
+            XHelpers.setObjectField(info, "versionCode", (int) versionCode);
+        }
+        param.setResult(info);
+        sFakedReads.incrementAndGet();
+        sample("已伪装" + via);
+        if (!sFakedLogged) {
+            sFakedLogged = true;
+            Log.record("版本伪装已生效: " + versionName + " (code=" + versionCode + ")");
+        }
+    }
+
+    /**
+     * 可选：让开关在支付宝进程启动（Application.attach 之前）就生效。version_config.json 里
+     * "earlyEnable": true 且 "enableVersionHook": true 才启用，默认不启用。
+     * 原因：支付宝启动时就会读一次自身版本并缓存，Service.onCreate 才读到配置时已经晚了；
+     * 但提前伪装会让支付宝启动阶段的版本校验（热修复/容器版本匹配等）也看到假版本，
+     * 有让支付宝异常的风险，所以做成需要手动改配置文件的开关，先用诊断日志确认必要性。
+     */
+    private static void preloadEarlyEnable() {
+        try {
+            File configFile = new File(FileUtil.MAIN_DIRECTORY_FILE, "version_config.json");
+            if (!configFile.exists()) {
+                return;
+            }
+            String content = FileUtil.readFromFile(configFile);
+            JSONObject config = MyUtils.newJSONObject(content);
+            sEarlyEnableConfigured = config.optBoolean("earlyEnable", false);
+            if (sEarlyEnableConfigured && config.optBoolean("enableVersionHook", false)) {
+                sCachedVersionName = config.optString("versionName", DEFAULT_VERSION_NAME);
+                sCachedVersionCode = config.optLong("versionCode", DEFAULT_VERSION_CODE);
+                sEnableVersionHook = true;
+                sEarlyEnabled = true;
+            }
+        } catch (Throwable t) {
+            Log.i("VersionHook", "提前读取版本伪装配置失败: " + t.getClass().getSimpleName());
+        }
+    }
+
+    /** 读支付宝真实版本名（绕过伪装），给模块自己记录“实际版本”用。 */
+    public static String readRealVersionName(Context context) throws Exception {
+        sReadingReal.set(Boolean.TRUE);
+        try {
+            return context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName;
+        } finally {
+            sReadingReal.remove();
         }
     }
 

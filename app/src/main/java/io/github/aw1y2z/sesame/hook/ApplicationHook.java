@@ -241,7 +241,7 @@ public class ApplicationHook extends XposedModule {
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                     context = (Context) param.args[0];
                     // 先记录真实版本号，伪装开关判断延后到 Service.onCreate（此时配置文件可读）
-                    String pkgVersion = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName;
+                    String pkgVersion = VersionHook.readRealVersionName(context);
                     realAlipayVersion = pkgVersion;
                     alipayVersion = new AlipayVersion(pkgVersion);
                     try {
@@ -383,6 +383,7 @@ public class ApplicationHook extends XposedModule {
                                 }
                                 Log.record("模块版本：" + modelVersion + "（交流更新QQ群：694474777）");
                                 Log.record("编译时间：" + BuildConfig.BUILD_TIME);
+                                Log.record(VersionHook.diagnostics());
                                 Log.record("开始执行" + MyUtils.recordUserName(getUserId()));
                                 try {
                                     int checkInterval = BaseModel.getCheckInterval().getValue();
