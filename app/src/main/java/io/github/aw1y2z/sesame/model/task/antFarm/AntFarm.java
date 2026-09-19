@@ -42,6 +42,10 @@ public class AntFarm extends ModelTask {
     private static final String TAG = AntFarm.class.getSimpleName();
     /** 家庭分享：当日累计"邀请全部失败"次数 */
     private static final String FLAG_FAMILY_SHARE_FAIL_COUNT = "antFarm::familyShareToFriends::failCount";
+    /** 饲料任务：服务端列表里已没有需要去做/领奖的任务，当天不再查询（按账号，次日清） */
+    private static final String FLAG_FARM_TASK_ALL_DONE = "antFarm::farmTaskAllDone";
+    /** 饲料任务一次执行最多循环几轮（多次任务每轮推进一次，如“试玩庄园火爆小游戏”每次 30g） */
+    private static final int MAX_FARM_TASK_ROUNDS = 10;
     /** 家庭分享：当日最多尝试几次，超过后当天不再重试（避免每轮任务都重发邀请请求） */
     private static final int MAX_FAMILY_SHARE_ATTEMPT = 3;
 
@@ -376,8 +380,7 @@ public class AntFarm extends ModelTask {
 
             step("饲料任务", () -> {
                 if (receiveFarmTaskAward.getValue()) {
-                    listFarmTask(TaskStatus.TODO);
-                    listFarmTask(TaskStatus.FINISHED);
+                    runFarmTaskRounds();
                 }
             });
 
@@ -1679,11 +1682,71 @@ public class AntFarm extends ModelTask {
         }
     }
 
-    private void listFarmTask(TaskStatus Mode) {
+    /**
+     * 饲料任务按轮执行（对照 AG：多次任务不能只做一次，也不能没做完就当天已完成）。
+     * 每轮 listFarmTask 一次，TODO 去做、FINISHED 领奖：
+     * ① 没有需要处理的任务 → 服务端确认当天已完成，记当日标记，之后不再查询；
+     * ② 有任务但本轮一个都没推进（失败/冷却/饲料满领不了）→ 停，标记不记，下次执行再试；
+     * ③ 有推进 → 再来一轮（多次任务每轮推进一次），最多 MAX_FARM_TASK_ROUNDS 轮。
+     * 注意：当天新出现的任务（如限时任务）要等次日才会再查，这是“当天已完成不再执行”的代价。
+     */
+    private void runFarmTaskRounds() {
+        if (Status.hasFlagToday(FLAG_FARM_TASK_ALL_DONE)) {
+            return;
+        }
+        farmTaskAttempted = new HashSet<>();
+        try {
+            for (int round = 0; round < MAX_FARM_TASK_ROUNDS; round++) {
+                int[] result = listFarmTask(null);
+                if (result == null) {
+                    return;
+                }
+                if (result[0] == 0) {
+                    Status.flagToday(FLAG_FARM_TASK_ALL_DONE);
+                    Log.farm("饲料任务🧾今日任务已全部完成，之后不再查询");
+                    return;
+                }
+                if (result[1] == 0) {
+                    return;
+                }
+                TimeUtil.sleep(800);
+            }
+        } finally {
+            farmTaskAttempted = null;
+        }
+    }
+
+    /** 按轮执行期间记录“任务+状态+进度”已试过的组合；null 表示不在按轮执行中（如 checkUnReceiveTaskAward） */
+    private Set<String> farmTaskAttempted;
+
+    /**
+     * 同一任务在同一状态/进度下本次执行只试一次：服务端返回成功但状态没变的任务（如需要手动完成的）
+     * 否则会每轮都重复请求，白跑满 MAX_FARM_TASK_ROUNDS 轮。对照 AG 的 actionKey。
+     */
+    private boolean alreadyTried(JSONObject task) {
+        Set<String> attempted = farmTaskAttempted;
+        if (attempted == null) {
+            return false;
+        }
+        return !attempted.add(task.optString("bizKey") + "|" + task.optString("taskId") + "|"
+                + task.optString("taskStatus") + "|" + task.optInt("rightsTimes"));
+    }
+
+    /** 服务端不支持用 RPC 完成、必须手动做的饲料任务，不算“需要处理”。 */
+    private static boolean isUnsupportedFarmTask(String bizKey) {
+        return bizKey.contains("HEART_DONAT") || bizKey.equals("BAIDUJS_202512") || bizKey.equals("BABAFARM_TB");
+    }
+
+    /**
+     * 处理一遍饲料任务列表。Mode 为 null 时 TODO（去做）和 FINISHED（领奖）一起处理。
+     *
+     * @return {需要处理的任务数, 本遍成功推进的任务数}；查询失败或异常返回 null
+     */
+    private int[] listFarmTask(TaskStatus Mode) {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.listFarmTask());
             if (!MessageUtil.checkMemo(TAG, jo)) {
-                return;
+                return null;
             }
             JSONObject signList = jo.optJSONObject("signList");
             if (signList != null && sign(signList)) {
@@ -1691,8 +1754,10 @@ public class AntFarm extends ModelTask {
             }
             JSONArray ja = jo.optJSONArray("farmTaskList");
             if (ja == null) {
-                return;
+                return null;
             }
+            int actionable = 0;
+            int progressed = 0;
             for (int i = 0; i < ja.length(); i++) {
                 JSONObject taskJo = ja.optJSONObject(i);
                 if (taskJo == null) {
@@ -1711,24 +1776,40 @@ public class AntFarm extends ModelTask {
                 //黑名单任务跳过
                 if (AntFarmDoFarmTaskList.getValue().contains(title)) {
                     if (taskStatus == TaskStatus.FINISHED) {
-                        receiveFarmTaskAward(taskJo);
+                        actionable++;
+                        if (!alreadyTried(taskJo) && receiveFarmTaskAward(taskJo)) {
+                            progressed++;
+                        }
                     }
                     continue;
                 }
-                if (taskStatus == TaskStatus.RECEIVED || taskStatus != Mode) {
+                if (taskStatus == TaskStatus.RECEIVED || (Mode != null && taskStatus != Mode)) {
                     continue;
                 }
-                if (taskStatus == TaskStatus.TODO && !doFarmTask(taskJo)) {
+                if (taskStatus == TaskStatus.TODO) {
+                    if (isUnsupportedFarmTask(taskJo.optString("bizKey"))) {
+                        continue;
+                    }
+                    actionable++;
+                    if (alreadyTried(taskJo) || !doFarmTask(taskJo)) {
+                        continue;
+                    }
+                } else if (taskStatus == TaskStatus.FINISHED) {
+                    actionable++;
+                    if (alreadyTried(taskJo) || !receiveFarmTaskAward(taskJo)) {
+                        continue;
+                    }
+                } else {
                     continue;
                 }
-                if (taskStatus == TaskStatus.FINISHED && !receiveFarmTaskAward(taskJo)) {
-                    continue;
-                }
+                progressed++;
                 TimeUtil.sleep(1000);
             }
+            return new int[]{actionable, progressed};
         } catch (Throwable t) {
             Log.err(TAG, "listFarmTask err:", t);
         }
+        return null;
     }
 
     private Boolean sign(JSONObject SignList) {
@@ -1880,7 +1961,7 @@ public class AntFarm extends ModelTask {
         try {
             String title = task.optString("title");
             String bizKey = task.optString("bizKey");
-            if (bizKey.contains("HEART_DONAT") || bizKey.equals("BAIDUJS_202512") || bizKey.equals("BABAFARM_TB")) {
+            if (isUnsupportedFarmTask(bizKey)) {
                 return false;
             }
             if (Objects.equals(title, "庄园小视频")) {
@@ -1923,12 +2004,15 @@ public class AntFarm extends ModelTask {
             if (!MessageUtil.checkMemo(TAG, jo)) {
                 return false;
             }
+            String title = task.optString("title", "");
             if (awardType.equals("ALLPURPOSE")) {
                 add2FoodStock(awardCount);
-                String title = task.optString("title", "");
                 Log.farm("饲料领取🎖️任务[" + title + "]奖励#获得[" + awardCount + "g]");
-                return true;
+            } else {
+                // 非饲料奖励（工具等）：RPC 已成功，原先返回 false 会让按轮执行把它一直当成“没做完”
+                Log.farm("饲料领取🎖️任务[" + title + "]奖励#类型[" + awardType + "]");
             }
+            return true;
         } catch (Throwable t) {
             Log.err(TAG, "receiveFarmTaskAward err:", t);
         }
