@@ -2,8 +2,8 @@
 
 开始任何任务前，先用 UTF-8 编码读取以下两份文档，了解项目背景和历史改动：
 
-- `doc/MyFix.md` —— 每次合并上游/fork 代码、修 bug、加功能的详细记录：改了什么、跳过了什么、为什么。按时间倒序追加，最新的在最上面。文件开头有「硬性规则」一节（GMT+8 时间处理、MyUtils JSON 创建、JSON 使用 `.opt*()` 读取及判空），是长期约束，touch 到相关代码必须遵守。
-- `CHANGELOG.md` —— 对应 `doc/MyFix.md` 的一行摘要清单，按时间倒序，标了 commit hash，用于快速对照某次提交改了什么。
+- `doc/MyFix.md` —— 只放长期规则和背景资料（不记日志）。文件开头有「硬性规则」一节（GMT+8 时间处理、MyUtils JSON 创建、JSON 使用 `.opt*()` 读取及判空），是长期约束，touch 到相关代码必须遵守。
+- `CHANGELOG.md` —— 所有变更日志：上半部分一行摘要（按时间倒序，标 commit hash），文末「详细记录」为改了什么、跳过了什么、为什么。每次合并/修 bug/加功能都写这里，不要写进 `doc/MyFix.md`。
 
 这两份文档是本项目当前状态和历史决策取舍的权威来源，比重新审查代码或凭经验猜测更准确、更省时间。
 
@@ -15,7 +15,7 @@
 2. **JSON 创建**：业务字符串转 `JSONObject` 统一通过 `MyUtils.newJSONObject(raw)`，空对象可用 `MyUtils.newJSONObject()`。不要把 Gson 与 `org.json` 混淆，也不要新增 Gson 替代现有工具。`MyUtils` 对无效输入返回空对象，调用方必须校验必要字段/成功状态，不能当作成功继续执行。已有严格解析路径若依赖解析异常中止任务，迁移时必须保留失败语义；确需保留直接构造的，在合并记录注明位置和理由。数组解析无对应 MyUtils 工厂时保留异常处理；创建空数组或用集合构造不作机械替换。
 3. **JSON 读取**：`org.json.JSONObject` / `JSONArray` 一律使用 `.opt()` / `.optString()` / `.optInt()` / `.optLong()` / `.optBoolean()` / `.optJSONObject()` / `.optJSONArray()` 等安全读取，禁止裸 `.get*()`。嵌套对象和数组必须判空，必要字段缺失或类型不符应跳过/停止，不能仅替换方法名。Map、SharedPreferences、Bundle 等非 JSON API 不在此禁令范围内。
 
-合并提交前必须复查这三项并运行相关回归；在 `doc/MyFix.md` 分别记录处理结果、例外及遗留项，不能未核对就声称“全部正常”。历史记录描述的是当时状态，当前结论以实际源码为准。
+合并提交前必须复查这三项并运行相关回归；在 `CHANGELOG.md` 分别记录处理结果、例外及遗留项，不能未核对就声称“全部正常”。历史记录描述的是当时状态，当前结论以实际源码为准。
 
 ## 提交前的回归检查
 
@@ -50,11 +50,11 @@ Sesame-M：支付宝自动化脚本的 Xposed 模块（`libxposed` API 102），
 
 - `origin` 指向自己的 fork 仓库（`Khaos116/Sesame-M`），不是上游。
 - `MIUIX-api102` 是主线分支（原分支，PR 走这条线），`my_dev` 是日常开发分支。`my_dev` 落后 `MIUIX-api102` 时按 `git merge origin/MIUIX-api102` 处理，不要 rebase（历史上一直用 merge，保留双方提交）。
-- 合并冲突的处理经验：先用 `git show <merge-base>:<file>` 查双方在分叉点各自的状态再决定，不要直接二选一。多数冲突要么是"my_dev 在分叉后新加的功能，upstream 那侧其实没变"（纯粹因为改动位置相邻产生的假冲突，取 my_dev 侧），要么是"upstream 做了真清理"（先 grep 确认 my_dev 这边也确实没人用了再跟着删）。详见 `doc/MyFix.md` 里"2026-09-15"那条记录的具体案例。
+- 合并冲突的处理经验：先用 `git show <merge-base>:<file>` 查双方在分叉点各自的状态再决定，不要直接二选一。多数冲突要么是"my_dev 在分叉后新加的功能，upstream 那侧其实没变"（纯粹因为改动位置相邻产生的假冲突，取 my_dev 侧），要么是"upstream 做了真清理"（先 grep 确认 my_dev 这边也确实没人用了再跟着删）。详见 `CHANGELOG.md` 详细记录里"2026-09-15"那条的具体案例。
 
 ## 关键架构点
 
-- `TaskLifecycle`（`data/task/TaskLifecycle.java`）：全局账号切换并发准入机制。任何会长时间运行、跨越账号切换窗口的代码（新起的线程、`postDelayed` 延迟回调）都要用 `TaskLifecycle.enter()`/`enter(generation)` 包起来，否则可能在账号切一半的时候继续用旧账号的状态跑，这类 bug 已经踩过好几次（见 MyFix.md）。
+- `TaskLifecycle`（`data/task/TaskLifecycle.java`）：全局账号切换并发准入机制。任何会长时间运行、跨越账号切换窗口的代码（新起的线程、`postDelayed` 延迟回调）都要用 `TaskLifecycle.enter()`/`enter(generation)` 包起来，否则可能在账号切一半的时候继续用旧账号的状态跑，这类 bug 已经踩过好几次（见 CHANGELOG.md）。
 - `RpcRequestGuard`（`rpc/intervallimit/RpcRequestGuard.java`）：所有 RPC 请求（新旧两套 `RpcBridge`）统一收口的失败退避层，按账号隔离。新增业务代码走 RPC 不需要自己再实现限流/退避，两套 Bridge 已经接好了。
 - `AppConfig` vs `BaseModel`（ModelField）两套配置系统不是一回事：`AppConfig` 是跟 App 独立进程共享的全局配置（存 `appConfig.json`，App 和被注入的支付宝进程都能读），`BaseModel`/各任务模块的 `ModelField` 是按账号存的业务配置（存 `config_v2.json`，只有注入进程里能看到）。哪个字段该放哪边要想清楚，之前把 `batteryPerm` 同时留在两边过，处理迁移花了不少功夫。
 - 日志文件按账号分目录（`log/<userId>/`），当前账号通过 `FileUtil.publishCurrentLogUser()` 原子发布到 `current_log_user.txt`，独立 App 进程靠读这个文件名来判断"现在是哪个账号"（App 进程本身不知道支付宝那边登录的是谁）。
