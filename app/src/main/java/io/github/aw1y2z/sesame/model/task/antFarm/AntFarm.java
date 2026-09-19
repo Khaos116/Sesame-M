@@ -44,8 +44,8 @@ public class AntFarm extends ModelTask {
     private static final String FLAG_FAMILY_SHARE_FAIL_COUNT = "antFarm::familyShareToFriends::failCount";
     /** 饲料任务：服务端列表里已没有需要去做/领奖的任务，当天不再查询（按账号，次日清） */
     private static final String FLAG_FARM_TASK_ALL_DONE = "antFarm::farmTaskAllDone";
-    /** 饲料任务一次执行最多循环几轮（多次任务每轮推进一次，如“试玩庄园火爆小游戏”每次 30g） */
-    private static final int MAX_FARM_TASK_ROUNDS = 10;
+    /** 饲料任务一次执行最多循环几轮（多阶段任务每阶段一轮，如“试玩庄园火爆小游戏”8 阶段×30g，再加领奖轮） */
+    private static final int MAX_FARM_TASK_ROUNDS = 20;
     /** 家庭分享：当日最多尝试几次，超过后当天不再重试（避免每轮任务都重发邀请请求） */
     private static final int MAX_FAMILY_SHARE_ATTEMPT = 3;
 
@@ -1723,13 +1723,30 @@ public class AntFarm extends ModelTask {
      * 同一任务在同一状态/进度下本次执行只试一次：服务端返回成功但状态没变的任务（如需要手动完成的）
      * 否则会每轮都重复请求，白跑满 MAX_FARM_TASK_ROUNDS 轮。对照 AG 的 actionKey。
      */
-    private boolean alreadyTried(JSONObject task) {
+    private boolean alreadyTried(JSONObject task, String action) {
         Set<String> attempted = farmTaskAttempted;
         if (attempted == null) {
             return false;
         }
-        return !attempted.add(task.optString("bizKey") + "|" + task.optString("taskId") + "|"
-                + task.optString("taskStatus") + "|" + task.optInt("rightsTimes"));
+        return !attempted.add(action + "|" + task.optString("bizKey") + "|" + task.optString("taskId") + "|"
+                + task.optString("taskStatus") + "|" + task.optInt("rightsTimes") + "|" + pendingAward(task));
+    }
+
+    /**
+     * 待领取的奖励饲料。多阶段任务（rightsTimesLimit>1，如“试玩庄园火爆小游戏”每阶段 30g）的 awardCount 是
+     * 累计总额，alreadyReceiveStageAwardCount 是已领的部分，待领 = 差值（对照 AG getMultiStageAccumulatedAward）。
+     * 原先直接拿 awardCount 做“会不会超过饲料上限”的判断，累计额（如 240g）远大于实际待领额，
+     * 会让本来放得下的奖励被误判成超上限而一直领不了；差值为 0 时退回 awardCount，保持单阶段任务原行为。
+     */
+    private static int pendingAward(JSONObject task) {
+        int total = task.optInt("awardCount", 0);
+        int pending = total - task.optInt("alreadyReceiveStageAwardCount", 0);
+        return pending > 0 ? pending : total;
+    }
+
+    /** 多阶段任务（rightsTimesLimit>1，如“试玩庄园火爆小游戏”8 阶段×30g）且阶段还没做满。 */
+    private static boolean multiStagePending(JSONObject task) {
+        return task.optInt("rightsTimesLimit", 1) > 1 && task.optInt("rightsTimes", 0) < task.optInt("rightsTimesLimit", 1);
     }
 
     /** 服务端不支持用 RPC 完成、必须手动做的饲料任务，不算“需要处理”。 */
@@ -1777,7 +1794,7 @@ public class AntFarm extends ModelTask {
                 if (AntFarmDoFarmTaskList.getValue().contains(title)) {
                     if (taskStatus == TaskStatus.FINISHED) {
                         actionable++;
-                        if (!alreadyTried(taskJo) && receiveFarmTaskAward(taskJo)) {
+                        if (!alreadyTried(taskJo, "receive") && receiveFarmTaskAward(taskJo)) {
                             progressed++;
                         }
                     }
@@ -1791,12 +1808,21 @@ public class AntFarm extends ModelTask {
                         continue;
                     }
                     actionable++;
-                    if (alreadyTried(taskJo) || !doFarmTask(taskJo)) {
+                    if (alreadyTried(taskJo, "do") || !doFarmTask(taskJo)) {
                         continue;
                     }
                 } else if (taskStatus == TaskStatus.FINISHED) {
                     actionable++;
-                    if (alreadyTried(taskJo) || !receiveFarmTaskAward(taskJo)) {
+                    boolean handled = false;
+                    // 按轮执行时，多阶段任务先把所有阶段做完，奖励累积，不做一阶段就领一阶段（对照 AG，最终 240/240 一次领）；
+                    // 阶段做不了（服务端不允许有待领奖励时继续做）才退回领奖，避免卡死
+                    if (farmTaskAttempted != null && multiStagePending(taskJo) && !alreadyTried(taskJo, "stage")) {
+                        handled = doFarmTask(taskJo);
+                    }
+                    if (!handled) {
+                        handled = !alreadyTried(taskJo, "receive") && receiveFarmTaskAward(taskJo);
+                    }
+                    if (!handled) {
                         continue;
                     }
                 } else {
@@ -1992,7 +2018,7 @@ public class AntFarm extends ModelTask {
         try {
             String taskId = task.optString("taskId");
             String awardType = task.optString("awardType", "");
-            int awardCount = task.optInt("awardCount", 0);
+            int awardCount = pendingAward(task);
             if (Objects.equals(awardType, "ALLPURPOSE")) {
                 if (awardCount + foodStock > foodStockLimit) {
                     unReceiveTaskAward++;
