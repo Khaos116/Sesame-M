@@ -5,6 +5,7 @@
 
 ## 2026-09-19
 
+- merge：再次合并 `origin/MIUIX-api102`（93140f06 → b1293b40，2 个上游提交“修复广播来源未校验并清理注释代码与统一日志截断”“修复20:01后回退公益捐蛋导致当天重复捐蛋”）到 `my_dev`，3 个文件冲突（`ApplicationHook`、`BaseModel`、`AntFarm`）；三项必查无问题，十项回归通过。详见详细记录。
 - feat `1533a213`：新增独立日志类型「验证记录」，统计哪些功能会触发弹出验证码。`Log.captcha`（不计入 `countModuleLog`）写 `captcha.日期.log`，同时以 `CAPTCHA` tag 写运行日志；日志页与首页开关新增「验证记录」（`AppConfig.enableCaptchaLog` 默认开）。`CaptchaTriggerStats` 在 `CaptchaDialog.show()` 之后（以及处理器在 Activity 里找不到“向右滑动验证”但界面有验证文字时）记一行：类型（向右滑动/对准图片拼图/未识别）、来源、**当时运行中的模块**（`ModelTask.runningTaskNames`）、**最近 5 个 RPC**（`RpcRequestGuard.recentRequests`）、界面文字；同来源同类型 30 秒去重；每轮执行开头打印“验证码触发统计(本进程)：模块 N次”。归因是推断（弹窗前最近的请求/运行中的模块是嫌疑对象），手动在支付宝里操作触发的验证会显示“无运行中模块”；计数进程重启清零，事件本身都在日志里。只观测，不点击/拖动/关闭弹窗。未真机验证。
 - fix `7f17e603`：版本伪装默认改回关闭。1.1.5 默认开启并做了定向提前伪装，真机日志（18:01，184719 包）显示日志模块早读被改写（`早期伪装(日志模块)2次`）、之后 173 次读取全部被改写，但弹出的仍是需对准图片的滑块——通过 `PackageManager` 伪装版本对验证码类型无效，主动向服务端谎报版本有风险却无收益。`enableVersionHook` 缺省 `false`、`sEarlyFake` 缺省 `false`；新建配置写 `defaultOffApplied` 标记；`loadVersionConfig` 一次性把没有该标记、且正好是 1.1.5 自动写入的默认值（开启 + 10.6.58.8000 + 1881）的配置改回关闭并打标记（用户改过版本名/版本号的不动；在 1.1.5 手动开启且没改默认值的也会被关一次，需在扩展页重新开启）；移除“旧默认自动迁移为开启”；扩展页说明改为默认关闭、不建议开启。诊断日志保留。**发现的显示问题（未修）**：日志里“实际版本”会显示伪装值，疑似系统缓存了 `PackageInfo` 对象而我们就地改写，只影响该行显示。
 - feat `d1d87b26`：庄园多阶段饲料任务每轮打印进度日志 `庄园饲料任务[标题]阶段 x/y，待领 Ng，状态 S`（同一状态只打一次）。用户反馈界面仍显示 180/240、右边“可领取”从 30g 变 60g：界面的 180/240 是**已领取额**，做完没领的显示在“可领取”，180+60=240 即 8 阶段已做满，光看界面分不清阶段是否做满，加日志便于核对。仅日志，无逻辑改动。
@@ -112,6 +113,17 @@
 - `6a31c9e1` feat: 新增全局自动切号功能（账号轮询，最小间隔2小时）
 
 ## 详细记录（自 doc/MyFix.md 迁移）
+
+### 2026-09-19（续）：合并 MIUIX-api102 至 b1293b40
+
+上游 2 个提交：① 广播来源校验（`ApplicationHook.isTrustedBroadcastSender`：Android 14+ 用 `getSentFromUid` 校验，白名单为本进程/模块 App `io.github.aw1y2z.sesame`/adb shell，取不到来源或低版本一律放行）、清理注释掉的旧代码、`BaseModel`/`FileUtil`/`ConfigV2` 统一日志截断；② 捐蛋排位 `competition()` 语义收紧：只有“接口成功但没有排位首页”才返回 false 触发公益捐蛋回退，接口异常/数据缺失/20:01 后跳过都返回 true，避免当天已为排位捐过蛋、晚上又捐一次公益。
+
+冲突及取舍：
+- `ApplicationHook`：上游在 `Application.attach` 里直接同步调用 `initSimplePageManager()`；my_dev 此前已把它挪到 `Service.onCreate`（版本伪装覆盖 `alipayVersion` 之后调用，对齐 GR）。保留 my_dev 做法，不在 attach 里再调一次，否则会调用两次。广播来源校验的新增代码自动合并，已核对 `MODULE_PACKAGE_NAME` 与 `app/build.gradle` 的 `applicationId`（`io.github.aw1y2z.sesame`）一致。
+- `BaseModel`：上游 `getString` + `StringUtil.truncate`，my_dev 已是 `optString`；取 `optString` + 上游的截断日志。
+- `AntFarm`：my_dev 把 `run()` 拆成了 `step()`，上游改的是老结构里的捐蛋回退，git 把两边错位对齐。整块取 my_dev 的 `step()` 结构，把上游对回退逻辑的改动手工搬进 `step("捐蛋")`（仅“确认当天没有排位活动”才回退，回退时打日志）；`competition()` 内部采用上游新语义，`getJSONObject` 改 `optJSONObject` 并对 null 按“有首页但缺榜单，不回退公益捐蛋”返回 true；20:01 后 `return true` 的处理两边一致，去掉我们多余的注释行。
+
+三项必查（对上游新增行做了检索）：GMT+8——无日历/日期/时区代码；JSON 创建——无直接 `new JSONObject(raw)`；JSON 读取——无裸 `.get*()`。无新增例外。验证：`:app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin` 通过；十项回归全部通过。未真机验证、未打包。
 
 ### 2026-09-19（续）：版本伪装改回默认关闭，新增「验证记录」日志类型
 

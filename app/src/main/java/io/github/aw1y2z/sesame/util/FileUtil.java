@@ -727,9 +727,7 @@ public class FileUtil {
             return "";
         }
         StringBuilder result = new StringBuilder();
-        FileReader fr = null;
-        try {
-            fr = new FileReader(f);
+        try (FileReader fr = new FileReader(f)) {
             char[] chs = new char[1024];
             int len;
             while ((len = fr.read(chs)) >= 0) {
@@ -738,9 +736,6 @@ public class FileUtil {
         }
         catch (Throwable t) {
             Log.printStackTrace(TAG, t);
-        }
-        finally {
-            close(fr);
         }
         return result.toString();
     }
