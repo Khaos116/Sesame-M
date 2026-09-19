@@ -320,7 +320,8 @@ public class GuardCheck {
             for (int n = 0; n < 4; n++) {
                 assert AntMemberRpcCall.check() : "member business denial/cooldown must not mean offline";
             }
-            assert calls == 3 : "member cooldown must remain effective";
+            // “请先实名认证”属于没开通/未认证：一天只请求一次（原为 5/5/30 分钟升级退避共 3 次）
+            assert calls == 1 : "member cooldown must remain effective";
             ApplicationHook.offline = true;
             assert !AntMemberRpcCall.check() : "offline account must not pass";
             ApplicationHook.offline = false;
@@ -444,6 +445,22 @@ public class GuardCheck {
             assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1 : "network errors must not launch";
             guard("com.alipay.neverland.biz.rpc.queryItemList").record(json("{\"error\":\"1009\",\"errorMessage\":\"系统繁忙，请稍后再试。\"}"));
             assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1 : "1009 busy must not launch";
+        }
+        reset();
+        {
+            // 未开通的功能一天只请求一次（日志里 collectManurePot G04 一天 150 次）
+            String pot = "com.alipay.antfarm.collectManurePot";
+            guard(pot, "[{\"manurePotNOs\":\"1\"}]").record(json("{\"success\":false,\"resultCode\":\"G04\",\"memo\":\"肥料已经存满了，去开通芭芭农场种果树吧\"}"));
+            now += DAY - 1;
+            assert guard(pot, "[{\"manurePotNOs\":\"1\"}]").shouldSkip() : "not-opened feature must wait a day";
+            now++;
+            assert !guard(pot, "[{\"manurePotNOs\":\"1\"}]").shouldSkip();
+            String friendOnly = "com.alipay.antfarm.friendOnlyProbe";
+            guard(friendOnly).record(json("{\"success\":false,\"resultCode\":\"X1\",\"memo\":\"好友未开通该功能\"}"));
+            assert !guard(friendOnly).shouldSkip() : "someone else's state must not pause the method";
+            String friendCert = "com.alipay.antmember.forest.h5.friendCertProbe";
+            guard(friendCert).record(json("{\"success\":false,\"resultCode\":\"X2\",\"memo\":\"对方未实名认证\"}"));
+            assert !guard(friendCert).shouldSkip() : "\"对方未实名\" must not pause the method for every friend";
         }
         reset();
         String enter = "com.alipay.antfarm.enterFarm";

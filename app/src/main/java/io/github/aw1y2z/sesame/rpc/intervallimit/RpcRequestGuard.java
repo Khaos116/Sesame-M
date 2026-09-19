@@ -116,6 +116,16 @@ public final class RpcRequestGuard {
         return "响应未提供错误原因";
     }
 
+    /** 提示当前账号需要去开通/认证才能用的文案（如庄园肥料罐 G04“肥料已经存满了，去开通芭芭农场种果树吧”）。只匹配对用户本人的提示，不含“好友未开通”这类针对他人的状态。 */
+    static boolean isNotOpened(String message) {
+        // 好友互动接口的请求键不含目标好友，“对方未实名认证”若命中会把整个接口对所有好友停一天
+        if (message.contains("好友") || message.contains("对方")) return false;
+        for (String marker : new String[]{"去开通", "请先开通", "请先认证", "请先实名", "未认证", "未实名"}) {
+            if (message.contains(marker)) return true;
+        }
+        return false;
+    }
+
     public static boolean isFailure(JSONObject result) {
         String error = result.optString("error");
         if (!error.isEmpty() && !"0".equals(error)) return true;
@@ -187,6 +197,9 @@ public final class RpcRequestGuard {
                 if (message.contains("验证") || message.contains("cheating traffic")) {
                     io.github.aw1y2z.sesame.hook.ApplicationHook.showVerification();
                 }
+            } else if (isNotOpened(message)) {
+                // 该账号没开通/未认证的功能（小号开不了），服务端每次都会拒绝，一天只请求一次
+                pause = DAY;
             } else if ("48".equals(code) || "TRANSPORT_ERROR".equals(code)) {
                 pause = core ? (failures < 3 ? MINUTE : 5 * MINUTE)
                         : (failures == 1 ? 5 * MINUTE : failures == 2 ? 30 * MINUTE : DAY);
