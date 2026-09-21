@@ -64,10 +64,8 @@ public final class PuzzleCaptchaSolver {
 
     /** 已经自动拖动过的窗口：每个窗口只拖一次。 */
     private static final Set<View> USED = Collections.newSetFromMap(new WeakHashMap<>());
-    // 主线程写、工作线程读，所以用同步包装
-    private static final Map<View, Integer> CAPTURES = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<View, Integer> CAPTURES = new WeakHashMap<>();
     private static final Map<View, String> LAST_DIAG = new WeakHashMap<>();
-    private static final Set<View> NO_SLIDER_SAVED = Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
     private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "SesamePuzzleSolver");
         thread.setDaemon(true);
@@ -164,6 +162,9 @@ public final class PuzzleCaptchaSolver {
                 polling = false;
                 if (!busy && !quiet) {
                     Log.captcha("拼图验证🧩监视窗口期结束，没有可处理的拼图窗口");
+                }
+                if (!quiet) {
+                    cleanupNoSlider();
                 }
                 return;
             }
@@ -365,10 +366,9 @@ public final class PuzzleCaptchaSolver {
         }
         if (slider == null) {
             diag(root, "未识别到拼图滑块按钮（图片可能还在加载，或布局与参考设备不同）");
-            // 没识别到滑块的图（图片还没加载、窗口是别的页面…）每个窗口最多存 1 张，且等第 3 次截图以后再存：
-            // 否则会存一堆没有验证码的图，把真验证码的截图挤出保留名额，也可能截到无关页面
-            Integer captured = CAPTURES.get(root);
-            if (!quiet && captured != null && captured >= 3 && NO_SLIDER_SAVED.add(root)) {
+            // 没识别到滑块的图（图片还没加载、窗口是别的页面…）先都存着，方便看过程；验证结束后
+            // cleanupNoSlider() 统一删掉，只留包含验证码（识别到滑块）的截图
+            if (!quiet) {
                 saveSample(bitmap, "no-slider", false);
             }
             bitmap.recycle();
@@ -440,6 +440,7 @@ public final class PuzzleCaptchaSolver {
                         }
                         Log.captcha("拼图验证🧩拖动 1.5 秒后：" + (closed
                                 ? "验证窗口已关闭，多半通过" : "验证窗口仍在，可能没对准（不再自动重试，可手动完成）"));
+                        cleanupNoSlider(); // 验证结束：只留包含验证码的截图
                     }, 1500L);
                     release.run();
                 });
@@ -469,17 +470,40 @@ public final class PuzzleCaptchaSolver {
             try (FileOutputStream out = new FileOutputStream(file)) {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
             }
-            File[] all = dir.listFiles((d, name) -> name.startsWith("puzzle-") && name.endsWith(".png"));
-            if (all != null && all.length > SAMPLE_KEEP) {
-                Arrays.sort(all, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
-                for (int i = 0; i < all.length - SAMPLE_KEEP; i++) {
-                    //noinspection ResultOfMethodCallIgnored
-                    all[i].delete();
-                }
-            }
+            prune(dir, false, SAMPLE_KEEP);
+            prune(dir, true, MAX_CAPTURES_PER_WINDOW + 4);
             return file.getName();
         } catch (Throwable t) {
             return "未保存";
+        }
+    }
+
+    /** 只保留最新 keep 张：noSlider=true 统计没验证码的截图，false 统计包含验证码的截图。 */
+    private static void prune(File dir, boolean noSlider, int keep) {
+        File[] files = dir.listFiles((d, name) -> name.startsWith("puzzle-") && name.endsWith(".png")
+                && name.endsWith("-no-slider.png") == noSlider);
+        if (files == null || files.length <= keep) {
+            return;
+        }
+        Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+        for (int i = 0; i < files.length - keep; i++) {
+            //noinspection ResultOfMethodCallIgnored
+            files[i].delete();
+        }
+    }
+
+    /** 验证结束（拖动完成/监视窗口期结束）后：删掉没包含验证码的截图，只留识别到滑块的。工作线程执行，避免主线程做文件 IO。 */
+    private static void cleanupNoSlider() {
+        try {
+            WORKER.execute(() -> {
+                try {
+                    prune(FileUtil.getCurrentUserPuzzleDirectory(), true, 0);
+                } catch (Throwable t) {
+                    Log.printStackTrace(TAG, t);
+                }
+            });
+        } catch (Throwable t) {
+            Log.printStackTrace(TAG, t);
         }
     }
 
