@@ -64,8 +64,10 @@ public final class PuzzleCaptchaSolver {
 
     /** 已经自动拖动过的窗口：每个窗口只拖一次。 */
     private static final Set<View> USED = Collections.newSetFromMap(new WeakHashMap<>());
-    private static final Map<View, Integer> CAPTURES = new WeakHashMap<>();
+    // 主线程写、工作线程读，所以用同步包装
+    private static final Map<View, Integer> CAPTURES = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<View, String> LAST_DIAG = new WeakHashMap<>();
+    private static final Set<View> NO_SLIDER_SAVED = Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
     private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "SesamePuzzleSolver");
         thread.setDaemon(true);
@@ -363,7 +365,10 @@ public final class PuzzleCaptchaSolver {
         }
         if (slider == null) {
             diag(root, "未识别到拼图滑块按钮（图片可能还在加载，或布局与参考设备不同）");
-            if (!quiet) {
+            // 没识别到滑块的图（图片还没加载、窗口是别的页面…）每个窗口最多存 1 张，且等第 3 次截图以后再存：
+            // 否则会存一堆没有验证码的图，把真验证码的截图挤出保留名额，也可能截到无关页面
+            Integer captured = CAPTURES.get(root);
+            if (!quiet && captured != null && captured >= 3 && NO_SLIDER_SAVED.add(root)) {
                 saveSample(bitmap, "no-slider", false);
             }
             bitmap.recycle();
