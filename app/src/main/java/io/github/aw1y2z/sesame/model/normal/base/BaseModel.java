@@ -59,7 +59,9 @@ public class BaseModel extends Model {
     @Getter
     private static final BooleanModelField showToast = new BooleanModelField("showToast", "气泡提示", true);
     @Getter
-    private static final BooleanModelField autoPuzzleSlider = new BooleanModelField("autoPuzzleSlider", "自动处理图片拼图滑块验证（未经真机验证，失败时不会重试）", true);
+    private static final BooleanModelField autoPuzzleSlider = new BooleanModelField("autoPuzzleSlider", "自动处理图片拼图滑块验证（拖错后按下面的次数重试）", true);
+    @Getter
+    private static final IntegerModelField puzzleMaxAttempts = new IntegerModelField("puzzleMaxAttempts", "拼图验证每个窗口最多自动尝试次数(1-5，计算错了会重试)", 4, 1, 5);
     @Getter
     private static final BooleanModelField closeCaptchaDialogVPN = new BooleanModelField("closeCaptchaDialogVPN", "关闭请检查是否使用了代理软件或VPN", false);
     @Getter
@@ -108,6 +110,7 @@ public class BaseModel extends Model {
         modelFields.addField(showToast);
         modelFields.addField(closeCaptchaDialogVPN);
         modelFields.addField(autoPuzzleSlider);
+        modelFields.addField(puzzleMaxAttempts);
         modelFields.addField(enableOnGoing);
         modelFields.addField(toastOffsetY);
         return modelFields;

@@ -37,7 +37,8 @@ import io.github.aw1y2z.sesame.util.RandomUtil;
  * <p>流程：验证被要求时 {@link #arm} → 主线程每秒扫描一次窗口（最多 60 次）找 WebView → 对 WebView 截图（PixelCopy）
  * → 工作线程识别滑块按钮/轨道终点并做图像匹配得到缺口位移 → 主线程用触摸事件把滑块拖过去。
  * 图像匹配（{@link PuzzleSliderMatcher} 等）与 GR2026 一致，已用其真实样本离线回放（checks/check_puzzle_matcher.py）。
- * <p>约束（来自 GR 的经验，也是为了不加重风控）：每个验证码窗口最多自动拖动一次；识别置信度不够就不动手；
+ * <p>约束（来自 GR 的经验，也是为了不加重风控）：每个验证码窗口最多自动拖动 N 次（配置项，默认 4，范围 1-5；拖错后
+ * 等页面刷新出新图再重试，GR 只拖一次，这里按用户要求放宽）；识别置信度不够就不动手；
  * 只在验证被要求后的窗口期内扫描，不会在任意 H5 页面上乱点。
  * <p>坐标常量按 GR 记录的设备布局（参考宽度 1264）缩放，其它布局可能识别不到滑块——这时只会记日志并保存截图，
  * 不会拖动；截图在 sesame-M/puzzle/<账号ID>/ 里，发给我用来校准。
@@ -50,6 +51,9 @@ public final class PuzzleCaptchaSolver {
     private static final int MAX_POLLS = 60;
     private static final int PASSIVE_POLLS = 8;
     private static final int MAX_CAPTURES_PER_WINDOW = 12;
+    private static final int DEFAULT_ATTEMPTS = 4;
+    private static final int ATTEMPTS_LIMIT = 5;
+    private static final int RETRY_POLLS = 30;
     private static final long MATCH_BUDGET_MS = 3500L;
     private static final long SLIDE_MIN_MS = 850L;
     private static final long SLIDE_MAX_MS = 950L;
@@ -63,8 +67,8 @@ public final class PuzzleCaptchaSolver {
     private static final float START_TOLERANCE = 130f;
     private static final float VERTICAL_TOLERANCE = 700f;
 
-    /** 已经自动拖动过的窗口：每个窗口只拖一次。 */
-    private static final Set<View> USED = Collections.newSetFromMap(new WeakHashMap<>());
+    /** 每个窗口已经自动拖动的次数；失败后允许重试，但总数有上限（连续失败太多会加重风控）。 */
+    private static final Map<View, Integer> ATTEMPTS = new WeakHashMap<>();
     private static final Map<View, Integer> CAPTURES = new WeakHashMap<>();
     private static final Map<View, String> LAST_DIAG = new WeakHashMap<>();
     private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(runnable -> {
@@ -221,7 +225,7 @@ public final class PuzzleCaptchaSolver {
         for (int i = targets.size() - 1; i >= 0; i--) {
             Target target = targets.get(i);
             View root = target.root;
-            if (root == null || !root.isShown() || USED.contains(root)) {
+            if (root == null || !root.isShown() || attemptsOf(root) >= maxAttempts()) {
                 continue;
             }
             View web = findWebView(root);
@@ -411,7 +415,7 @@ public final class PuzzleCaptchaSolver {
     private static void swipe(Target target, View web, Slider slider, PuzzleSliderMatcher.Result match,
                               float startX, float startY, float trackEndX, String sampleName, Runnable release) {
         View root = target.root;
-        if (!web.isShown() || !web.isAttachedToWindow() || USED.contains(root)) {
+        if (!web.isShown() || !web.isAttachedToWindow() || attemptsOf(root) >= maxAttempts()) {
             release.run();
             return;
         }
@@ -421,30 +425,71 @@ public final class PuzzleCaptchaSolver {
             release.run();
             return;
         }
-        USED.add(root);
+        final int attempt = attemptsOf(root) + 1;
+        ATTEMPTS.put(root, attempt);
         long duration = SLIDE_MIN_MS + RandomUtil.nextInt(0, (int) (SLIDE_MAX_MS - SLIDE_MIN_MS + 1));
         Log.captcha(String.format(java.util.Locale.ROOT,
-                "拼图验证🧩识别成功，开始拖动：缺口位移=%dpx 触摸距离=%.0fpx 终点=%.0f 轨道截断=%s 方法=%s 分数=%.3f 耗时=%dms 截图=%s",
-                match.displacement, mapping.touchDistance, mapping.endX, mapping.clamped, match.method,
+                "拼图验证🧩第%d/" + maxAttempts() + "次识别成功，开始拖动：缺口位移=%dpx 触摸距离=%.0fpx 终点=%.0f 轨道截断=%s 方法=%s 分数=%.3f 耗时=%dms 截图=%s",
+                attempt, match.displacement, mapping.touchDistance, mapping.endX, mapping.clamped, match.method,
                 match.bestScore, match.elapsedMs, sampleName));
         PuzzleSwipe.start(web, startX, startY, mapping.endX, startY, duration, 12f,
                 () -> web.isShown() && web.isAttachedToWindow(),
                 (sent, reason) -> {
-                    Log.captcha("拼图验证🧩拖动" + (sent ? "已完成" : "未完成") + "（" + reason + "），每个窗口只自动拖一次");
-                    polling = false; // 拖完就停止本轮监视，结果由页面自己判定
+                    Log.captcha("拼图验证🧩拖动" + (sent ? "已完成" : "未完成") + "（" + reason + "）");
+                    polling = false; // 拖完先停止扫描，1.5 秒后按页面结果决定是结束还是重试
                     MAIN.postDelayed(() -> {
                         boolean closed = !web.isAttachedToWindow() || !web.isShown();
                         if (closed) {
                             // 窗口关了多半是通过了：解除接口的验证暂停，触发验证的功能不必再等到期。
                             // 若其实没通过，接口下次还会返回“请验证”，会重新暂停并重新监视
                             io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard.clearVerifyPause();
+                            Log.captcha("拼图验证🧩拖动 1.5 秒后：验证窗口已关闭，多半通过");
+                            cleanupNoSlider(); // 验证结束：只留包含验证码的截图
+                        } else if (attempt < maxAttempts()) {
+                            Log.captcha("拼图验证🧩拖动 1.5 秒后：验证窗口仍在，第 " + attempt + " 次没通过，等页面刷新出新图后重试");
+                            retry(root);
+                        } else {
+                            Log.captcha("拼图验证🧩拖动 1.5 秒后：验证窗口仍在，已自动尝试 " + attempt + " 次不再重试，可手动完成");
+                            cleanupNoSlider();
                         }
-                        Log.captcha("拼图验证🧩拖动 1.5 秒后：" + (closed
-                                ? "验证窗口已关闭，多半通过" : "验证窗口仍在，可能没对准（不再自动重试，可手动完成）"));
-                        cleanupNoSlider(); // 验证结束：只留包含验证码的截图
                     }, 1500L);
                     release.run();
                 });
+    }
+
+    /** 每个窗口最多自动尝试几次：读配置，限制在 1 到 5；读不到就用默认 4（连续失败太多会加重风控，所以有上限）。 */
+    private static int maxAttempts() {
+        try {
+            Integer value = BaseModel.getPuzzleMaxAttempts().getValue();
+            if (value != null) {
+                return Math.max(1, Math.min(ATTEMPTS_LIMIT, value));
+            }
+        } catch (Throwable ignored) {
+            // 配置没加载好：用默认值
+        }
+        return DEFAULT_ATTEMPTS;
+    }
+
+    private static int attemptsOf(View root) {
+        Integer count = ATTEMPTS.get(root);
+        return count == null ? 0 : count;
+    }
+
+    /**
+     * 拖错后页面会刷新出新图：清掉这个窗口的截图计数和诊断去重，重新开始一轮监视（最多 RETRY_POLLS 秒）。
+     * 新一轮仍要求滑块回到轨道左端、匹配可信才动手，所以页面还在刷新时不会乱拖。
+     */
+    private static void retry(View root) {
+        CAPTURES.remove(root);
+        LAST_DIAG.remove(root);
+        quiet = false;
+        maxPolls = RETRY_POLLS;
+        polls = 0;
+        if (polling) {
+            return;
+        }
+        polling = true;
+        MAIN.postDelayed(PuzzleCaptchaSolver::poll, POLL_MS);
     }
 
     /** 同一窗口同一原因只记一次，避免每秒刷屏。 */
