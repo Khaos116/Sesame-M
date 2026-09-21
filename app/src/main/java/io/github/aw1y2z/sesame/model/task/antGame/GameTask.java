@@ -103,6 +103,9 @@ public enum GameTask {
             URL url = new URL("https://gamesapi2.aslk2018.com/v2/game/login");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
+            // 防止外部游戏服连接挂起导致当前线程无限阻塞（主任务线程会因此冻结，只能重启恢复）
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(15_000);
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("alipayMiniMark", mark);
@@ -263,6 +266,9 @@ public enum GameTask {
             URL url = new URL("https://gamesapi2.aslk2018.com/v2/zfb/taskReport");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
+            // 防止外部游戏服连接挂起导致当前线程无限阻塞（reportSync 在主任务线程同步执行）
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(15_000);
             conn.setDoOutput(true);
             conn.setRequestProperty("authorization", this.cachedToken);
             conn.setRequestProperty("alipayMiniMark", mark);

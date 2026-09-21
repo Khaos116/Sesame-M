@@ -72,7 +72,7 @@ public class BaseModel extends Model {
     public void boot(ClassLoader classLoader) {
         try {
             // 开关已迁到全局配置 AppConfig（模块级，不分账号）
-            CaptchaHook.updateHooks(io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getCloseCaptchaDialogVPN());
+            CaptchaHook.updateHooks(io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getCloseCaptchaDialog());
             Log.record("✅ 验证码Hook配置已同步");
         } catch (Throwable t) {
             Log.printStackTrace("❌ 验证码Hook配置同步失败", t);

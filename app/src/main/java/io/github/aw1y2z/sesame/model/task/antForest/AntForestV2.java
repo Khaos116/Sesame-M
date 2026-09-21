@@ -2629,7 +2629,7 @@ public class AntForestV2 extends ModelTask {
                     if (!Status.hasFlagToday("EnergyRain::PlayGame")) {
                         Log.record("是否可以能量雨游戏: " + canPlayGame);
                         // 检查并处理游戏任务
-                        boolean hasTaskToProcess = checkAndDoEndGameTask();
+                        checkAndDoEndGameTask();
                         TimeUtil.sleep(4000);
                     }
                 }
@@ -2644,17 +2644,17 @@ public class AntForestV2 extends ModelTask {
         }
     }
 
-    public static boolean checkAndDoEndGameTask() {
+    public static void checkAndDoEndGameTask() {
         try {
             // 1. 查询游戏任务列表
             String response = AntForestRpcCall.queryEnergyRainEndGameList();
             JSONObject jo = new JSONObject(response);
             if (!MessageUtil.checkResultCode(TAG, jo)) {
-                return false;
+                return;
             }
             if (!jo.has("energyRainEndGameGroupTask")) {
                 Status.flagToday("EnergyRain::PlayGame");
-                return false;
+                return;
             }
 
             // 2. 初始化新任务（需要接入森林救援队）
@@ -2663,44 +2663,43 @@ public class AntForestV2 extends ModelTask {
                 String initResStr = AntForestRpcCall.initTask("GAME_DONE_SLJYD");
                 JSONObject initRes = new JSONObject(initResStr);
                 if (!MessageUtil.checkResultCode(TAG, initRes)) {
-                    return false;
+                    return;
                 }
-                /*
-                // 3. 遍历任务列表，检查待执行任务
-                JSONObject groupTask = jo.optJSONObject("energyRainEndGameGroupTask");
-                JSONArray taskInfoList = groupTask != null ? groupTask.optJSONArray("taskInfoList") : null;
-
-                if (taskInfoList != null && taskInfoList.length() > 0) {
-                    for (int i = 0; i < taskInfoList.length(); i++) {
-                        JSONObject task = taskInfoList.getJSONObject(i);
-                        JSONObject baseInfo = task.optJSONObject("taskBaseInfo");
-                        if (baseInfo == null) {
-                            continue;
-                        }
-                        String taskType = baseInfo.optString("taskType");
-                        String taskStatus = baseInfo.optString("taskStatus");
-
-                        // 处理森林救援队任务（GAME_DONE_SLJYD）
-                        if ("GAME_DONE_SLJYD".equals(taskType)) {
-                            if ("TODO".equals(taskStatus) || "NOT_TRIGGER".equals(taskStatus)) {
-                                // 执行任务上报
-                                GameTask.Forest_sljyd.report("森林", 1);
-                                return true; // 有任务待处理
-                            } else if ("FINISHED".equals(taskStatus) || "DONE".equals(taskStatus)) {
-                                return false; // 任务已完成
-                            }
-                        }
-                    }
-                } else if (!jo.optBoolean("needInitTask", false)) {
-                    return false; // 无任务且无需初始化
-                }*/
             }
-            GameTask.Forest_sljyd.report("森林", 1);
-            return true;
+
+            // 3. 仅当森林救援队(GAME_DONE_SLJYD)未完结时才上报，避免每轮重复发起外部请求
+            JSONObject groupTask = jo.optJSONObject("energyRainEndGameGroupTask");
+            JSONArray taskInfoList = groupTask != null ? groupTask.optJSONArray("taskInfoList") : null;
+
+            String sljydStatus = null;
+            if (taskInfoList != null) {
+                for (int i = 0; i < taskInfoList.length(); i++) {
+                    JSONObject task = taskInfoList.optJSONObject(i);
+                    JSONObject baseInfo = task != null ? task.optJSONObject("taskBaseInfo") : null;
+                    if (baseInfo == null) continue;
+                    if ("GAME_DONE_SLJYD".equals(baseInfo.optString("taskType"))) {
+                        sljydStatus = baseInfo.optString("taskStatus");
+                        break;
+                    }
+                }
+            }
+
+            // 需要初始化、或任务处于待办/未触发时上报；已完结/无任务则仅标记今日已处理
+            boolean needInit = jo.optBoolean("needInitTask", false);
+            boolean shouldReport = needInit
+                    || "TODO".equals(sljydStatus)
+                    || "NOT_TRIGGER".equals(sljydStatus);
+
+            if (shouldReport) {
+                GameTask.Forest_sljyd.report("森林", 1);
+                Status.flagToday("EnergyRain::PlayGame");
+                return;
+            }
+            Log.record("森林救援队🐱无需上报(状态:" + sljydStatus + ")，今日跳过");
+            Status.flagToday("EnergyRain::PlayGame");
 
         } catch (Throwable th) {
             Log.printStackTrace("执行能量雨后续任务出错:", th);
-            return false;
         }
     }
 

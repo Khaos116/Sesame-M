@@ -133,8 +133,9 @@ public class CaptchaHook {
                     String info = dialogAllInfo.toString();
 
                     // 宽松匹配：包含"VPN"或"代理"即视为需拦截的弹窗
-                    if (info.contains("VPN") || info.contains("代理")) {
-                        Log.record("检测到VPN/代理弹窗，自动关闭: " + info.replaceAll("\n", " | "));
+                    if (info.contains("VPN") || info.contains("代理")
+                            || info.contains("人气太旺") || info.contains("反馈码")) {
+                        Log.record("检测到可屏蔽弹窗，自动关闭: " + info.replaceAll("\n", " | "));
                         dialog.dismiss();
                     }
                 }

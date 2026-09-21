@@ -807,11 +807,11 @@ fun ConfigTab(activity: MiuixMainActivity) {
             enableOnGoing = it
             activity.broadcastReloadConfig()
         }
-        var closeCaptchaDialogVPN by remember { mutableStateOf(AppConfig.INSTANCE.closeCaptchaDialogVPN ?: true) }
-        BooleanSwitch("屏蔽VPN/代理弹窗", closeCaptchaDialogVPN) {
-            AppConfig.INSTANCE.closeCaptchaDialogVPN = it
+        var closeCaptchaDialog by remember { mutableStateOf(AppConfig.INSTANCE.closeCaptchaDialog ?: true) }
+        BooleanSwitch("屏蔽部分弹窗", closeCaptchaDialog) {
+            AppConfig.INSTANCE.closeCaptchaDialog = it
             AppConfig.save()
-            closeCaptchaDialogVPN = it
+            closeCaptchaDialog = it
             activity.broadcastReloadConfig()
         }
     }

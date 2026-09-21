@@ -1429,7 +1429,11 @@ public class AntOcean extends ModelTask {
             // 执行摸鱼循环
             int touchCount = 0;
             int totalEnergy = 0;
-            while (remainTouchChance > 0) {
+            // 护底：防止服务端未返回剩余摸鱼次数导致 while 永不退出（线程永久挂起，只能重启进程恢复）
+            int touchGuard = 0;
+            final int MAX_TOUCH = 200;
+            while (remainTouchChance > 0 && touchGuard < MAX_TOUCH) {
+                touchGuard++;
                 String touchResult = AntOceanRpcCall.antfishTouchfish();
                 JSONObject touchJo = new JSONObject(touchResult);
 
@@ -1484,14 +1488,24 @@ public class AntOcean extends ModelTask {
                     Statistics.addData(Statistics.DataType.COLLECTED, energyGain);
                 }
 
-                // 更新剩余次数
+                // 更新剩余次数：仅当响应明确带回 myFish.interactVO 时才采用，否则视为无法继续，安全退出避免死循环
+                boolean remainUpdated = false;
                 JSONObject myFishResult = touchJo.optJSONObject("myFish");
                 if (myFishResult != null) {
                     JSONObject interactResult = myFishResult.optJSONObject("interactVO");
                     if (interactResult != null) {
                         remainTouchChance = interactResult.optInt("remainTouchChance", 0);
+                        remainUpdated = true;
                     }
                 }
+                if (!remainUpdated) {
+                    Log.record("海洋摸鱼🐟服务端未返回剩余摸鱼次数，结束摸鱼循环避免死循环");
+                    break;
+                }
+            }
+
+            if (touchGuard >= MAX_TOUCH) {
+                Log.record("海洋摸鱼🐟摸鱼循环达到上限[" + MAX_TOUCH + "]，强制退出（疑似服务端未正确递减剩余次数）");
             }
 
             if (touchCount > 0) {
