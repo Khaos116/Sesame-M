@@ -1,0 +1,590 @@
+package io.github.aw1y2z.sesame.hook;
+
+import android.app.Activity;
+import android.app.Dialog;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Rect;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.PixelCopy;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.WeakHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
+import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
+import io.github.aw1y2z.sesame.util.FileUtil;
+import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.RandomUtil;
+
+/**
+ * 自动处理「对准图片」的拼图滑块验证码（H5 WebView 渲染）。
+ * <p>流程：验证被要求时 {@link #arm} → 主线程每秒扫描一次窗口（最多 60 次）找 WebView → 对 WebView 截图（PixelCopy）
+ * → 工作线程识别滑块按钮/轨道终点并做图像匹配得到缺口位移 → 主线程用触摸事件把滑块拖过去。
+ * 图像匹配（{@link PuzzleSliderMatcher} 等）与 GR2026 一致，已用其真实样本离线回放（checks/check_puzzle_matcher.py）。
+ * <p>约束（来自 GR 的经验，也是为了不加重风控）：每个验证码窗口最多自动拖动一次；识别置信度不够就不动手；
+ * 只在验证被要求后的窗口期内扫描，不会在任意 H5 页面上乱点。
+ * <p>坐标常量按 GR 记录的设备布局（参考宽度 1264）缩放，其它布局可能识别不到滑块——这时只会记日志并保存截图，
+ * 不会拖动；截图在日志目录的 puzzle 文件夹里，发给我用来校准。
+ */
+public final class PuzzleCaptchaSolver {
+    private static final String TAG = "PuzzleCaptchaSolver";
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+
+    private static final long POLL_MS = 1000L;
+    private static final int MAX_POLLS = 60;
+    private static final int MAX_CAPTURES_PER_WINDOW = 12;
+    private static final long MATCH_BUDGET_MS = 3500L;
+    private static final long SLIDE_MIN_MS = 850L;
+    private static final long SLIDE_MAX_MS = 950L;
+    private static final int SAMPLE_KEEP = 6;
+
+    private static final float REFERENCE_WIDTH = 1264f;
+    private static final float START_X = 236f;
+    private static final float START_Y = 1787f;
+    // 同一验证码在不同设备有不同的水平留白：固定坐标只作宽松候选提示，真正的按钮靠颜色连通块识别
+    private static final float START_TOLERANCE = 130f;
+    private static final float VERTICAL_TOLERANCE = 700f;
+
+    /** 已经自动拖动过的窗口：每个窗口只拖一次。 */
+    private static final Set<View> USED = Collections.newSetFromMap(new WeakHashMap<>());
+    private static final Map<View, Integer> CAPTURES = new WeakHashMap<>();
+    private static final Map<View, String> LAST_DIAG = new WeakHashMap<>();
+    private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "SesamePuzzleSolver");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    // 以下仅主线程访问
+    private static boolean polling;
+    private static boolean busy;
+    private static int polls;
+    private static long generation;
+    private static boolean disabledLogged;
+
+    private PuzzleCaptchaSolver() {
+    }
+
+    /**
+     * 验证被要求时调用（任意线程）：接口返回“请验证”、或验证码弹窗出现。重复调用只会把 60 秒窗口期重新计时。
+     */
+    public static void arm(String source) {
+        long armedGeneration = TaskLifecycle.generation();
+        MAIN.post(() -> {
+            if (!isEnabled()) {
+                if (!disabledLogged) {
+                    disabledLogged = true;
+                    Log.captcha("拼图验证⏸️自动图片滑块开关已关闭，不处理（来源[" + source + "]）");
+                }
+                return;
+            }
+            polls = 0;
+            generation = armedGeneration;
+            if (polling) {
+                return;
+            }
+            polling = true;
+            Log.captcha("拼图验证🧩开始监视验证窗口，最长 " + MAX_POLLS + " 秒（来源[" + source + "]）");
+            MAIN.postDelayed(PuzzleCaptchaSolver::poll, POLL_MS);
+        });
+    }
+
+    private static boolean isEnabled() {
+        try {
+            return Boolean.TRUE.equals(BaseModel.getAutoPuzzleSlider().getValue());
+        } catch (Throwable t) {
+            // 配置还没加载好就按开启处理会误动手，宁可不动
+            return false;
+        }
+    }
+
+    private static void poll() {
+        try (TaskLifecycle.Work work = TaskLifecycle.enter(generation)) {
+            if (work == null) {
+                polling = false; // 账号切换中或已切走：旧账号的窗口期作废
+                return;
+            }
+            polls++;
+            if (!busy) {
+                scanOnce();
+            }
+            if (polls >= MAX_POLLS) {
+                polling = false;
+                if (!busy) {
+                    Log.captcha("拼图验证🧩监视窗口期结束，没有可处理的拼图窗口");
+                }
+                return;
+            }
+            MAIN.postDelayed(PuzzleCaptchaSolver::poll, POLL_MS);
+        } catch (Throwable t) {
+            polling = false;
+            Log.printStackTrace(TAG, t);
+        }
+    }
+
+    private static final class Target {
+        final View root;
+        final Window window;
+
+        Target(View root, Window window) {
+            this.root = root;
+            this.window = window;
+        }
+    }
+
+    /** 当前可见窗口：栈顶 Activity + 被监控到的显示中对话框（对话框靠后，优先扫描）。 */
+    private static List<Target> windows() {
+        List<Target> targets = new ArrayList<>();
+        Activity top = SimplePageManager.getTopActivity();
+        if (top != null && !top.isFinishing() && top.getWindow() != null) {
+            targets.add(new Target(top.getWindow().getDecorView(), top.getWindow()));
+        }
+        for (WeakReference<Dialog> ref : new ArrayList<>(SimplePageManager.getDialogs())) {
+            Dialog dialog = ref.get();
+            if (dialog != null && dialog.isShowing() && dialog.getWindow() != null) {
+                targets.add(new Target(dialog.getWindow().getDecorView(), dialog.getWindow()));
+            }
+        }
+        return targets;
+    }
+
+    private static void scanOnce() {
+        List<Target> targets = windows();
+        for (int i = targets.size() - 1; i >= 0; i--) {
+            Target target = targets.get(i);
+            View root = target.root;
+            if (root == null || !root.isShown() || USED.contains(root)) {
+                continue;
+            }
+            View web = findWebView(root);
+            if (web == null || !web.isShown() || web.getWidth() < 400 || web.getHeight() < 400) {
+                continue;
+            }
+            int captures = CAPTURES.containsKey(root) ? CAPTURES.get(root) : 0;
+            if (captures >= MAX_CAPTURES_PER_WINDOW) {
+                continue;
+            }
+            CAPTURES.put(root, captures + 1);
+            busy = true;
+            capture(target, web, (bitmap, error) -> {
+                if (bitmap == null) {
+                    diag(root, "截图失败:" + error);
+                    busy = false;
+                    return;
+                }
+                submit(target, web, bitmap);
+            });
+            return;
+        }
+    }
+
+    private static View findWebView(View view) {
+        if (view == null) {
+            return null;
+        }
+        View nested = null;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View candidate = findWebView(group.getChildAt(i));
+                if (candidate != null) {
+                    nested = candidate;
+                }
+            }
+        }
+        if (nested != null) {
+            return nested;
+        }
+        return isWebView(view) ? view : null;
+    }
+
+    /** 支付宝的验证码在 com.alipay.mywebview.sdk.WebView 里渲染，它不一定继承 android.webkit.WebView。 */
+    private static boolean isWebView(View view) {
+        if (view instanceof android.webkit.WebView) {
+            return true;
+        }
+        String name = view.getClass().getName();
+        if ("android.webkit.WebView".equals(name) || "com.alipay.mywebview.sdk.WebView".equals(name)) {
+            return true;
+        }
+        CharSequence accessibility = view.getAccessibilityClassName();
+        return accessibility != null && ("android.webkit.WebView".contentEquals(accessibility)
+                || "com.alipay.mywebview.sdk.WebView".contentEquals(accessibility));
+    }
+
+    private interface CaptureCallback {
+        void onCaptured(Bitmap bitmap, String error);
+    }
+
+    /** 主线程：对 WebView 实际渲染画面截图（PixelCopy；WebView 走硬件渲染，软件 draw 可能是空白）。 */
+    private static void capture(Target target, View web, CaptureCallback callback) {
+        if (web.getWidth() <= 0 || web.getHeight() <= 0) {
+            callback.onCaptured(null, "invalid size");
+            return;
+        }
+        Bitmap bitmap;
+        try {
+            bitmap = Bitmap.createBitmap(web.getWidth(), web.getHeight(), Bitmap.Config.ARGB_8888);
+        } catch (Throwable t) {
+            callback.onCaptured(null, "bitmap allocation failed: " + t);
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && target.window != null) {
+            int[] inWindow = new int[2];
+            web.getLocationInWindow(inWindow);
+            Rect source = new Rect(inWindow[0], inWindow[1], inWindow[0] + web.getWidth(), inWindow[1] + web.getHeight());
+            try {
+                PixelCopy.request(target.window, source, bitmap, result -> {
+                    if (result == PixelCopy.SUCCESS) {
+                        callback.onCaptured(bitmap, null);
+                    } else {
+                        bitmap.recycle();
+                        callback.onCaptured(null, "PixelCopy result=" + result);
+                    }
+                }, MAIN);
+                return;
+            } catch (Throwable t) {
+                bitmap.recycle();
+                callback.onCaptured(null, "PixelCopy failed: " + t);
+                return;
+            }
+        }
+        try {
+            web.draw(new Canvas(bitmap));
+            callback.onCaptured(bitmap, null);
+        } catch (Throwable t) {
+            bitmap.recycle();
+            callback.onCaptured(null, "draw failed: " + t);
+        }
+    }
+
+    /** 主线程：把截图交给工作线程做识别与匹配。 */
+    private static void submit(Target target, View web, Bitmap bitmap) {
+        final long submitGeneration = generation;
+        int[] location = new int[2];
+        web.getLocationOnScreen(location);
+        final float scale = web.getWidth() / REFERENCE_WIDTH;
+        try {
+            WORKER.execute(() -> {
+                Runnable release = () -> busy = false;
+                try (TaskLifecycle.Work work = TaskLifecycle.enter(submitGeneration)) {
+                    if (work == null) {
+                        bitmap.recycle();
+                        MAIN.post(release);
+                        return;
+                    }
+                    analyze(target, web, bitmap, location, scale, release);
+                } catch (Throwable t) {
+                    Log.printStackTrace(TAG, t);
+                    if (!bitmap.isRecycled()) {
+                        bitmap.recycle();
+                    }
+                    MAIN.post(release);
+                }
+            });
+        } catch (Throwable t) {
+            bitmap.recycle();
+            busy = false;
+            Log.printStackTrace(TAG, t);
+        }
+    }
+
+    /** 工作线程：识别滑块 → 图像匹配 → 结果回主线程执行拖动。 */
+    private static void analyze(Target target, View web, Bitmap bitmap, int[] location, float scale, Runnable release) {
+        View root = target.root;
+        Slider slider = detectSlider(bitmap, scale);
+        if (slider == null) {
+            diag(root, "未识别到拼图滑块按钮（图片可能还在加载，或布局与参考设备不同）");
+            saveSample(bitmap, "no-slider", false);
+            bitmap.recycle();
+            MAIN.post(release);
+            return;
+        }
+        if (!slider.atStart(scale)) {
+            diag(root, "滑块不在轨道左端，跳过：" + slider.describe());
+            bitmap.recycle();
+            MAIN.post(release);
+            return;
+        }
+        if (!slider.hasTrackEnd()) {
+            diag(root, "未识别到轨道终点：" + slider.describe());
+            saveSample(bitmap, "no-track", false);
+            bitmap.recycle();
+            MAIN.post(release);
+            return;
+        }
+        float startX = location[0] + slider.centerX;
+        float startY = location[1] + slider.centerY;
+        float trackEndX = location[0] + slider.trackEndX;
+        int sourceLeft = Math.round(slider.centerX - slider.buttonWidth / 2f);
+        PuzzleSliderMatcher.Result match = PuzzleSliderMatcher.estimate(
+                bitmap, startY, location[1], MATCH_BUDGET_MS, sourceLeft);
+        if (!match.success) {
+            diag(root, "缺口位移识别失败（不拖动）：" + match.error);
+            saveSample(bitmap, "match-failed", false);
+            bitmap.recycle();
+            MAIN.post(release);
+            return;
+        }
+        String sampleName = saveSample(bitmap, "matched-d" + match.displacement, false);
+        bitmap.recycle();
+        MAIN.post(() -> swipe(target, web, slider, match, startX, startY, trackEndX, sampleName, release));
+    }
+
+    /** 主线程：窗口仍然有效才拖动，并只拖一次。 */
+    private static void swipe(Target target, View web, Slider slider, PuzzleSliderMatcher.Result match,
+                              float startX, float startY, float trackEndX, String sampleName, Runnable release) {
+        View root = target.root;
+        if (!web.isShown() || !web.isAttachedToWindow() || USED.contains(root)) {
+            release.run();
+            return;
+        }
+        PuzzleSliderGeometry.Mapping mapping = PuzzleSliderGeometry.map(match.displacement, startX, trackEndX);
+        if (!mapping.success || mapping.touchDistance <= 0f) {
+            diag(root, "轨道换算失败：" + mapping.error);
+            release.run();
+            return;
+        }
+        USED.add(root);
+        long duration = SLIDE_MIN_MS + RandomUtil.nextInt(0, (int) (SLIDE_MAX_MS - SLIDE_MIN_MS + 1));
+        Log.captcha(String.format(java.util.Locale.ROOT,
+                "拼图验证🧩识别成功，开始拖动：缺口位移=%dpx 触摸距离=%.0fpx 终点=%.0f 轨道截断=%s 方法=%s 分数=%.3f 耗时=%dms 截图=%s",
+                match.displacement, mapping.touchDistance, mapping.endX, mapping.clamped, match.method,
+                match.bestScore, match.elapsedMs, sampleName));
+        PuzzleSwipe.start(web, startX, startY, mapping.endX, startY, duration, 12f,
+                () -> web.isShown() && web.isAttachedToWindow(),
+                (sent, reason) -> {
+                    Log.captcha("拼图验证🧩拖动" + (sent ? "已完成" : "未完成") + "（" + reason + "），每个窗口只自动拖一次");
+                    polling = false; // 拖完就停止本轮监视，结果由页面自己判定
+                    MAIN.postDelayed(() -> {
+                        boolean closed = !web.isAttachedToWindow() || !web.isShown();
+                        Log.captcha("拼图验证🧩拖动 1.5 秒后：" + (closed
+                                ? "验证窗口已关闭，多半通过" : "验证窗口仍在，可能没对准（不再自动重试，可手动完成）"));
+                    }, 1500L);
+                    release.run();
+                });
+    }
+
+    /** 同一窗口同一原因只记一次，避免每秒刷屏。 */
+    private static void diag(View root, String message) {
+        String last = LAST_DIAG.get(root);
+        if (message.equals(last)) {
+            return;
+        }
+        LAST_DIAG.put(root, message);
+        Log.captcha("拼图验证🧩" + message);
+    }
+
+    /** 保存截图到日志目录 puzzle/，只保留最新几张，返回文件名（保存失败返回 "未保存"）。 */
+    private static String saveSample(Bitmap bitmap, String tag, boolean ignored) {
+        try {
+            File dir = new File(FileUtil.getCurrentUserLogDirectory(), "puzzle");
+            if (!dir.isDirectory() && !dir.mkdirs()) {
+                return "未保存";
+            }
+            File file = new File(dir, "puzzle-" + System.currentTimeMillis() + "-" + tag + ".png");
+            try (FileOutputStream out = new FileOutputStream(file)) {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
+            }
+            File[] all = dir.listFiles((d, name) -> name.startsWith("puzzle-") && name.endsWith(".png"));
+            if (all != null && all.length > SAMPLE_KEEP) {
+                Arrays.sort(all, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+                for (int i = 0; i < all.length - SAMPLE_KEEP; i++) {
+                    //noinspection ResultOfMethodCallIgnored
+                    all[i].delete();
+                }
+            }
+            return file.getName();
+        } catch (Throwable t) {
+            return "未保存";
+        }
+    }
+
+    // ===================== 滑块按钮与轨道识别（移植自 GR BaseCaptchaHandler） =====================
+
+    private static final class Slider {
+        final float centerX;
+        final float centerY;
+        final float trackEndX;
+        final int buttonWidth;
+
+        Slider(float centerX, float centerY, float trackEndX, int buttonWidth) {
+            this.centerX = centerX;
+            this.centerY = centerY;
+            this.trackEndX = trackEndX;
+            this.buttonWidth = buttonWidth;
+        }
+
+        boolean hasTrackEnd() {
+            return Float.isFinite(trackEndX) && trackEndX > centerX;
+        }
+
+        boolean atStart(float scale) {
+            return Math.abs(centerX - START_X * scale) <= START_TOLERANCE * scale;
+        }
+
+        String describe() {
+            return "center=(" + Math.round(centerX) + "," + Math.round(centerY) + ") buttonWidth=" + buttonWidth
+                    + " trackEnd=" + (hasTrackEnd() ? String.valueOf(Math.round(trackEndX)) : "无");
+        }
+    }
+
+    private static Slider detectSlider(Bitmap bitmap, float scale) {
+        if (bitmap == null || bitmap.isRecycled() || bitmap.getWidth() <= 0 || bitmap.getHeight() <= 0) {
+            return null;
+        }
+        try {
+            int scanTop = Math.max(0, Math.round((START_Y - VERTICAL_TOLERANCE) * scale));
+            int scanBottom = Math.min(bitmap.getHeight(), Math.round((START_Y + VERTICAL_TOLERANCE) * scale));
+            int scanLeft = Math.max(0, Math.round((START_X - 180f) * scale));
+            int scanRight = Math.min(bitmap.getWidth(), Math.round((START_X + 220f) * scale));
+            int[] c = findButtonComponent(bitmap, scanLeft, scanTop, scanRight, scanBottom, scale);
+            if (c == null) {
+                return null;
+            }
+            float trackEnd = detectTrackEnd(bitmap, c[0], c[1], c[2], c[3], scale);
+            return new Slider((c[0] + c[2]) / 2f, (c[1] + c[3]) / 2f, trackEnd, c[2] - c[0] + 1);
+        } catch (Throwable t) {
+            Log.printStackTrace(TAG, t);
+            return null;
+        }
+    }
+
+    /**
+     * 取一个连通的彩色块（蓝/红按钮）而不是所有蓝/红像素的包围盒：错误页常带另一块彩色插图，
+     * 合并会让坐标漂移。返回 {left, top, right, bottom}，找不到返回 null。
+     */
+    private static int[] findButtonComponent(Bitmap bitmap, int left, int top, int right, int bottom, float scale) {
+        int width = right - left;
+        int height = bottom - top;
+        if (width <= 0 || height <= 0) {
+            return null;
+        }
+        boolean[] visited = new boolean[width * height];
+        int[] queue = new int[width * height];
+        int minWidth = Math.max(50, Math.round(60f * scale));
+        int maxWidth = Math.max(minWidth, Math.round(180f * scale));
+        int minHeight = Math.max(45, Math.round(55f * scale));
+        int maxHeight = Math.max(minHeight, Math.round(180f * scale));
+        int minPixels = Math.max(400, Math.round(1800f * scale * scale));
+        float expectedX = START_X * scale;
+        float expectedY = START_Y * scale;
+        int[] best = null;
+        float bestDistance = Float.MAX_VALUE;
+        for (int index = 0; index < visited.length; index++) {
+            if (visited[index]) {
+                continue;
+            }
+            int x = left + index % width;
+            int y = top + index / width;
+            if (!isButtonColor(bitmap.getPixel(x, y))) {
+                visited[index] = true;
+                continue;
+            }
+            int head = 0;
+            int tail = 0;
+            queue[tail++] = index;
+            visited[index] = true;
+            int minX = x, maxX = x, minY = y, maxY = y;
+            while (head < tail) {
+                int point = queue[head++];
+                int px = point % width;
+                int py = point / width;
+                minX = Math.min(minX, left + px);
+                maxX = Math.max(maxX, left + px);
+                minY = Math.min(minY, top + py);
+                maxY = Math.max(maxY, top + py);
+                if (px > 0 && !visited[point - 1] && isButtonColor(bitmap.getPixel(left + px - 1, top + py))) {
+                    visited[point - 1] = true;
+                    queue[tail++] = point - 1;
+                }
+                if (px + 1 < width && !visited[point + 1] && isButtonColor(bitmap.getPixel(left + px + 1, top + py))) {
+                    visited[point + 1] = true;
+                    queue[tail++] = point + 1;
+                }
+                if (py > 0 && !visited[point - width] && isButtonColor(bitmap.getPixel(left + px, top + py - 1))) {
+                    visited[point - width] = true;
+                    queue[tail++] = point - width;
+                }
+                if (py + 1 < height && !visited[point + width] && isButtonColor(bitmap.getPixel(left + px, top + py + 1))) {
+                    visited[point + width] = true;
+                    queue[tail++] = point + width;
+                }
+            }
+            int componentWidth = maxX - minX + 1;
+            int componentHeight = maxY - minY + 1;
+            float centerX = (minX + maxX) / 2f;
+            float centerY = (minY + maxY) / 2f;
+            if (tail < minPixels || componentWidth < minWidth || componentWidth > maxWidth
+                    || componentHeight < minHeight || componentHeight > maxHeight
+                    || Math.abs(centerX - expectedX) > START_TOLERANCE * scale
+                    || Math.abs(centerY - expectedY) > VERTICAL_TOLERANCE * scale) {
+                continue;
+            }
+            float distance = Math.abs(centerX - expectedX) + Math.abs(centerY - expectedY) * 0.5f;
+            if (best == null || distance < bestDistance) {
+                best = new int[]{minX, minY, maxX, maxY};
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    private static boolean isButtonColor(int color) {
+        int red = (color >>> 16) & 0xff;
+        int green = (color >>> 8) & 0xff;
+        int blue = color & 0xff;
+        return (blue >= 170 && green >= 60 && red <= 120 && blue - red >= 70)
+                || (red >= 160 && green <= 140 && blue <= 140 && red - blue >= 70);
+    }
+
+    /** 轨道是紧挨按钮右侧的浅色低饱和矩形，右端减去半个按钮宽度就是按钮中心能到的终点。 */
+    private static float detectTrackEnd(Bitmap bitmap, int buttonLeft, int buttonTop, int buttonRight,
+                                        int buttonBottom, float scale) {
+        int inferredWidth = buttonRight - buttonLeft + 1 + 2 * Math.max(2, Math.round(3f * scale));
+        int minRail = Math.max(inferredWidth * 2, Math.round(300f * scale));
+        int bestEnd = -1;
+        int inset = Math.max(4, Math.round(16f * scale));
+        for (int y = buttonTop + inset; y <= buttonBottom - inset; y += Math.max(2, Math.round(4f * scale))) {
+            int x = buttonRight + 1;
+            int searchLimit = Math.min(bitmap.getWidth() - 1, x + Math.max(12, Math.round(12f * scale)));
+            while (x <= searchLimit && !isLightNeutral(bitmap.getPixel(x, y))) {
+                x++;
+            }
+            int runStart = x;
+            while (x < bitmap.getWidth() && isLightNeutral(bitmap.getPixel(x, y))) {
+                x++;
+            }
+            int runEnd = x - 1;
+            if (runEnd - runStart + 1 >= minRail) {
+                bestEnd = Math.max(bestEnd, runEnd);
+            }
+        }
+        return bestEnd < 0 ? Float.NaN : bestEnd + 1f - inferredWidth / 2f;
+    }
+
+    private static boolean isLightNeutral(int color) {
+        int red = (color >>> 16) & 0xff;
+        int green = (color >>> 8) & 0xff;
+        int blue = color & 0xff;
+        int min = Math.min(red, Math.min(green, blue));
+        int max = Math.max(red, Math.max(green, blue));
+        return min >= 225 && max <= 253 && max - min <= 5;
+    }
+}

@@ -59,6 +59,8 @@ public class BaseModel extends Model {
     @Getter
     private static final BooleanModelField showToast = new BooleanModelField("showToast", "气泡提示", true);
     @Getter
+    private static final BooleanModelField autoPuzzleSlider = new BooleanModelField("autoPuzzleSlider", "自动处理图片拼图滑块验证（未经真机验证，失败时不会重试）", true);
+    @Getter
     private static final BooleanModelField closeCaptchaDialogVPN = new BooleanModelField("closeCaptchaDialogVPN", "关闭请检查是否使用了代理软件或VPN", false);
     @Getter
     private static final IntegerModelField toastOffsetY = new IntegerModelField("toastOffsetY", "气泡纵向偏移", 0);
@@ -105,6 +107,7 @@ public class BaseModel extends Model {
         modelFields.addField(rpcRequestTaskList);
         modelFields.addField(showToast);
         modelFields.addField(closeCaptchaDialogVPN);
+        modelFields.addField(autoPuzzleSlider);
         modelFields.addField(enableOnGoing);
         modelFields.addField(toastOffsetY);
         return modelFields;

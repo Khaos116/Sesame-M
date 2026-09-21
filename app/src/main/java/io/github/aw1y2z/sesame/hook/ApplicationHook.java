@@ -1277,8 +1277,9 @@ public class ApplicationHook extends XposedModule {
 
     // 滑块验证hook注册
     private void initSimplePageManager() {
+        // 窗口监控（栈顶 Activity、对话框跟踪）不分版本都要开：图片拼图滑块（PuzzleCaptchaSolver）靠它找验证窗口
+        enableWindowMonitoring(classLoader);
         if (shouldEnableSimplePageManager()) {
-            enableWindowMonitoring(classLoader);
             addHandler("com.alipay.mobile.nebulax.xriver.activity.XRiverActivity", new Captcha1Handler());
             addHandler("com.eg.android.AlipayGphone.AlipayLogin", new Captcha2Handler());
         }
@@ -1297,7 +1298,7 @@ public class ApplicationHook extends XposedModule {
         AlipayVersion maxSupported = new AlipayVersion("10.6.58.99999");
         if (alipayVersion.compareTo(maxSupported) > 0) {
             // 只有在不支持时才打印警告
-            Log.record("目标应用版本[" + alipayVersion.getVersionString() + "]高于[10.6.58.99999]不支持自动过滑块验证");
+            Log.record("目标应用版本[" + alipayVersion.getVersionString() + "]高于[10.6.58.99999]，不启用“向右滑动”简单滑块处理器；图片拼图滑块由 PuzzleCaptchaSolver 处理");
             return false;
         }
 

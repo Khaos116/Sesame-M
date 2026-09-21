@@ -261,6 +261,7 @@ public final class RpcRequestGuard {
                     VERIFY_PAUSE.put(key, new long[]{now + VERIFY_PAUSE_MS,
                             io.github.aw1y2z.sesame.data.task.TaskLifecycle.generation()});
                     io.github.aw1y2z.sesame.hook.CaptchaTriggerStats.recordRisk(request.getRequestMethod(), message);
+                    io.github.aw1y2z.sesame.hook.PuzzleCaptchaSolver.arm("接口 " + request.getRequestMethod());
                     io.github.aw1y2z.sesame.hook.ApplicationHook.showVerification();
                     Log.record("请求保护⏸️" + request.getRequestMethod() + "#" + message
                             + "#暂停" + VERIFY_PAUSE_MS / MINUTE + "分钟（仅本次运行，重启支付宝或切换账号后恢复）");

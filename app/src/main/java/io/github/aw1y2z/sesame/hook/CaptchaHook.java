@@ -68,6 +68,42 @@ public class CaptchaHook {
         
         // 注意：此时配置文件还未加载，不能立即应用Hook
         // 实际的Hook应用会在BaseModel.boot()中进行
+        hookCaptchaDialogArm(classLoader);
+    }
+
+    private static boolean armHookInstalled;
+
+    /**
+     * 常开的 CaptchaDialog.show() 钩子（不受“关闭代理/VPN 弹窗”开关控制）：弹出真验证窗口时记一条验证记录，
+     * 并让 {@link PuzzleCaptchaSolver} 开始监视窗口。VPN/代理提示也是同一个 Dialog 类，含 VPN/代理字样的跳过。
+     */
+    private static synchronized void hookCaptchaDialogArm(ClassLoader classLoader) {
+        if (armHookInstalled) {
+            return;
+        }
+        try {
+            Class<?> captchaDialogClass = XHelpers.findClass(CLASS_CAPTCHA_DIALOG, classLoader);
+            XHelpers.findAndHookMethod(captchaDialogClass, "show", new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    Dialog dialog = getDialogInstance(param.thisObject);
+                    if (dialog == null) {
+                        return;
+                    }
+                    StringBuilder info = new StringBuilder();
+                    collectDialogInfo(dialog, info);
+                    String text = info.toString();
+                    if (text.contains("VPN") || text.contains("代理")) {
+                        return;
+                    }
+                    CaptchaTriggerStats.recordDialog(dialog);
+                    PuzzleCaptchaSolver.arm("CaptchaDialog.show()");
+                }
+            });
+            armHookInstalled = true;
+        } catch (Throwable e) {
+            Log.printStackTrace(TAG, e);
+        }
     }
     
     /**
@@ -136,8 +172,6 @@ public class CaptchaHook {
                     if (info.contains("VPN") || info.contains("代理")) {
                         Log.record("检测到VPN/代理弹窗，自动关闭: " + info.replaceAll("\n", " | "));
                         dialog.dismiss();
-                    } else {
-                        CaptchaTriggerStats.recordDialog(dialog); // 真验证弹窗：记类型/来源/运行中模块/最近请求
                     }
                 }
             });

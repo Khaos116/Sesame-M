@@ -173,6 +173,14 @@ public class CaptchaTriggerStats {
     public static void recordRisk(String method, String message) { riskRecords++; lastRiskMethod = method; }
 }
 """)
+    write("hook/PuzzleCaptchaSolver.java", """
+package io.github.aw1y2z.sesame.hook;
+public class PuzzleCaptchaSolver {
+    public static int arms;
+    public static String lastSource;
+    public static void arm(String source) { arms++; lastSource = source; }
+}
+""")
     write("model/normal/base/BaseModel.java", """
 package io.github.aw1y2z.sesame.model.normal.base;
 public class BaseModel {
@@ -449,6 +457,8 @@ public class GuardCheck {
             assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1 : "1009 must bring Alipay to front";
             assert io.github.aw1y2z.sesame.hook.CaptchaTriggerStats.riskRecords == 1 : "verification demand must be recorded once";
             assert "alipay.antforest.forest.h5.startEnergyRain".equals(io.github.aw1y2z.sesame.hook.CaptchaTriggerStats.lastRiskMethod) : "record must name the triggering method";
+            assert io.github.aw1y2z.sesame.hook.PuzzleCaptchaSolver.arms == 1
+                    && io.github.aw1y2z.sesame.hook.PuzzleCaptchaSolver.lastSource.contains("alipay.antforest.forest.h5.startEnergyRain") : "verification demand must arm the puzzle solver once";
             guard("alipay.antforest.forest.h5.startEnergyRain").record(json("{\"error\":\"1009\"}")); // already paused: no second launch
             assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1;
             guard("com.alipay.antfarm.feedAnimal").record(json("{\"error\":48}"));
@@ -456,6 +466,7 @@ public class GuardCheck {
             guard("com.alipay.neverland.biz.rpc.queryItemList").record(json("{\"error\":\"1009\",\"errorMessage\":\"系统繁忙，请稍后再试。\"}"));
             assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1 : "1009 busy must not launch";
             assert io.github.aw1y2z.sesame.hook.CaptchaTriggerStats.riskRecords == 1 : "network/busy must not record";
+            assert io.github.aw1y2z.sesame.hook.PuzzleCaptchaSolver.arms == 1 : "network/busy must not arm the solver";
         }
         reset();
         {
