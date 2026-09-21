@@ -208,6 +208,11 @@ public class SimplePageManager {
                                 mContextRef = new WeakReference<>(activity.getApplicationContext());
                             }
                             mClassLoader = activity.getClassLoader();
+                            String activityName = activity.getClass().getName();
+                            if ("com.alipay.mobile.nebulax.xriver.activity.XRiverActivity".equals(activityName)
+                                    || "com.eg.android.AlipayGphone.AlipayLogin".equals(activityName)) {
+                                PuzzleCaptchaSolver.armPassive("Activity " + activity.getClass().getSimpleName());
+                            }
                             triggerActivity();
                         }
                     }

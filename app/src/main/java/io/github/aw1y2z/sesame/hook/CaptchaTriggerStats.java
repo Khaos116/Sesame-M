@@ -1,7 +1,6 @@
 package io.github.aw1y2z.sesame.hook;
 
 import android.app.Activity;
-import android.app.Dialog;
 import android.view.View;
 
 import java.util.LinkedHashMap;
@@ -32,12 +31,10 @@ public final class CaptchaTriggerStats {
     private CaptchaTriggerStats() {
     }
 
-    /** CaptchaDialog.show() 之后调用（UI 线程）。 */
-    static void recordDialog(Dialog dialog) {
+    /** CaptchaDialog.show() 之后调用（UI 线程）。text 可能为空（取不到弹窗文字时也要留一条记录）。 */
+    static void recordDialogText(String dialogClass, String text) {
         try {
-            StringBuilder texts = new StringBuilder();
-            CaptchaHook.collectDialogInfo(dialog, texts);
-            record("CaptchaDialog", texts.toString());
+            record("CaptchaDialog:" + dialogClass, text == null ? "" : text);
         } catch (Throwable t) {
             Log.printStackTrace("CaptchaTriggerStats", t);
         }

@@ -48,6 +48,7 @@ public final class PuzzleCaptchaSolver {
 
     private static final long POLL_MS = 1000L;
     private static final int MAX_POLLS = 60;
+    private static final int PASSIVE_POLLS = 8;
     private static final int MAX_CAPTURES_PER_WINDOW = 12;
     private static final long MATCH_BUDGET_MS = 3500L;
     private static final long SLIDE_MIN_MS = 850L;
@@ -75,6 +76,10 @@ public final class PuzzleCaptchaSolver {
     private static boolean polling;
     private static boolean busy;
     private static int polls;
+    private static int maxPolls = MAX_POLLS;
+    private static WeakReference<Dialog> hintDialog = new WeakReference<>(null);
+    /** 被动扫描（页面恢复触发）时不刷验证记录，直到真的识别到拼图滑块。工作线程也会读，所以 volatile。 */
+    private static volatile boolean quiet;
     private static long generation;
     private static boolean disabledLogged;
 
@@ -85,6 +90,11 @@ public final class PuzzleCaptchaSolver {
      * 验证被要求时调用（任意线程）：接口返回“请验证”、或验证码弹窗出现。重复调用只会把 60 秒窗口期重新计时。
      */
     public static void arm(String source) {
+        arm(source, null);
+    }
+
+    /** dialog 是验证码弹窗对象时传进来，扫描时直接用它，不依赖窗口跟踪列表。 */
+    public static void arm(String source, Dialog dialog) {
         long armedGeneration = TaskLifecycle.generation();
         MAIN.post(() -> {
             if (!isEnabled()) {
@@ -94,6 +104,11 @@ public final class PuzzleCaptchaSolver {
                 }
                 return;
             }
+            if (dialog != null) {
+                hintDialog = new WeakReference<>(dialog);
+            }
+            quiet = false;
+            maxPolls = MAX_POLLS;
             polls = 0;
             generation = armedGeneration;
             if (polling) {
@@ -101,6 +116,25 @@ public final class PuzzleCaptchaSolver {
             }
             polling = true;
             Log.captcha("拼图验证🧩开始监视验证窗口，最长 " + MAX_POLLS + " 秒（来源[" + source + "]）");
+            MAIN.postDelayed(PuzzleCaptchaSolver::poll, POLL_MS);
+        });
+    }
+
+    /**
+     * 被动触发（XRiver/首页页面恢复，GR 也在这两个页面挂验证码处理器）：只短时扫描几次，
+     * 平时不写验证记录，识别到拼图滑块才转为正常流程。已经在监视时不打断也不延长。
+     */
+    public static void armPassive(String source) {
+        long armedGeneration = TaskLifecycle.generation();
+        MAIN.post(() -> {
+            if (polling || !isEnabled()) {
+                return;
+            }
+            quiet = true;
+            maxPolls = PASSIVE_POLLS;
+            polls = 0;
+            generation = armedGeneration;
+            polling = true;
             MAIN.postDelayed(PuzzleCaptchaSolver::poll, POLL_MS);
         });
     }
@@ -124,9 +158,9 @@ public final class PuzzleCaptchaSolver {
             if (!busy) {
                 scanOnce();
             }
-            if (polls >= MAX_POLLS) {
+            if (polls >= maxPolls) {
                 polling = false;
-                if (!busy) {
+                if (!busy && !quiet) {
                     Log.captcha("拼图验证🧩监视窗口期结束，没有可处理的拼图窗口");
                 }
                 return;
@@ -159,6 +193,20 @@ public final class PuzzleCaptchaSolver {
             Dialog dialog = ref.get();
             if (dialog != null && dialog.isShowing() && dialog.getWindow() != null) {
                 targets.add(new Target(dialog.getWindow().getDecorView(), dialog.getWindow()));
+            }
+        }
+        Dialog hinted = hintDialog.get();
+        if (hinted != null && hinted.isShowing() && hinted.getWindow() != null) {
+            View decor = hinted.getWindow().getDecorView();
+            boolean present = false;
+            for (Target target : targets) {
+                if (target.root == decor) {
+                    present = true;
+                    break;
+                }
+            }
+            if (!present) {
+                targets.add(new Target(decor, hinted.getWindow()));
             }
         }
         return targets;
@@ -309,9 +357,15 @@ public final class PuzzleCaptchaSolver {
     private static void analyze(Target target, View web, Bitmap bitmap, int[] location, float scale, Runnable release) {
         View root = target.root;
         Slider slider = detectSlider(bitmap, scale);
+        if (slider != null && quiet) {
+            quiet = false;
+            Log.captcha("拼图验证🧩被动扫描发现拼图滑块（未经接口/弹窗触发）：" + slider.describe());
+        }
         if (slider == null) {
             diag(root, "未识别到拼图滑块按钮（图片可能还在加载，或布局与参考设备不同）");
-            saveSample(bitmap, "no-slider", false);
+            if (!quiet) {
+                saveSample(bitmap, "no-slider", false);
+            }
             bitmap.recycle();
             MAIN.post(release);
             return;
@@ -388,6 +442,9 @@ public final class PuzzleCaptchaSolver {
 
     /** 同一窗口同一原因只记一次，避免每秒刷屏。 */
     private static void diag(View root, String message) {
+        if (quiet) {
+            return;
+        }
         String last = LAST_DIAG.get(root);
         if (message.equals(last)) {
             return;

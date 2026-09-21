@@ -87,18 +87,25 @@ public class CaptchaHook {
             XHelpers.findAndHookMethod(captchaDialogClass, "show", new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
-                    Dialog dialog = getDialogInstance(param.thisObject);
-                    if (dialog == null) {
-                        return;
+                    // 先记录再取细节：取弹窗对象/收集文字任何一步失败都不能让这次验证静默丢失
+                    Object dialogObject = param.thisObject;
+                    Dialog dialog = null;
+                    String text = "";
+                    try {
+                        dialog = getDialogInstance(dialogObject);
+                        if (dialog != null) {
+                            StringBuilder info = new StringBuilder();
+                            collectDialogInfo(dialog, info);
+                            text = info.toString();
+                        }
+                    } catch (Throwable t) {
+                        text = "";
                     }
-                    StringBuilder info = new StringBuilder();
-                    collectDialogInfo(dialog, info);
-                    String text = info.toString();
                     if (text.contains("VPN") || text.contains("代理")) {
                         return;
                     }
-                    CaptchaTriggerStats.recordDialog(dialog);
-                    PuzzleCaptchaSolver.arm("CaptchaDialog.show()");
+                    CaptchaTriggerStats.recordDialogText(dialogObject.getClass().getSimpleName(), text);
+                    PuzzleCaptchaSolver.arm("CaptchaDialog.show()", dialog);
                 }
             });
             armHookInstalled = true;
