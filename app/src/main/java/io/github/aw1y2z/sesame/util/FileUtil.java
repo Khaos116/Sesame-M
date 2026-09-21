@@ -3,6 +3,7 @@ package io.github.aw1y2z.sesame.util;
 import static io.github.aw1y2z.sesame.util.idMap.UserIdMap.getShowName;
 import android.os.Build;
 import android.os.Environment;
+import io.github.aw1y2z.sesame.entity.UserEntity;
 import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -23,6 +24,61 @@ public class FileUtil {
     public static final File LOG_DIRECTORY_FILE = getLogDirectoryFile();
     private static File cityCodeFile;
     private static File wuaFile;
+
+    static {
+        // 账号目录/导出文件名用账号列表里括号前面的名字（如 C176），找不到才用 uid；两个进程（支付宝/模块 App）都要装
+        AccountFolderName.install(new AccountFolderName.Source() {
+            @Override
+            public String displayName(String uid) {
+                File self = new File(new File(CONFIG_DIRECTORY_FILE, uid), "self.json");
+                if (!self.isFile()) {
+                    return null;
+                }
+                UserEntity.UserDto dto = JsonUtil.parseObject(readFromFile(self), UserEntity.UserDto.class);
+                return dto == null ? null : dto.toEntity().getShowName();
+            }
+        }, new AccountFolderName.Store() {
+            @Override
+            public String owner(String folder) {
+                File marker = new File(new File(LOG_DIRECTORY_FILE, folder), ".uid");
+                try {
+                    return marker.isFile() && marker.length() <= 128
+                            ? new String(Files.readAllBytes(marker.toPath()), java.nio.charset.StandardCharsets.UTF_8).trim()
+                            : null;
+                } catch (IOException e) {
+                    return null;
+                }
+            }
+
+            @Override
+            public void migrate(String uid, String folder) {
+                // 旧的 uid 目录改名成名字目录，保留历史日志/截图；名字目录已存在就不动
+                for (File root : new File[]{LOG_DIRECTORY_FILE, new File(MAIN_DIRECTORY_FILE, "puzzle")}) {
+                    File old = new File(root, uid);
+                    File target = new File(root, folder);
+                    if (old.isDirectory() && !target.exists() && !old.renameTo(target)) {
+                        Log.printStackTrace(TAG, new IOException("rename " + old + " -> " + target + " failed"));
+                    }
+                }
+            }
+
+            @Override
+            public void claim(String folder, String uid) {
+                File dir = new File(LOG_DIRECTORY_FILE, folder);
+                if (!dir.isDirectory() && !dir.mkdirs()) {
+                    return;
+                }
+                File marker = new File(dir, ".uid");
+                if (!marker.exists()) {
+                    try {
+                        Files.write(marker.toPath(), uid.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    } catch (IOException ignored) {
+                        // 标记写不进去只影响“同名账号区分”，不影响日志
+                    }
+                }
+            }
+        });
+    }
     
     // 备份相关配置（可根据需求调整n值，比如n=3则A/B/C循环）
     private static int BACKUP_MAX_COUNT = 5; // 配置读取失败时的默认值
@@ -606,8 +662,33 @@ public class FileUtil {
         return getUserLogDirectory(UserIdMap.getCurrentUid());
     }
 
+    /** 账号目录名：账号列表里括号前面的名字（如 C176），找不到才用 uid；uid 不合法用 default。 */
     private static String logDirectoryName(String userId) {
-        return userId != null && userId.matches("[A-Za-z0-9_-]{1,128}") ? userId : "default";
+        return AccountFolderName.resolve(userId);
+    }
+
+    /** 配置页账号列表里括号前面的名字，找不到用 uid；导出文件名用（不迁移目录、不写标记，模块 App 进程也可调用）。 */
+    public static String accountLabel(String userId) {
+        return AccountFolderName.displayLabel(userId);
+    }
+
+    /** 由日志目录名找回 uid（目录里的 .uid 标记）；没有标记说明目录名本身就是 uid。 */
+    public static String uidOfLogFolder(String folder) {
+        if (folder == null) {
+            return null;
+        }
+        File marker = new File(new File(LOG_DIRECTORY_FILE, folder), ".uid");
+        try {
+            if (marker.isFile() && marker.length() <= 128) {
+                String uid = new String(Files.readAllBytes(marker.toPath()), java.nio.charset.StandardCharsets.UTF_8).trim();
+                if (AccountFolderName.isValidUid(uid)) {
+                    return uid;
+                }
+            }
+        } catch (IOException ignored) {
+            // 读不到就当目录名是 uid
+        }
+        return folder;
     }
 
     public static void publishCurrentLogUser(String userId) {
@@ -631,7 +712,12 @@ public class FileUtil {
     }
 
     public static File getUserLogDirectory(String userId) {
-        String dirName = logDirectoryName(userId);
+        return getLogDirectoryByName(logDirectoryName(userId));
+    }
+
+    /** 已经是目录名（current_log_user.txt 里发布的）时用它：不再按 uid 解析，名字不安全就用 default。 */
+    public static File getLogDirectoryByName(String name) {
+        String dirName = AccountFolderName.isSafeFolder(name) ? name : "default";
         File dir = new File(LOG_DIRECTORY_FILE, dirName);
         if (dir.exists() && dir.isFile()) {
             dir.delete();
@@ -643,14 +729,14 @@ public class FileUtil {
     }
 
     private static File getLogFile(String type) {
-        String userId = "default";
+        String userId = "default"; // 这里是目录名（发布出来的账号名或 uid），不是 uid
         File currentUser = new File(MAIN_DIRECTORY_FILE, "current_log_user.txt");
         try {
             if (currentUser.isFile() && currentUser.length() <= 128) {
                 userId = new String(Files.readAllBytes(currentUser.toPath()), java.nio.charset.StandardCharsets.UTF_8).trim();
             }
         } catch (IOException ignored) { }
-        File logFile = new File(getUserLogDirectory(userId), Log.getLogFileName(type));
+        File logFile = new File(getLogDirectoryByName(userId), Log.getLogFileName(type));
         if (logFile.exists() && logFile.isDirectory()) {
             logFile.delete();
         }

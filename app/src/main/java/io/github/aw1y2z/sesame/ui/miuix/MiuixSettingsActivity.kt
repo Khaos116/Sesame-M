@@ -54,6 +54,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectOneModelField
 import io.github.aw1y2z.sesame.entity.IdAndName
 import io.github.aw1y2z.sesame.entity.KVNode
+import io.github.aw1y2z.sesame.util.FileUtil
 import io.github.aw1y2z.sesame.util.Log
 import io.github.aw1y2z.sesame.util.StringUtil
 import io.github.aw1y2z.sesame.util.ToastUtil
@@ -175,7 +176,7 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
                 title = "配置设置",
                 onBack = { activity.saveAndFinish() },
                 onImport = { importLauncher.launch("*/*") },
-                onExport = { exportLauncher.launch("[" + (userId ?: "默认") + "]-config_v2.json") },
+                onExport = { exportLauncher.launch("[" + (if (userId.isNullOrEmpty()) "默认" else FileUtil.accountLabel(userId)) + "]-config_v2.json") },
                 onClear = { showDeleteDialog = true }
             )
         },

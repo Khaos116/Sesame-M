@@ -35,6 +35,9 @@ code += '''
 // Account I/O and JSON boundary doubles; run the production label/fallback logic.
 object FileUtil {
     var profile = "valid"
+    // 日志目录以账号名命名（如 C176），目录里的 .uid 标记记着 uid；没有标记说明目录名本身就是 uid
+    val markers = mutableMapOf<String, String>()
+    fun uidOfLogFolder(folder: String?): String? = if (folder == null) null else markers[folder] ?: folder
     fun getSelfIdFile(uid: String) = File(uid)
     fun readFromFile(file: File): String = profile
 }
@@ -58,6 +61,14 @@ fun main() {
     for (profile in listOf("", "broken", "null")) {
         FileUtil.profile = profile
         check(accountDisplayName("20880001") == "20880001")
+    }
+    // 目录名是账号名：靠 .uid 标记找回 uid，仍显示“名字(账号)”；读不到账号信息时显示目录名而不是空
+    FileUtil.profile = "valid"
+    FileUtil.markers["C176"] = "20880001"
+    check(accountDisplayName("C176") == "测试账号(test@example.com)")
+    for (profile in listOf("", "broken", "null")) {
+        FileUtil.profile = profile
+        check(accountDisplayName("C176") == "C176")
     }
     println("PASS: account label and missing/invalid profile UID fallback")
     val file = File.createTempFile("sesame-log-follow", ".log")

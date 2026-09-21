@@ -848,13 +848,15 @@ fun BooleanSwitch(title: String, checked: Boolean, onCheckedChange: (Boolean) ->
     )
 }
 
-private fun accountDisplayName(userId: String): String {
+private fun accountDisplayName(folderOrUid: String): String {
+    // 日志目录现在以账号名命名（如 C176），先由目录里的 .uid 标记找回 uid 再读账号信息
+    val userId = FileUtil.uidOfLogFolder(folderOrUid) ?: folderOrUid
     return try {
         val body = FileUtil.readFromFile(FileUtil.getSelfIdFile(userId))
         val user = JsonUtil.parseObject(body, UserEntity.UserDto::class.java)?.toEntity()
-        user?.let { "${it.showName}(${it.account})" } ?: userId
+        user?.let { "${it.showName}(${it.account})" } ?: folderOrUid
     } catch (_: Exception) {
-        userId
+        folderOrUid
     }
 }
 

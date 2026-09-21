@@ -7,6 +7,11 @@ public class LogCheck {
     static String TAG = "test";
     static File MAIN_DIRECTORY_FILE, LOG_DIRECTORY_FILE;
     static class UserIdMap { static String uid; static String getCurrentUid() { return uid; } }
+    // 账号目录名解析的桩：这里只验证 FileUtil 里的目录/发布/清理逻辑，名字解析本身见 check_account_folder.py
+    static class AccountFolderName {
+        static String resolve(String uid) { return isSafeFolder(uid) ? uid : "default"; }
+        static boolean isSafeFolder(String n) { return n != null && n.matches("[A-Za-z0-9_-]{1,128}"); }
+    }
     static class AtomicConfigFile {
         static void write(String s, File f) throws IOException { Files.writeString(f.toPath(), s); }
     }
