@@ -460,7 +460,7 @@ fun HomeTab(activity: MiuixMainActivity, currentAccount: String) {
         onDispose { }
     }
 
-    TabTitleRow(title = "Sesame-M", account = currentAccount)
+    TabTitleRow(title = "芝麻粒M", account = currentAccount)
     Spacer(Modifier.height(16.dp))
 
     Box(
@@ -997,7 +997,7 @@ fun TabTitleRow(title: String, account: String) {
             color = MiuixTheme.colorScheme.onBackground
         )
         Text(
-            text = "${io.github.aw1y2z.sesame.BuildConfig.VERSION_NAME}  ${io.github.aw1y2z.sesame.BuildConfig.BUILD_TIME}\n当前账号: $account",
+            text = "${io.github.aw1y2z.sesame.BuildConfig.VERSION_NAME}  ${io.github.aw1y2z.sesame.BuildConfig.BUILD_TIME}\n$account",
             fontSize = 12.sp,
             color = MiuixTheme.colorScheme.primary,
             textAlign = TextAlign.End,
