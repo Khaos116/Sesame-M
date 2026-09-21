@@ -121,38 +121,54 @@ public class UserIdMap {
             try {
                 UserIdMap.unload();
                 String selfId = ApplicationHook.getUserId();
-                Class<?> clsUserIndependentCache = loader.loadClass("com.alipay.mobile.socialcommonsdk.bizdata.UserIndependentCache");
-                Class<?> clsAliAccountDaoOp = loader.loadClass("com.alipay.mobile.socialcommonsdk.bizdata.contact.data.AliAccountDaoOp");
-                Object aliAccountDaoOp = XHelpers.callStaticMethod(clsUserIndependentCache, "getCacheObj", clsAliAccountDaoOp);
-                List<?> allFriends = (List<?>) XHelpers.callMethod(aliAccountDaoOp, "getAllFriends", new Object[0]);
-                if (!allFriends.isEmpty()) {
-                    Class<?> friendClass = allFriends.get(0).getClass();
-                    Field userIdField = XHelpers.findField(friendClass, "userId");
-                    Field accountField = XHelpers.findField(friendClass, "account");
-                    Field nameField = XHelpers.findField(friendClass, "name");
-                    Field nickNameField = XHelpers.findField(friendClass, "nickName");
-                    Field remarkNameField = XHelpers.findField(friendClass, "remarkName");
-                    Field friendStatusField = XHelpers.findField(friendClass, "friendStatus");
-                    UserEntity selfEntity = null;
-                    for (Object userObject : allFriends) {
-                        try {
-                            String userId = (String) userIdField.get(userObject);
-                            String account = (String) accountField.get(userObject);
-                            String name = (String) nameField.get(userObject);
-                            String nickName = (String) nickNameField.get(userObject);
-                            String remarkName = (String) remarkNameField.get(userObject);
-                            Integer friendStatus = (Integer) friendStatusField.get(userObject);
-                            UserEntity userEntity = new UserEntity(userId, account, friendStatus, name, nickName, remarkName);
-                            if (Objects.equals(selfId, userId)) {
-                                selfEntity = userEntity;
+
+                // 优先从「我的账号模型」取自身信息：直接描述当前登录账号，
+                // 不依赖是否在好友列表中，新版支付宝下更可靠（避免新账号拿不到 self.json）。
+                UserEntity selfEntity = buildSelfFromAccountModel();
+
+                // 遍历本地好友列表：补全好友映射；若自身仍在其中且上面没拿到，则作为兜底。
+                try {
+                    Class<?> clsUserIndependentCache = loader.loadClass("com.alipay.mobile.socialcommonsdk.bizdata.UserIndependentCache");
+                    Class<?> clsAliAccountDaoOp = loader.loadClass("com.alipay.mobile.socialcommonsdk.bizdata.contact.data.AliAccountDaoOp");
+                    Object aliAccountDaoOp = XHelpers.callStaticMethod(clsUserIndependentCache, "getCacheObj", clsAliAccountDaoOp);
+                    List<?> allFriends = (List<?>) XHelpers.callMethod(aliAccountDaoOp, "getAllFriends", new Object[0]);
+                    if (!allFriends.isEmpty()) {
+                        Class<?> friendClass = allFriends.get(0).getClass();
+                        Field userIdField = XHelpers.findField(friendClass, "userId");
+                        Field accountField = XHelpers.findField(friendClass, "account");
+                        Field nameField = XHelpers.findField(friendClass, "name");
+                        Field nickNameField = XHelpers.findField(friendClass, "nickName");
+                        Field remarkNameField = XHelpers.findField(friendClass, "remarkName");
+                        Field friendStatusField = XHelpers.findField(friendClass, "friendStatus");
+                        for (Object userObject : allFriends) {
+                            try {
+                                String userId = (String) userIdField.get(userObject);
+                                String account = (String) accountField.get(userObject);
+                                String name = (String) nameField.get(userObject);
+                                String nickName = (String) nickNameField.get(userObject);
+                                String remarkName = (String) remarkNameField.get(userObject);
+                                Integer friendStatus = (Integer) friendStatusField.get(userObject);
+                                UserEntity userEntity = new UserEntity(userId, account, friendStatus, name, nickName, remarkName);
+                                if (selfEntity == null && Objects.equals(selfId, userId)) {
+                                    selfEntity = userEntity;
+                                }
+                                UserIdMap.add(userEntity);
+                            } catch (Throwable t) {
+                                Log.i("addUserObject err:");
+                                Log.printStackTrace(t);
                             }
-                            UserIdMap.add(userEntity);
-                        } catch (Throwable t) {
-                            Log.i("addUserObject err:");
-                            Log.printStackTrace(t);
                         }
                     }
+                } catch (Throwable t) {
+                    Log.i("load friends err:");
+                    Log.printStackTrace(t);
+                }
+
+                if (selfEntity != null) {
+                    UserIdMap.add(selfEntity);
                     UserIdMap.saveSelf(selfEntity);
+                } else {
+                    Log.record("未能获取自身账号信息，配置页副标题将回退为用户ID");
                 }
                 UserIdMap.save(selfId);
             } catch (Throwable t) {
@@ -162,6 +178,56 @@ public class UserIdMap {
         });
     }
     
+    /**
+     * 从「我的账号模型」(SocialSdkContactService#getMyAccountInfoModelByLocal) 构造自身 UserEntity。
+     * 该模型直接描述当前登录账号，比从好友列表中匹配自己更可靠，避免新账号拿不到 self.json。
+     */
+    private static UserEntity buildSelfFromAccountModel() {
+        try {
+            Object selfObj = ApplicationHook.getUserObject();
+            if (selfObj == null) {
+                return null;
+            }
+            String uid = readField(selfObj, "userId");
+            if (uid == null || uid.isEmpty()) {
+                return null;
+            }
+            return new UserEntity(
+                    uid,
+                    readField(selfObj, "account", "loginId"),
+                    null,
+                    readField(selfObj, "realName", "name", "userName"),
+                    readField(selfObj, "nickName", "nick"),
+                    readField(selfObj, "remarkName")
+            );
+        } catch (Throwable t) {
+            Log.i("buildSelfFromAccountModel err:");
+            Log.printStackTrace(t);
+            return null;
+        }
+    }
+
+    /** 安全读取字段：依次尝试多个候选字段名，缺失或抛错时返回 null */
+    private static String readField(Object obj, String... names) {
+        if (obj == null) {
+            return null;
+        }
+        for (String name : names) {
+            try {
+                Object v = XHelpers.getObjectField(obj, name);
+                if (v != null) {
+                    String s = String.valueOf(v);
+                    if (!s.isEmpty()) {
+                        return s;
+                    }
+                }
+            } catch (Throwable ignored) {
+                // 字段不存在属正常兼容情况，静默跳过
+            }
+        }
+        return null;
+    }
+
     public synchronized static void setCurrentUserId(String userId) {
         if (userId == null || userId.isEmpty()) {
             currentUid = null;

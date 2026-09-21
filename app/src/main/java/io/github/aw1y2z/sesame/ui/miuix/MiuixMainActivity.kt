@@ -567,7 +567,8 @@ fun StatisticsTable(activity: MiuixMainActivity) {
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            // 上下补 16dp：卡片本身不带内边距（各部分自备留白），不补的话表头会贴住卡片上边缘
+            .padding(horizontal = 16.dp, vertical = 16.dp)
     ) {
         Row(Modifier.fillMaxWidth()) {
             Box(Modifier.weight(1f))

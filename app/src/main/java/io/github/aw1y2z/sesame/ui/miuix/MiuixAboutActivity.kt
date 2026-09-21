@@ -61,6 +61,8 @@ fun AboutScreen(activity: MiuixAboutActivity) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                // 左右留白与其它页面保持一致，否则卡片会顶到屏幕两边
+                .padding(horizontal = 16.dp)
                 .padding(top = 24.dp, bottom = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

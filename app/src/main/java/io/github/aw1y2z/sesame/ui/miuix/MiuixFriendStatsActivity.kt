@@ -72,7 +72,7 @@ fun FriendStatsScreen(activity: MiuixFriendStatsActivity) {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)
             ) {
