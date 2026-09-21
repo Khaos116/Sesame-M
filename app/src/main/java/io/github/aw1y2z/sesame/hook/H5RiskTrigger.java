@@ -115,9 +115,9 @@ final class H5RiskTrigger {
 
     static boolean isRiskUrl(String url) {
         String lower = url.toLowerCase(Locale.ROOT);
-        return lower.contains("captcha") || lower.contains("slider") || lower.contains("risk")
-                || lower.contains("verify") || lower.contains("validate")
-                // 支付宝风控处置落地页（GR H5RiskOpenHook 的指纹）：模板 ID 与 dispose 参数里可能没有上面的通用词
+        // 与 GR H5RiskOpenHook 的指纹一致：captcha 覆盖 captcha.alipay.com / captcha_ / aicaptcha。
+        // 不再用 risk/verify/validate/slider 这类通用词：普通页面也会命中，导致不停启动 60 秒监视并截图
+        return lower.contains("captcha")
                 || lower.contains("180020010001270421") || lower.contains("x-dispose-trace")
                 || lower.contains("disposeapplication") || lower.contains("disposedname")
                 || lower.contains("disposename");

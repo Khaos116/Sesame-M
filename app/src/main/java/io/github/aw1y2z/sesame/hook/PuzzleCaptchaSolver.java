@@ -67,8 +67,13 @@ public final class PuzzleCaptchaSolver {
     private static final float START_TOLERANCE = 130f;
     private static final float VERTICAL_TOLERANCE = 700f;
 
-    /** 每个窗口已经自动拖动的次数；失败后允许重试，但总数有上限（连续失败太多会加重风控）。 */
+    /**
+     * 每个验证码 WebView 已经自动拖动的次数；失败后允许重试，但总数有上限（连续失败太多会加重风控）。
+     * 按 WebView 而不是窗口计数：每次重新弹出验证码都是新的 WebView，从 0 开始；验证成功、换号、
+     * 重启支付宝（进程重建）也都会归零。仅主线程访问。
+     */
     private static final Map<View, Integer> ATTEMPTS = new WeakHashMap<>();
+    private static long attemptsGeneration = -1;
     private static final Map<View, Integer> CAPTURES = new WeakHashMap<>();
     private static final Map<View, String> LAST_DIAG = new WeakHashMap<>();
     private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(runnable -> {
@@ -169,7 +174,12 @@ public final class PuzzleCaptchaSolver {
                     Log.captcha("拼图验证🧩监视窗口期结束，没有可处理的拼图窗口");
                 }
                 if (!quiet) {
-                    cleanupNoSlider();
+                    // 最后一次扫描刚发起截图时分析还在进行，稍后才会存图：等它做完再清理，否则会漏掉最后一张
+                    if (busy) {
+                        MAIN.postDelayed(PuzzleCaptchaSolver::cleanupNoSlider, 6000L);
+                    } else {
+                        cleanupNoSlider();
+                    }
                 }
                 return;
             }
@@ -225,11 +235,12 @@ public final class PuzzleCaptchaSolver {
         for (int i = targets.size() - 1; i >= 0; i--) {
             Target target = targets.get(i);
             View root = target.root;
-            if (root == null || !root.isShown() || attemptsOf(root) >= maxAttempts()) {
+            if (root == null || !root.isShown()) {
                 continue;
             }
             View web = findWebView(root);
-            if (web == null || !web.isShown() || web.getWidth() < 400 || web.getHeight() < 400) {
+            if (web == null || !web.isShown() || web.getWidth() < 400 || web.getHeight() < 400
+                    || attemptsOf(web) >= maxAttempts()) {
                 continue;
             }
             int captures = CAPTURES.containsKey(root) ? CAPTURES.get(root) : 0;
@@ -415,7 +426,7 @@ public final class PuzzleCaptchaSolver {
     private static void swipe(Target target, View web, Slider slider, PuzzleSliderMatcher.Result match,
                               float startX, float startY, float trackEndX, String sampleName, Runnable release) {
         View root = target.root;
-        if (!web.isShown() || !web.isAttachedToWindow() || attemptsOf(root) >= maxAttempts()) {
+        if (!web.isShown() || !web.isAttachedToWindow() || attemptsOf(web) >= maxAttempts()) {
             release.run();
             return;
         }
@@ -425,8 +436,8 @@ public final class PuzzleCaptchaSolver {
             release.run();
             return;
         }
-        final int attempt = attemptsOf(root) + 1;
-        ATTEMPTS.put(root, attempt);
+        final int attempt = attemptsOf(web) + 1;
+        ATTEMPTS.put(web, attempt);
         long duration = SLIDE_MIN_MS + RandomUtil.nextInt(0, (int) (SLIDE_MAX_MS - SLIDE_MIN_MS + 1));
         Log.captcha(String.format(java.util.Locale.ROOT,
                 "拼图验证🧩第%d/" + maxAttempts() + "次识别成功，开始拖动：缺口位移=%dpx 触摸距离=%.0fpx 终点=%.0f 轨道截断=%s 方法=%s 分数=%.3f 耗时=%dms 截图=%s",
@@ -443,7 +454,8 @@ public final class PuzzleCaptchaSolver {
                             // 窗口关了多半是通过了：解除接口的验证暂停，触发验证的功能不必再等到期。
                             // 若其实没通过，接口下次还会返回“请验证”，会重新暂停并重新监视
                             io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard.clearVerifyPause();
-                            Log.captcha("拼图验证🧩拖动 1.5 秒后：验证窗口已关闭，多半通过");
+                            ATTEMPTS.remove(web); // 验证成功：尝试次数归零
+                            Log.captcha("拼图验证🧩拖动 1.5 秒后：验证窗口已关闭，多半通过（尝试次数已归零）");
                             cleanupNoSlider(); // 验证结束：只留包含验证码的截图
                         } else if (attempt < maxAttempts()) {
                             Log.captcha("拼图验证🧩拖动 1.5 秒后：验证窗口仍在，第 " + attempt + " 次没通过，等页面刷新出新图后重试");
@@ -470,8 +482,14 @@ public final class PuzzleCaptchaSolver {
         return DEFAULT_ATTEMPTS;
     }
 
-    private static int attemptsOf(View root) {
-        Integer count = ATTEMPTS.get(root);
+    private static int attemptsOf(View web) {
+        // 换号（TaskLifecycle 代数变化）时整体归零
+        long current = TaskLifecycle.generation();
+        if (current != attemptsGeneration) {
+            ATTEMPTS.clear();
+            attemptsGeneration = current;
+        }
+        Integer count = ATTEMPTS.get(web);
         return count == null ? 0 : count;
     }
 
@@ -517,33 +535,50 @@ public final class PuzzleCaptchaSolver {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
             }
             prune(dir, false, SAMPLE_KEEP);
-            prune(dir, true, MAX_CAPTURES_PER_WINDOW + 4);
+            prune(dir, true, MAX_CAPTURES_PER_WINDOW + 4); // 没验证码的另设上限兜底，互不挤占
             return file.getName();
         } catch (Throwable t) {
             return "未保存";
         }
     }
 
-    /** 只保留最新 keep 张：noSlider=true 统计没验证码的截图，false 统计包含验证码的截图。 */
-    private static void prune(File dir, boolean noSlider, int keep) {
-        File[] files = dir.listFiles((d, name) -> name.startsWith("puzzle-") && name.endsWith(".png")
-                && name.endsWith("-no-slider.png") == noSlider);
-        if (files == null || files.length <= keep) {
-            return;
-        }
-        Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
-        for (int i = 0; i < files.length - keep; i++) {
-            //noinspection ResultOfMethodCallIgnored
-            files[i].delete();
-        }
+    /**
+     * 没有验证码的截图：没识别到滑块（no-slider），或只找到疑似按钮却没有轨道（no-track，按钮识别只是颜色连通块，
+     * 普通页面上的蓝/红按钮也会命中，有轨道才像验证码）。其余（match-failed、matched-d…）都是滑块和轨道都识别到了。
+     */
+    private static boolean isJunkSample(String name) {
+        return name.endsWith("-no-slider.png") || name.endsWith("-no-track.png");
     }
 
-    /** 验证结束（拖动完成/监视窗口期结束）后：删掉没包含验证码的截图，只留识别到滑块的。工作线程执行，避免主线程做文件 IO。 */
+    /** 只保留最新 keep 张：junk=true 统计没验证码的截图，false 统计有验证码的截图。返回删除的张数。 */
+    private static int prune(File dir, boolean junk, int keep) {
+        File[] files = dir.listFiles((d, name) -> name.startsWith("puzzle-") && name.endsWith(".png")
+                && isJunkSample(name) == junk);
+        if (files == null || files.length <= keep) {
+            return 0;
+        }
+        Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+        int deleted = 0;
+        for (int i = 0; i < files.length - keep; i++) {
+            if (files[i].delete()) {
+                deleted++;
+            }
+        }
+        return deleted;
+    }
+
+    /**
+     * 验证结束（拖动完成/监视窗口期结束）后：删掉没包含验证码的截图，只留识别到滑块和轨道的。工作线程执行，
+     * 避免主线程做文件 IO；删除了才写日志，方便确认清理真的执行了。
+     */
     private static void cleanupNoSlider() {
         try {
             WORKER.execute(() -> {
                 try {
-                    prune(FileUtil.getCurrentUserPuzzleDirectory(), true, 0);
+                    int deleted = prune(FileUtil.getCurrentUserPuzzleDirectory(), true, 0);
+                    if (deleted > 0) {
+                        Log.captcha("拼图验证🧩验证结束，已清理 " + deleted + " 张没有验证码的截图");
+                    }
                 } catch (Throwable t) {
                     Log.printStackTrace(TAG, t);
                 }
