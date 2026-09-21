@@ -632,12 +632,19 @@ public class FileUtil {
         if (dir == null || !LOG_DIRECTORY_FILE.equals(dir.getParentFile())) {
             return name;
         }
-        String userId = dir.getName();
-        if ("default".equals(userId) || name.contains(userId)) {
+        String folder = dir.getName();
+        if ("default".equals(folder)) {
             return name;
         }
+        // 目录还叫 uid（新账号还没有账号信息、或升级后支付宝还没重启迁移过）时，导出名也尽量用账号名
+        String label = AccountFolderName.isValidUid(folder) && folder.matches("\\d+")
+                ? AccountFolderName.displayLabel(folder) : folder;
+        if (name.contains(folder)) {
+            // 文件名里已带账号（异常统计 rpc-failures.日期.账号.json）：旧文件里的 uid 换成账号名
+            return label.equals(folder) ? name : name.replace(folder, label);
+        }
         int dot = name.lastIndexOf('.');
-        return dot > 0 ? name.substring(0, dot) + "." + userId + name.substring(dot) : name + "." + userId;
+        return dot > 0 ? name.substring(0, dot) + "." + label + name.substring(dot) : name + "." + label;
     }
 
     public static File exportFile(File file) {

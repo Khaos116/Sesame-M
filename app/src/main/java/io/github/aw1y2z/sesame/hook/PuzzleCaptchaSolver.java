@@ -86,6 +86,8 @@ public final class PuzzleCaptchaSolver {
     private static boolean busy;
     private static int polls;
     private static int maxPolls = MAX_POLLS;
+    /** 扫描循环的令牌：每次（重新）开始换一个新值，旧循环下一次触发时发现令牌不符就自己退出，避免同时跑两条循环。 */
+    private static int pollToken;
     private static WeakReference<Dialog> hintDialog = new WeakReference<>(null);
     /** 被动扫描（页面恢复触发）时不刷验证记录，直到真的识别到拼图滑块。工作线程也会读，所以 volatile。 */
     private static volatile boolean quiet;
@@ -123,10 +125,9 @@ public final class PuzzleCaptchaSolver {
             if (polling) {
                 return;
             }
-            polling = true;
             cleanupNoSlider(); // 上次残留的没拖动过的截图
             Log.captcha("拼图验证🧩开始监视验证窗口，最长 " + MAX_POLLS + " 秒（来源[" + source + "]）");
-            MAIN.postDelayed(PuzzleCaptchaSolver::poll, POLL_MS);
+            startPolling();
         });
     }
 
@@ -144,9 +145,19 @@ public final class PuzzleCaptchaSolver {
             maxPolls = PASSIVE_POLLS;
             polls = 0;
             generation = armedGeneration;
-            polling = true;
-            MAIN.postDelayed(PuzzleCaptchaSolver::poll, POLL_MS);
+            startPolling();
         });
+    }
+
+    /** 开始一条新的扫描循环（主线程）：令牌加一，之前排着队的旧循环不再执行。 */
+    private static void startPolling() {
+        polling = true;
+        pollToken++;
+        schedulePoll(pollToken);
+    }
+
+    private static void schedulePoll(int token) {
+        MAIN.postDelayed(() -> poll(token), POLL_MS);
     }
 
     private static boolean isEnabled() {
@@ -158,7 +169,11 @@ public final class PuzzleCaptchaSolver {
         }
     }
 
-    private static void poll() {
+    private static void poll(int token) {
+        // 拖动完成/窗口期结束/重新开始后，旧循环排着队的这一次不能再跑（否则会和新循环同时扫描、重复打日志）
+        if (token != pollToken || !polling) {
+            return;
+        }
         try (TaskLifecycle.Work work = TaskLifecycle.enter(generation)) {
             if (work == null) {
                 polling = false; // 账号切换中或已切走：旧账号的窗口期作废
@@ -183,7 +198,7 @@ public final class PuzzleCaptchaSolver {
                 }
                 return;
             }
-            MAIN.postDelayed(PuzzleCaptchaSolver::poll, POLL_MS);
+            schedulePoll(token);
         } catch (Throwable t) {
             polling = false;
             Log.printStackTrace(TAG, t);
@@ -376,8 +391,8 @@ public final class PuzzleCaptchaSolver {
     private static void analyze(Target target, View web, Bitmap bitmap, int[] location, float scale, Runnable release) {
         View root = target.root;
         Slider slider = detectSlider(bitmap, scale);
-        if (slider != null && quiet) {
-            quiet = false;
+        if (slider != null && quiet && slider.hasTrackEnd()) {
+            quiet = false; // 按钮和轨道都识别到才像验证码；只有按钮多半是普通页面上的蓝/红按钮
             Log.captcha("拼图验证🧩被动扫描发现拼图滑块（未经接口/弹窗触发）：" + slider.describe());
         }
         if (slider == null) {
@@ -440,9 +455,9 @@ public final class PuzzleCaptchaSolver {
         ATTEMPTS.put(web, attempt);
         long duration = SLIDE_MIN_MS + RandomUtil.nextInt(0, (int) (SLIDE_MAX_MS - SLIDE_MIN_MS + 1));
         Log.captcha(String.format(java.util.Locale.ROOT,
-                "拼图验证🧩第%d/" + maxAttempts() + "次识别成功，开始拖动：缺口位移=%dpx 触摸距离=%.0fpx 终点=%.0f 轨道截断=%s 方法=%s 分数=%.3f 耗时=%dms 截图=%s",
+                "拼图验证🧩第%d/" + maxAttempts() + "次识别成功，开始拖动：缺口位移=%dpx 触摸距离=%.0fpx 终点=%.0f 轨道截断=%s 方法=%s 分数=%.3f 耗时=%dms 滑块=%s 截图=%s",
                 attempt, match.displacement, mapping.touchDistance, mapping.endX, mapping.clamped, match.method,
-                match.bestScore, match.elapsedMs, sampleName));
+                match.bestScore, match.elapsedMs, slider.describe(), sampleName));
         PuzzleSwipe.start(web, startX, startY, mapping.endX, startY, duration, 12f,
                 () -> web.isShown() && web.isAttachedToWindow(),
                 (sent, reason) -> {
@@ -459,9 +474,11 @@ public final class PuzzleCaptchaSolver {
                             cleanupNoSlider(); // 验证结束：只留包含验证码的截图
                         } else if (attempt < maxAttempts()) {
                             Log.captcha("拼图验证🧩拖动 1.5 秒后：验证窗口仍在，第 " + attempt + " 次没通过，等页面刷新出新图后重试");
+                            saveAfterShot(target, web, match.displacement, attempt);
                             retry(root);
                         } else {
                             Log.captcha("拼图验证🧩拖动 1.5 秒后：验证窗口仍在，已自动尝试 " + attempt + " 次不再重试，可手动完成");
+                            saveAfterShot(target, web, match.displacement, attempt);
                             cleanupNoSlider();
                         }
                     }, 1500L);
@@ -480,6 +497,33 @@ public final class PuzzleCaptchaSolver {
             // 配置没加载好：用默认值
         }
         return DEFAULT_ATTEMPTS;
+    }
+
+    /**
+     * 拖完 1.5 秒窗口还在（多半没对准）时再截一张“拖动之后”的图，存成 matched-after-d<位移>-a<第几次>（属于 matched，会保留）：
+     * 对照拖动前的 matched-d<位移> 就能看出滑块到底停在缺口的哪里，是位移算偏了还是页面进了别的状态。
+     */
+    private static void saveAfterShot(Target target, View web, int displacement, int attempt) {
+        try {
+            capture(target, web, (bitmap, error) -> {
+                if (bitmap == null) {
+                    return;
+                }
+                try {
+                    WORKER.execute(() -> {
+                        try {
+                            saveSample(bitmap, "matched-after-d" + displacement + "-a" + attempt, false);
+                        } finally {
+                            bitmap.recycle();
+                        }
+                    });
+                } catch (Throwable t) {
+                    bitmap.recycle();
+                }
+            });
+        } catch (Throwable t) {
+            Log.printStackTrace(TAG, t);
+        }
     }
 
     private static int attemptsOf(View web) {
@@ -503,11 +547,7 @@ public final class PuzzleCaptchaSolver {
         quiet = false;
         maxPolls = RETRY_POLLS;
         polls = 0;
-        if (polling) {
-            return;
-        }
-        polling = true;
-        MAIN.postDelayed(PuzzleCaptchaSolver::poll, POLL_MS);
+        startPolling(); // 总是换新令牌：拖动完成时 polling 已置 false，旧循环会在下一次触发时自己退出
     }
 
     /** 同一窗口同一原因只记一次，避免每秒刷屏。 */

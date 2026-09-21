@@ -80,6 +80,7 @@ def main():
                 "    public static void publishCurrentLogUser(",
                 "    public static File getUserLogDirectory(",
                 "    public static File getLogDirectoryByName(",
+                "    static String exportName(",
                 "    private static File getLogFile(",
                 "    private static java.util.List<File> getLogFiles()",
                 "    public static void clearLog()",

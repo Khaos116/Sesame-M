@@ -11,6 +11,9 @@ public class LogCheck {
     static class AccountFolderName {
         static String resolve(String uid) { return isSafeFolder(uid) ? uid : "default"; }
         static boolean isSafeFolder(String n) { return n != null && n.matches("[A-Za-z0-9_-]{1,128}"); }
+        static boolean isValidUid(String n) { return isSafeFolder(n); }
+        static final Map<String, String> LABELS = new HashMap<>();
+        static String displayLabel(String uid) { return LABELS.getOrDefault(uid, uid); }
     }
     static class AtomicConfigFile {
         static void write(String s, File f) throws IOException { Files.writeString(f.toPath(), s); }
@@ -53,6 +56,21 @@ public class LogCheck {
             assert a.length() == 0 && current.length() == 0 && other.length() == 4;
             publishCurrentLogUser("../escape");
             assert getLogFile("runtime").getParentFile().getName().equals("default");
+            // 导出文件名：账号名目录 → 带账号名；仍叫 uid 的目录 → 用账号名；default/目录外 → 原名
+            AccountFolderName.LABELS.put("2088122949590991", "C158");
+            File runtime = new File(new File(LOG_DIRECTORY_FILE, "C158"), "runtime.2026-09-21.log");
+            assert exportName(runtime).equals("runtime.2026-09-21.C158.log") : exportName(runtime);
+            File uidDir = new File(new File(LOG_DIRECTORY_FILE, "2088122949590991"), "runtime.2026-09-21.log");
+            assert exportName(uidDir).equals("runtime.2026-09-21.C158.log") : exportName(uidDir);
+            File noLabelDir = new File(new File(LOG_DIRECTORY_FILE, "2088000000000001"), "error.2026-09-21.log");
+            assert exportName(noLabelDir).equals("error.2026-09-21.2088000000000001.log") : exportName(noLabelDir);
+            File oldReport = new File(new File(LOG_DIRECTORY_FILE, "2088122949590991"), "rpc-failures.2026-09-21.2088122949590991.json");
+            assert exportName(oldReport).equals("rpc-failures.2026-09-21.C158.json") : exportName(oldReport);
+            File newReport = new File(new File(LOG_DIRECTORY_FILE, "C158"), "rpc-failures.2026-09-21.C158.json");
+            assert exportName(newReport).equals("rpc-failures.2026-09-21.C158.json") : exportName(newReport);
+            File defaultDir = new File(new File(LOG_DIRECTORY_FILE, "default"), "runtime.2026-09-21.log");
+            assert exportName(defaultDir).equals("runtime.2026-09-21.log");
+            assert exportName(new File(MAIN_DIRECTORY_FILE, "statistics.json")).equals("statistics.json");
             System.out.println("PASS host log account, account cleanup, open-file truncation and path validation");
         } finally {
             try (var paths = Files.walk(MAIN_DIRECTORY_FILE.toPath())) {
