@@ -53,7 +53,7 @@ public class NotificationUtil {
                     .setSubText("芝麻粒-M")
                     .setAutoCancel(false)
                     .setContentIntent(pi);
-            if (BaseModel.getEnableOnGoing().getValue()) {
+            if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableOnGoing()) {
                 builder.setOngoing(true);
             }
             Notification mNotification = builder.build();

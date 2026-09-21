@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,7 +30,7 @@ public abstract class Model {
     @Getter
     private static final Model[] modelArray = new Model[modelClazzList.size()];
 
-    private static final List<Model> modelList = new LinkedList<>(Arrays.asList(modelArray));
+    private static final List<Model> modelList = Arrays.asList(modelArray);
 
     private static final List<Model> readOnlyModelList = Collections.unmodifiableList(modelList);
 

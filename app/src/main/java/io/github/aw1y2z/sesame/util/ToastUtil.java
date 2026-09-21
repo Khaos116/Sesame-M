@@ -17,7 +17,7 @@ public class ToastUtil {
     }
 
     private static void show(Toast toast) {
-        toast.setGravity(toast.getGravity(), toast.getXOffset(), BaseModel.getToastOffsetY().getValue());
+        toast.setGravity(toast.getGravity(), toast.getXOffset(), io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getToastOffsetY());
         toast.show();
     }
 }

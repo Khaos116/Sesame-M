@@ -5,6 +5,7 @@
 
 ## 2026-09-21
 
+- merge：再次合并 `origin/MIUIX-api102`（2dda9ba3 → d7ec910c，17 个上游提交：配置保存改为临时文件原子替换并修复跨进程旧快照覆盖、配置编辑器输入即生效、模块级开关（气泡/状态栏禁删/VPN 弹窗）迁到全局 `AppConfig`、抓包记录开关统一到日志页并移除按账号的 `debugMode`、分组页执行功能、新版保护地自动前进/自动任务/动物伙伴（大富翁）、庄园饲料领奖遇 102 跳过本轮剩余任务、首页/日志页样式、miuix 升到 0.9.4）。6 处冲突：`ModelTask`、`BaseModel`、`AntFarm`、`AntForestV2`（2 处）、`MiuixMainActivity`（3 处）、`FileUtil`，取舍与 GMT+8/JSON 复查见下方详细记录。合并后 Debug 与 Release（R8）构建成功，13 项回归全部通过。
 - fix `e0fec4b2`：运行日志页右上角“分享”给出的文件名不带账号名（用户确认装了两个版本，导出的 `runtime.2026-09-21.log` 仍没有账号名，期望切到哪个账号导出/分享的就是哪个账号且带名字）。根因：日志页右上角有“导出”（`FileUtil.exportFile`，会按 `exportName` 加账号名）和“分享”（`Intent.ACTION_SEND` + `FileProvider`）两个图标，“分享”直接分享原文件，接收方看到的是原始文件名 `runtime.日期.log`，`EXTRA_SUBJECT` 也是原名，完全没走命名逻辑（上一条只改了导出路径，没发现这条）。改为分享前先 `FileUtil.copyForShare` 把日志复制到 `cacheDir/share/` 并按 `exportName` 命名（如 `runtime.2026-09-21.C158.log`），分享这个副本；副本目录里只留这一份（先清上次的）；`provider_paths.xml` 加 `<cache-path name="share" path="share/"/>`；失败提示“分享失败”。日志页里的账号名来自当前发布的日志目录（`current_log_user.txt`），所以切到哪个账号，导出/分享的就是哪个账号的运行日志。`audit_regressions` 加了 `copyForShare` 用例（文件名带账号名、内容一致、旧副本被清、源文件不存在返回 null）。其它文件的出口已逐一核对：日志导出/异常统计导出走 `exportFile`，配置导出 `[名字]-config_v2.json`，`statistics.json`（`Statistics.INSTANCE` 是全模块累计，不分账号；`MiuixMainActivity.exportStatistics/importStatistics` 目前没有调用方）无账号，没有其它直接分享原文件的入口。完整清单：日志页“导出”（所有日志类型）、日志页“分享”（运行日志）、错误页“导出统计”（异常请求统计）、配置页“导出”（`[名字]-config_v2.json`）——均已带账号名。未真机验证。
 - fix `872cd694`：导出文件名补漏 + 拼图扫描重复循环 + 被动扫描误报（用户给了有验证弹窗的 `runtime.2026-09-21.log`，账号 3，13:00:23 起，1.1.6）。① **导出文件名没带账号名**：`FileUtil.exportName` 原来只用目录名，目录还叫 uid（升级后支付宝没重启迁移过、或新账号没有 `self.json`）时导出名带的是 uid 甚至没有账号。现在目录还是纯数字 uid 时用 `AccountFolderName.displayLabel(uid)`（括号前面的名字→括号里面的账号→uid）；文件名里已有 uid 的旧异常统计文件（`rpc-failures.日期.uid.json`）把 uid 换成账号名；default 目录/目录外的文件（如 `statistics.json`，全局文件，无账号）保持原名。其它导出：配置导出 `[名字]-config_v2.json`、异常统计导出都走这两处，已一并覆盖；`audit_regressions` 把 `exportName` 纳入并加了用例（账号名目录、uid 目录有/无账号名、旧异常统计文件、default、目录外）。② **扫描循环没有停**：`poll()` 不检查 `polling`，拖动完成时置 `polling=false` 后排着队的那一次仍会执行并继续排队，`retry()` 又新开一条，同时跑两条循环（日志里“监视窗口期结束，没有可处理的拼图窗口”连续打印两次即证据）。改为令牌：`startPolling()` 换新令牌，旧循环下一次触发发现令牌不符或 `polling=false` 就退出。③ **被动扫描误报**：13:00:27 的“被动扫描发现拼图滑块”是一个 `center=(236,1354)`、按钮宽 80、没有轨道的普通页面按钮（颜色连通块识别会命中蓝/红按钮）。现在被动扫描要按钮和轨道终点都识别到才转为正常流程。④ **复盘信息**：“识别成功，开始拖动”日志带上滑块位置（`center=… buttonWidth=… trackEnd=…`）；拖完 1.5 秒窗口仍在时再截一张“拖动之后”的图存成 `matched-after-d<位移>-a<第几次>`（属于 matched，保留），对照拖动前的 `matched-d<位移>` 能看出滑块停在缺口的哪里。**这份日志说明的**：H5 触发链路真机跑通——13:00:31 `render.alipay.com/p/yuyan/180020010001270421` 经 `startActivityForResult` 与 `WebView.loadUrl` 打开，命中 GR 的指纹；第 1/4 次识别缺口位移 655px、方法 `cluster-best-pixel-refined`、分数 0.400（偏低），拖完窗口仍在，判定没通过；之后重试一直只看到那个没有轨道的疑似按钮，没有再拖，13:00:51 窗口期结束。**原因未定**（可能是位移算错、也可能拖动后页面进了别的状态），需要 `puzzle/<账号名>/` 里的 `matched-d655` 截图（以及新版的 `matched-after-…`）才能判断。未真机验证。
 - fix `45f82c05`：账号名读取顺序（用户要求：先取括号前面的，没有再取括号里面的，最后才用 uid）。`AccountFolderName.Source` 由返回单个名字改为按优先级返回候选 `[showName, account]`，`displayLabel`/`resolve` 取第一个安全化后非空且不叫 default 的；两个都不可用才用 uid。即 ① 账号列表括号前面的名字（备注，没有用昵称，如 C176）→ ② 括号里面的账号（邮箱/手机号安全化后，如 `user_example_com`、`138_1234`）→ ③ uid。`check_account_folder.py` 补了优先级、名字不可用改用账号、两者都不可用回退 uid 的用例。未真机验证。
@@ -139,6 +140,36 @@
 - `6a31c9e1` feat: 新增全局自动切号功能（账号轮询，最小间隔2小时）
 
 ## 详细记录（自 doc/MyFix.md 迁移）
+
+### 2026-09-21（续）：合并 MIUIX-api102 至 d7ec910c
+
+上游 17 个提交、32 个文件（+1472/-421）。
+
+**冲突与取舍（6 个文件）**
+- `ModelTask`：两边各新增一个方法（my_dev 的 `hasPendingMainTask`/`isAllTaskIdle`，上游的 `startGroupTask`——配置页“执行”按钮通过广播交给注入进程，只跑指定分组），相邻插入产生的假冲突，两个都保留。
+- `BaseModel`：上游把 `showToast`/`closeCaptchaDialogVPN`/`toastOffsetY`/`enableOnGoing` 迁到全局 `AppConfig`（模块级、不分账号），跟着删掉；my_dev 的 `autoPuzzleSlider`、`puzzleMaxAttempts` 保留在 `BaseModel`（仍按账号）。`boot()` 保留 my_dev 的 `CaptchaHook.setupHook(classLoader)`（`audit_regressions` 断言它在 `updateHooks` 之前），`updateHooks` 改读 `AppConfig.getCloseCaptchaDialogVPN()`。
+- `FileUtil`：两边各新增一个 getter（my_dev 的 `getAntFishpondTaskListMapFile`，上游的 `getMonopolyTaskListMapFile`），都保留。
+- `AntFarm`：my_dev 已把这段读取改成 opt*、并对未知 `taskStatus` 只跳过一项；上游在循环开头加了“本轮已遇 102（`farmTaskAwardBusy`）就 `break`，留到下一轮”。保留 my_dev 的健壮读取并加上上游那段。
+- `AntForestV2`：① 上游整块删除了“合成动物碎片”（`combineAnimalPiece` 字段与 `queryAnimalAndPiece`/`combineAnimalPiece` 方法），my_dev 侧确认没有其它调用后跟着删；② `queryAnimalPropList` 改为返回 boolean，调用处合并为 `else if (!animalDispatched && !MyUtils.closeVerification())`——保留 my_dev 的“关闭验证相关功能”门控；③ 自动合并进来的 `consumeAnimalProp` 空值保护还是 `return;`，与上游改成 boolean 的签名不符，编译报错，改为 `return false;`。
+- `MiuixMainActivity`（3 处）：上游 Tab 签名改为 `HomeTab(activity)` 等且标题换成新样式；my_dev 早已有“当前账号”标题行（`TabTitleRow`）和权限申请。保留 my_dev 的 `currentAccount` 参数、`TabTitleRow` 与权限申请，采用上游 `ConfigTab` 需要 `activity` 的签名（`ConfigTab(activity, currentAccount)`），核对合并后各 Tab 没有重复标题。
+
+**自动合并带来的行为变化（不是冲突，但要知道）**
+- `closeCaptchaDialogVPN` 现在是全局 `AppConfig` 字段，**默认开**（原 my_dev 按账号默认关，上一次合并时保留的“默认关”不再适用）。开着时含“VPN”或“代理”字样的验证码弹窗会被自动关闭；`CaptchaHook` 常开的验证监视钩子对这类弹窗同样跳过，不会启动拼图处理。旧的按账号取值未见迁移代码，等于被忽略。
+- `showToast`/`toastOffsetY`/`enableOnGoing` 同样迁到全局；`debugMode` 按账号字段被移除，抓包记录开关统一为日志页开关。
+- 庄园饲料领奖遇 102 时跳过本轮剩余领奖（上游）与 my_dev 的 `RpcRequestGuard` 对 `receiveFarmTaskAward` 102 的 5 分钟→30 分钟→6 小时退避是两层，互不冲突。
+- 动物碎片合成功能被上游删除，配置项「合成动物碎片」不再存在。
+
+**规范复查（GMT+8、JSON 创建、JSON 读取）**——对合并结果里所有新增/修改行逐项扫描，发现并处理：
+- JSON 创建：新版保护地（大富翁）代码有 13 处 `new JSONObject(接口返回串)`（`monopolyPatrol`、`monopolyResponse`、`monopolyTaskTitle` 的 `bizInfo`、`monopolyFinishTask` 的 `prodPlayParam`、动物伙伴派遣等），统一改为 `MyUtils.newJSONObject(...)`。逐处核对：所有接口返回都接着 `MessageUtil.checkResultCode`/`checkSuccess`，空对象一律判失败；`bizInfo` 无效则标题回退到 `taskTitle`/任务类型；`prodPlayParam` 无效则时长为 0 被判“时长异常，跳过”；`markMonopolyTaskBlackList` 对空对象不会拉黑。
+- JSON 读取：`selected.getString("creatureCode")` 改为 `optString` 并判空（空则记录并跳过派遣）。
+- GMT+8：`parseMonopolyDate` 用 `Asia/Shanghai`（等价东八区，但不符合项目“显式 GMT+8”约定），改为 `TimeZone.getTimeZone("GMT+8")`。
+- 其余新增文件（`MonopolyTaskListMap`、`FileUtil`、各 UI 文件、其它模块）没有新的裸 `get*()`、Calendar 或未走 `MyUtils` 的 JSON 构造；`GeminiAI` 未动。
+
+**验证**
+- Debug（Java + Kotlin）与 `assembleNormalRelease`（R8）构建成功（合并带 miuix 依赖升级，按规则跑了 Release）。
+- 13 项回归全部通过；`account_lifecycle` 的 `ModelTask` 桩需要补 `ModelGroup`/`Model.getGroup()`（上游 `startGroupTask` 用到），已补。
+- 提示：中途有一次编译其实失败了但被我的输出过滤漏掉（javac 中文报错），后来改成直接看 `BUILD SUCCESSFUL` 才发现；最终结果以 `BUILD SUCCESSFUL` 为准。
+- 未真机验证：新版保护地、配置保存、分组页执行等上游功能本次只做了合并与静态检查。
 
 ### 2026-09-21：日报复核与退避调整、验证记录、合并 MIUIX-api102（2dda9ba3）、删除版本伪装、拼图滑块自动验证、v1.1.6
 

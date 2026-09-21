@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -235,8 +236,17 @@ fun SelectionEditContent(
         val saved = if (userId != null) ConfigV2.save(userId, true) else false
         Log.i("SelectionEdit", "applyAndSave: field=${field.code}, saved=$saved, value=${configField.value}")
         if (saved) {
+            // 本页的保存是"退出时隐式落盘"，成功不弹气泡（失败才提示）
             dirty = false
-            ToastUtil.show(activity, "已保存")
+            if (userId != null) {
+                try {
+                    val intent = Intent("com.eg.android.AlipayGphone.sesame.restart")
+                    intent.putExtra("userId", userId)
+                    activity.sendBroadcast(intent)
+                } catch (th: Throwable) {
+                    Log.printStackTrace(th)
+                }
+            }
         } else {
             ToastUtil.show(activity, "保存失败")
         }
@@ -251,12 +261,8 @@ fun SelectionEditContent(
         topBar = {
             LogTopBar(
                 title = field.name ?: "",
-                onBack = {
-                    if (!dirty) {
-                        ToastUtil.show(activity, "没有未保存的更改")
-                    }
-                    activity.saveAndFinish()
-                }
+                // 无改动时静默退出，不再提示"没有未保存的更改"
+                onBack = { activity.saveAndFinish() }
             )
         },
         containerColor = MiuixTheme.colorScheme.surface
@@ -305,8 +311,11 @@ fun SelectionEditContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f, fill = false)
+                    // 先裁到圆角再画底；并且**不在这里加左右内边距**：
+                    // 行的文字缩进由行自身的 insideMargin 提供，行顶满卡片宽度后
+                    // 条目的按压效果才是通栏色带，否则会露出方框
+                    .clip(RoundedCornerShape(16.dp))
                     .background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 LazyColumn(
                     state = lazyListState,

@@ -15,9 +15,11 @@ STUBS = """
 package io.github.aw1y2z.sesame.data.task;
 class Build { static class VERSION { static int SDK_INT = 24; } static class VERSION_CODES { static int N = 24; } }
 class Model { static Model[] models = new Model[2]; static Model[] getModelArray() { return models; }
-  public void prepare() {} public ModelType getType() { return ModelType.TASK; } public boolean isEnable() { return true; } }
+  public void prepare() {} public ModelType getType() { return ModelType.TASK; } public boolean isEnable() { return true; }
+  public ModelGroup getGroup() { return null; } }
 class ModelFields {}
 enum ModelType { TASK }
+class ModelGroup { String getCode() { return ""; } }
 class BaseModel { static void taskRpcRequest() {} static Value getTimedTaskModel() { return new Value(); }
  static class Value { int getValue() { return 1; } } static class TimedTaskModel { static int SYSTEM=0, PROGRAM=1; } }
 class Log { static final java.util.concurrent.atomic.AtomicInteger completions = new java.util.concurrent.atomic.AtomicInteger();

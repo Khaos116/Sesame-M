@@ -115,7 +115,7 @@ public class AntStall extends ModelTask {
         modelFields.addField(inviteOpenShopList = new SelectModelField("inviteOpenShopList", "邀请摆摊 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("inviteOpenShopType"));
         modelFields.addField(taskList = new BooleanModelField("taskList", "新村任务 | 加速产币", false));
         modelFields.addField(AutoAntStallTaskList = new BooleanModelField("AutoAntStallTaskList", "新村任务 | 自动黑名单", true).setDependsOn("taskList"));
-        modelFields.addField(AntStallTaskList = new SelectModelField("AntStallTaskList", "新村任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntStallTaskList::getList).setDependsOn("taskList"));
+        modelFields.addField(AntStallTaskList = new SelectModelField("AntStallTaskList", "新村任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntStallTaskList::getList).setDependsOn("AutoAntStallTaskList"));
         modelFields.addField(doTaskOnce = new BooleanModelField("doTaskOnce", "新村任务仅执行一次", false).setDependsOn("taskList"));
         modelFields.addField(donate = new BooleanModelField("donate", "助力就业岗位", false));
         modelFields.addField(nextVillage = new BooleanModelField("nextVillage", "解锁新村新店", false));

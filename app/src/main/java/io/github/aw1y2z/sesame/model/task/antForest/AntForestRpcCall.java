@@ -391,23 +391,80 @@ public class AntForestRpcCall {
         return ApplicationHook.requestString("alipay.antforest.forest.h5.exchangePatrolChance", "[{\"costStep\":" + costStep + ",\"source\":\"ant_forest\",\"timezoneId\":\"Asia/Shanghai\"}]");
     }
     
-    public static String queryAnimalAndPiece(int animalId) {
-        String args = null;
-        if (animalId != 0) {
-            args = "[{\"animalId\":" + animalId + ",\"source\":\"ant_forest\",\"timezoneId\":\"Asia/Shanghai\"}]";
-        }
-        else {
-            args = "[{\"source\":\"ant_forest\",\"timezoneId\":\"Asia/Shanghai\",\"withDetail\":\"N\"," + "\"withGift" + "\":true}]";
-        }
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryAnimalAndPiece", args);
-    }
-    
-    public static String combineAnimalPiece(int animalId, String piecePropIds) {
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.combineAnimalPiece", "[{\"animalId\":" + animalId + ",\"piecePropIds\":" + piecePropIds + ",\"timezoneId\":\"Asia/Shanghai" + "\",\"source\":\"ant_forest\"}]");
-    }
-    
     public static String AnimalConsumeProp(String propGroup, String propId, String propType) {
         return ApplicationHook.requestString("alipay.antforest.forest.h5.consumeProp", "[{\"propGroup\":\"" + propGroup + "\",\"propId\":\"" + propId + "\",\"propType\":\"" + propType + "\",\"source\":\"ant_forest\",\"timezoneId\":\"Asia/Shanghai\"}]");
+    }
+    
+    /* 新版保护地 */
+    private static final String MONOPOLY_SOURCE = "monopoly_home_board";
+    
+    private static String monopolyPayload(String extra) {
+        return "[{\"source\":\"" + MONOPOLY_SOURCE + "\",\"uniqueId\":\"" + RandomUtil.getRandomString(16) + "\"" + extra + "}]";
+    }
+    
+    public static String queryMonopolyEntryInfo() {
+        return ApplicationHook.requestString("alipay.antisle.monopoly.h5.queryMonopolyEntryInfo", monopolyPayload(""));
+    }
+    
+    /* 领取新版保护地首页道具（当日巡护机会） */
+    public static String triggerMonopolyHomeProps() {
+        return ApplicationHook.requestString("alipay.antisle.monopoly.h5.triggerHomePageProps", monopolyPayload(""));
+    }
+    
+    /* 掷骰子前进；首次进入地图时服务端要求带引导参数 */
+    public static String rollMonopolyDice(boolean guideRoll) {
+        String extra = guideRoll
+                ? ",\"extParams\":\"{\\\"guideRoll\\\":true,\\\"source\\\":\\\"newUserGuide\\\"}\""
+                : "";
+        return ApplicationHook.requestString("alipay.antisle.monopoly.h5.rollDice", monopolyPayload(extra));
+    }
+    
+    /* 确认新版保护地事件（CHARITY 领取 / SPECIAL 跳过） */
+    public static String confirmMonopolyEvent(String eventId, String actionKey) {
+        String extra = ",\"eventId\":\"" + eventId + "\",\"status\":\"CONFIRMED\""
+                + ",\"decisionData\":{\"actionKey\":\"" + actionKey + "\",\"source\":\"ROLL_DICE_STEP\"}";
+        return ApplicationHook.requestString("alipay.antisle.monopoly.h5.eventConfirm", monopolyPayload(extra));
+    }
+    
+    /* 新版保护地任务列表 */
+    public static String listMonopolyTasks(String regionCode, String sceneCode) {
+        return ApplicationHook.requestString("com.alipay.antieptask.listTaskopengreen",
+                "[{\"regionCode\":\"" + regionCode + "\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"ANTFOREST\","
+                        + "\"requestType\":\"RPC\",\"zoneId\":\"Asia/Shanghai\",\"uniqueId\":\"" + RandomUtil.getRandomString(16) + "\"}]");
+    }
+    
+    /* 新版保护地任务完成 */
+    public static String finishMonopolyTask(String taskType, String sceneCode) {
+        return ApplicationHook.requestString("com.alipay.antieptask.finishTaskopengreen",
+                "[{\"taskType\":\"" + taskType + "\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"ANTFOREST\","
+                        + "\"requestType\":\"H5\",\"outBizNo\":\"" + taskType + "_" + System.currentTimeMillis() + "_" + RandomUtil.getRandomString(8) + "\"}]");
+    }
+    
+    /* 新版保护地任务领奖 */
+    public static String receiveMonopolyTask(String taskType, String sceneCode) {
+        return ApplicationHook.requestString("com.alipay.antieptask.receiveTaskAwardopengreen",
+                "[{\"taskType\":\"" + taskType + "\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"ANTFOREST\","
+                        + "\"requestType\":\"RPC\",\"ignoreLimit\":false}]");
+    }
+    
+    /* 新版动物伙伴：查询当前占用与可领能量 */
+    public static String queryUsingCreatureInfo(String targetUserId) {
+        return ApplicationHook.requestString("alipay.antisle.monopoly.h5.queryUsingCreatureInfo",
+                "[{\"source\":\"chInfo_ch_appcenter__chsub_9patch\",\"targetUserId\":\"" + targetUserId + "\","
+                        + "\"uniqueId\":\"" + RandomUtil.getRandomString(16) + "\",\"version\":\"20260623\"}]");
+    }
+    
+    /* 新版动物伙伴：领取派遣能量 */
+    public static String collectMonopolyCreatureEnergy(String creatureCode, String shortDay) {
+        return ApplicationHook.requestString("alipay.antisle.monopoly.h5.collectMonopolyCreatureEnergy",
+                "[{\"creatureCode\":\"" + creatureCode + "\",\"shortDay\":\"" + shortDay + "\","
+                        + "\"source\":\"chInfo_ch_appcenter__chsub_9patch\",\"uniqueId\":\"" + RandomUtil.getRandomString(16) + "\"}]");
+    }
+    
+    /* 新版动物伙伴：派遣 */
+    public static String assignMonopolyCreature(String creatureCode) {
+        String extra = ",\"creatureCode\":\"" + creatureCode + "\",\"secondConfirm\":false";
+        return ApplicationHook.requestString("alipay.antisle.monopoly.h5.assignMonopolyCreature", monopolyPayload(extra));
     }
     
     public static String collectAnimalRobEnergy(String propId, String propType, String shortDay) {

@@ -22,6 +22,7 @@ import io.github.aw1y2z.sesame.util.idMap.GoldenBeansTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.MarathonIdMap;
 import io.github.aw1y2z.sesame.util.idMap.MemberBenefitIdMap;
 import io.github.aw1y2z.sesame.util.idMap.MemberCreditSesameTaskListMap;
+import io.github.aw1y2z.sesame.util.idMap.MonopolyTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.NewAncientTreeIdMap;
 import io.github.aw1y2z.sesame.util.idMap.PathThemeMapListMap;
 import io.github.aw1y2z.sesame.util.idMap.PlantSceneIdMap;
@@ -85,6 +86,7 @@ public final class ConfigPreload {
         PathThemeMapListMap.load();
         AntMemberTaskListMap.load();
         GoldenBeansTaskListMap.load();
+        MonopolyTaskListMap.load();
         ConfigV2.load(userId);
     }
 

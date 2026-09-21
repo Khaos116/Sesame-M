@@ -15,7 +15,7 @@ public class Toast {
 
     public static void show(CharSequence cs, boolean force) {
         Context context = ApplicationHook.getContext();
-        if (context != null && (force || BaseModel.getShowToast().getValue())) {
+        if (context != null && (force || io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getShowToast())) {
             show(context, ApplicationHook.getMainHandler(), cs);
         }
     }
@@ -25,7 +25,7 @@ public class Toast {
             handler.post(() -> {
                 try {
                     android.widget.Toast toast = android.widget.Toast.makeText(context, cs, android.widget.Toast.LENGTH_SHORT);
-                    toast.setGravity(toast.getGravity(), toast.getXOffset(), BaseModel.getToastOffsetY().getValue());
+                    toast.setGravity(toast.getGravity(), toast.getXOffset(), io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getToastOffsetY());
                     toast.show();
                 } catch (Throwable t) {
                     Log.err(TAG, "show.run err:", t);

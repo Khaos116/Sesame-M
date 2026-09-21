@@ -10,6 +10,7 @@ import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 import lombok.Getter;
 import io.github.aw1y2z.sesame.data.Model;
 import io.github.aw1y2z.sesame.data.ModelFields;
+import io.github.aw1y2z.sesame.data.ModelGroup;
 import io.github.aw1y2z.sesame.data.ModelType;
 import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 import io.github.aw1y2z.sesame.util.Log;
@@ -332,6 +333,31 @@ public abstract class ModelTask extends Model {
     /** Delayed children are pending; only admitted dispatch and running work block switching. */
     public static boolean isAllTaskIdle() {
         return TaskLifecycle.isIdle();
+    }
+
+    /**
+     * 只执行指定分组下的任务（{@code groupCode} 取 {@link ModelGroup#getCode()}）。
+     * <p>配置页的"执行"按钮必须通过广播交给<strong>注入进程</strong>跑：模块 App 自己的进程没有
+     * libxposed 类（{@code ApplicationHook}/{@code hook.Toast}/{@code NotificationUtil} 一碰就是
+     * NoClassDefFoundError），而且那是个 UI 进程，把任务循环压在主线程上会直接卡死界面。
+     *
+     * @return 实际触发的任务数
+     */
+    public static int startGroupTask(String groupCode) {
+        int count = 0;
+        for (Model model : getModelArray()) {
+            if (model == null || ModelType.TASK != model.getType()) {
+                continue;
+            }
+            ModelGroup group = model.getGroup();
+            if (group == null || !groupCode.equals(group.getCode())) {
+                continue;
+            }
+            if (((ModelTask) model).startTask(false)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     public static void stopAllTask() {

@@ -48,8 +48,9 @@ public class MessageUtil {
     /**
      * 是否服务端繁忙：`resultCode=102` 或文案为"服务器正在开小差"。
      * <p>这类错误是临时性的，既不该拉黑，也不该几秒内连续重试。
+     * <p>对调用方的用途：命中后可在"本轮"内放弃后续同类调用（见 {@code AntFarm.listFarmTask} 的领奖）。
      */
-    private static boolean isServerBusy(JSONObject jo) {
+    public static boolean isServerBusy(JSONObject jo) {
         if (jo == null) {
             return false;
         }
@@ -275,6 +276,7 @@ public class MessageUtil {
     static {
         BLACKLIST_LIST_TARGETS.put("AntForestVitalityTaskList", new String[]{"AntForestV2", "蚂蚁森林活力值任务"});
         BLACKLIST_LIST_TARGETS.put("AntForestHuntTaskList", new String[]{"AntForestV2", "蚂蚁森林抽抽乐任务"});
+        BLACKLIST_LIST_TARGETS.put("MonopolyTaskList", new String[]{"AntForestV2", "新版保护地任务"});
         BLACKLIST_LIST_TARGETS.put("AntFarmDoFarmTaskList", new String[]{"AntFarm", "庄园饲料任务"});
         BLACKLIST_LIST_TARGETS.put("AntFarmDrawMachineTaskList", new String[]{"AntFarm", "庄园装扮抽抽乐任务"});
         BLACKLIST_LIST_TARGETS.put("AntDodoTaskList", new String[]{"AntDodo", "神奇物种任务"});

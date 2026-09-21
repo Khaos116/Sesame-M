@@ -42,6 +42,7 @@ import io.github.aw1y2z.sesame.util.compat.XC_MethodReplacement;
 import io.github.aw1y2z.sesame.BuildConfig;
 import io.github.aw1y2z.sesame.data.ConfigV2;
 import io.github.aw1y2z.sesame.data.Model;
+import io.github.aw1y2z.sesame.data.ModelGroup;
 import io.github.aw1y2z.sesame.data.RunType;
 import io.github.aw1y2z.sesame.data.TokenConfig;
 import io.github.aw1y2z.sesame.data.ViewAppInfo;
@@ -681,7 +682,7 @@ public class ApplicationHook extends XposedModule {
                         }
                     }, 2000);
                 }
-                if (BaseModel.getNewRpc().getValue()) {
+                if (AppConfig.INSTANCE.getNewRpc()) {
                     rpcBridge = new NewRpcBridge();
                 } else {
                     rpcBridge = new OldRpcBridge();
@@ -698,58 +699,7 @@ public class ApplicationHook extends XposedModule {
                     }
                 }
                 setWakenAtTimeAlarm();
-                if (BaseModel.getNewRpc().getValue() && BaseModel.getDebugMode().getValue()) {
-                    try {
-                        rpcRequestUnhook = XHelpers.findAndHookMethod("com.alibaba.ariver.commonability.network.rpc.RpcBridgeExtension", classLoader, "rpc", String.class, boolean.class, boolean.class, String.class, classLoader.loadClass(ClassUtil.JSON_OBJECT_NAME), String.class, classLoader.loadClass(ClassUtil.JSON_OBJECT_NAME), boolean.class, boolean.class, int.class, boolean.class, String.class, classLoader.loadClass("com.alibaba.ariver.app.api.App"), classLoader.loadClass("com.alibaba.ariver.app.api.Page"), classLoader.loadClass("com.alibaba.ariver.engine.api.bridge.model.ApiContext"), classLoader.loadClass("com.alibaba.ariver.engine.api.bridge.extension" + ".BridgeCallback"), new XC_MethodHook() {
-
-                            @SuppressLint("WakelockTimeout")
-                            @Override
-                            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                                Object[] args = param.args;
-                                Object object = args[15];
-                                Object[] recordArray = new Object[4];
-                                recordArray[0] = System.currentTimeMillis();
-                                recordArray[1] = args[0];
-                                recordArray[2] = args[4];
-                                rpcHookMap.put(object, recordArray);
-                            }
-
-                            @SuppressLint("WakelockTimeout")
-                            @Override
-                            protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                                Object object = param.args[15];
-                                Object[] recordArray = rpcHookMap.remove(object);
-                                if (recordArray != null) {
-                                    Log.debug("记录\n时间: " + recordArray[0] + "\n方法: " + recordArray[1] + "\n参数: " + recordArray[2] + "\n数据: " + recordArray[3] + "\n");
-                                } else {
-                                    Log.debug("删除记录ID: " + object.hashCode());
-                                }
-                            }
-
-                        });
-                        Log.i(TAG, "hook record request successfully");
-                    } catch (Throwable t) {
-                        Log.err(TAG, "hook record request err:", t);
-                    }
-                    try {
-                        rpcResponseUnhook = XHelpers.findAndHookMethod("com.alibaba.ariver.engine.common.bridge.internal.DefaultBridgeCallback", classLoader, "sendJSONResponse", classLoader.loadClass(ClassUtil.JSON_OBJECT_NAME), new XC_MethodHook() {
-
-                            @SuppressLint("WakelockTimeout")
-                            @Override
-                            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                                Object object = param.thisObject;
-                                Object[] recordArray = rpcHookMap.get(object);
-                                if (recordArray != null) {
-                                    recordArray[3] = String.valueOf(param.args[0]);
-                                }
-                            }
-
-                        });
-                        Log.i(TAG, "hook record response successfully");
-                    } catch (Throwable t) {
-                        Log.err(TAG, "hook record response err:", t);
-                    }
-                }
+                installRpcRecordHook();
                 NotificationUtil.start(service);
                 CaptchaHook.setupHook(classLoader);
                 Model.bootAllModel(classLoader);
@@ -771,6 +721,95 @@ public class ApplicationHook extends XposedModule {
         }
     }
 
+    /**
+     * 安装抓包钩子（请求 + 返回各一个）。
+     * 开关统一为日志页的「抓包记录」({@code AppConfig.enableDebugLog})，全局生效；
+     * 老接口没有 RpcBridgeExtension.rpc / DefaultBridgeCallback.sendJSONResponse，故仍要求「使用新接口」开着。
+     * 重复调用不会叠加 hook。
+     */
+    private static synchronized void installRpcRecordHook() {
+        if (!AppConfig.INSTANCE.getEnableDebugLog()) {
+            return;
+        }
+        if (!AppConfig.INSTANCE.getNewRpc()) {
+            Log.i(TAG, "抓包需要开启「使用新接口」，已跳过");
+            return;
+        }
+        if (rpcRequestUnhook != null || rpcResponseUnhook != null) {
+            return;
+        }
+        try {
+            rpcRequestUnhook = XHelpers.findAndHookMethod("com.alibaba.ariver.commonability.network.rpc.RpcBridgeExtension", classLoader, "rpc", String.class, boolean.class, boolean.class, String.class, classLoader.loadClass(ClassUtil.JSON_OBJECT_NAME), String.class, classLoader.loadClass(ClassUtil.JSON_OBJECT_NAME), boolean.class, boolean.class, int.class, boolean.class, String.class, classLoader.loadClass("com.alibaba.ariver.app.api.App"), classLoader.loadClass("com.alibaba.ariver.app.api.Page"), classLoader.loadClass("com.alibaba.ariver.engine.api.bridge.model.ApiContext"), classLoader.loadClass("com.alibaba.ariver.engine.api.bridge.extension" + ".BridgeCallback"), new XC_MethodHook() {
+
+                @SuppressLint("WakelockTimeout")
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    Object[] args = param.args;
+                    Object object = args[15];
+                    Object[] recordArray = new Object[4];
+                    recordArray[0] = System.currentTimeMillis();
+                    recordArray[1] = args[0];
+                    recordArray[2] = args[4];
+                    rpcHookMap.put(object, recordArray);
+                }
+
+                @SuppressLint("WakelockTimeout")
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                    Object object = param.args[15];
+                    Object[] recordArray = rpcHookMap.remove(object);
+                    if (recordArray != null) {
+                        Log.debug("记录\n时间: " + recordArray[0] + "\n方法: " + recordArray[1] + "\n参数: " + recordArray[2] + "\n数据: " + recordArray[3] + "\n");
+                    } else {
+                        Log.debug("删除记录ID: " + object.hashCode());
+                    }
+                }
+
+            });
+            Log.i(TAG, "hook record request successfully");
+        } catch (Throwable t) {
+            Log.err(TAG, "hook record request err:", t);
+        }
+        try {
+            rpcResponseUnhook = XHelpers.findAndHookMethod("com.alibaba.ariver.engine.common.bridge.internal.DefaultBridgeCallback", classLoader, "sendJSONResponse", classLoader.loadClass(ClassUtil.JSON_OBJECT_NAME), new XC_MethodHook() {
+
+                @SuppressLint("WakelockTimeout")
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    Object object = param.thisObject;
+                    Object[] recordArray = rpcHookMap.get(object);
+                    if (recordArray != null) {
+                        recordArray[3] = String.valueOf(param.args[0]);
+                    }
+                }
+
+            });
+            Log.i(TAG, "hook record response successfully");
+        } catch (Throwable t) {
+            Log.err(TAG, "hook record response err:", t);
+        }
+    }
+
+    /** 卸载抓包钩子；未安装时是空操作 */
+    private static synchronized void uninstallRpcRecordHook() {
+        if (rpcResponseUnhook != null) {
+            try {
+                rpcResponseUnhook.unhook();
+            } catch (Throwable e) {
+                Log.printStackTrace(e);
+            }
+            rpcResponseUnhook = null;
+        }
+        if (rpcRequestUnhook != null) {
+            try {
+                rpcRequestUnhook.unhook();
+            } catch (Throwable e) {
+                Log.printStackTrace(e);
+            }
+            rpcRequestUnhook = null;
+        }
+    }
+
     private synchronized static void destroyHandler(Boolean force) {
         try {
             if (force) {
@@ -784,20 +823,7 @@ public class ApplicationHook extends XposedModule {
                     Model.destroyAllModel();
                     UserIdMap.unload();
                 }
-                if (rpcResponseUnhook != null) {
-                    try {
-                        rpcResponseUnhook.unhook();
-                    } catch (Exception e) {
-                        Log.printStackTrace(e);
-                    }
-                }
-                if (rpcRequestUnhook != null) {
-                    try {
-                        rpcRequestUnhook.unhook();
-                    } catch (Exception e) {
-                        Log.printStackTrace(e);
-                    }
-                }
+                uninstallRpcRecordHook();
                 if (wakeLock != null) {
                     wakeLock.release();
                     wakeLock = null;
@@ -1145,10 +1171,23 @@ public class ApplicationHook extends XposedModule {
                         }
                         break;
                     case "com.eg.android.AlipayGphone.sesame.execute":
+                        // 配置页"执行"按钮会带 group（ModelGroup 的 code）：BASE＝全部任务，
+                        // 其余只跑该分组的任务；不带 group 时保持原行为（整轮执行）。
+                        String groupCode = intent.getStringExtra("group");
                         BroadcastReceiver.PendingResult r2 = goAsync();
                         new Thread(() -> {
                             try {
-                                initHandler(false);
+                                if (StringUtil.isEmpty(groupCode)) {
+                                    initHandler(false);
+                                } else if (ModelGroup.BASE == ModelGroup.getByCode(groupCode)) {
+                                    ModelTask.stopAllTask();
+                                    ModelTask.startAllTask(false);
+                                    Log.record("开始执行全部任务");
+                                } else {
+                                    ModelTask.stopAllTask();
+                                    int count = ModelTask.startGroupTask(groupCode);
+                                    Log.record("开始执行分组【" + ModelGroup.getName(groupCode) + "】任务: " + count + " 个");
+                                }
                             } catch (Throwable th) {
                                 Log.printStackTrace(TAG, th);
                             }
@@ -1181,6 +1220,12 @@ public class ApplicationHook extends XposedModule {
                         // UI 侧修改日志开关等共享配置后通知本进程重载,使开关即时生效
                         try {
                             AppConfig.load();
+                            // 「抓包记录」开关即时装卸钩子（原来只在 initHandler 判定，改了必须重启进程才生效）
+                            if (AppConfig.INSTANCE.getEnableDebugLog()) {
+                                installRpcRecordHook();
+                            } else {
+                                uninstallRpcRecordHook();
+                            }
                             Log.i(TAG, "reload AppConfig from UI");
                         } catch (Throwable th) {
                             Log.err(TAG, "sesame reloadConfig err:", th);
