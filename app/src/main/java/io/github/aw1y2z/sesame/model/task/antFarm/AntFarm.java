@@ -48,6 +48,8 @@ public class AntFarm extends ModelTask {
     private static final int MAX_FARM_TASK_ROUNDS = 20;
     /** 家庭分享：当日最多尝试几次，超过后当天不再重试（避免每轮任务都重发邀请请求） */
     private static final int MAX_FAMILY_SHARE_ATTEMPT = 3;
+    /** 小鸡所在空间标识：家庭空间。睡觉/起床靠它区分走家庭接口还是个人小屋接口 */
+    private static final String SPACE_TYPE_CHICK_FAMILY = "ChickFamily";
 
     private String ownerFarmId;
     private String ownerUserId;
@@ -786,7 +788,7 @@ public class AntFarm extends ModelTask {
                 return false;
             }
             if (sleepInfo.optLong("sleepBeginTime") + TimeUnit.MINUTES.toMillis(sleepMinutes.getValue()) <= System.currentTimeMillis()) {
-                if (jo.has("spaceType")) {
+                if (SPACE_TYPE_CHICK_FAMILY.equals(jo.optString("spaceType"))) {
                     return familyWakeUp();
                 }
                 return animalWakeUp();

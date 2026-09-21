@@ -324,27 +324,7 @@ public class SimplePageManager {
             Log.e(TAG, "找不到DialogInterface.OnCancelListener类", e);
         }
         
-        // Hook 支付宝验证码对话框
-        try {
-            Class<?> captchaDialogClass = XHelpers.findClass(
-                    "com.alipay.rdssecuritysdk.v3.captcha.view.CaptchaDialog",
-                    getClassLoader()
-            );
-            CompatHelpers.findAndHookMethod(
-                    captchaDialogClass,
-                    "show",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            Dialog dialog = (Dialog) param.thisObject;
-                            addDialogIfNotExists(dialog, "CaptchaDialog.show()");
-                            CaptchaTriggerStats.recordDialog(dialog);
-                        }
-                    }
-            );
-        } catch (Throwable e) {
-            Log.e(TAG, "挂钩 CaptchaDialog.show() 错误: ", e);
-        }
+
     }
     
     /**

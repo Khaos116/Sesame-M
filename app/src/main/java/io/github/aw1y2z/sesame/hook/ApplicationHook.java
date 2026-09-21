@@ -2,6 +2,7 @@ package io.github.aw1y2z.sesame.hook;
 
 import static io.github.aw1y2z.sesame.hook.SimplePageManager.addHandler;
 import static io.github.aw1y2z.sesame.hook.SimplePageManager.enableWindowMonitoring;
+import io.github.aw1y2z.sesame.hook.CaptchaHook;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -799,6 +800,7 @@ public class ApplicationHook extends XposedModule {
                     }
                 }
                 NotificationUtil.start(service);
+                CaptchaHook.setupHook(classLoader);
                 Model.bootAllModel(classLoader);
                 Status.load();
                 TokenConfig.load();
