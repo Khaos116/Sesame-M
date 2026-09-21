@@ -58,7 +58,6 @@ public final class PuzzleCaptchaSolver {
     private static final long SLIDE_MIN_MS = 850L;
     private static final long SLIDE_MAX_MS = 950L;
     /** 每个账号最多保留多少张包含验证码的截图（目录按账号分）。 */
-    private static final int SAMPLE_KEEP = 10;
 
     private static final float REFERENCE_WIDTH = 1264f;
     private static final float START_X = 236f;
@@ -125,6 +124,7 @@ public final class PuzzleCaptchaSolver {
                 return;
             }
             polling = true;
+            cleanupNoSlider(); // 上次残留的没拖动过的截图
             Log.captcha("拼图验证🧩开始监视验证窗口，最长 " + MAX_POLLS + " 秒（来源[" + source + "]）");
             MAIN.postDelayed(PuzzleCaptchaSolver::poll, POLL_MS);
         });
@@ -523,61 +523,39 @@ public final class PuzzleCaptchaSolver {
         Log.captcha("拼图验证🧩" + message);
     }
 
-    /** 保存截图到日志目录 puzzle/，只保留最新 10 张，返回文件名（保存失败返回 "未保存"）。 */
+    /**
+     * 保存截图，返回相对文件名（保存失败返回 "未保存"）。放哪里、留几张见 {@link PuzzleSampleFiles}：
+     * 只有拖动过的 matched 放账号 puzzle 目录，其余放 tmp/ 验证结束时删。
+     */
     private static String saveSample(Bitmap bitmap, String tag, boolean ignored) {
         try {
-            File dir = FileUtil.getCurrentUserPuzzleDirectory();
-            if (!dir.isDirectory()) {
+            File accountDir = FileUtil.getCurrentUserPuzzleDirectory();
+            File file = PuzzleSampleFiles.fileFor(accountDir, tag, System.currentTimeMillis());
+            File parent = file.getParentFile();
+            if (parent == null || (!parent.isDirectory() && !parent.mkdirs())) {
                 return "未保存";
             }
-            File file = new File(dir, "puzzle-" + System.currentTimeMillis() + "-" + tag + ".png");
             try (FileOutputStream out = new FileOutputStream(file)) {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
             }
-            prune(dir, false, SAMPLE_KEEP);
-            prune(dir, true, MAX_CAPTURES_PER_WINDOW + 4); // 没验证码的另设上限兜底，互不挤占
-            return file.getName();
+            PuzzleSampleFiles.rotate(accountDir, tag);
+            return (parent.equals(accountDir) ? "" : PuzzleSampleFiles.TMP_DIR + "/") + file.getName();
         } catch (Throwable t) {
             return "未保存";
         }
     }
 
     /**
-     * 没有验证码的截图：没识别到滑块（no-slider），或只找到疑似按钮却没有轨道（no-track，按钮识别只是颜色连通块，
-     * 普通页面上的蓝/红按钮也会命中，有轨道才像验证码）。其余（match-failed、matched-d…）都是滑块和轨道都识别到了。
-     */
-    private static boolean isJunkSample(String name) {
-        return name.endsWith("-no-slider.png") || name.endsWith("-no-track.png");
-    }
-
-    /** 只保留最新 keep 张：junk=true 统计没验证码的截图，false 统计有验证码的截图。返回删除的张数。 */
-    private static int prune(File dir, boolean junk, int keep) {
-        File[] files = dir.listFiles((d, name) -> name.startsWith("puzzle-") && name.endsWith(".png")
-                && isJunkSample(name) == junk);
-        if (files == null || files.length <= keep) {
-            return 0;
-        }
-        Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
-        int deleted = 0;
-        for (int i = 0; i < files.length - keep; i++) {
-            if (files[i].delete()) {
-                deleted++;
-            }
-        }
-        return deleted;
-    }
-
-    /**
-     * 验证结束（拖动完成/监视窗口期结束）后：删掉没包含验证码的截图，只留识别到滑块和轨道的。工作线程执行，
-     * 避免主线程做文件 IO；删除了才写日志，方便确认清理真的执行了。
+     * 验证结束（拖动完成/监视窗口期结束）后：只留拖动过的 matched 截图。开始新一轮监视前也会调用一次，清上次的残留。
+     * 工作线程执行，避免主线程做文件 IO；删除了才写日志，方便确认清理真的执行了。
      */
     private static void cleanupNoSlider() {
         try {
             WORKER.execute(() -> {
                 try {
-                    int deleted = prune(FileUtil.getCurrentUserPuzzleDirectory(), true, 0);
+                    int deleted = PuzzleSampleFiles.deleteNonMatched(FileUtil.getCurrentUserPuzzleDirectory());
                     if (deleted > 0) {
-                        Log.captcha("拼图验证🧩验证结束，已清理 " + deleted + " 张没有验证码的截图");
+                        Log.captcha("拼图验证🧩已清理 " + deleted + " 张没有拖动过的截图，只保留 matched");
                     }
                 } catch (Throwable t) {
                     Log.printStackTrace(TAG, t);
