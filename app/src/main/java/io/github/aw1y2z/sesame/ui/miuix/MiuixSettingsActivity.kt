@@ -16,9 +16,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,6 +63,7 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.basic.TextFieldDefaults
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.CheckboxPreference
 import top.yukonga.miuix.kmp.preference.RadioButtonPreference
@@ -186,7 +187,7 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(padding)
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             // ============ 配置分组目录 ============
             SmallTitle(text = "配置分组")
@@ -279,12 +280,10 @@ fun FieldItem(field: ModelField<*>, onFieldChanged: (() -> Unit)? = null) {
             )
             if (expanded) {
                 var text by remember { mutableStateOf(current.toString()) }
-                Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp).padding(horizontal = 16.dp)) {
                     TextField(
                         value = text,
                         onValueChange = { input ->
-                            // 输入即写回（不再需要保存按钮）：只接受整数，
-                            // 且必须落在 min/max 之内才写——避免把 "1" 这种中间态存进去
                             val filtered = input.filterIndexed { index, c -> c.isDigit() || (c == '-' && index == 0) }
                             text = filtered
                             val parsed = filtered.toIntOrNull()
@@ -296,12 +295,7 @@ fun FieldItem(field: ModelField<*>, onFieldChanged: (() -> Unit)? = null) {
                             }
                         },
                         label = "",
-                        modifier = Modifier.fillMaxWidth()
                     )
-                    if (limitHint.isNotEmpty()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(text = limitHint, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-                    }
                 }
             }
         }
@@ -321,17 +315,15 @@ fun FieldItem(field: ModelField<*>, onFieldChanged: (() -> Unit)? = null) {
             )
             if (expanded) {
                 var text by remember { mutableStateOf(field.configValue ?: "") }
-                Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp).padding(horizontal = 16.dp)) {
                     TextField(
                         value = text,
                         onValueChange = {
-                            // 输入即写回（不再需要保存按钮），落盘仍在退出页面时统一做
                             text = it
                             field.setObjectValue(it)
                             onFieldChanged?.invoke()
                         },
                         label = "",
-                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
@@ -363,11 +355,10 @@ fun FieldItem(field: ModelField<*>, onFieldChanged: (() -> Unit)? = null) {
             )
             if (expanded) {
                 var text by remember { mutableStateOf(list.joinToString("\n")) }
-                Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp).padding(horizontal = 16.dp)) {
                     TextField(
                         value = text,
                         onValueChange = { input ->
-                            // 每次变更即解析并写回（空行忽略），不再需要保存按钮
                             text = input
                             field.setObjectValue(input.lines().map { it.trim() }.filter { it.isNotEmpty() })
                             onFieldChanged?.invoke()
@@ -375,7 +366,6 @@ fun FieldItem(field: ModelField<*>, onFieldChanged: (() -> Unit)? = null) {
                         label = "",
                         singleLine = false,
                         maxLines = 8,
-                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }

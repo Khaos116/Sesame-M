@@ -542,7 +542,8 @@ fun StatisticsTable(activity: MiuixMainActivity) {
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            // 上下补 16dp：卡片本身不带内边距（各部分自备留白），不补的话表头会贴住卡片上边缘
+            .padding(horizontal = 16.dp, vertical = 16.dp)
     ) {
         Row(Modifier.fillMaxWidth()) {
             Box(Modifier.weight(1f))
@@ -716,7 +717,9 @@ fun ConfigTab(activity: MiuixMainActivity) {
                     UserIdMap.loadSelf(userId)
                     val userEntity = UserIdMap.get(userId)
                     val label = UserIdMap.getAccountLabel(userId) ?: userId
-                    val summary = userEntity?.let { it.showName + ": " + it.account }
+                    // 副标题优先显示「昵称:账号」；新用户尚未被模块钩子同步资料（self.json 不存在）时
+                    // 回退显示 userId 本身，避免空白且仍能区分账号
+                    val summary = userEntity?.let { it.showName + ": " + it.account } ?: userId
                     list.add(Triple(userId, label, summary))
                 }
             }

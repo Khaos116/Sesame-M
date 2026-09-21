@@ -243,7 +243,7 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
             items(sections.size) { index ->
