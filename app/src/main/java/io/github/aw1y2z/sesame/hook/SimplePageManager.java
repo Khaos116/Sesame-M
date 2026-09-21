@@ -208,9 +208,11 @@ public class SimplePageManager {
                                 mContextRef = new WeakReference<>(activity.getApplicationContext());
                             }
                             mClassLoader = activity.getClassLoader();
-                            String activityName = activity.getClass().getName();
-                            if ("com.alipay.mobile.nebulax.xriver.activity.XRiverActivity".equals(activityName)
-                                    || "com.eg.android.AlipayGphone.AlipayLogin".equals(activityName)) {
+                            String activityName = activity.getClass().getName().toLowerCase(java.util.Locale.ROOT);
+                            // H5 容器：XRiver / Nebula / H5Activity，加上登录/首页（GR 在 XRiver 和登录页挂验证码处理器，
+                            // 另有 "*" 兜底）；被动扫描只静默扫 8 秒，识别到拼图滑块才转正常流程
+                            if (activityName.contains("xriver") || activityName.contains("nebula")
+                                    || activityName.contains("h5activity") || activityName.endsWith(".alipaylogin")) {
                                 PuzzleCaptchaSolver.armPassive("Activity " + activity.getClass().getSimpleName());
                             }
                             triggerActivity();

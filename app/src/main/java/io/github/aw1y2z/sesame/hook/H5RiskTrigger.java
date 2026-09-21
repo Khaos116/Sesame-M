@@ -66,7 +66,7 @@ final class H5RiskTrigger {
                 protected void beforeHookedMethod(MethodHookParam param) {
                     Object first = param.args != null && param.args.length > 0 ? param.args[0] : null;
                     if (first instanceof Intent) {
-                        inspect("Activity." + method, String.valueOf(((Intent) first).getDataString()));
+                        inspect("Activity." + method, intentToText((Intent) first));
                     }
                 }
             };
@@ -76,6 +76,27 @@ final class H5RiskTrigger {
             Log.record(TAG + "：挂钩 Activity." + method + " 失败：" + t.getClass().getSimpleName());
             return 0;
         }
+    }
+
+    /** 拼 action/data/component/extras：H5 容器的 URL 绝大多数在 extras 里，只看 data 会漏。 */
+    static String intentToText(Intent intent) {
+        StringBuilder builder = new StringBuilder();
+        try {
+            builder.append("action=").append(intent.getAction()).append(' ');
+            Uri data = intent.getData();
+            if (data != null) {
+                builder.append("data=").append(data).append(' ');
+            }
+            if (intent.getComponent() != null) {
+                builder.append("component=").append(intent.getComponent().flattenToShortString()).append(' ');
+            }
+            if (intent.getExtras() != null) {
+                builder.append("extras=").append(intent.getExtras());
+            }
+        } catch (Throwable ignored) {
+            // extras 解包失败时只用已拼好的部分
+        }
+        return builder.toString();
     }
 
     /** 命中风险/验证关键词才处理；同一页面 30 秒内只记一次（CaptchaTriggerStats 内去重）。 */
@@ -95,12 +116,26 @@ final class H5RiskTrigger {
     static boolean isRiskUrl(String url) {
         String lower = url.toLowerCase(Locale.ROOT);
         return lower.contains("captcha") || lower.contains("slider") || lower.contains("risk")
-                || lower.contains("verify") || lower.contains("validate");
+                || lower.contains("verify") || lower.contains("validate")
+                // 支付宝风控处置落地页（GR H5RiskOpenHook 的指纹）：模板 ID 与 dispose 参数里可能没有上面的通用词
+                || lower.contains("180020010001270421") || lower.contains("x-dispose-trace")
+                || lower.contains("disposeapplication") || lower.contains("disposedname")
+                || lower.contains("disposename");
     }
 
-    /** 只留域名+路径。 */
+    private static final java.util.regex.Pattern URL_IN_TEXT = java.util.regex.Pattern.compile("https?://[^\\s,}\\]\"']+");
+    private static final java.util.regex.Pattern COMPONENT_IN_TEXT = java.util.regex.Pattern.compile("component=(\\S+)");
+
+    /** 只留域名+路径；输入是 Intent 文本时先取其中的 URL，取不到就用 component。 */
     static String summarize(String url) {
         try {
+            java.util.regex.Matcher found = URL_IN_TEXT.matcher(url);
+            if (found.find()) {
+                url = found.group();
+            } else if (url.startsWith("action=")) {
+                java.util.regex.Matcher component = COMPONENT_IN_TEXT.matcher(url);
+                return component.find() ? "intent " + component.group(1) : "intent(无URL)";
+            }
             Uri uri = Uri.parse(url);
             String host = uri.getHost() == null ? "" : uri.getHost();
             String path = uri.getPath() == null ? "" : uri.getPath();
