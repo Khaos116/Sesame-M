@@ -5,6 +5,7 @@
 
 ## 2026-09-21
 
+- 真机验证：用户装 `2c005d55` 编译的包后，手动触发验证码，**拼图自动验证成功一次**（触发→截图→识别→匹配→拖动整条链路通了）。这同时推翻了此前“手动触发的验证不会自动处理”的说法：手动触发也被某个触发点接住了。当时没有导出运行日志，不知道具体是弹窗钩子、H5 打开监视还是页面恢复扫描；单次成功不代表成功率，GR 自述部分图片仍会失败。
 - chore `5ed2af90`：版本号 1.1.5 → 1.1.6（`gradle.properties`），tag `v1.1.6` 指向该提交；此后的提交（`e0a85a88` 起，见上）不在 tag 内，按用户要求不重打 tag，本地 Release 包为 tag 之后的代码编译。
 - fix `2c005d55`：H5 触发补漏（复查对照 GR `H5RiskOpenHook` 后核实成立）。① `Activity.startActivity/startActivityForResult` 原先只读 `getDataString()`，H5 容器的 URL 多在 extras 里，读到 null 后被转成字符串 "null" 必然不命中——现拼 action/data/component/extras（同 GR `intentToText`），日志里的来源摘要仍只保留域名+路径（先从 extras 文本取 URL，取不到用 component）。② 风险关键词补上 GR 的支付宝风控处置页指纹：模板 ID `180020010001270421`、`x-dispose-trace`、`disposeapplication`、`disposedname`、`disposename`（`captcha.alipay.com`/`captcha_`/`aicaptcha` 已被通用词 `captcha` 覆盖）。**没加** `security`：太宽，会命中大量无关页面，GR 也没有。③ 页面恢复被动扫描的类名由精确匹配 `XRiverActivity`/`AlipayLogin` 改为按关键字包含（xriver/nebula/h5activity/以 `.alipaylogin` 结尾），覆盖 NebulaActivity、H5Activity 等容器；仍只静默扫描 8 秒，识别到拼图滑块才转正常流程。未真机验证。
 - fix `5be07610`：拼图验证触发对齐 GR，修复“验证码弹出但验证记录一条都没有”。对照 GR 的 `CaptchaHook`/`SimplePageManager`：① 我的 `CaptchaDialog.show()` 钩子先 `getDialogInstance` 再 `collectDialogInfo`，任何一步取不到就直接 `return`，一行日志都不写——现在先记录再取细节，取不到弹窗对象/文字也照样写「验证记录」（`来源[CaptchaDialog:类名]`，文字可为空），并把弹窗对象直接交给 `PuzzleCaptchaSolver.arm(source, dialog)`，扫描时优先用它，不再依赖窗口跟踪列表；② GR 在 XRiver 页和登录/首页（`AlipayLogin`）恢复时就挂验证码处理器，我原先只在接口报错/弹窗/H5 URL 才启动——新增 `armPassive`：这两个页面恢复时静默扫描 8 秒（不写验证记录、不存无滑块截图），一旦识别到拼图滑块才转为正常流程并写“被动扫描发现拼图滑块”。仍是推测：不知道用户这次验证码具体走哪条路径，运行日志（1.1.6 11:02–11:14）里没有任何接口验证要求；新增的“钩子已挂载/H5 验证页监视已挂载”运行日志能区分“钩子没挂上”和“没触发”。未真机验证。
@@ -145,7 +146,7 @@
 - 第二轮（`b3026e22`、`5be07610`）：用户装 1.1.6 后仍为空。1.1.6 运行日志（11:02–11:14，账号 2088702045701743）显示**没有任何接口返回 1009/“请验证”，也没有风控暂停**，说明这次验证码是宿主自己拉起的页面，不经过 `RpcRequestGuard`。同时发现自己的 `CaptchaDialog.show()` 钩子有静默失败路径：先 `getDialogInstance` 再 `collectDialogInfo`，任一步取不到就直接 `return`，一行日志都不写。改为先记录再取细节，并把弹窗对象直接交给 `PuzzleCaptchaSolver.arm(source, dialog)`；钩子与 `H5RiskTrigger` 都在运行日志写“已挂载/挂载失败”，以后能区分“没挂上”和“没触发”。
 - 第三轮（`2c005d55`，对照 GR `H5RiskOpenHook` 与复查意见核实后修）：`Activity.startActivity` 只读 `getDataString()`（H5 容器的 URL 多在 extras 里）→ 改拼 action/data/component/extras；关键词补支付宝风控处置页指纹（模板 ID `180020010001270421`、`x-dispose-trace`、`disposeapplication`、`disposedname`、`disposename`）；页面恢复被动扫描由精确类名改为按关键字包含（xriver/nebula/h5activity/`.alipaylogin`）。**没采纳**：加 `security` 关键词（太宽，GR 也没有）。
 - 现在的触发点共 5 类：接口返回“需验证”（`RpcRequestGuard`）、`CaptchaDialog.show()`（常开，含 VPN/代理字样的弹窗跳过）、H5 风险页打开（`H5RiskTrigger`：`WebView.loadUrl`×2、`Activity.startActivity/ForResult`）、XRiver/Nebula/H5Activity/登录页恢复时的被动静默扫描、（低版本）SimplePageManager 处理器。日志只写域名+路径，不写 URL 参数。
-- 仍然没有覆盖：`loadUrl` 之外的打开方式（Nebula `H5Utils.startApp/openUrl` 等，GR 有钩）、手动触发的验证；均未真机验证。
+- 仍然没有覆盖：`loadUrl` 之外的打开方式（Nebula `H5Utils.startApp/openUrl` 等，GR 有钩）。手动触发的验证原先以为不覆盖，真机实测手动触发也被接住并自动验证成功（见第 8 条）。
 
 **3. RPC 退避调整（`0530538c`，`ee878329`）**
 - `errorMessage()` 补读 `resultView`：`signin.query` 的“人气大爆发，请稍后再试”原被当成“响应未提供错误原因”，非核心接口连续 3 次就走 `!core && failures>=3 → 24 小时`。新增 `isBusy`（人气大爆发/系统繁忙/请稍后再试），非核心接口按 5 分钟（前 2 次）/30 分钟退避，核心接口行为不变；1009 但文案为“系统繁忙，请稍后再试”（neverland）同样按临时繁忙处理，不再当风控。
@@ -176,9 +177,14 @@
 - `gradle.properties` 1.1.5 → 1.1.6（`5ed2af90`），tag `v1.1.6` 指向该提交并已推送；之后的提交（`e0a85a88` 起）不在 tag 内，用户要求不重打 tag。本地 Release 包（`Sesame-M-Normal-arm64-v8a-1.1.6.apk`，arm64-v8a，已签名）是用最新代码编译的，`versionCode` 由 git 提交数生成。
 - `.kotlin/sessions/*.salive` 是 Kotlin 编译的临时文件，被跟踪但每次编译会变化，不提交。
 
-**8. 待观察**
+**8. 真机验证结果（`2c005d55` 编译的包）**
+- 用户手动触发验证码，拼图自动验证成功一次：截图、滑块识别、缺口匹配、触摸拖动整条链路在真机上走通。
+- 没有导出那次的运行日志/验证记录/`puzzle/` 截图，所以不知道是哪个触发点接住的，也没有保存的位移与分数可以对照。
+- 只有一次成功，不能当成功率：GR 自述部分图片验证失败问题待定位；滑块按钮识别沿用参考设备布局，别的验证码样式/分辨率仍可能识别不到。之后遇到失败请保留 `puzzle/` 截图和验证记录。
+
+**9. 待观察**
 - 装最新包后看运行日志开头有无“`CaptchaDialog.show()` 验证监视钩子已挂载”“H5 验证页监视已挂载 N 个钩子”；验证码一出现立刻导出运行日志、验证记录与 `puzzle/` 截图，据此判断是“没挂上”“没触发”还是“触发了但没识别到滑块”。
-- 手动触发的验证目前不会自动处理；`risk`/`verify` 关键词较宽，可能多记几条无关验证记录（只启动 60 秒监视，不会拖动）。
+- `risk`/`verify` 关键词较宽，可能多记几条无关验证记录（只启动 60 秒监视，不会拖动）。
 
 ### 2026-09-19（续）：合并 MIUIX-api102 至 b1293b40
 
