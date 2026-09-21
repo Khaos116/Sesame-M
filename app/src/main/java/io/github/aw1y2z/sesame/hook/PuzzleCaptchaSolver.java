@@ -53,7 +53,8 @@ public final class PuzzleCaptchaSolver {
     private static final long MATCH_BUDGET_MS = 3500L;
     private static final long SLIDE_MIN_MS = 850L;
     private static final long SLIDE_MAX_MS = 950L;
-    private static final int SAMPLE_KEEP = 6;
+    /** 每个账号最多保留多少张包含验证码的截图（目录按账号分）。 */
+    private static final int SAMPLE_KEEP = 10;
 
     private static final float REFERENCE_WIDTH = 1264f;
     private static final float START_X = 236f;
@@ -459,7 +460,7 @@ public final class PuzzleCaptchaSolver {
         Log.captcha("拼图验证🧩" + message);
     }
 
-    /** 保存截图到日志目录 puzzle/，只保留最新几张，返回文件名（保存失败返回 "未保存"）。 */
+    /** 保存截图到日志目录 puzzle/，只保留最新 10 张，返回文件名（保存失败返回 "未保存"）。 */
     private static String saveSample(Bitmap bitmap, String tag, boolean ignored) {
         try {
             File dir = FileUtil.getCurrentUserPuzzleDirectory();
