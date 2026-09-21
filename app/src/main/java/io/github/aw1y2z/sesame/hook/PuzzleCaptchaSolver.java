@@ -40,7 +40,7 @@ import io.github.aw1y2z.sesame.util.RandomUtil;
  * <p>约束（来自 GR 的经验，也是为了不加重风控）：每个验证码窗口最多自动拖动一次；识别置信度不够就不动手；
  * 只在验证被要求后的窗口期内扫描，不会在任意 H5 页面上乱点。
  * <p>坐标常量按 GR 记录的设备布局（参考宽度 1264）缩放，其它布局可能识别不到滑块——这时只会记日志并保存截图，
- * 不会拖动；截图在日志目录的 puzzle 文件夹里，发给我用来校准。
+ * 不会拖动；截图在 sesame-M/puzzle/<账号ID>/ 里，发给我用来校准。
  */
 public final class PuzzleCaptchaSolver {
     private static final String TAG = "PuzzleCaptchaSolver";
@@ -399,8 +399,8 @@ public final class PuzzleCaptchaSolver {
     /** 保存截图到日志目录 puzzle/，只保留最新几张，返回文件名（保存失败返回 "未保存"）。 */
     private static String saveSample(Bitmap bitmap, String tag, boolean ignored) {
         try {
-            File dir = new File(FileUtil.getCurrentUserLogDirectory(), "puzzle");
-            if (!dir.isDirectory() && !dir.mkdirs()) {
+            File dir = FileUtil.getCurrentUserPuzzleDirectory();
+            if (!dir.isDirectory()) {
                 return "未保存";
             }
             File file = new File(dir, "puzzle-" + System.currentTimeMillis() + "-" + tag + ".png");

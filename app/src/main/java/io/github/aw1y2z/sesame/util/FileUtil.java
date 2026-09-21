@@ -618,6 +618,18 @@ public class FileUtil {
         }
     }
 
+    /** 拼图验证码截图目录：主目录/puzzle/<账号ID>/（不放在 log 下，清理日志时不会被一起删掉）。 */
+    public static File getCurrentUserPuzzleDirectory() {
+        File dir = new File(new File(MAIN_DIRECTORY_FILE, "puzzle"), logDirectoryName(UserIdMap.getCurrentUid()));
+        if (dir.exists() && dir.isFile()) {
+            dir.delete();
+        }
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        return dir;
+    }
+
     public static File getUserLogDirectory(String userId) {
         String dirName = logDirectoryName(userId);
         File dir = new File(LOG_DIRECTORY_FILE, dirName);
