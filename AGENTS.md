@@ -59,4 +59,4 @@ Sesame-M：支付宝自动化脚本的 Xposed 模块（`libxposed` API 102），
 - `TaskLifecycle`（`data/task/TaskLifecycle.java`）：全局账号切换并发准入机制。任何会长时间运行、跨越账号切换窗口的代码（新起的线程、`postDelayed` 延迟回调）都要用 `TaskLifecycle.enter()`/`enter(generation)` 包起来，否则可能在账号切一半的时候继续用旧账号的状态跑，这类 bug 已经踩过好几次（见 CHANGELOG.md）。
 - `RpcRequestGuard`（`rpc/intervallimit/RpcRequestGuard.java`）：所有 RPC 请求（新旧两套 `RpcBridge`）统一收口的失败退避层，按账号隔离。新增业务代码走 RPC 不需要自己再实现限流/退避，两套 Bridge 已经接好了。
 - `AppConfig` vs `BaseModel`（ModelField）两套配置系统不是一回事：`AppConfig` 是跟 App 独立进程共享的全局配置（存 `appConfig.json`，App 和被注入的支付宝进程都能读），`BaseModel`/各任务模块的 `ModelField` 是按账号存的业务配置（存 `config_v2.json`，只有注入进程里能看到）。哪个字段该放哪边要想清楚，之前把 `batteryPerm` 同时留在两边过，处理迁移花了不少功夫。
-- 日志文件按账号分目录（`log/<账号名>/`，账号名取配置页账号列表括号前面的名字如 `C176`，找不到才用 userId；见 `util/AccountFolderName.java`），当前账号通过 `FileUtil.publishCurrentLogUser()` 原子发布到 `current_log_user.txt`，独立 App 进程靠读这个文件名来判断"现在是哪个账号"（App 进程本身不知道支付宝那边登录的是谁）。
+- 日志文件按账号分目录（`log/<账号名>/`，账号名依次取配置页账号列表括号前面的名字（如 `C176`）、括号里面的账号、userId，用第一个能用的；见 `util/AccountFolderName.java`），当前账号通过 `FileUtil.publishCurrentLogUser()` 原子发布到 `current_log_user.txt`，独立 App 进程靠读这个文件名来判断"现在是哪个账号"（App 进程本身不知道支付宝那边登录的是谁）。

@@ -26,16 +26,21 @@ public class FileUtil {
     private static File wuaFile;
 
     static {
-        // 账号目录/导出文件名用账号列表里括号前面的名字（如 C176），找不到才用 uid；两个进程（支付宝/模块 App）都要装
+        // 账号目录/导出文件名用账号名：先账号列表括号前面的名字（如 C176），再括号里面的账号，最后才用 uid；两个进程（支付宝/模块 App）都要装
         AccountFolderName.install(new AccountFolderName.Source() {
             @Override
-            public String displayName(String uid) {
+            public String[] candidates(String uid) {
                 File self = new File(new File(CONFIG_DIRECTORY_FILE, uid), "self.json");
                 if (!self.isFile()) {
                     return null;
                 }
                 UserEntity.UserDto dto = JsonUtil.parseObject(readFromFile(self), UserEntity.UserDto.class);
-                return dto == null ? null : dto.toEntity().getShowName();
+                if (dto == null) {
+                    return null;
+                }
+                UserEntity user = dto.toEntity();
+                // 与配置页账号列表“名字(账号)”一致：先括号前面的名字，再括号里面的账号
+                return new String[]{user.getShowName(), user.getAccount()};
             }
         }, new AccountFolderName.Store() {
             @Override
@@ -322,7 +327,7 @@ public class FileUtil {
             logDir.mkdirs();
         }
         // 改成按账号分子目录之前遗留的旧版日志文件（直接躺在 log/ 根目录下），迁移后不再使用，清理掉。
-        // 新版日志都在 log/<userId>/ 子目录下，只删根目录下的文件，不碰子目录。
+        // 新版日志都在 log/<账号名>/ 子目录下，只删根目录下的文件，不碰子目录。
         File[] legacyFiles = logDir.listFiles(File::isFile);
         if (legacyFiles != null) {
             for (File legacyFile : legacyFiles) {
@@ -616,9 +621,10 @@ public class FileUtil {
     }
     
     /**
-     * 导出文件名：log/&lt;userId&gt;/ 下的日志文件在扩展名前带上账号（如 runtime.2026-09-19.2088702045701743.log），
-     * 多个账号导出到同一个下载目录时不会重名，也能看出是谁导出的；与异常统计文件 rpc-failures.日期.账号.json 的命名一致。
-     * 文件名里已含账号（异常统计）、或取不到账号（default）时保持原名。日志内容里仍不写 uid/昵称。
+     * 导出文件名：log/&lt;账号名&gt;/ 下的日志文件在扩展名前带上账号名（如 runtime.2026-09-19.C176.log；账号名是括号前面的名字，
+     * 没有就用括号里面的账号，最后才是 uid），多个账号导出到同一个下载目录时不会重名，也能看出是谁导出的；
+     * 与异常统计文件 rpc-failures.日期.账号名.json 的命名一致。文件名里已含账号名（异常统计）、或取不到账号（default）时保持原名。
+     * 日志内容里仍不写 uid/昵称。
      */
     static String exportName(File file) {
         String name = file.getName();
@@ -655,19 +661,20 @@ public class FileUtil {
     }
     
     /**
-     * 当前账号的日志目录：{@code log/<userId>/}，未登录/取不到当前账号时用 "default"。
+     * 当前账号的日志目录：{@code log/<账号名>/}（账号名：括号前面的名字 → 括号里面的账号 → uid，见 {@link AccountFolderName}），
+     * 未登录/取不到当前账号时用 "default"。
      * 账号切换后 {@link UserIdMap#getCurrentUid()} 变化，后续日志自动落到新账号目录下。
      */
     public static File getCurrentUserLogDirectory() {
         return getUserLogDirectory(UserIdMap.getCurrentUid());
     }
 
-    /** 账号目录名：账号列表里括号前面的名字（如 C176），找不到才用 uid；uid 不合法用 default。 */
+    /** 账号目录名：先账号列表括号前面的名字（如 C176），再括号里面的账号，最后才用 uid；uid 不合法用 default。 */
     private static String logDirectoryName(String userId) {
         return AccountFolderName.resolve(userId);
     }
 
-    /** 配置页账号列表里括号前面的名字，找不到用 uid；导出文件名用（不迁移目录、不写标记，模块 App 进程也可调用）。 */
+    /** 账号名（先括号前面的名字，再括号里面的账号，最后 uid）；导出文件名用（不迁移目录、不写标记，模块 App 进程也可调用）。 */
     public static String accountLabel(String userId) {
         return AccountFolderName.displayLabel(userId);
     }
@@ -699,7 +706,7 @@ public class FileUtil {
         }
     }
 
-    /** 拼图验证码截图目录：主目录/puzzle/<账号ID>/（不放在 log 下，清理日志时不会被一起删掉）。 */
+    /** 拼图验证码截图目录：主目录/puzzle/<账号名>/（账号名规则同日志目录；不放在 log 下，清理日志时不会被一起删掉）。 */
     public static File getCurrentUserPuzzleDirectory() {
         File dir = new File(new File(MAIN_DIRECTORY_FILE, "puzzle"), logDirectoryName(UserIdMap.getCurrentUid()));
         if (dir.exists() && dir.isFile()) {

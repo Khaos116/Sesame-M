@@ -4,35 +4,35 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 账号目录/导出文件名里用的账号名：优先用配置页账号列表里括号前面的名字（备注，没有就用昵称，如 C176），
- * 找不到才用 uid。日志目录 {@code log/<名字>/}、拼图截图目录 {@code puzzle/<名字>/}、导出文件名都用它。
+ * 账号目录/导出文件名里用的账号名，按顺序取第一个能用的：① 配置页账号列表括号前面的名字（备注，没有就用昵称，
+ * 如 C176）；② 括号里面的账号；③ uid。日志目录 {@code log/<名字>/}、拼图截图目录 {@code puzzle/<名字>/}、导出文件名都用它。
  * <p>纯逻辑，文件读写通过 {@link Source}/{@link Store} 注入，方便在 JVM 里直接测（checks/check_account_folder.py）。
  * <ul>
- *   <li>名字只做文件名安全处理（非字母数字/下划线/连字符 → 下划线，最长 {@value #MAX_LABEL} 个字符）。</li>
+ *   <li>名字/账号只做文件名安全处理（非字母数字/连字符 → 下划线，最长 {@value #MAX_LABEL} 个字符；邮箱、手机号也照此处理）。</li>
  *   <li>两个账号同名时后来者加 uid 后 4 位区分（{@code C176-1743}），靠目录里的 {@code .uid} 标记文件判断归属。</li>
- *   <li>首次用名字时把旧的 uid 目录改名成名字目录（保留历史日志）。</li>
+ *   <li>首次用名字/账号时把旧的 uid 目录改名成新目录（保留历史日志）。</li>
  *   <li>每个 uid 在一个进程里只解析一次并缓存：日志写入器按目录路径创建，进程中途换目录会把日志拆成两半；
- *       所以第一次没找到名字（新账号）本进程就一直用 uid，下次启动才用名字。</li>
+ *       所以第一次读不到账号信息（新账号，还没有 self.json）本进程就一直用 uid，下次启动才用名字/账号。</li>
  * </ul>
  */
 public final class AccountFolderName {
     public static final String DEFAULT = "default";
     static final int MAX_LABEL = 24;
 
-    /** 读取账号显示名（配置页账号列表括号前面的名字）；读不到返回 null。 */
+    /** 按优先级返回账号名候选（先括号前面的名字，再括号里面的账号）；读不到返回 null 或空数组。 */
     public interface Source {
-        String displayName(String uid);
+        String[] candidates(String uid);
     }
 
     /** 目录归属与迁移。 */
     public interface Store {
-        /** 名字目录当前属于哪个 uid（标记文件），没有返回 null。 */
+        /** 该目录名当前属于哪个 uid（标记文件），没有返回 null。 */
         String owner(String folder);
 
-        /** 把旧的 uid 目录改名成名字目录（名字目录还不存在时）。 */
+        /** 把旧的 uid 目录改名成账号名目录（账号名目录还不存在时）。 */
         void migrate(String uid, String folder);
 
-        /** 记下名字目录属于这个 uid。 */
+        /** 记下账号名目录属于这个 uid。 */
         void claim(String folder, String uid);
     }
 
@@ -102,21 +102,32 @@ public final class AccountFolderName {
         return result.substring(start, end);
     }
 
-    /** 只取显示用的名字：找不到返回 uid（导出文件名等不涉及目录的地方用，不迁移、不写标记）。 */
+    /**
+     * 只取显示用的名字（导出文件名等不涉及目录的地方用，不迁移、不写标记）：按候选顺序取第一个安全化后非空、
+     * 且不叫 default 的；都不行才用 uid。
+     */
     public static String displayLabel(String uid) {
         if (!isValidUid(uid)) {
             return DEFAULT;
         }
         try {
             Source s = source;
-            String label = s == null ? "" : sanitize(s.displayName(uid));
-            return label.isEmpty() || label.equals(DEFAULT) ? uid : label;
+            String[] candidates = s == null ? null : s.candidates(uid);
+            if (candidates != null) {
+                for (String candidate : candidates) {
+                    String label = sanitize(candidate);
+                    if (!label.isEmpty() && !label.equals(DEFAULT)) {
+                        return label;
+                    }
+                }
+            }
+            return uid;
         } catch (Throwable t) {
             return uid;
         }
     }
 
-    /** 账号目录名：名字优先，找不到才用 uid；uid 不合法用 default。 */
+    /** 账号目录名：括号前面的名字 → 括号里面的账号 → uid，取第一个能用的；uid 不合法用 default。 */
     public static String resolve(String uid) {
         if (!isValidUid(uid)) {
             return DEFAULT;

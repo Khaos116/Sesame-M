@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""账号目录/导出文件名用账号名（配置页账号列表括号前面的名字，如 C176），找不到才用 uid。
+"""账号目录/导出文件名用账号名：先取配置页账号列表括号前面的名字（如 C176），没有再取括号里面的账号，最后才用 uid。
 
 直接编译生产代码 util/AccountFolderName.java（纯逻辑，读写通过接口注入），用内存实现回放：
-- 有名字用名字，没有/读取失败/空名/名为 default 用 uid；uid 不合法用 default；
+- 名字可用就用名字；名字不可用（空/纯符号/叫 default）改用账号；两者都不可用或读取失败才用 uid；uid 不合法用 default；
 - 名字做文件名安全处理（路径分隔符、点、空白、超长）；中文名保留；
 - 同名的两个账号后来者加 uid 后 4 位区分；
 - 旧的 uid 目录只在首次解析时迁移一次；每个 uid 一个进程里只解析一次（日志写入器按目录创建，不能中途换）；
@@ -24,12 +24,15 @@ import java.util.*;
 public class AccountFolderNameCheck {
     static class FakeSource implements AccountFolderName.Source {
         final Map<String, String> names = new HashMap<>();
+        final Map<String, String> accounts = new HashMap<>();
         int calls;
         boolean throwing;
-        public String displayName(String uid) {
+        /** 与生产一致：先括号前面的名字，再括号里面的账号。 */
+        public String[] candidates(String uid) {
             calls++;
             if (throwing) throw new IllegalStateException("self.json unreadable");
-            return names.get(uid);
+            if (!names.containsKey(uid) && !accounts.containsKey(uid)) return null;
+            return new String[]{names.get(uid), accounts.get(uid)};
         }
     }
 
@@ -75,13 +78,34 @@ public class AccountFolderNameCheck {
         assert store.migrations.size() == 1 && source.calls == 1 : "resolved once per process";
         eq("C176", AccountFolderName.displayLabel(uid), "displayLabel");
 
-        // 空名/纯符号/名字就是 default/读取失败 → 用 uid
+        // 名字不可用（空/纯符号/叫 default）且没有账号 → 用 uid
         for (String bad : new String[]{"", "   ", "!!!", "///", "default"}) {
             fresh();
             source.names.put(uid, bad);
             eq(uid, AccountFolderName.resolve(uid), "bad label [" + bad + "]");
             eq(uid, AccountFolderName.displayLabel(uid), "bad label display [" + bad + "]");
         }
+
+        // 优先级：括号前面的名字 → 括号里面的账号 → uid
+        fresh();
+        source.names.put(uid, "C176");
+        source.accounts.put(uid, "user@example.com");
+        eq("C176", AccountFolderName.resolve(uid), "name wins over account");
+        for (String badName : new String[]{"", "   ", "!!!", "default"}) {
+            fresh();
+            source.names.put(uid, badName);
+            source.accounts.put(uid, "user@example.com");
+            eq("user_example_com", AccountFolderName.resolve(uid), "account used when name unusable [" + badName + "]");
+            eq("user_example_com", AccountFolderName.displayLabel(uid), "account display [" + badName + "]");
+        }
+        fresh();
+        source.accounts.put(uid, "138****1234"); // 名字缺失只有账号（手机号带掩码）
+        eq("138_1234", AccountFolderName.resolve(uid), "masked phone account");
+        fresh();
+        source.names.put(uid, "!!!");
+        source.accounts.put(uid, "///"); // 两个都不可用 → uid
+        eq(uid, AccountFolderName.resolve(uid), "both unusable falls back to uid");
+        eq(uid, AccountFolderName.displayLabel(uid), "both unusable display");
         fresh();
         source.throwing = true;
         eq(uid, AccountFolderName.resolve(uid), "unreadable");
