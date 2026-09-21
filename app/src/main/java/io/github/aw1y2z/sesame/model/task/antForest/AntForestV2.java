@@ -1537,7 +1537,8 @@ public class AntForestV2 extends ModelTask {
         try {
             JSONObject jo = new JSONObject(extInfo);
             double leftEnergy = Double.parseDouble(jo.optString("leftEnergy", "0"));
-            if (leftEnergy > collectRobExpandEnergy.getValue() || (Objects.equals(jo.optString("overLimitToday", "false"), "true") && leftEnergy > 0)) {
+            // 有额外能量就收取（无阈值限制，与翻倍卡开关状态无关）
+            if (leftEnergy > 0) {
                 collectRobExpandEnergy(propId, propType);
             }
         } catch (Throwable th) {

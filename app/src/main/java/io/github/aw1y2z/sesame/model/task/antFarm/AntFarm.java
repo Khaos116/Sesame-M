@@ -42,6 +42,8 @@ public class AntFarm extends ModelTask {
     private static final String FLAG_FAMILY_SHARE_FAIL_COUNT = "antFarm::familyShareToFriends::failCount";
     /** 家庭分享：当日最多尝试几次，超过后当天不再重试（避免每轮任务都重发邀请请求） */
     private static final int MAX_FAMILY_SHARE_ATTEMPT = 3;
+    /** 小鸡所在空间标识：家庭空间。睡觉/起床靠它区分走家庭接口还是个人小屋接口 */
+    private static final String SPACE_TYPE_CHICK_FAMILY = "ChickFamily";
 
     private String ownerFarmId;
     private String ownerUserId;
@@ -713,7 +715,8 @@ public class AntFarm extends ModelTask {
             // 走哪条路由由**小鸡当前所在的空间**决定，而不是"亲密家庭功能开关"：
             // 开关关着、但小鸡人在家庭空间时，原先会去调个人小屋的睡觉接口 → 小鸡不在那儿，静默失败，
             // 于是"家庭里的小鸡不睡觉"。（起床逻辑本来就按 spaceType 判断，两边不一致才是根因）
-            if (jo.has("spaceType")) {
+            // 只判字段是否存在不够：其它空间（如小鸡在好友家）也可能带 spaceType，必须比对取值
+            if (SPACE_TYPE_CHICK_FAMILY.equals(jo.optString("spaceType"))) {
                 return familySleep(resolveFamilyGroupId(jo));
             }
             return animalSleep();
@@ -742,7 +745,7 @@ public class AntFarm extends ModelTask {
                 return false;
             }
             if (sleepInfo.getLong("sleepBeginTime") + TimeUnit.MINUTES.toMillis(sleepMinutes.getValue()) <= System.currentTimeMillis()) {
-                if (jo.has("spaceType")) {
+                if (SPACE_TYPE_CHICK_FAMILY.equals(jo.optString("spaceType"))) {
                     return familyWakeUp();
                 }
                 return animalWakeUp();

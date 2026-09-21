@@ -119,34 +119,24 @@ public class CaptchaHook {
     private static XC_MethodHook.Unhook hookCaptchaDialogShowAndClose(ClassLoader classLoader) {
         try {
             Class<?> captchaDialogClass = XHelpers.findClass(CLASS_CAPTCHA_DIALOG, classLoader);
-            
+
             return XHelpers.findAndHookMethod(captchaDialogClass, "show", new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
-                    // show()执行后触发
                     Object dialogObj = param.thisObject;
-                    StringBuilder dialogAllInfo = new StringBuilder();
-                    dialogAllInfo.append("===== 支付宝CaptchaDialog信息 =====\n");
-                    dialogAllInfo.append("对话框类名：").append(dialogObj.getClass().getName()).append("\n");
-                    
-                    // 获取Dialog实例
                     Dialog dialog = getDialogInstance(dialogObj);
-                    if (dialog == null) {
-                        Log.i(TAG + "无法获取Dialog实例，关闭失败");
-                        return;
-                    }
-                    
-                    // 收集对话框信息（保持原有逻辑）
+                    if (dialog == null) return;
+
+                    // 收集对话框信息用于判断是否为VPN/代理弹窗
+                    StringBuilder dialogAllInfo = new StringBuilder();
                     collectDialogInfo(dialog, dialogAllInfo);
-                    Log.i(TAG + "\n" + dialogAllInfo.toString());
-                    
-                    // 关闭对话框
-                    if (dialogAllInfo.toString().contains("请检查是否使用了代理软件或VPN")) {
-                        Log.record("包含\"请检查是否使用了代理软件或VPN\",关闭对话框");
-                        dialog.dismiss(); // 关键：在show()后关闭窗口
+                    String info = dialogAllInfo.toString();
+
+                    // 宽松匹配：包含"VPN"或"代理"即视为需拦截的弹窗
+                    if (info.contains("VPN") || info.contains("代理")) {
+                        Log.record("检测到VPN/代理弹窗，自动关闭: " + info.replaceAll("\n", " | "));
+                        dialog.dismiss();
                     }
-                    Log.record("执行了弹窗检测hookCaptchaDialogShowAndClose()");
-                    
                 }
             });
         } catch (Throwable e) {

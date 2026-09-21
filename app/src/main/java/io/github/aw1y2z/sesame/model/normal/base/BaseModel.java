@@ -12,6 +12,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.SelectAndCountModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.entity.AlipayrpcRequest;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
+import io.github.aw1y2z.sesame.hook.CaptchaHook;
 import io.github.aw1y2z.sesame.model.task.antForest.AntForestRpcCall;
 import lombok.Getter;
 
@@ -62,6 +63,8 @@ public class BaseModel extends Model {
     private static final IntegerModelField toastOffsetY = new IntegerModelField("toastOffsetY", "气泡纵向偏移", 0);
     @Getter
     private static final BooleanModelField enableOnGoing = new BooleanModelField("enableOnGoing", "开启状态栏禁删", false);
+    @Getter
+    private static final BooleanModelField closeCaptchaDialogVPN = new BooleanModelField("closeCaptchaDialogVPN", "屏蔽VPN/代理弹窗", true);
     
     @Override
     public String getName() {
@@ -79,13 +82,12 @@ public class BaseModel extends Model {
     }
     
     public void boot(ClassLoader classLoader) {
-        /*// 配置已加载，更新验证码Hook状态
         try {
             CaptchaHook.updateHooks(closeCaptchaDialogVPN.getValue());
             Log.record("✅ 验证码Hook配置已同步");
         } catch (Throwable t) {
             Log.printStackTrace("❌ 验证码Hook配置同步失败", t);
-        }*/
+        }
     }
     @Override
     public ModelFields getFields() {
