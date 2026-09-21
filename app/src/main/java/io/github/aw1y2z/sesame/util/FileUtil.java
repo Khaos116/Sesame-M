@@ -647,6 +647,29 @@ public class FileUtil {
         return dot > 0 ? name.substring(0, dot) + "." + label + name.substring(dot) : name + "." + label;
     }
 
+    /**
+     * 分享用的副本：复制到 shareDir 并按导出规则命名（带账号名）。直接用 FileProvider 分享原文件时，接收方看到的是
+     * 原始文件名（runtime.日期.log，不带账号），多个账号的日志分不清；所以分享前先复制一份带账号名的。
+     * shareDir 里只留这一份（先清掉上次分享的副本）。失败返回 null。
+     */
+    public static File copyForShare(File file, File shareDir) {
+        if (file == null || !file.isFile()) {
+            return null;
+        }
+        if (!shareDir.isDirectory() && !shareDir.mkdirs()) {
+            return null;
+        }
+        File[] old = shareDir.listFiles();
+        if (old != null) {
+            for (File previous : old) {
+                //noinspection ResultOfMethodCallIgnored
+                previous.delete();
+            }
+        }
+        File target = new File(shareDir, exportName(file));
+        return copyTo(file, target) ? target : null;
+    }
+
     public static File exportFile(File file) {
         String exportDirStr = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) + File.separator + CONFIG_DIRECTORY_NAME;
         File exportDir = new File(exportDirStr);

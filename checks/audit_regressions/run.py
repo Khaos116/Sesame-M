@@ -81,6 +81,7 @@ def main():
                 "    public static File getUserLogDirectory(",
                 "    public static File getLogDirectoryByName(",
                 "    static String exportName(",
+                "    public static File copyForShare(",
                 "    private static File getLogFile(",
                 "    private static java.util.List<File> getLogFiles()",
                 "    public static void clearLog()",

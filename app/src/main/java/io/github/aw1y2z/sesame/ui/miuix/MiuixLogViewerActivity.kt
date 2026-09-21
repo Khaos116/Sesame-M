@@ -231,19 +231,24 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                 },
                 onShare = if (logType == LogType.RUNTIME) {
                     {
-                        val file = logType.file
-                        val uri = FileProvider.getUriForFile(
-                            context,
-                            "${context.packageName}.fileprovider",
-                            file
-                        )
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_STREAM, uri)
-                            putExtra(Intent.EXTRA_SUBJECT, file.name)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        // 分享带账号名的副本（runtime.日期.C158.log），不直接分享原文件：原文件名不带账号，多个账号分不清
+                        val shared = FileUtil.copyForShare(logType.file, File(context.cacheDir, "share"))
+                        if (shared == null) {
+                            ToastUtil.show(context, "分享失败")
+                        } else {
+                            val uri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                shared
+                            )
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                putExtra(Intent.EXTRA_SUBJECT, shared.name)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            activity.startActivity(Intent.createChooser(shareIntent, "分享日志"))
                         }
-                        activity.startActivity(Intent.createChooser(shareIntent, "分享日志"))
                     }
                 } else null
             )

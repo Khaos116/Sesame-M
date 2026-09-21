@@ -2,4 +2,6 @@
 <paths>
     <external-path name="logs" path="Android/media/com.eg.android.AlipayGphone/sesame-M/log/" />
     <files-path name="internal_logs" path="log/" />
+    <!-- 分享日志时先复制一份带账号名的副本到这里（FileUtil.copyForShare） -->
+    <cache-path name="share" path="share/" />
 </paths>

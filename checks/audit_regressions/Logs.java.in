@@ -26,6 +26,10 @@ public class LogCheck {
         static String getLogFileName(String type) { return type + "." + DATE_FORMAT_THREAD_LOCAL.get().format(new Date()) + ".log"; }
         static void printStackTrace(String tag, Throwable t) { throw new AssertionError(t); }
     }
+    static boolean copyTo(File from, File to) {
+        try { Files.copy(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING); return true; }
+        catch (IOException e) { return false; }
+    }
     static boolean clearFile(File f) {
         try { Files.writeString(f.toPath(), ""); return true; }
         catch (IOException e) { throw new AssertionError(e); }
@@ -71,6 +75,17 @@ public class LogCheck {
             File defaultDir = new File(new File(LOG_DIRECTORY_FILE, "default"), "runtime.2026-09-21.log");
             assert exportName(defaultDir).equals("runtime.2026-09-21.log");
             assert exportName(new File(MAIN_DIRECTORY_FILE, "statistics.json")).equals("statistics.json");
+            // 分享：接收方看到的是副本的文件名，必须带账号名，内容与原文件一致，且 shareDir 里只留这一份
+            File shareDir = new File(MAIN_DIRECTORY_FILE, "share-cache");
+            Files.createDirectories(runtime.getParentFile().toPath());
+            Files.writeString(runtime.toPath(), "runtime body");
+            File stale = new File(shareDir, "runtime.2026-09-20.C176.log");
+            Files.createDirectories(shareDir.toPath()); Files.writeString(stale.toPath(), "stale");
+            File shared = copyForShare(runtime, shareDir);
+            assert shared != null && shared.getName().equals("runtime.2026-09-21.C158.log") : String.valueOf(shared);
+            assert Files.readString(shared.toPath()).equals("runtime body");
+            assert !stale.exists() && shareDir.list().length == 1 : "old shared copies must be cleaned";
+            assert copyForShare(new File(MAIN_DIRECTORY_FILE, "missing.log"), shareDir) == null;
             System.out.println("PASS host log account, account cleanup, open-file truncation and path validation");
         } finally {
             try (var paths = Files.walk(MAIN_DIRECTORY_FILE.toPath())) {
