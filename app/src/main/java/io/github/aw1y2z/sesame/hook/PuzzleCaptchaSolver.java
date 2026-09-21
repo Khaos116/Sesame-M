@@ -374,6 +374,11 @@ public final class PuzzleCaptchaSolver {
                     polling = false; // 拖完就停止本轮监视，结果由页面自己判定
                     MAIN.postDelayed(() -> {
                         boolean closed = !web.isAttachedToWindow() || !web.isShown();
+                        if (closed) {
+                            // 窗口关了多半是通过了：解除接口的验证暂停，触发验证的功能不必再等到期。
+                            // 若其实没通过，接口下次还会返回“请验证”，会重新暂停并重新监视
+                            io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard.clearVerifyPause();
+                        }
                         Log.captcha("拼图验证🧩拖动 1.5 秒后：" + (closed
                                 ? "验证窗口已关闭，多半通过" : "验证窗口仍在，可能没对准（不再自动重试，可手动完成）"));
                     }, 1500L);
