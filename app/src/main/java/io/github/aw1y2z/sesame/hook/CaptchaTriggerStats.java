@@ -20,14 +20,14 @@ import io.github.aw1y2z.sesame.util.StringUtil;
  * <p>只做观测：不点击、不拖动、不关闭弹窗。归因是推断——弹窗出现前最近的请求/正在运行的模块是嫌疑对象，
  * 不是服务端明确告知的触发者；手动在支付宝里操作触发的验证，运行中模块会显示为“无”。
  */
-final class CaptchaTriggerStats {
+public final class CaptchaTriggerStats {
     private static final Pattern PUZZLE = Pattern.compile("拼图|对准|缺口|拖动|滑块|图片");
     private static final Pattern VERIFY = Pattern.compile("验证|拼图|滑块|缺口");
     private static final long DEDUP_MS = 30_000L;
     /** 本进程内按模块累计（进程重启清零；每次事件本身都在运行日志里，可以再统计） */
     private static final Map<String, Integer> COUNTS = new LinkedHashMap<>();
-    private static long lastAt;
-    private static String lastSig = "";
+    /** 去重签名 → 上次记录时间：多个来源（接口/Activity/弹窗）交替出现时各自独立去重 */
+    private static final Map<String, Long> LAST_AT = new LinkedHashMap<>();
 
     private CaptchaTriggerStats() {
     }
@@ -38,6 +38,28 @@ final class CaptchaTriggerStats {
             StringBuilder texts = new StringBuilder();
             CaptchaHook.collectDialogInfo(dialog, texts);
             record("CaptchaDialog", texts.toString());
+        } catch (Throwable t) {
+            Log.printStackTrace("CaptchaTriggerStats", t);
+        }
+    }
+
+    /**
+     * 接口返回“请验证后继续”(1009 等)时调用（RpcRequestGuard）。不依赖界面 Hook：支付宝 10.6.58 以上
+     * SimplePageManager 整体不启用（拿不到弹窗/Activity），这条是任何版本都能拿到的触发记录，
+     * 且直接给出返回验证要求的接口，比弹窗时的“最近请求”更准。
+     */
+    public static void recordRisk(String method, String message) {
+        try {
+            record("RPC:" + method, "风控要求验证(接口返回)", message);
+        } catch (Throwable t) {
+            Log.printStackTrace("CaptchaTriggerStats", t);
+        }
+    }
+
+    /** 处理器找到“向右滑动验证”文字时调用：这是最常见的验证形态，且不走 scanActivity（那条只在没找到时触发）。 */
+    static void recordSlide(Activity activity, String slideText) {
+        try {
+            record("Activity:" + activity.getClass().getSimpleName(), slideText == null ? "向右滑动验证" : slideText);
         } catch (Throwable t) {
             Log.printStackTrace("CaptchaTriggerStats", t);
         }
@@ -61,17 +83,21 @@ final class CaptchaTriggerStats {
     }
 
     private static void record(String via, String texts) {
-        String type = classify(texts);
+        record(via, classify(texts), texts);
+    }
+
+    private static void record(String via, String type, String texts) {
         long now = System.currentTimeMillis();
         String sig = via + "|" + type;
         List<String> running = ModelTask.runningTaskNames();
         synchronized (CaptchaTriggerStats.class) {
             // 同一来源同一类型 30 秒内只记一次：处理器会反复重试，Activity 也会反复 resume
-            if (sig.equals(lastSig) && now - lastAt < DEDUP_MS) {
+            Long last = LAST_AT.get(sig);
+            if (last != null && now - last < DEDUP_MS) {
                 return;
             }
-            lastSig = sig;
-            lastAt = now;
+            LAST_AT.values().removeIf(t -> now - t >= DEDUP_MS);
+            LAST_AT.put(sig, now);
             if (running.isEmpty()) {
                 COUNTS.merge("无运行中模块", 1, Integer::sum);
             } else {

@@ -29,6 +29,25 @@ public final class RpcRequestGuard {
     private final boolean core;
     private final boolean knownUnsupported;
 
+    /**
+     * “请验证后继续”的暂停只放内存，不写 RuntimeInfo：重启支付宝（进程重建）或切换账号（TaskLifecycle 代数变化）
+     * 就失效，请求重新发出即可再次弹出验证；持久化会把它带过重启，用户没法通过重启/换号重新验证。
+     */
+    private static final java.util.Map<String, long[]> VERIFY_PAUSE = new java.util.HashMap<>();
+    private static final long VERIFY_PAUSE_MS = 5 * MINUTE;
+
+    /** 验证已通过（自动滑块成功）时调用：立即解除所有验证暂停。 */
+    public static void clearVerifyPause() {
+        synchronized (RpcRequestGuard.class) {
+            VERIFY_PAUSE.clear();
+        }
+    }
+
+    private long verifyUntil() {
+        long[] item = VERIFY_PAUSE.get(key);
+        return item != null && item[1] == io.github.aw1y2z.sesame.data.task.TaskLifecycle.generation() ? item[0] : 0L;
+    }
+
     private static final java.util.ArrayList<Object[]> RECENT = new java.util.ArrayList<>();
     private static final int RECENT_MAX = 8;
 
@@ -89,7 +108,8 @@ public final class RpcRequestGuard {
         if ("com.alipay.antfarm.enterFarm".equals(method)) {
             identity.put("userId").put(args.optString("userId")).put("farmId").put(args.optString("farmId"));
         }
-        key = "RpcRequestGuard.v1." + identity;
+        // v2：换前缀让旧版本写入的 24 小时暂停（风控/验证、人气大爆发误判等）整体作废，不再读取
+        key = "RpcRequestGuard.v2." + identity;
         knownUnsupported = isKnownUnsupported(method, args);
     }
 
@@ -123,7 +143,7 @@ public final class RpcRequestGuard {
     public boolean shouldSkip() {
         synchronized (RpcRequestGuard.class) {
             JSONObject saved = MyUtils.newJSONObject(state.getString(key));
-            long until = saved.optLong("until");
+            long until = Math.max(saved.optLong("until"), verifyUntil());
             if (!knownUnsupported && until <= System.currentTimeMillis()) return false;
             String reason = knownUnsupported ? "跳过GR已知异常任务" : "请求异常暂停中，剩余"
                     + Math.max(1, (until - System.currentTimeMillis()) / 1000) + "秒";
@@ -138,11 +158,24 @@ public final class RpcRequestGuard {
     }
 
     public static String errorMessage(JSONObject result) {
-        for (String field : new String[]{"errorMessage", "errorMsg", "resultDesc", "resultMsg", "memo"}) {
+        for (String field : new String[]{"errorMessage", "errorMsg", "resultDesc", "resultMsg", "memo", "resultView"}) {
             String message = result.optString(field);
             if (!message.isEmpty()) return RpcFailurePolicy.boundedMessage(message);
         }
         return "响应未提供错误原因";
+    }
+
+    /** 非验证类的风控拒绝（如“访问被拒绝”）：30 分钟起，一天内连续出现再加长。 */
+    private static long riskPause(int failures) {
+        return failures <= 1 ? 30 * MINUTE : failures == 2 ? 120 * MINUTE : 360 * MINUTE;
+    }
+
+    private static long busyPause(int failures) {
+        return failures < 3 ? 5 * MINUTE : 30 * MINUTE;
+    }
+
+    static boolean isBusy(String message) {
+        return message.contains("人气大爆发") || message.contains("系统繁忙") || message.contains("请稍后再试");
     }
 
     /** 提示当前账号需要去开通/认证才能用的文案（如庄园肥料罐 G04“肥料已经存满了，去开通芭芭农场种果树吧”）。只匹配对用户本人的提示，不含“好友未开通”这类针对他人的状态。 */
@@ -205,6 +238,7 @@ public final class RpcRequestGuard {
             } catch (Exception e) {
                 Log.i("异常请求统计写入失败：" + e.getClass().getSimpleName());
             }
+            if (verifyUntil() > now) return;
             JSONObject saved = MyUtils.newJSONObject(state.getString(key));
             // An older in-flight success must not cancel a pause imposed by a newer failure.
             if (saved.optLong("until") > now) return;
@@ -219,12 +253,20 @@ public final class RpcRequestGuard {
             String message = errorMessage(result);
             int failures = now - saved.optLong("last") < DAY ? saved.optInt("failures") + 1 : 1;
             long pause = 0;
+            boolean needVerify = message.contains("验证") || message.contains("cheating traffic");
             if (RpcFailurePolicy.isRiskDenied(code, message) || message.contains("验证后继续")
                     || message.contains("滑动验证") || message.contains("cheating traffic")) {
-                pause = RpcFailurePolicy.RISK_DENIED_MS;
-                // 只在提示要验证时拉起支付宝；09-18 日报里 neverland 的 1009 是“系统繁忙”，不需要验证
-                if (message.contains("验证") || message.contains("cheating traffic")) {
+                if (needVerify) {
+                    // 只在提示要验证时拉起支付宝；09-18 日报里 neverland 的 1009 是“系统繁忙”，不需要验证
+                    VERIFY_PAUSE.put(key, new long[]{now + VERIFY_PAUSE_MS,
+                            io.github.aw1y2z.sesame.data.task.TaskLifecycle.generation()});
+                    io.github.aw1y2z.sesame.hook.CaptchaTriggerStats.recordRisk(request.getRequestMethod(), message);
                     io.github.aw1y2z.sesame.hook.ApplicationHook.showVerification();
+                    Log.record("请求保护⏸️" + request.getRequestMethod() + "#" + message
+                            + "#暂停" + VERIFY_PAUSE_MS / MINUTE + "分钟（仅本次运行，重启支付宝或切换账号后恢复）");
+                    return;
+                } else {
+                    pause = isBusy(message) ? busyPause(failures) : riskPause(failures);
                 }
             } else if (isNotOpened(message)) {
                 // 该账号没开通/未认证的功能（小号开不了），服务端每次都会拒绝，一天只请求一次
@@ -239,6 +281,9 @@ public final class RpcRequestGuard {
                 boolean farmAward = "com.alipay.antfarm.receiveFarmTaskAward".equals(request.getRequestMethod());
                 pause = core ? (failures < 3 ? 5 * MINUTE : farmAward && failures >= 5 ? 6 * 60 * MINUTE : 30 * MINUTE)
                         : RpcFailurePolicy.SYSTEM_ERROR_MS;
+            } else if (!core && isBusy(message)) {
+                // 服务端临时繁忙（“人气大爆发，请稍后再试”等）：短退避，不能因为连续 3 次就停一天；核心接口本就不因普通失败暂停
+                pause = busyPause(failures);
             } else if (!core && failures >= 3) {
                 pause = DAY;
             }

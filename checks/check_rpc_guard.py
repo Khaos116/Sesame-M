@@ -165,6 +165,14 @@ public class ApplicationHook {
     public static ClassLoader getClassLoader() { return ApplicationHook.class.getClassLoader(); }
 }
 """)
+    write("hook/CaptchaTriggerStats.java", """
+package io.github.aw1y2z.sesame.hook;
+public class CaptchaTriggerStats {
+    public static int riskRecords;
+    public static String lastRiskMethod;
+    public static void recordRisk(String method, String message) { riskRecords++; lastRiskMethod = method; }
+}
+""")
     write("model/normal/base/BaseModel.java", """
 package io.github.aw1y2z.sesame.model.normal.base;
 public class BaseModel {
@@ -290,7 +298,7 @@ public class GuardCheck {
             RpcEntity denied = new RpcEntity("other.denied", "[{}]");
             if (async) bridge.newAsyncRequest(denied, 3, 0); else bridge.requestObject(denied, 3, 0);
             assert calls == 1 && denied.getHasError();
-            now += DAY - 1;
+            now += 30 * MIN - 1;
             assert guard("other.denied").shouldSkip();
             now++;
             assert !guard("other.denied").shouldSkip();
@@ -425,7 +433,7 @@ public class GuardCheck {
         }
         reset();
         guard("other.precedence").record(json("{\"success\":false,\"error\":\"1009\",\"resultCode\":\"SYSTEM_ERROR\"}"));
-        now += DAY - 1;
+        now += 30 * MIN - 1;
         assert guard("other.precedence").shouldSkip() : "non-empty error must keep precedence";
         now++;
         assert !guard("other.precedence").shouldSkip();
@@ -439,12 +447,54 @@ public class GuardCheck {
             int before = io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches;
             guard("alipay.antforest.forest.h5.startEnergyRain").record(json("{\"error\":\"1009\",\"errorMessage\":\"为保障您的正常访问，请进行验证后继续。\"}"));
             assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1 : "1009 must bring Alipay to front";
+            assert io.github.aw1y2z.sesame.hook.CaptchaTriggerStats.riskRecords == 1 : "verification demand must be recorded once";
+            assert "alipay.antforest.forest.h5.startEnergyRain".equals(io.github.aw1y2z.sesame.hook.CaptchaTriggerStats.lastRiskMethod) : "record must name the triggering method";
             guard("alipay.antforest.forest.h5.startEnergyRain").record(json("{\"error\":\"1009\"}")); // already paused: no second launch
             assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1;
             guard("com.alipay.antfarm.feedAnimal").record(json("{\"error\":48}"));
             assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1 : "network errors must not launch";
             guard("com.alipay.neverland.biz.rpc.queryItemList").record(json("{\"error\":\"1009\",\"errorMessage\":\"系统繁忙，请稍后再试。\"}"));
             assert io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches == before + 1 : "1009 busy must not launch";
+            assert io.github.aw1y2z.sesame.hook.CaptchaTriggerStats.riskRecords == 1 : "network/busy must not record";
+        }
+        reset();
+        {
+            // “请验证后继续”只在内存暂停 5 分钟：不写持久化状态，重启支付宝/切号（代数变化）后立即可再请求
+            String risk = "com.alipay.antfarm.cook";
+            var before = new java.util.HashMap<>(RuntimeInfo.getInstance().values);
+            guard(risk).record(json("{\"error\":1009,\"errorMessage\":\"为了保障您的操作安全，请进行验证后继续。\"}"));
+            assert RuntimeInfo.getInstance().values.equals(before) : "verification pause must not be persisted";
+            now += 5 * MIN - 1;
+            assert guard(risk).shouldSkip() : "verification pause lasts 5 minutes";
+            now++;
+            assert !guard(risk).shouldSkip() : "verification pause must end after 5 minutes";
+            guard(risk).record(json("{\"error\":1009,\"errorMessage\":\"为了保障您的操作安全，请进行验证后继续。\"}"));
+            assert guard(risk).shouldSkip();
+            var freeze = io.github.aw1y2z.sesame.data.task.TaskLifecycle.freezeIfIdle();
+            assert freeze != null;
+            assert !guard(risk).shouldSkip() : "account switch must lift the verification pause";
+            io.github.aw1y2z.sesame.data.task.TaskLifecycle.thaw(freeze);
+            assert !guard(risk).shouldSkip();
+            guard(risk).record(json("{\"error\":1009,\"errorMessage\":\"为了保障您的操作安全，请进行验证后继续。\"}"));
+            assert guard(risk).shouldSkip();
+            RpcRequestGuard.clearVerifyPause();
+            assert !guard(risk).shouldSkip() : "successful slide must lift the verification pause";
+            // 1009 系统繁忙：按临时繁忙短退避，不当风控
+            String neverland = "com.alipay.neverland.biz.rpc.queryItemList2";
+            guard(neverland).record(json("{\"error\":\"1009\",\"errorMessage\":\"系统繁忙，请稍后再试。\"}"));
+            now += 5 * MIN - 1;
+            assert guard(neverland).shouldSkip();
+            now++;
+            assert !guard(neverland).shouldSkip();
+            // 人气大爆发（文案在 resultView，无 errorMessage）：非核心接口反复出现也只短退避，不停一天
+            String promo = "com.alipay.loanpromoweb.promo.signin.query";
+            String busy = "{\"errorCode\":\"100001\",\"name\":\"BizError\",\"resultView\":\"人气大爆发，请稍后再试\",\"success\":false}";
+            assert "人气大爆发，请稍后再试".equals(RpcRequestGuard.errorMessage(json(busy))) : "resultView must be read";
+            for (int i = 0; i < 4; i++) {
+                guard(promo).record(json(busy));
+                now += (i < 2 ? 5 : 30) * MIN;
+                assert !guard(promo).shouldSkip() : "busy must never pause a day, round " + i;
+            }
         }
         reset();
         {
@@ -498,7 +548,7 @@ public class GuardCheck {
         assert guard(other).shouldSkip();
         reset();
         guard(forest).record(json("{\"error\":1009,\"errorMessage\":\"访问被拒绝\"}"));
-        now += DAY-1;
+        now += 30 * MIN - 1;
         assert guard(forest).shouldSkip();
         now++;
         assert !guard(forest).shouldSkip();

@@ -73,6 +73,7 @@ public abstract class BaseCaptchaHandler {
                 return false; // 未找到关键视图，返回 false 让其他处理器尝试
             }
             Log.record("滑动验证🆘发现滑动验证文本:" + slideTextInDialog.getText()+"");
+            CaptchaTriggerStats.recordSlide(activity, slideTextInDialog.getText());
             try {
                 Thread.sleep(500L); // 等待界面稳定
             } catch (InterruptedException e) {
@@ -138,6 +139,7 @@ public abstract class BaseCaptchaHandler {
         
         if (checkCaptchaTextGone()) {
             //Log.record("滑动验证🆘验证码文本已消失，滑动成功。");
+            io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard.clearVerifyPause(); // 自动滑过了，不必再等暂停到期
             return true;
         } else {
             //Log.record("滑动验证🆘验证码文本仍然存在，滑动可能失败。");
