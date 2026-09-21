@@ -5,7 +5,7 @@
 
 ## 2026-09-21
 
-- fix：`puzzle/` 截图目录里出现好几张没有验证码的图（用户反馈）。原因：处理流程启动后每秒对最大的 WebView 截图（最多 12 次），识别不到滑块就存 `no-slider`，验证码图片未加载、窗口已关、或被 H5 打开监视误触发扫到无关页面时都会存下无验证码的图，还会把真验证码的截图挤出“只留 6 张”的名额。改为 `no-slider` 每个窗口最多存 1 张，且第 3 次截图以后才存；识别到滑块后的 `no-track`/`match-failed`/`matched-d…` 仍照存。文件名后缀即原因，只有后三种是真验证码。`CAPTURES`/`NO_SLIDER_SAVED` 改为同步集合（主线程写、工作线程读）。
+- fix `76c6edbd`：`puzzle/` 截图目录里出现好几张没有验证码的图（用户反馈）。原因：处理流程启动后每秒对最大的 WebView 截图（最多 12 次），识别不到滑块就存 `no-slider`，验证码图片未加载、窗口已关、或被 H5 打开监视误触发扫到无关页面时都会存下无验证码的图，还会把真验证码的截图挤出“只留 6 张”的名额。改为 `no-slider` 每个窗口最多存 1 张，且第 3 次截图以后才存；识别到滑块后的 `no-track`/`match-failed`/`matched-d…` 仍照存。文件名后缀即原因，只有后三种是真验证码。`CAPTURES`/`NO_SLIDER_SAVED` 改为同步集合（主线程写、工作线程读）。
 - 真机验证：用户装 `2c005d55` 编译的包后，手动触发验证码，**拼图自动验证成功一次**（触发→截图→识别→匹配→拖动整条链路通了）。这同时推翻了此前“手动触发的验证不会自动处理”的说法：手动触发也被某个触发点接住了。当时没有导出运行日志，不知道具体是弹窗钩子、H5 打开监视还是页面恢复扫描；单次成功不代表成功率，GR 自述部分图片仍会失败。
 - chore `5ed2af90`：版本号 1.1.5 → 1.1.6（`gradle.properties`），tag `v1.1.6` 指向该提交；此后的提交（`e0a85a88` 起，见上）不在 tag 内，按用户要求不重打 tag，本地 Release 包为 tag 之后的代码编译。
 - fix `2c005d55`：H5 触发补漏（复查对照 GR `H5RiskOpenHook` 后核实成立）。① `Activity.startActivity/startActivityForResult` 原先只读 `getDataString()`，H5 容器的 URL 多在 extras 里，读到 null 后被转成字符串 "null" 必然不命中——现拼 action/data/component/extras（同 GR `intentToText`），日志里的来源摘要仍只保留域名+路径（先从 extras 文本取 URL，取不到用 component）。② 风险关键词补上 GR 的支付宝风控处置页指纹：模板 ID `180020010001270421`、`x-dispose-trace`、`disposeapplication`、`disposedname`、`disposename`（`captcha.alipay.com`/`captcha_`/`aicaptcha` 已被通用词 `captcha` 覆盖）。**没加** `security`：太宽，会命中大量无关页面，GR 也没有。③ 页面恢复被动扫描的类名由精确匹配 `XRiverActivity`/`AlipayLogin` 改为按关键字包含（xriver/nebula/h5activity/以 `.alipaylogin` 结尾），覆盖 NebulaActivity、H5Activity 等容器；仍只静默扫描 8 秒，识别到拼图滑块才转正常流程。未真机验证。
