@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -308,8 +309,11 @@ fun SelectionEditContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f, fill = false)
+                    // 先裁到圆角再画底；并且**不在这里加左右内边距**：
+                    // 行的文字缩进由行自身的 insideMargin 提供，行顶满卡片宽度后
+                    // 条目的按压效果才是通栏色带，否则会露出方框
+                    .clip(RoundedCornerShape(16.dp))
                     .background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 LazyColumn(
                     state = lazyListState,

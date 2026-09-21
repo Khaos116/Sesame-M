@@ -108,7 +108,7 @@ dependencies {
     // Kotlin + Compose（miuix UI 重构基础）
     implementation "org.jetbrains.kotlin:kotlin-stdlib:2.4.0"
     implementation "androidx.activity:activity-compose:1.9.3"
-    implementation "top.yukonga.miuix.kmp:miuix-ui:0.9.3"
-    implementation "top.yukonga.miuix.kmp:miuix-preference:0.9.3"
+    implementation "top.yukonga.miuix.kmp:miuix-ui:0.9.4"
+    implementation "top.yukonga.miuix.kmp:miuix-preference:0.9.4"
     implementation "androidx.compose.material:material-icons-extended:1.7.6"
 }

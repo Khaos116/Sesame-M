@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -218,6 +219,26 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
         },
         containerColor = MiuixTheme.colorScheme.surface
     ) { padding ->
+        // 按分区（Header）归组：一个分组 = 一张 CardColumn（四角 16dp 圆角、行无缝），
+        // 与一级页「一张卡里排多行」完全一致；行作为 Card 的子项，背景/裁剪/按压观感都由它负责。
+        // 注意：必须在这里算（@Composable 上下文），不能放进 LazyColumn 的 content lambda
+        val sections = remember(rows) {
+                val list = ArrayList<Pair<String?, MutableList<GroupFieldsRow.Field>>>()
+                var title: String? = null
+                var fields = ArrayList<GroupFieldsRow.Field>()
+                rows.forEach { row ->
+                    when (row) {
+                        is GroupFieldsRow.Header -> {
+                            if (title != null || fields.isNotEmpty()) list.add(title to fields)
+                            title = row.title
+                            fields = ArrayList()
+                        }
+                        is GroupFieldsRow.Field -> fields.add(row)
+                    }
+                }
+                if (title != null || fields.isNotEmpty()) list.add(title to fields)
+            list
+        }
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -225,16 +246,19 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
-            items(rows, key = { it.key }) { row ->
-                when (row) {
-                    is GroupFieldsRow.Header -> SmallTitle(text = row.title)
-                    is GroupFieldsRow.Field -> GroupFieldRow(
-                        activity = activity,
-                        userId = userId,
-                        groupCode = groupCode,
-                        row = row,
-                        onDependencyChanged = { depVersion++ }
-                    )
+            items(sections.size) { index ->
+                val (title, fields) = sections[index]
+                title?.let { SmallTitle(text = it) }
+                CardColumn {
+                    fields.forEach { fieldRow ->
+                        GroupFieldRow(
+                            activity = activity,
+                            userId = userId,
+                            groupCode = groupCode,
+                            row = fieldRow,
+                            onDependencyChanged = { depVersion++ }
+                        )
+                    }
                 }
             }
         }
@@ -253,21 +277,10 @@ private fun GroupFieldRow(
     row: GroupFieldsRow.Field,
     onDependencyChanged: () -> Unit
 ) {
-    val shape = when {
-        row.first && row.last -> RoundedCornerShape(16.dp)
-        row.first -> RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
-        row.last -> RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
-        else -> RectangleShape
-    }
+    // 不再自己画背景：行的容器由外层 CardColumn（= 库的 Card）统一负责，
+    // 与一级页一样是「一张卡里排多行」，行的左右缩进交给行自身的 insideMargin
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MiuixTheme.colorScheme.surfaceContainer, shape)
-            .padding(horizontal = 16.dp)
-            .padding(
-                top = if (row.first) 8.dp else 0.dp,
-                bottom = if (row.last) 16.dp else 0.dp
-            )
+        modifier = Modifier.fillMaxWidth()
     ) {
         val field = row.field
         when (field.type) {

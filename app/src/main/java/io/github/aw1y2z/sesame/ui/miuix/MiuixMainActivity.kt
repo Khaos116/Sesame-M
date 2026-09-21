@@ -50,6 +50,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.draw.clip
+import top.yukonga.miuix.kmp.basic.Card
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -678,6 +682,9 @@ fun LogSwitchRow(title: String, checked: Boolean, onClick: () -> Unit, onChecked
                 .matchParentSize()
                 .padding(end = 72.dp)
                 .clickable(onClick = onClick)
+                // 这层盖在库的 SwitchPreference 之上，miuix 0.9.4 的 semantics 合并会把下层的行标题吞掉
+                // （无障碍树里读不到「森林记录」等标题），这里把标题补回语义
+                .semantics { contentDescription = title }
         )
     }
 }
@@ -926,12 +933,10 @@ fun BooleanSwitch(title: String, checked: Boolean, summary: String? = null, onCh
 
 @Composable
 fun CardColumn(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier
-            .fillMaxWidth()
-            .background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(16.dp))
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
+    // Card 只传 modifier：preference 行直接作为子项，行的左右缩进交给行自身的 insideMargin。
+    // 之前给 Card 传 insideMargin 会把所有行整体往里缩，行自带的方形按压高亮就成了"悬在卡片里的方框"；
+    // 让行顶满卡片宽度后，高亮是一条通栏色带，圆角由卡片自身裁剪处理。
+    Card(modifier = modifier.fillMaxWidth()) {
         content()
     }
 }
