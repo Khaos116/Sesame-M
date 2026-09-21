@@ -29,8 +29,12 @@ public class PuzzleMatcherCheck {
         final int[] pixels; final int l, t, w, h;
         Roi(int[] pixels, int l, int t, int w, int h) { this.pixels = pixels; this.l = l; this.t = t; this.w = w; this.h = h; }
         public void read(int left, int top, int width, int height, int[] dst) {
-            if (left != l || top != t || width != w || height != h) throw new IllegalStateException("ROI changed");
-            System.arraycopy(pixels, 0, dst, 0, pixels.length);
+            // 请求区域可能比夹具 ROI 略大（模板内缩后右边界外移）：交集内取夹具像素，其余补黑
+            java.util.Arrays.fill(dst, 0, width * height, 0xff000000);
+            int x0 = Math.max(left, l), x1 = Math.min(left + width, l + w);
+            int y0 = Math.max(top, t), y1 = Math.min(top + height, t + h);
+            for (int y = y0; y < y1; y++)
+                System.arraycopy(pixels, (y - t) * w + (x0 - l), dst, (y - top) * width + (x0 - left), Math.max(0, x1 - x0));
         }
     }
 
@@ -95,7 +99,24 @@ public class PuzzleMatcherCheck {
         PuzzleSliderMatcherCore.Result occluded = PuzzleSliderMatcherCore.estimateOptimized(W, 2649, 1786.5f, 0,
                 load("sample-live-occluded-pink-triangle.rgba.gz", 167, 1081, 984, 637), 3500L, 169);
         within("occluded-pink-triangle", occluded, 703, 4);
-        assert occluded.method.equals("occluded-contour-consensus") : occluded.method;
+        // 模板内缩后旧边缘匹配直接就能给出接近的位移，不再走到轮廓分支；轮廓分支单独回放，保持覆盖
+        PuzzleSliderMatcherCore.Result contour = PuzzleOccludedContourMatcher.estimate(W, 2649, 1786.5f, 0,
+                load("sample-live-occluded-pink-triangle.rgba.gz", 167, 1081, 984, 637), 3500L, 169);
+        within("occluded-pink-triangle-contour", contour, 703, 4);
+        assert contour.method.equals("occluded-contour-consensus") : contour.method;
+
+        // 真机未压缩截图（WebView 整屏 1280x2720，滑块中心 (239,1846)，按钮左缘 171）。
+        // 火焰：旧版给 751/0.39（模板左缘压在照片边界上），真缺口 672（把滑块图叠上去验证过）；芽形：610
+        for (String[] real : new String[][]{{"real-flame-d751.png", "672"}, {"real-sprout-d610.png", "610"}}) {
+            java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(dir.resolve(real[0]).toFile());
+            int rw = img.getWidth(), rh = img.getHeight();
+            int[] all = img.getRGB(0, 0, rw, rh, null, 0, rw);
+            PuzzleSliderMatcherCore.Result r = PuzzleSliderMatcherCore.estimateOptimized(rw, rh, 1846f, 0,
+                    (left, top, width, height, dst) -> {
+                        for (int y = 0; y < height; y++) System.arraycopy(all, (top + y) * rw + left, dst, y * width, width);
+                    }, 3500L, 171);
+            within(real[0], r, Integer.parseInt(real[1]), 6);
+        }
 
         // 纯色照片只有一条水平边框：不能匹配
         PuzzleSliderMatcherCore.Result uniform = PuzzleSliderMatcherCore.estimate(W, 2649, 1786.5f, 0,

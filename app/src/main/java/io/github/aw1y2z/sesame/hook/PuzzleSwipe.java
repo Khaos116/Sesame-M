@@ -9,6 +9,8 @@ import android.view.View;
 
 import java.util.function.BooleanSupplier;
 
+import io.github.aw1y2z.sesame.util.RandomUtil;
+
 /**
  * 拼图滑块的触摸序列：按下、按时间推进的移动、精确停在终点、抬起，全程主线程 postDelayed 排队，不阻塞。
  * 坐标传屏幕绝对值，内部按目标视图当前位置换算成视图内坐标（WebView 不在屏幕原点，直接传绝对坐标会偏）。
@@ -20,6 +22,20 @@ final class PuzzleSwipe {
         void onDone(boolean sent, String reason);
     }
 
+    /** 最后一次 MOVE 之后、抬起之前调用：做完事（比如截图）后必须调用 proceed 才会抬起；超时 {@link #HOLD_TIMEOUT_MS} 自动抬起。 */
+    interface BeforeRelease {
+        void onHold(Runnable proceed);
+    }
+
+    /** 最后一次 MOVE 后等这么久再回调 BeforeRelease，让页面把滑块画到终点（截图才是真实的提交位置）。 */
+    private static final long SETTLE_MS = 150L;
+    /** 与 GR 一致：按下后随机停 30~80ms 再开始移动；途中每个 MOVE 的 X 抖 ±3px、Y 抖 ±2px（终点那一下保持精确）。 */
+    private static final int DOWN_PAUSE_MIN_MS = 30;
+    private static final int DOWN_PAUSE_MAX_MS = 80;
+    private static final int JITTER_X = 3;
+    private static final int JITTER_Y = 2;
+    private static final long HOLD_TIMEOUT_MS = 800L;
+
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static Swipe active;
 
@@ -28,12 +44,12 @@ final class PuzzleSwipe {
 
     /** 任意线程可调；实际在主线程开始。 */
     static void start(View target, float sx, float sy, float ex, float ey, long duration, float arc,
-                      BooleanSupplier valid, Completion completion) {
+                      BooleanSupplier valid, BeforeRelease beforeRelease, Completion completion) {
         Runnable begin = () -> {
             if (active != null) {
                 active.finish(false, "CANCELLED");
             }
-            Swipe swipe = new Swipe(target, sx, sy, ex, ey, Math.max(300L, duration), arc, valid, completion);
+            Swipe swipe = new Swipe(target, sx, sy, ex, ey, Math.max(300L, duration), arc, valid, beforeRelease, completion);
             active = swipe;
             swipe.begin();
         };
@@ -49,18 +65,20 @@ final class PuzzleSwipe {
         final float sx, sy, ex, ey, arc;
         final long duration;
         final BooleanSupplier valid;
+        final BeforeRelease beforeRelease;
         final Completion completion;
         final int[] origin = new int[2];
         final int[] location = new int[2];
         final Runnable next = this::move;
         final Runnable release = this::up;
+        final Runnable hold = this::hold;
         long downTime;
         long lastTime;
         boolean down;
         boolean done;
 
         Swipe(View target, float sx, float sy, float ex, float ey, long duration, float arc,
-              BooleanSupplier valid, Completion completion) {
+              BooleanSupplier valid, BeforeRelease beforeRelease, Completion completion) {
             this.target = target;
             this.sx = sx;
             this.sy = sy;
@@ -69,6 +87,7 @@ final class PuzzleSwipe {
             this.duration = duration;
             this.arc = arc;
             this.valid = valid;
+            this.beforeRelease = beforeRelease;
             this.completion = completion;
         }
 
@@ -97,7 +116,7 @@ final class PuzzleSwipe {
                 finish(false, "INPUT_REJECTED");
                 return;
             }
-            MAIN.postDelayed(next, 16L);
+            MAIN.postDelayed(next, RandomUtil.nextLong(DOWN_PAUSE_MIN_MS, DOWN_PAUSE_MAX_MS + 1));
         }
 
         void move() {
@@ -119,6 +138,8 @@ final class PuzzleSwipe {
             float y = sy - origin[1] + (ey - sy) * progress;
             if (progress < 1f) {
                 y += (float) Math.sin(Math.PI * progress) * arc;
+                x += RandomUtil.nextInt(-JITTER_X, JITTER_X + 1);
+                y += RandomUtil.nextInt(-JITTER_Y, JITTER_Y + 1);
             }
             if (!send(MotionEvent.ACTION_MOVE, x, y, progress)) {
                 finish(false, "INPUT_REJECTED");
@@ -127,7 +148,26 @@ final class PuzzleSwipe {
             if (done) {
                 return;
             }
-            MAIN.postDelayed(progress >= 1f ? release : next, progress >= 1f ? 32L : 16L);
+            if (progress < 1f) {
+                MAIN.postDelayed(next, 16L);
+            } else if (beforeRelease != null) {
+                MAIN.postDelayed(hold, SETTLE_MS);
+            } else {
+                MAIN.postDelayed(release, 32L);
+            }
+        }
+
+        /** 手指停在终点，交给调用方截图；proceed（或超时兜底）才抬起。up() 靠 done 幂等，重复调用无害。 */
+        void hold() {
+            if (done) {
+                return;
+            }
+            MAIN.postDelayed(release, HOLD_TIMEOUT_MS);
+            try {
+                beforeRelease.onHold(() -> MAIN.post(release));
+            } catch (Throwable t) {
+                MAIN.post(release);
+            }
         }
 
         void up() {
@@ -174,6 +214,7 @@ final class PuzzleSwipe {
             done = true;
             MAIN.removeCallbacks(next);
             MAIN.removeCallbacks(release);
+            MAIN.removeCallbacks(hold);
             if (down) {
                 // 手指还按着就结束：补一个 CANCEL，避免宿主以为一直按着
                 send(MotionEvent.ACTION_CANCEL, x(), y(), 1f);

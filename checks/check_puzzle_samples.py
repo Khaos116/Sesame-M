@@ -2,7 +2,7 @@
 """拼图验证码截图文件管理：只保留拖动过的 matched，其余放 tmp/ 并在验证结束时删掉。
 
 直接编译生产代码 hook/PuzzleSampleFiles.java（纯 java.io），用临时目录回放：
-- matched 放账号目录、每号最多 10 张、按时间轮换；旧版本遗留的无关文件不占 matched 名额；
+- matched 放账号目录、matched 和 matched_submit 各最多 10 张、按时间轮换；旧版本遗留的无关文件不占 matched 名额；
 - no-slider / no-track / match-failed 放 tmp/；
 - 清理后只剩 matched，tmp/ 目录被移除，旧版本散落在主目录里的无关文件也被删；重复清理是空操作。
 """
@@ -44,18 +44,23 @@ public class PuzzleSampleFilesCheck {
         for (String tag : new String[]{"no-slider", "no-track", "match-failed"}) {
             assert PuzzleSampleFiles.targetDir(account, tag).equals(new File(account, "tmp")) : tag;
         }
-        assert PuzzleSampleFiles.fileFor(account, "matched-d300", 5L).getName().contains("-matched-");
+        assert PuzzleSampleFiles.fileFor(account, "matched-d300", 5L).getName().contains(PuzzleSampleFiles.MATCHED_MARK);
+        assert PuzzleSampleFiles.fileFor(account, "matched_submit-d300-a1", 5L).getParentFile().equals(account);
+        assert PuzzleSampleFiles.fileFor(account, "matched_submit-d300-a1", 5L).getName().contains(PuzzleSampleFiles.SUBMIT_MARK);
 
         // 旧版本遗留在主目录的无关文件（比部分 matched 更新，不能挤掉 matched）
         touch(new File(account, "puzzle-1-no-slider.png"), 20000);
         touch(new File(account, "puzzle-2-match-failed.png"), 20001);
 
-        // 12 张 matched → 只留最新 10 张
-        for (int i = 0; i < 12; i++) save(account, "matched-d" + (300 + i), 10000 + i);
+        // 24 张 matched → 只留最新 10 张；再存 14 张 matched_submit → 也只留 10 张
+        for (int i = 0; i < 24; i++) save(account, "matched-d" + (300 + i), 10000 + i);
+        for (int i = 0; i < 14; i++) save(account, "matched_submit-d" + (300 + i) + "-a1", 15000 + i);
         long matched = Arrays.stream(account.listFiles()).filter(f -> f.getName().contains("-matched-")).count();
+        long submit = Arrays.stream(account.listFiles()).filter(f -> f.getName().contains("-matched_submit-")).count();
         assert matched == 10 : "matched must be capped at 10, got " + matched;
+        assert submit == 10 : "matched_submit must be capped at 10, got " + submit;
         assert !new File(account, "puzzle-10000-matched-d300.png").exists() : "oldest matched must rotate out";
-        assert new File(account, "puzzle-10011-matched-d311.png").exists() : "newest matched must stay";
+        assert new File(account, "puzzle-10023-matched-d323.png").exists() : "newest matched must stay";
 
         // 过程中的无验证码截图放 tmp/，且有兜底上限
         for (int i = 0; i < 20; i++) save(account, i % 2 == 0 ? "no-slider" : "no-track", 30000 + i);
@@ -68,11 +73,11 @@ public class PuzzleSampleFilesCheck {
         int deleted = PuzzleSampleFiles.deleteNonMatched(account);
         assert deleted == PuzzleSampleFiles.KEEP_TMP + 2 : "tmp files + 2 legacy, got " + deleted;
         String[] left = account.list();
-        assert left.length == 10 : "only matched must remain: " + Arrays.toString(left);
-        for (String name : left) assert name.contains("-matched-") : name;
+        assert left.length == 20 : "only matched must remain: " + Arrays.toString(left);
+        for (String name : left) assert name.contains("-matched-") || name.contains("-matched_submit-") : name;
         assert !new File(account, "tmp").exists() : "tmp dir must be removed";
         assert PuzzleSampleFiles.deleteNonMatched(account) == 0 : "second cleanup must be a no-op";
-        System.out.println("PASS: only matched kept (max 10 per account), tmp and legacy non-matched removed");
+        System.out.println("PASS: only matched kept (matched 10 + matched_submit 10), tmp and legacy non-matched removed");
     }
 }
 '''

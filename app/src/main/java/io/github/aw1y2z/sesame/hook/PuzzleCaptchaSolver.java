@@ -460,6 +460,7 @@ public final class PuzzleCaptchaSolver {
                 match.bestScore, match.elapsedMs, slider.describe(), sampleName));
         PuzzleSwipe.start(web, startX, startY, mapping.endX, startY, duration, 12f,
                 () -> web.isShown() && web.isAttachedToWindow(),
+                proceed -> saveBeforeReleaseShot(target, web, match.displacement, attempt, proceed),
                 (sent, reason) -> {
                     Log.captcha("拼图验证🧩拖动" + (sent ? "已完成" : "未完成") + "（" + reason + "）");
                     polling = false; // 拖完先停止扫描，1.5 秒后按页面结果决定是结束还是重试
@@ -523,6 +524,35 @@ public final class PuzzleCaptchaSolver {
             });
         } catch (Throwable t) {
             Log.printStackTrace(TAG, t);
+        }
+    }
+
+    /**
+     * 手指停在终点、抬起之前截一张（matched_submit-d<位移>-a<第几次>）：记录最终提交的位置，
+     * 和拖动前的 matched-d<位移>、拖动后的 matched-after 对照。截到图（或失败）就 proceed 抬起，主线程调用。
+     */
+    private static void saveBeforeReleaseShot(Target target, View web, int displacement, int attempt, Runnable proceed) {
+        try {
+            capture(target, web, (bitmap, error) -> {
+                proceed.run(); // 图已经拷出来了，不必等落盘
+                if (bitmap == null) {
+                    return;
+                }
+                try {
+                    WORKER.execute(() -> {
+                        try {
+                            saveSample(bitmap, "matched_submit-d" + displacement + "-a" + attempt, false);
+                        } finally {
+                            bitmap.recycle();
+                        }
+                    });
+                } catch (Throwable t) {
+                    bitmap.recycle();
+                }
+            });
+        } catch (Throwable t) {
+            Log.printStackTrace(TAG, t);
+            proceed.run();
         }
     }
 

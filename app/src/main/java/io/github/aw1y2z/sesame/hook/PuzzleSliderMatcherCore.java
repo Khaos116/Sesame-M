@@ -17,6 +17,12 @@ final class PuzzleSliderMatcherCore {
     private static final int INITIAL_SEARCH_TRAVEL_REFERENCE = 720;
     private static final int ROI_TRAVEL_REFERENCE = 800;
     private static final float MIN_BEST_SCORE = 0.16f;
+    /**
+     * 运行时传进来的 sourceLeft 是滑块按钮左缘，也就是照片左缘：模板框的最左一列正好压在“照片/白底”的边界上，
+     * 那条竖边在目标区域里不存在，会把相关分拉低（真机火焰图：左缘 171 → 751/0.39 的错位，内缩 3px 以上 → 672/0.71）。
+     * 模板整体右移这么多像素避开边界；位移是目标减源，不受影响。
+     */
+    private static final int SOURCE_INSET_REFERENCE = 8;
 
     private PuzzleSliderMatcherCore() {
         throw new UnsupportedOperationException("Utility class cannot be instantiated");
@@ -31,6 +37,7 @@ final class PuzzleSliderMatcherCore {
             PixelReader reader, long timeoutMs, int sourceLeft) {
         long started = System.nanoTime();
         if (timeoutMs <= 0) return Result.failure("matching timed out", 0);
+        if (sourceLeft >= 0) sourceLeft += Math.round(SOURCE_INSET_REFERENCE * width / (float) REFERENCE_WIDTH);
         Result texture = PuzzleTextureMatcherCore.estimate(width, height, sliderY, screenTop,
                 reader, Math.min(1200L, timeoutMs / 2), sourceLeft);
         long used = elapsedMs(started);
