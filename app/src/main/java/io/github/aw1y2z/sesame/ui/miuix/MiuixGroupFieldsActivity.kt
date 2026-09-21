@@ -22,7 +22,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +48,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.SelectAndCountOneModelField
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectOneModelField
 import io.github.aw1y2z.sesame.util.Log
+import io.github.aw1y2z.sesame.util.StringUtil
 import io.github.aw1y2z.sesame.util.ToastUtil
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -118,6 +118,19 @@ class MiuixGroupFieldsActivity : MiuixBaseActivity() {
         if (!ConfigV2.isModify(userId)) return
         if (ConfigV2.save(userId, true)) {
             ToastUtil.show(this, "保存成功！")
+            sendRestartIfNeeded()
+        }
+    }
+
+    private fun sendRestartIfNeeded() {
+        if (!StringUtil.isEmpty(userId)) {
+            try {
+                val intent = Intent("com.eg.android.AlipayGphone.sesame.restart")
+                intent.putExtra("userId", userId)
+                sendBroadcast(intent)
+            } catch (th: Throwable) {
+                Log.printStackTrace(th)
+            }
         }
     }
 }
@@ -174,11 +187,33 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
         list
     }
 
+    /**
+     * 执行当前分组的任务。
+     * 本进程是模块 App 的 UI 进程，没有 libxposed 类（ApplicationHook/hook.Toast/NotificationUtil 一碰
+     * 就 NoClassDefFoundError），任务循环也不能压在主线程上，所以只发广播让注入进程去跑。
+     * BASE 分组由注入侧解释为"执行全部任务"。
+     */
+    val onExecute = remember {
+        {
+            try {
+                val intent = Intent("com.eg.android.AlipayGphone.sesame.execute")
+                intent.putExtra("group", group.getCode())
+                activity.sendBroadcast(intent)
+                ToastUtil.show(activity, "已发送执行请求：${group.getName()}")
+            } catch (th: Throwable) {
+                Log.printStackTrace(th)
+                ToastUtil.show(activity, "执行失败: ${th.message}")
+            }
+            Unit
+        }
+    }
+
     Scaffold(
         topBar = {
             LogTopBar(
                 title = group.getName(),
-                onBack = { activity.saveAndFinish() }
+                onBack = { activity.saveAndFinish() },
+                onExecute = onExecute
             )
         },
         containerColor = MiuixTheme.colorScheme.surface

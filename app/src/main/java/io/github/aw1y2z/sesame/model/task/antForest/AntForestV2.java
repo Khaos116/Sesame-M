@@ -6,18 +6,23 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -43,6 +48,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.TextModelField;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
 import io.github.aw1y2z.sesame.entity.AlipayAntForestHuntTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayAntForestVitalityTaskList;
+import io.github.aw1y2z.sesame.entity.AlipayMonopolyTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayUser;
 import io.github.aw1y2z.sesame.entity.CollectEnergyEntity;
 import io.github.aw1y2z.sesame.entity.CustomOption;
@@ -76,6 +82,7 @@ import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 import io.github.aw1y2z.sesame.util.idMap.AntForestHuntTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.AntForestVitalityTaskListMap;
+import io.github.aw1y2z.sesame.util.idMap.MonopolyTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 import io.github.aw1y2z.sesame.util.idMap.VitalityBenefitIdMap;
 import lombok.Getter;
@@ -92,6 +99,18 @@ public class AntForestV2 extends ModelTask {
      * 用于切回失败 / 进程被杀之后的校正，避免用户被永久留在组队模式。
      */
     private static final String FLAG_TEAM_MODE_SWITCHED = "Forest::teamWaterSwitchedToTeam";
+
+    /**
+     * 新版保护地任务：只有洪山动物园区域下发了任务场景，其余区域没有任务列表。
+     */
+    private static final String MONOPOLY_REGION_HSDWY = "hongshandongwuyuan";
+    private static final String MONOPOLY_TASK_SCENE_HSDWY = "ANTFOREST_MONOPOLY_TASK_HSDWY";
+
+    /**
+     * 新版保护地任务的浏览时长上限（秒）：服务端下发 timeCount 后要等这么久才能提交完成，
+     * 超出上限视为异常数据，不阻塞本轮任务。
+     */
+    private static final long MONOPOLY_MAX_TASK_SECONDS = 300L;
 
     private static final AverageMath offsetTimeMath = new AverageMath(5);
 
@@ -215,12 +234,18 @@ public class AntForestV2 extends ModelTask {
     private BooleanModelField vitalityExchangeBenefit;
     private SelectAndCountModelField vitality_ExchangeBenefitList;
     private BooleanModelField userPatrol;
+    private BooleanModelField monopolyPatrol;
+    private BooleanModelField monopolyTasks;
+    private BooleanModelField monopolyAnimalEnergy;
+    private BooleanModelField monopolyDispatchAnimal;
+    private ChoiceModelField monopolyDispatchPriority;
+    private BooleanModelField AutoMonopolyTaskList;
+    private SelectModelField MonopolyTaskList;
     private BooleanModelField collectGiftBox;
     private BooleanModelField medicalHealth;
     private BooleanModelField greenLife;
 
     private BooleanModelField greenRent;
-    private BooleanModelField combineAnimalPiece;
     private ChoiceModelField consumeAnimalPropType;
     private SelectModelField whoYouWantToGiveTo;
     private BooleanModelField ecoLife;
@@ -320,12 +345,18 @@ public class AntForestV2 extends ModelTask {
         modelFields.addField(energyRain = new BooleanModelField("energyRain", "收集能量雨", false));
         modelFields.addField(giveEnergyRainList = new SelectModelField("giveEnergyRainList", "赠送能量雨好友列表", new LinkedHashSet<>(), AlipayUser::getList));
         modelFields.addField(useEnergyRainLimit = new BooleanModelField("useEnergyRainLimit", "兑换使用限时能量雨卡", false));
-        modelFields.addField(userPatrol = new BooleanModelField("userPatrol", "保护地巡护", false));
-        modelFields.addField(combineAnimalPiece = new BooleanModelField("combineAnimalPiece", "合成动物碎片", false));
+        modelFields.addField(userPatrol = new BooleanModelField("userPatrol", "旧版保护地巡护", false));
+        modelFields.addField(monopolyPatrol = new BooleanModelField("monopolyPatrol", "新版保护地 | 自动前进", false));
+        modelFields.addField(monopolyTasks = new BooleanModelField("monopolyTasks", "新版保护地 | 自动任务", false));
+        modelFields.addField(monopolyAnimalEnergy = new BooleanModelField("monopolyAnimalEnergy", "新版动物伙伴 | 领取能量", false));
+        modelFields.addField(monopolyDispatchAnimal = new BooleanModelField("monopolyDispatchAnimal", "新版动物伙伴 | 自动派遣", false));
+        modelFields.addField(monopolyDispatchPriority = new ChoiceModelField("monopolyDispatchPriority", "新版动物伙伴 | 派遣优先级", 0, new String[]{"新版优先", "旧版优先"}).setDependsOn("monopolyDispatchAnimal"));
+        modelFields.addField(AutoMonopolyTaskList = new BooleanModelField("AutoMonopolyTaskList", "新版保护地 | 自动黑名单", true).setDependsOn("monopolyTasks"));
+        modelFields.addField(MonopolyTaskList = new SelectModelField("MonopolyTaskList", "新版保护地 | 黑名单列表", new LinkedHashSet<>(), AlipayMonopolyTaskList::getList).setDependsOn("AutoMonopolyTaskList"));
         modelFields.addField(consumeAnimalPropType = new ChoiceModelField("consumeAnimalPropType", "派遣动物伙伴", ConsumeAnimalPropType.NONE, ConsumeAnimalPropType.nickNames));
         modelFields.addField(receiveForestTaskAward = new BooleanModelField("receiveForestTaskAward", "森林任务", false));
         modelFields.addField(AutoAntForestVitalityTaskList = new BooleanModelField("AutoAntForestVitalityTaskList", "活力值 | 自动黑名单", true));
-        modelFields.addField(AntForestVitalityTaskList = new SelectModelField("AntForestVitalityTaskList", "活力值 | 黑名单列表", new LinkedHashSet<>(), AlipayAntForestVitalityTaskList::getList));
+        modelFields.addField(AntForestVitalityTaskList = new SelectModelField("AntForestVitalityTaskList", "活力值 | 黑名单列表", new LinkedHashSet<>(), AlipayAntForestVitalityTaskList::getList).setDependsOn("AutoAntForestVitalityTaskList"));
         modelFields.addField(collectGiftBox = new BooleanModelField("collectGiftBox", "领取礼盒", false));
         modelFields.addField(medicalHealth = new BooleanModelField("medicalHealth", "医疗健康", false));
         modelFields.addField(greenLife = new BooleanModelField("greenLife", "森林集市", false));
@@ -339,15 +370,15 @@ public class AntForestV2 extends ModelTask {
         modelFields.addField(loveteamWaterNum = new IntegerModelField("loveteamWaterNum", "真爱合种浇水" + "(g)", 20, 20, 10000).setDependsOn("loveteamWater"));
         modelFields.addField(ForestHunt = new BooleanModelField("ForestHunt", "森林寻宝", false));
         modelFields.addField(AutoAntForestHuntTaskList = new BooleanModelField("AutoAntForestHuntTaskList", "抽抽乐任务 | 自动黑名单", true).setDependsOn("ForestHunt"));
-        modelFields.addField(AntForestHuntTaskList = new SelectModelField("AntForestHuntTaskList", "抽抽乐任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntForestHuntTaskList::getList).setDependsOn("ForestHunt"));
+        modelFields.addField(AntForestHuntTaskList = new SelectModelField("AntForestHuntTaskList", "抽抽乐任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntForestHuntTaskList::getList).setDependsOn("AutoAntForestHuntTaskList"));
         modelFields.addField(ForestHuntDraw = new BooleanModelField("ForestHuntDraw", "森林寻宝抽奖", false).setDependsOn("ForestHunt"));
         modelFields.addField(ForestHuntHelp = new BooleanModelField("ForestHuntHelp", "森林寻宝助力", false).setDependsOn("ForestHunt"));
         modelFields.addField(NORMALForestHuntHelp = new BooleanModelField("NORMALForestHuntHelp", "普通场景强制助力" + "(助力任务不在列表中时使用，如果日志显示失效请关闭)", false).setDependsOn("ForestHunt"));
         modelFields.addField(ACTIVITYForestHuntHelp = new BooleanModelField("ACTIVITYForestHuntHelp", "活动场景强制助力" + "(同上)", false).setDependsOn("ForestHunt"));
         modelFields.addField(ForestHuntHelpList = new SelectModelField("ForestHuntHelpList", "点击配置寻宝助力列表" + "(填写shareId中开头的22-24位字符在\"4O7FEYDgn\"前的)", new LinkedHashSet<>(), AlipayForestHunt::getList).setDependsOn("ForestHunt"));
         modelFields.addField(dress = new BooleanModelField("dress", "装扮保护 | 开启", false));
-        modelFields.addField(dressDetailList = new TextModelField("dressDetailList", "装扮保护 | " + "装扮信息", ""));
-        modelFields.addField(new EmptyModelField("dressDetailListClear", "装扮保护 | 装扮信息清除", () -> dressDetailList.reset()));
+        modelFields.addField(dressDetailList = new TextModelField("dressDetailList", "装扮保护 | " + "装扮信息", "").setDependsOn("dress"));
+        modelFields.addField(new EmptyModelField("dressDetailListClear", "装扮保护 | 装扮信息清除", () -> dressDetailList.reset()).setDependsOn("dress"));
         return modelFields;
     }
 
@@ -604,6 +635,10 @@ public class AntForestV2 extends ModelTask {
                     initAntForestTaskListMap(AutoAntForestVitalityTaskList.getValue(), AutoAntForestHuntTaskList.getValue(), receiveForestTaskAward.getValue(), ForestHunt.getValue());
                     Status.flagToday("BlackList::initAntForest");
                 }
+                // 新版保护地任务名单来自服务端下发：本地为空时每轮补一次，开了开关不必等到次日
+                if (monopolyTasks.getValue() && MonopolyTaskListMap.getMap().isEmpty()) {
+                    initMonopolyTaskListMap();
+                }
 
                 // 组队合种浇水
                 if (partnerteamWater.getValue()) {
@@ -625,15 +660,28 @@ public class AntForestV2 extends ModelTask {
                 if (userPatrol.getValue()) {
                     queryUserPatrol();
                 }
-                if (combineAnimalPiece.getValue()) {
-                    queryAnimalAndPiece();
+                if (monopolyPatrol.getValue()) {
+                    monopolyPatrol();
+                }
+                if (monopolyAnimalEnergy.getValue()) {
+                    collectMonopolyAnimalEnergy();
+                }
+                // 动物伙伴自动派遣：新版受独立开关与优先级控制，旧版仍只看"派遣动物伙伴"选择
+                Integer monopolyDispatchPriorityValue = monopolyDispatchPriority.getValue();
+                boolean newAnimalFirst = monopolyDispatchPriorityValue == null || monopolyDispatchPriorityValue == 0;
+                boolean animalDispatched = false;
+                if (monopolyDispatchAnimal.getValue() && newAnimalFirst) {
+                    animalDispatched = dispatchMonopolyAnimal(canConsumeAnimalProp);
                 }
                 if (consumeAnimalPropType.getValue() != ConsumeAnimalPropType.NONE) {
                     if (!canConsumeAnimalProp) {
                         Log.record("已经有动物伙伴在巡护森林");
-                    } else {
-                        queryAnimalPropList();
+                    } else if (!animalDispatched) {
+                        animalDispatched = queryAnimalPropList();
                     }
+                }
+                if (monopolyDispatchAnimal.getValue() && !animalDispatched && !newAnimalFirst) {
+                    dispatchMonopolyAnimal(canConsumeAnimalProp);
                 }
                 if (expiredEnergy.getValue()) {
                     popupTask();
@@ -1826,6 +1874,40 @@ public class AntForestV2 extends ModelTask {
             }
         } catch (Throwable t) {
             Log.err(TAG, "initAntForestTaskListMap err:", t);
+        }
+    }
+
+    /**
+     * 新版保护地任务列表初始化：把服务端下发的任务名同步到 {@link MonopolyTaskListMap}，
+     * 作为配置页「新版保护地 | 黑名单列表」的候选项。
+     * <p>没有预置黑白名单：新版保护地任务名由服务端动态下发，全部交给自动拉黑机制判定。
+     */
+    public void initMonopolyTaskListMap() {
+        try {
+            MonopolyTaskListMap.load();
+            JSONObject jo = monopolyResponse(AntForestRpcCall.listMonopolyTasks(MONOPOLY_REGION_HSDWY, MONOPOLY_TASK_SCENE_HSDWY));
+            if (MessageUtil.checkSuccess(TAG, jo)) {
+                JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
+                if (taskInfoList != null) {
+                    for (int i = 0; i < taskInfoList.length(); i++) {
+                        JSONObject task = taskInfoList.optJSONObject(i);
+                        JSONObject base = task == null ? null : task.optJSONObject("taskBaseInfo");
+                        if (base == null || !MONOPOLY_TASK_SCENE_HSDWY.equals(base.optString("sceneCode"))) {
+                            continue;
+                        }
+                        String taskType = base.optString("taskType");
+                        if (taskType.isEmpty()) {
+                            continue;
+                        }
+                        String title = blackTaskKey(monopolyTaskTitle(base, taskType));
+                        MonopolyTaskListMap.add(title, title);
+                    }
+                }
+            }
+            MonopolyTaskListMap.save();
+            Log.record("同步任务🉑新版保护地任务列表");
+        } catch (Throwable t) {
+            Log.err(TAG, "initMonopolyTaskListMap err:", t);
         }
     }
 
@@ -3459,12 +3541,425 @@ public class AntForestV2 extends ModelTask {
         }
     }
 
-    // 查询可派遣伙伴
-    private void queryAnimalPropList() {
+    /* 新版保护地：自动前进（领取首页机会 + 掷骰推进 + 事件确认） */
+    private void monopolyPatrol() {
+        try {
+            JSONObject state = new JSONObject(AntForestRpcCall.queryMonopolyEntryInfo());
+            if (!MessageUtil.checkResultCode(TAG, state)) {
+                return;
+            }
+            JSONObject regionInfo = state.optJSONObject("regionInfo");
+            JSONObject mapInfo = state.optJSONObject("mapInfo");
+            JSONObject userInfo = state.optJSONObject("userInfo");
+            if (regionInfo == null || mapInfo == null || userInfo == null) {
+                Log.record("新版保护地🌲入口缺少区域、地图或用户状态，跳过本轮");
+                return;
+            }
+            if (isMonopolyClosed(regionInfo) || isMonopolyClosed(mapInfo)) {
+                Log.forest("新版保护地🌲当前区域或地图不在开放期，停止本轮");
+                return;
+            }
+            String regionCode = regionInfo.optString("regionCode");
+            boolean tasksEnabled = monopolyTasks.getValue();
+            // 掷骰会解锁新任务，所以骰子用完后需要再补跑一次任务
+            boolean tasksMayHaveChanged = false;
+            if (tasksEnabled) {
+                monopolyTask(regionCode);
+            }
+            // 首次进入地图时服务端要求带引导参数掷骰
+            boolean guideRoll = userInfo.optBoolean("firstEnterMonopoly");
+            JSONObject pendingEvent = state.optJSONObject("eventInfo");
+
+            // 首页道具：领取当日巡护机会（骰子）
+            JSONObject props = new JSONObject(AntForestRpcCall.triggerMonopolyHomeProps());
+            if (!MessageUtil.checkResultCode(TAG, props)) {
+                return;
+            }
+            state = new JSONObject(AntForestRpcCall.queryMonopolyEntryInfo());
+            if (!MessageUtil.checkResultCode(TAG, state)) {
+                return;
+            }
+            if (pendingEvent == null) {
+                pendingEvent = state.optJSONObject("eventInfo");
+            }
+
+            Set<String> confirmedEvents = new HashSet<>();
+            while (!Thread.currentThread().isInterrupted()) {
+                JSONObject event = pendingEvent;
+                if (event != null && event.optBoolean("needConfirm")) {
+                    String eventId = event.optString("eventId");
+                    String eventType = event.optString("eventType");
+                    String actionKey = "CHARITY".equals(eventType) ? "confirm" : ("SPECIAL".equals(eventType) ? "skip" : null);
+                    JSONObject displayInfo = event.optJSONObject("displayInfo");
+                    if (eventId.isEmpty() || actionKey == null || displayInfo == null
+                            || !"SINGLE_ACTION_CONFIRM".equals(displayInfo.optString("flowType"))) {
+                        Log.record("新版保护地🌲事件缺少可执行决策，保留当前事件[" + eventId + "]");
+                        return;
+                    }
+                    if (confirmedEvents.contains(eventId)) {
+                        Log.record("新版保护地🌲事件[" + eventId + "]已提交确认，等待后续调度刷新");
+                        return;
+                    }
+                    JSONObject confirmation = new JSONObject(AntForestRpcCall.confirmMonopolyEvent(eventId, actionKey));
+                    if (!MessageUtil.checkResultCode(TAG, confirmation)) {
+                        return;
+                    }
+                    confirmedEvents.add(eventId);
+                    Log.forest("新版保护地🌲事件[" + eventId + "]已确认");
+                    state = new JSONObject(AntForestRpcCall.queryMonopolyEntryInfo());
+                    if (!MessageUtil.checkResultCode(TAG, state)) {
+                        return;
+                    }
+                    pendingEvent = state.optJSONObject("eventInfo");
+                    continue;
+                }
+
+                int diceCount = state.optInt("totalDiceCount", -1);
+                if (diceCount < 0) {
+                    Log.record("新版保护地🌲响应缺少可用骰子数量，跳过本轮");
+                    return;
+                }
+                if (diceCount == 0) {
+                    if (tasksEnabled && tasksMayHaveChanged) {
+                        monopolyTask(regionCode);
+                        tasksMayHaveChanged = false;
+                        state = new JSONObject(AntForestRpcCall.queryMonopolyEntryInfo());
+                        if (!MessageUtil.checkResultCode(TAG, state)) {
+                            return;
+                        }
+                        pendingEvent = state.optJSONObject("eventInfo");
+                        continue;
+                    }
+                    Log.record("新版保护地🌲当前无可用骰子，后续调度继续查询");
+                    return;
+                }
+
+                JSONObject currentUserInfo = state.optJSONObject("userInfo");
+                int previousSteps = currentUserInfo == null ? -1 : currentUserInfo.optInt("stepCount", -1);
+                JSONObject roll = new JSONObject(AntForestRpcCall.rollMonopolyDice(guideRoll));
+                if (!MessageUtil.checkResultCode(TAG, roll)) {
+                    return;
+                }
+                guideRoll = false;
+                pendingEvent = roll.optJSONObject("eventInfo");
+                JSONObject rollUserInfo = roll.optJSONObject("userInfo");
+                int steps = rollUserInfo == null ? -1 : rollUserInfo.optInt("stepCount", -1);
+                // 骰子数、步数、事件三者都没变化，说明服务端没受理，留到下次调度重试
+                if (roll.optInt("totalDiceCount", -1) == diceCount && steps == previousSteps && pendingEvent == null) {
+                    Log.record("新版保护地🌲掷骰后未确认状态变化，保留后续调度");
+                    return;
+                }
+                tasksMayHaveChanged = true;
+                Log.forest("新版保护地🌲掷骰[" + roll.optInt("diceNumber") + "]剩余" + roll.optInt("totalDiceCount") + "次");
+                TimeUtil.sleep(500);
+                state = new JSONObject(AntForestRpcCall.queryMonopolyEntryInfo());
+                if (!MessageUtil.checkResultCode(TAG, state)) {
+                    return;
+                }
+                if (pendingEvent == null) {
+                    pendingEvent = state.optJSONObject("eventInfo");
+                }
+            }
+        } catch (Throwable t) {
+            Log.err(TAG, "monopolyPatrol err:", t);
+        }
+    }
+
+    /* 新版保护地：区域/地图是否未开放或已结束（缺少日期字段视为一直开放） */
+    private boolean isMonopolyClosed(JSONObject activity) {
+        long now = System.currentTimeMillis();
+        long start = parseMonopolyDate(activity.optString("startDate"));
+        long end = parseMonopolyDate(activity.optString("endDate"));
+        return (start > 0 && now < start) || (end > 0 && now >= end);
+    }
+
+    /* 解析新版保护地的 "yyyy-MM-dd HH:mm:ss" 时间串（东八区），解析失败返回 0 */
+    private long parseMonopolyDate(String date) {
+        if (StringUtil.isEmpty(date)) {
+            return 0L;
+        }
+        try {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA);
+            format.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+            format.setLenient(false);
+            Date parsed = format.parse(date);
+            return parsed == null ? 0L : parsed.getTime();
+        } catch (ParseException e) {
+            return 0L;
+        }
+    }
+
+    /* 新版保护地部分接口的响应会被包在 resData 里 */
+    private JSONObject monopolyResponse(String raw) throws JSONException {
+        JSONObject jo = new JSONObject(raw);
+        JSONObject resData = jo.optJSONObject("resData");
+        return resData == null ? jo : resData;
+    }
+
+    /* 新版保护地：完成可自动执行的任务并领取奖励 */
+    private boolean monopolyTask(String regionCode) {
+        String sceneCode;
+        if (MONOPOLY_REGION_HSDWY.equals(regionCode)) {
+            sceneCode = MONOPOLY_TASK_SCENE_HSDWY;
+        } else {
+            Log.forest("新版保护地🌲当前区域[" + regionCode + "]没有任务场景，继续地图巡护");
+            return false;
+        }
+        boolean changed = false;
+        try {
+            // 每轮只处理一个任务，最多 20 轮：服务端状态不变时靠轮次上限收敛
+            for (int round = 0; round < 20; round++) {
+                JSONObject jo = monopolyResponse(AntForestRpcCall.listMonopolyTasks(regionCode, sceneCode));
+                if (!MessageUtil.checkSuccess(TAG, jo)) {
+                    return changed;
+                }
+                JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
+                if (taskInfoList == null) {
+                    Log.record("新版保护地🌲任务列表为空，跳过");
+                    return changed;
+                }
+                boolean acted = false;
+                for (int i = 0; i < taskInfoList.length() && !acted; i++) {
+                    JSONObject task = taskInfoList.optJSONObject(i);
+                    JSONObject base = task == null ? null : task.optJSONObject("taskBaseInfo");
+                    if (base == null || !sceneCode.equals(base.optString("sceneCode"))) {
+                        continue;
+                    }
+                    String taskType = base.optString("taskType");
+                    if (taskType.isEmpty()) {
+                        continue;
+                    }
+                    String title = monopolyTaskTitle(base, taskType);
+                    String status = base.optString("taskStatus");
+                    // 黑名单任务静默跳过；已完成待领奖的仍把奖励领掉（与森林任务一致）
+                    if (isMonopolyTaskBlacklisted(title) && !"FINISHED".equals(status)) {
+                        continue;
+                    }
+                    if ("FINISHED".equals(status)) {
+                        acted = true;
+                        changed |= monopolyReceiveTaskAward(taskType, sceneCode, title);
+                    } else if ("TODO".equals(status) && "NORMAL".equals(base.optString("taskMode"))
+                            && "VISIT_FLOAT_BALL".equals(base.optString("taskProdPlayType"))) {
+                        // 只自动做"浏览浮球"这类纯等待任务，其余需要真实业务动作的任务不碰
+                        acted = true;
+                        changed |= monopolyFinishTask(base, taskType, sceneCode, title);
+                    }
+                }
+                if (!acted) {
+                    return changed;
+                }
+            }
+        } catch (Throwable t) {
+            Log.err(TAG, "monopolyTask err:", t);
+        }
+        return changed;
+    }
+
+    /* 新版保护地任务展示名：bizInfo.title → bizInfo.taskTitle → 任务类型（各接口键名不统一） */
+    private String monopolyTaskTitle(JSONObject base, String taskType) {
+        String bizInfo = base.optString("bizInfo");
+        if (!bizInfo.isEmpty()) {
+            try {
+                JSONObject biz = new JSONObject(bizInfo);
+                String title = biz.optString("title");
+                if (title.isEmpty()) {
+                    title = biz.optString("taskTitle");
+                }
+                if (!title.isEmpty()) {
+                    return title;
+                }
+            } catch (Throwable t) {
+                Log.err(TAG, "monopolyTaskTitle err:", t);
+            }
+        }
+        return taskType;
+    }
+
+    /* 新版保护地任务是否在配置的黑名单里（键统一剥掉标题末尾的 "(n/N)" 次数后缀） */
+    private boolean isMonopolyTaskBlacklisted(String title) {
+        Set<String> blackList = MonopolyTaskList.getValue();
+        return blackList != null && blackList.contains(blackTaskKey(title));
+    }
+
+    /* 失败响应按统一判据自动拉黑（可重试错误不会拉黑），受「自动黑名单」开关控制 */
+    private void markMonopolyTaskBlackList(String title, JSONObject jo) {
+        if (Boolean.TRUE.equals(AutoMonopolyTaskList.getValue())) {
+            MessageUtil.checkResultCodeAndMarkTaskBlackList("MonopolyTaskList", blackTaskKey(title), jo);
+        }
+    }
+
+    /* 新版保护地：按服务端下发的时长等待后提交任务完成 */
+    private boolean monopolyFinishTask(JSONObject base, String taskType, String sceneCode, String title) {
+        try {
+            long seconds = 0L;
+            String prodPlayParam = base.optString("prodPlayParam");
+            if (!prodPlayParam.isEmpty()) {
+                seconds = new JSONObject(prodPlayParam).optLong("timeCount", 0L);
+            }
+            if (seconds <= 0 || seconds > MONOPOLY_MAX_TASK_SECONDS) {
+                Log.record("新版保护地🌲任务[" + title + "]下发时长异常(" + seconds + "s)，跳过");
+                return false;
+            }
+            TimeUtil.sleep(TimeUnit.SECONDS.toMillis(seconds));
+            JSONObject jo = monopolyResponse(AntForestRpcCall.finishMonopolyTask(taskType, sceneCode));
+            markMonopolyTaskBlackList(title, jo);
+            if (MessageUtil.checkSuccess(TAG, jo)) {
+                Log.forest("新版保护地🌲任务完成[" + title + "]");
+                return true;
+            }
+        } catch (Throwable t) {
+            Log.err(TAG, "monopolyFinishTask err:", t);
+        }
+        return false;
+    }
+
+    /* 新版保护地：领取任务奖励 */
+    private boolean monopolyReceiveTaskAward(String taskType, String sceneCode, String title) {
+        try {
+            JSONObject jo = monopolyResponse(AntForestRpcCall.receiveMonopolyTask(taskType, sceneCode));
+            markMonopolyTaskBlackList(title, jo);
+            if (MessageUtil.checkSuccess(TAG, jo)) {
+                Log.forest("新版保护地🌲任务奖励[" + title + "]");
+                return true;
+            }
+        } catch (Throwable t) {
+            Log.err(TAG, "monopolyReceiveTaskAward err:", t);
+        }
+        return false;
+    }
+
+    /* 新版动物伙伴：领取已产生的派遣能量 */
+    private void collectMonopolyAnimalEnergy() {
+        try {
+            String uid = UserIdMap.getCurrentUid();
+            if (StringUtil.isEmpty(uid)) {
+                return;
+            }
+            JSONObject jo = monopolyResponse(AntForestRpcCall.queryUsingCreatureInfo(uid));
+            if (!MessageUtil.checkResultCode(TAG, jo)) {
+                return;
+            }
+            JSONObject creature = jo.optJSONObject("userCreatureVO");
+            if (creature == null) {
+                return;
+            }
+            JSONObject energy = creature.optJSONObject("robEnergyVO");
+            if (energy == null) {
+                Log.record("新版动物伙伴🦩缺少能量状态，跳过");
+                return;
+            }
+            if (energy.optBoolean("energyIsCollect")) {
+                return;
+            }
+            if (energy.optInt("yesterdayRobEnergy", 0) <= 0) {
+                // 昨日没有产出能量，属于正常情况，不打扰用户
+                return;
+            }
+            String creatureCode = creature.optString("creatureCode");
+            String shortDay = energy.optString("yesterdayShortDay");
+            if (!energy.has("energyIsCollect") || creatureCode.isEmpty() || shortDay.isEmpty()) {
+                Log.record("新版动物伙伴🦩能量缺少领取标识，跳过");
+                return;
+            }
+            JSONObject collect = monopolyResponse(AntForestRpcCall.collectMonopolyCreatureEnergy(creatureCode, shortDay));
+            if (!MessageUtil.checkResultCode(TAG, collect)) {
+                return;
+            }
+            int collected = collect.optInt("collectedEnergy", -1);
+            if (collected < 0) {
+                Log.record("新版动物伙伴🦩领取成功但缺少实际到账量，不计入统计");
+                return;
+            }
+            if (collected > 0) {
+                Statistics.addData(Statistics.DataType.COLLECTED, collected);
+            }
+            Log.forest("新版动物伙伴🦩[" + creature.optString("creatureName", creatureCode) + "]派遣能量[" + collected + "g]");
+        } catch (Throwable t) {
+            Log.err(TAG, "collectMonopolyAnimalEnergy err:", t);
+        }
+    }
+
+    /* 新版动物伙伴：自动派遣（已有动物在巡护时不替换） */
+    private boolean dispatchMonopolyAnimal(boolean canConsumeAnimalProp) {
+        try {
+            if (!canConsumeAnimalProp) {
+                return false;
+            }
+            JSONObject jo = new JSONObject(AntForestRpcCall.queryMonopolyEntryInfo());
+            if (!MessageUtil.checkResultCode(TAG, jo)) {
+                return false;
+            }
+            if (jo.optBoolean("usingMonopolyCreature")) {
+                Log.record("新版动物伙伴🦩已有动物在巡护，保留当前伙伴");
+                return true;
+            }
+            JSONArray creatureList = jo.optJSONArray("creatureList");
+            if (creatureList == null) {
+                Log.record("新版动物伙伴🦩入口缺少动物列表，跳过");
+                return false;
+            }
+            List<JSONObject> candidates = new ArrayList<>();
+            boolean allHasInitialRobEnergy = true;
+            for (int i = 0; i < creatureList.length(); i++) {
+                JSONObject creature = creatureList.optJSONObject(i);
+                if (creature == null || !isMonopolyCreatureIdle(creature)) {
+                    continue;
+                }
+                candidates.add(creature);
+                if (creature.isNull("initialRobEnergy")) {
+                    allHasInitialRobEnergy = false;
+                }
+            }
+            if (candidates.isEmpty()) {
+                Log.record("新版动物伙伴🦩当前没有可派遣的动物");
+                return false;
+            }
+            // 都能给出预计产出时选最高的，否则按服务端顺序取第一个
+            JSONObject selected = candidates.get(0);
+            if (allHasInitialRobEnergy) {
+                for (JSONObject candidate : candidates) {
+                    if (candidate.optInt("initialRobEnergy") > selected.optInt("initialRobEnergy")) {
+                        selected = candidate;
+                    }
+                }
+            }
+            String creatureCode = selected.getString("creatureCode");
+            JSONObject assigned = new JSONObject(AntForestRpcCall.assignMonopolyCreature(creatureCode));
+            if (MessageUtil.checkResultCode(TAG, assigned)) {
+                Log.forest("新版动物伙伴🦩派遣[" + selected.optString("creatureName", creatureCode) + "]");
+                return true;
+            }
+        } catch (Throwable t) {
+            Log.err(TAG, "dispatchMonopolyAnimal err:", t);
+        }
+        return false;
+    }
+
+    /* 新版动物是否空闲可派遣 */
+    private boolean isMonopolyCreatureIdle(JSONObject creature) {
+        if (StringUtil.isEmpty(creature.optString("creatureCode"))) {
+            return false;
+        }
+        if ("using".equals(creature.optString("status")) || creature.optLong("assignTime", 0L) > 0) {
+            return false;
+        }
+        JSONObject energy = creature.optJSONObject("robEnergyVO");
+        if (energy == null) {
+            return true;
+        }
+        if (energy.has("robRemainDays") && energy.optInt("robRemainDays") <= 0) {
+            return false;
+        }
+        int maxWorkDays = energy.optInt("maxWorkDays", 0);
+        return maxWorkDays <= 0 || energy.optInt("alreadyWorkDays", 0) < maxWorkDays;
+    }
+
+    // 查询可派遣伙伴，返回是否派遣成功
+    private boolean queryAnimalPropList() {
         try {
             JSONObject jo = new JSONObject(AntForestRpcCall.queryAnimalPropList());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
-                return;
+                return false;
             }
             JSONArray animalProps = jo.getJSONArray("animalProps");
             JSONObject animalProp = null;
@@ -3479,16 +3974,17 @@ public class AntForestV2 extends ModelTask {
                     animalProp = jo;
                 }
             }
-            consumeAnimalProp(animalProp);
+            return consumeAnimalProp(animalProp);
         } catch (Throwable t) {
             Log.err(TAG, "queryAnimalPropList err:", t);
         }
+        return false;
     }
 
-    // 派遣伙伴
-    private void consumeAnimalProp(JSONObject animalProp) {
+    // 派遣伙伴，返回是否派遣成功
+    private boolean consumeAnimalProp(JSONObject animalProp) {
         if (animalProp == null) {
-            return;
+            return false;
         }
         try {
             String propGroup = animalProp.getJSONObject("main").getString("propGroup");
@@ -3497,78 +3993,12 @@ public class AntForestV2 extends ModelTask {
             JSONObject jo = new JSONObject(AntForestRpcCall.consumeProp(propGroup, propType, false));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Log.forest("巡护派遣🐆[" + name + "]");
+                return true;
             }
         } catch (Throwable t) {
             Log.err(TAG, "consumeAnimalProp err:", t);
         }
-    }
-
-    private void queryAnimalAndPiece() {
-        try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryAnimalAndPiece(0));
-            if (!MessageUtil.checkResultCode(TAG, jo)) {
-                return;
-            }
-            JSONArray animalProps = jo.getJSONArray("animalProps");
-            for (int i = 0; i < animalProps.length(); i++) {
-                boolean canCombineAnimalPiece = true;
-                jo = animalProps.getJSONObject(i);
-                JSONArray pieces = jo.getJSONArray("pieces");
-                int id = jo.getJSONObject("animal").getInt("id");
-                for (int j = 0; j < pieces.length(); j++) {
-                    jo = pieces.optJSONObject(j);
-                    if (jo == null || jo.optInt("holdsNum", 0) <= 0) {
-                        canCombineAnimalPiece = false;
-                        break;
-                    }
-                }
-                if (canCombineAnimalPiece) {
-                    combineAnimalPiece(id);
-                }
-            }
-        } catch (Throwable t) {
-            Log.err(TAG, "queryAnimalAndPiece err:", t);
-        }
-    }
-
-    private void combineAnimalPiece(int animalId) {
-        try {
-            do {
-                JSONObject jo = new JSONObject(AntForestRpcCall.queryAnimalAndPiece(animalId));
-                if (!MessageUtil.checkResultCode(TAG, jo)) {
-                    return;
-                }
-                JSONArray animalProps = jo.getJSONArray("animalProps");
-                jo = animalProps.getJSONObject(0);
-                JSONObject animal = jo.getJSONObject("animal");
-                int id = animal.getInt("id");
-                String name = animal.getString("name");
-                JSONArray pieces = jo.getJSONArray("pieces");
-                boolean canCombineAnimalPiece = true;
-                JSONArray piecePropIds = new JSONArray();
-                for (int j = 0; j < pieces.length(); j++) {
-                    jo = pieces.optJSONObject(j);
-                    if (jo == null || jo.optInt("holdsNum", 0) <= 0) {
-                        canCombineAnimalPiece = false;
-                        break;
-                    } else {
-                        piecePropIds.put(jo.getJSONArray("propIdList").getString(0));
-                    }
-                }
-                if (canCombineAnimalPiece) {
-                    jo = new JSONObject(AntForestRpcCall.combineAnimalPiece(id, piecePropIds.toString()));
-                    if (MessageUtil.checkResultCode(TAG, jo)) {
-                        Log.forest("合成动物💡[" + name + "]");
-                        animalId = id;
-                        TimeUtil.sleep(100);
-                        continue;
-                    }
-                }
-                break;
-            } while (true);
-        } catch (Throwable t) {
-            Log.err(TAG, "combineAnimalPiece err:", t);
-        }
+        return false;
     }
 
     private int forFriendCollectEnergy(String targetUserId, long bubbleId) {

@@ -278,33 +278,29 @@ fun FieldItem(field: ModelField<*>, onFieldChanged: (() -> Unit)? = null) {
                 }
             )
             if (expanded) {
-                val context2 = LocalContext.current
                 var text by remember { mutableStateOf(current.toString()) }
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                     TextField(
                         value = text,
-                        onValueChange = { text = it },
+                        onValueChange = { input ->
+                            // 输入即写回（不再需要保存按钮）：只接受整数，
+                            // 且必须落在 min/max 之内才写——避免把 "1" 这种中间态存进去
+                            val filtered = input.filterIndexed { index, c -> c.isDigit() || (c == '-' && index == 0) }
+                            text = filtered
+                            val parsed = filtered.toIntOrNull()
+                            val belowMin = lowerLimit != null && (parsed == null || parsed < lowerLimit)
+                            val aboveMax = maxLimit != null && (parsed == null || parsed > maxLimit)
+                            if (!belowMin && !aboveMax) {
+                                field.setConfigValue(parsed.toString())
+                                onFieldChanged?.invoke()
+                            }
+                        },
                         label = "",
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(text = "取消", onClick = { expanded = false; expandedFieldKey = null })
-                        Spacer(Modifier.width(8.dp))
-                        TextButton(text = "保存", onClick = {
-                            val parsed = text.trim().toIntOrNull()
-                            if (parsed == null) {
-                                ToastUtil.show(context2, "请输入有效整数")
-                            } else if (lowerLimit != null && parsed < lowerLimit) {
-                                ToastUtil.show(context2, "最小值为 $lowerLimit")
-                            } else if (maxLimit != null && parsed > maxLimit) {
-                                ToastUtil.show(context2, "最大值为 $maxLimit")
-                            } else {
-                                field.setConfigValue(parsed.toString())
-                                expanded = false
-                                expandedFieldKey = null
-                            }
-                        })
+                    if (limitHint.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(text = limitHint, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
                     }
                 }
             }
@@ -328,20 +324,15 @@ fun FieldItem(field: ModelField<*>, onFieldChanged: (() -> Unit)? = null) {
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                     TextField(
                         value = text,
-                        onValueChange = { text = it },
+                        onValueChange = {
+                            // 输入即写回（不再需要保存按钮），落盘仍在退出页面时统一做
+                            text = it
+                            field.setObjectValue(it)
+                            onFieldChanged?.invoke()
+                        },
                         label = "",
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(text = "取消", onClick = { expanded = false; expandedFieldKey = null })
-                        Spacer(Modifier.width(8.dp))
-                        TextButton(text = "保存", onClick = {
-                            field.setObjectValue(text)
-                            expanded = false
-                            expandedFieldKey = null
-                        })
-                    }
                 }
             }
         }
@@ -375,23 +366,17 @@ fun FieldItem(field: ModelField<*>, onFieldChanged: (() -> Unit)? = null) {
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                     TextField(
                         value = text,
-                        onValueChange = { text = it },
+                        onValueChange = { input ->
+                            // 每次变更即解析并写回（空行忽略），不再需要保存按钮
+                            text = input
+                            field.setObjectValue(input.lines().map { it.trim() }.filter { it.isNotEmpty() })
+                            onFieldChanged?.invoke()
+                        },
                         label = "",
                         singleLine = false,
                         maxLines = 8,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(text = "取消", onClick = { expanded = false; expandedFieldKey = null })
-                        Spacer(Modifier.width(8.dp))
-                        TextButton(text = "保存", onClick = {
-                            val newList = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
-                            field.setObjectValue(newList)
-                            expanded = false
-                            expandedFieldKey = null
-                        })
-                    }
                 }
             }
         }
@@ -416,22 +401,16 @@ fun FieldItem(field: ModelField<*>, onFieldChanged: (() -> Unit)? = null) {
                 var sel by remember { mutableStateOf(current) }
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                     choiceArray.forEachIndexed { index, opt ->
+                        // 点选即生效（不再需要保存按钮）
                         RadioButtonPreference(
                             title = opt,
                             selected = sel == index,
-                            onClick = { sel = index }
+                            onClick = {
+                                sel = index
+                                field.setObjectValue(index)
+                                onFieldChanged?.invoke()
+                            }
                         )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(text = "取消", onClick = { expanded = false; expandedFieldKey = null })
-                        Spacer(Modifier.width(8.dp))
-                        TextButton(text = "保存", onClick = {
-                            field.setObjectValue(sel)
-                            expanded = false
-                            expandedFieldKey = null
-                            onFieldChanged?.invoke()
-                        })
                     }
                 }
             }

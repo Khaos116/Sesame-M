@@ -50,21 +50,9 @@ public class BaseModel extends Model {
     @Getter
     public static final IntegerModelField backupConfigDays = new IntegerModelField("backupConfigDays", "按天和修改备份配置保存数(滚动覆盖)", 5);
     @Getter
-    private static final BooleanModelField newRpc = new BooleanModelField("newRpc", "使用新接口(最低支持v10.3.96.8100)", true);
-    @Getter
-    private static final BooleanModelField debugMode = new BooleanModelField("debugMode", "开启抓包(基于新接口)", false);
-    @Getter
     private static final SelectAndCountModelField rpcRequestList = new SelectAndCountModelField("rpcRequestList", "RPC请求列表及每日执行数(慎用)", new LinkedHashMap<>(), AlipayrpcRequest::getList, "请填写每日执行次数");
     @Getter
     private static final SelectModelField rpcRequestTaskList= new SelectModelField("rpcRequestTaskList", "RPC可选任务列表(长按列表中的项仅移除用，内容需打开rpcResquest.json文件配置)", new LinkedHashSet<>(), AlipayrpcRequest::getList,"长按删除RPC列表项用");
-    @Getter
-    private static final BooleanModelField showToast = new BooleanModelField("showToast", "气泡提示", true);
-    @Getter
-    private static final IntegerModelField toastOffsetY = new IntegerModelField("toastOffsetY", "气泡纵向偏移", 0);
-    @Getter
-    private static final BooleanModelField enableOnGoing = new BooleanModelField("enableOnGoing", "开启状态栏禁删", false);
-    @Getter
-    private static final BooleanModelField closeCaptchaDialogVPN = new BooleanModelField("closeCaptchaDialogVPN", "屏蔽VPN/代理弹窗", true);
     
     @Override
     public String getName() {
@@ -83,7 +71,8 @@ public class BaseModel extends Model {
     
     public void boot(ClassLoader classLoader) {
         try {
-            CaptchaHook.updateHooks(closeCaptchaDialogVPN.getValue());
+            // 开关已迁到全局配置 AppConfig（模块级，不分账号）
+            CaptchaHook.updateHooks(io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getCloseCaptchaDialogVPN());
             Log.record("✅ 验证码Hook配置已同步");
         } catch (Throwable t) {
             Log.printStackTrace("❌ 验证码Hook配置同步失败", t);
@@ -100,13 +89,8 @@ public class BaseModel extends Model {
         modelFields.addField(timedTaskModel);
         modelFields.addField(timeoutRestart);
         modelFields.addField(backupConfigDays);
-        modelFields.addField(newRpc);
-        modelFields.addField(debugMode);
         modelFields.addField(rpcRequestList);
         modelFields.addField(rpcRequestTaskList);
-        modelFields.addField(showToast);
-        modelFields.addField(enableOnGoing);
-        modelFields.addField(toastOffsetY);
         return modelFields;
     }
     

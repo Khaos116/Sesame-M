@@ -93,6 +93,9 @@ public class ModelField<T> implements Serializable {
         return description;
     }
 
+    /** 依赖链最大层数，仅用于防御配置成环 */
+    private static final int MAX_DEPENDS_ON_DEPTH = 16;
+
     @JsonIgnore
     private String dependsOn;
 
@@ -122,8 +125,19 @@ public class ModelField<T> implements Serializable {
     public boolean isVisible(ModelConfig config) {
         if (dependsOn == null || dependsOn.isEmpty()) return true;
         ModelField<?> parent = config != null ? config.getModelField(dependsOn) : null;
-        if (parent == null) return true;
-        return isParentActive(parent);
+        // 沿依赖链逐级向上判断：链条上任一环未激活，本字段就不显示。
+        // 只查直接父字段不够——A→B→C 时 B 自身可能已被隐藏，C 却仍会显示
+        // （例如"自动黑名单"默认开启，功能开关一关就会出现"自动黑名单行消失、黑名单列表行还在"）。
+        // 深度上限仅用于防御配置里的环。
+        for (int depth = 0; parent != null && depth < MAX_DEPENDS_ON_DEPTH; depth++) {
+            if (!isParentActive(parent)) {
+                return false;
+            }
+            String parentCode = parent.getDependsOn();
+            parent = (config == null || parentCode == null || parentCode.isEmpty())
+                    ? null : config.getModelField(parentCode);
+        }
+        return true;
     }
 
     private static boolean isParentActive(ModelField<?> parent) {

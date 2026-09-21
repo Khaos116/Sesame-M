@@ -37,6 +37,53 @@ public class AppConfig {
     private Boolean enableViewRuntimeLog = true;
     private Boolean batteryPerm = true;
 
+    // 模块级开关：原先是按账号存在 BaseModel 里，现改为全局（注入进程与模块 App 共用同一份）
+    private Boolean newRpc = true;
+    private Boolean showToast = true;
+    private Integer toastOffsetY = 0;
+    private Boolean enableOnGoing = false;
+    private Boolean closeCaptchaDialogVPN = true;
+
+    public Boolean getNewRpc() {
+        return newRpc;
+    }
+
+    public void setNewRpc(Boolean value) {
+        newRpc = value;
+    }
+
+    public Boolean getShowToast() {
+        return showToast;
+    }
+
+    public void setShowToast(Boolean value) {
+        showToast = value;
+    }
+
+    public Integer getToastOffsetY() {
+        return toastOffsetY;
+    }
+
+    public void setToastOffsetY(Integer value) {
+        toastOffsetY = value;
+    }
+
+    public Boolean getEnableOnGoing() {
+        return enableOnGoing;
+    }
+
+    public void setEnableOnGoing(Boolean value) {
+        enableOnGoing = value;
+    }
+
+    public Boolean getCloseCaptchaDialogVPN() {
+        return closeCaptchaDialogVPN;
+    }
+
+    public void setCloseCaptchaDialogVPN(Boolean value) {
+        closeCaptchaDialogVPN = value;
+    }
+
     public Boolean getLanguageSimplifiedChinese() {
         return languageSimplifiedChinese;
     }

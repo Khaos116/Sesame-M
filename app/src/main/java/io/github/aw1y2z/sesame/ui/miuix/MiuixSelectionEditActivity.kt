@@ -233,8 +233,17 @@ fun SelectionEditContent(
         val saved = if (userId != null) ConfigV2.save(userId, true) else false
         Log.i("SelectionEdit", "applyAndSave: field=${field.code}, saved=$saved, value=${configField.value}")
         if (saved) {
+            // 本页的保存是"退出时隐式落盘"，成功不弹气泡（失败才提示）
             dirty = false
-            ToastUtil.show(activity, "已保存")
+            if (userId != null) {
+                try {
+                    val intent = Intent("com.eg.android.AlipayGphone.sesame.restart")
+                    intent.putExtra("userId", userId)
+                    activity.sendBroadcast(intent)
+                } catch (th: Throwable) {
+                    Log.printStackTrace(th)
+                }
+            }
         } else {
             ToastUtil.show(activity, "保存失败")
         }
@@ -249,12 +258,8 @@ fun SelectionEditContent(
         topBar = {
             LogTopBar(
                 title = field.name ?: "",
-                onBack = {
-                    if (!dirty) {
-                        ToastUtil.show(activity, "没有未保存的更改")
-                    }
-                    activity.saveAndFinish()
-                }
+                // 无改动时静默退出，不再提示"没有未保存的更改"
+                onBack = { activity.saveAndFinish() }
             )
         },
         containerColor = MiuixTheme.colorScheme.surface
