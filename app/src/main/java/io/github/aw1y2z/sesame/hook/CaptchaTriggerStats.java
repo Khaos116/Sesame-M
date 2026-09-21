@@ -56,6 +56,15 @@ public final class CaptchaTriggerStats {
         }
     }
 
+    /** 宿主打开风险/验证类 H5 页面（H5RiskTrigger）。summary 只含域名+路径。 */
+    static void recordH5(String source, String summary) {
+        try {
+            record("H5:" + source + ":" + summary, "H5验证页打开", summary);
+        } catch (Throwable t) {
+            Log.printStackTrace("CaptchaTriggerStats", t);
+        }
+    }
+
     /** 处理器找到“向右滑动验证”文字时调用：这是最常见的验证形态，且不走 scanActivity（那条只在没找到时触发）。 */
     static void recordSlide(Activity activity, String slideText) {
         try {

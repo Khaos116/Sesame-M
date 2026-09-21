@@ -69,6 +69,7 @@ public class CaptchaHook {
         // 注意：此时配置文件还未加载，不能立即应用Hook
         // 实际的Hook应用会在BaseModel.boot()中进行
         hookCaptchaDialogArm(classLoader);
+        H5RiskTrigger.setup(classLoader);
     }
 
     private static boolean armHookInstalled;
@@ -101,7 +102,9 @@ public class CaptchaHook {
                 }
             });
             armHookInstalled = true;
+            Log.record(TAG + "：CaptchaDialog.show() 验证监视钩子已挂载");
         } catch (Throwable e) {
+            Log.record(TAG + "：CaptchaDialog.show() 验证监视钩子挂载失败（稍后配置加载时会重试）：" + e.getClass().getSimpleName());
             Log.printStackTrace(TAG, e);
         }
     }
