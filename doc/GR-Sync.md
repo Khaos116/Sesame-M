@@ -23,7 +23,7 @@ Sesame-M 包名 `io.github.aw1y2z.sesame`，GR2026 包名 `io.github.lazyimmorta
 ## 明确不应迁移的内容
 
 - **消费金 / 商家服务**（GR2026: [model/task/consumeGold/ConsumeGold.java](../../Gr/Sesame-GR2026/app/src/main/java/io/github/lazyimmortal/sesame/model/task/consumeGold/ConsumeGold.java)、[model/task/antMember/MerchantService.java](../../Gr/Sesame-GR2026/app/src/main/java/io/github/lazyimmortal/sesame/model/task/antMember/MerchantService.java)）：Sesame-M 提交历史中已有一次专门移除（`4f803e99 移除消费金和商家服务功能`），属于本项目的既定方向性决定，不回迁。
-- **版本伪装 Hook**（GR2026: [hook/ext/VersionHook.java](../../Gr/Sesame-GR2026/app/src/main/java/io/github/lazyimmortal/sesame/hook/ext/VersionHook.java)）：通过 hook `PackageManager.getPackageInfo()` 伪造支付宝版本号，属于特定版本/个人偏好类功能，与 Sure-Xu 文档中"GR 的版本伪装...属于具体版本/个人偏好，不直接覆盖"的判断一致，不作为通用能力迁入。
+- **版本伪装 Hook**（GR2026: [hook/ext/VersionHook.java](../../Gr/Sesame-GR2026/app/src/main/java/io/github/lazyimmortal/sesame/hook/ext/VersionHook.java)）：通过 hook `PackageManager.getPackageInfo()` 伪造支付宝版本号，属于特定版本/个人偏好类功能，与 Sure-Xu 文档中"GR 的版本伪装...属于具体版本/个人偏好，不直接覆盖"的判断一致，不作为通用能力迁入。（**Sesame-M 已于 2026-09-21 删除**：真机验证伪装版本不能让服务端改发简单滑块，见 CHANGELOG.md）
 - **GR2026 的传统 UI 层**（`ui/BaseActivity.java`、`ui/ListAdapter.java`、`ui/ChoiceDialog.java`、`ui/dto/Model*Dto.java` 等）：这是 GR2026 尚未做 Compose 化的旧实现，方向与 Sesame-M 已完成的 Miuix/Compose 重写（`ui/miuix/*Activity.kt`）相反，不应作为参考迁回。
 
 ## Native 库（libsesame.so / watermark）现状

@@ -86,9 +86,6 @@ def main():
         assert "FLAG_TASKS_DONE" not in (SOURCE / "model/task/goldenbeans/goldenbeans.java").read_text(encoding="utf-8")
         response = method("model/normal/answerAI/GeminiAI.java", "    public String getAnswerStr(")
         assert "replaceAll" not in response and "return answer.trim();" in response
-        hook = method("hook/ext/VersionHook.java", "    private static void handleRead(")
-        assert "String versionName = earlyName();" in hook
-        assert "long versionCode = earlyCode();" in hook
         boot = method("model/normal/base/BaseModel.java", "    public void boot(")
         assert boot.index("CaptchaHook.setupHook(classLoader)") < boot.index("CaptchaHook.updateHooks(")
         fish = (SOURCE / "model/task/fish/FishTask.java").read_text(encoding="utf-8")
