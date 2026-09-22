@@ -111,7 +111,7 @@ open class Field(val type: String, val code: String, var value: Any?) {
     val expandValue = emptyList<IdAndName>()
     fun setObjectValue(v: Any?) { value = v }
 }
-class SelectAndCountModelField(code: String, v: Map<String, Int>) : Field("SELECT_AND_COUNT", code, v) {
+class SelectAndCountModelField(code: String, v: Map<String, Int>, val valueRangeMin: Float = 1f) : Field("SELECT_AND_COUNT", code, v) {
     fun clear() { value = emptyMap<String, Int>() }
     fun add(id: String, count: Int) { value = (value as Map<String, Int>) + (id to count) }
 }
@@ -126,6 +126,7 @@ fun edit(liveField: Field, add: String? = null, newCount: Int? = null) {
     val smf = liveField
     @@WITH_COUNT@@
     check(withCount == liveField.type.startsWith("SELECT_AND_COUNT"))
+    @@DEFAULT_COUNT@@
     @@INITIAL@@
     var sel = initialState.second
     var counts = sel.associateWith { initialState.third[it] ?: 1 }
@@ -155,6 +156,7 @@ fun main() {
     println("PASS: all count fields retain counts, edit counts and replace single selection")
 }
 '''.replace("@@WITH_COUNT@@", re.search(r"val withCount = [^\n]+", selection_ui)[0]) \
+    .replace("@@DEFAULT_COUNT@@", re.search(r"val defaultCount = [^\n]+", selection_ui)[0]) \
     .replace("@@INITIAL@@", method(selection_path, "    val initialState = remember(")) \
     .replace("@@SAVE@@", method(selection_path, "        when (configField.type)"))
 assert "if (withCount && isChecked)" in selection_ui

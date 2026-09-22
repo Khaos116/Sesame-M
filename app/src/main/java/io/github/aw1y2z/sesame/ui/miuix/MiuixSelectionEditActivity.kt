@@ -140,6 +140,10 @@ fun SelectionEditContent(
     val liveField = ConfigV2.INSTANCE.getModelFields(modelCode)?.get(field.code) ?: field
     val single = liveField.type == "SELECT_ONE" || liveField.type == "SELECT_AND_COUNT_ONE"
     val withCount = liveField.type == "SELECT_AND_COUNT" || liveField.type == "SELECT_AND_COUNT_ONE"
+    // 新勾选项默认值取字段数值下限（合种浇水=0、浇水好友=1 等），对所有 withCount 字段通用，不只是合种浇水
+    val defaultCount = if (withCount) ((liveField as? SelectAndCountModelField)?.valueRangeMin?.toInt() ?: 1) else 1
+    // 合种浇水两列表用数值输入框而非滑块（取值范围大，滑块不好操作）
+    val useInputBox = liveField.code == "cooperateWaterList" || liveField.code == "cooperateWaterTotalLimitList"
 
     @Suppress("UNCHECKED_CAST")
     val smf = when {
@@ -175,7 +179,7 @@ fun SelectionEditContent(
         }
         val initialCounts: Map<String, Int> = when {
             liveField.type == "SELECT_AND_COUNT" -> (v as? Map<*, *>)
-                ?.mapValues { (_, value) -> (value as? Int) ?: 1 }
+                ?.mapValues { (_, value) -> (value as? Int) ?: defaultCount }
                 ?.mapKeys { (k, _) -> k as? String ?: "" }
                 ?.filterKeys { it in ids } ?: emptyMap()
             liveField.type == "SELECT_AND_COUNT_ONE" -> {
@@ -199,7 +203,7 @@ fun SelectionEditContent(
 
     var sel by remember { mutableStateOf(selectedIds) }
     var counts by remember {
-        mutableStateOf(selectedIds.associateWith { initialCounts[it] ?: 1 })
+        mutableStateOf(selectedIds.associateWith { initialCounts[it] ?: defaultCount })
     }
     var searchQuery by remember { mutableStateOf("") }
     var dirty by remember { mutableStateOf(false) }
@@ -348,7 +352,7 @@ fun SelectionEditContent(
                                         if (checked) {
                                             sel = sel + opt.id
                                             if (!counts.containsKey(opt.id)) {
-                                                counts = counts + (opt.id to (initialCounts[opt.id] ?: 1))
+                                                counts = counts + (opt.id to (initialCounts[opt.id] ?: defaultCount))
                                             }
                                         } else {
                                             sel = sel - opt.id
@@ -360,21 +364,47 @@ fun SelectionEditContent(
                         }
                         if (withCount && isChecked) {
                             key(opt.id) {
-                                var sliderValue by remember(opt.id) { mutableFloatStateOf((counts[opt.id] ?: 1).toFloat()) }
-                                SliderPreference(
-                                    title = "数量",
-                                    value = sliderValue,
-                                    valueRange = run {
-                                        val f = liveField as? SelectAndCountModelField
-                                        (f?.valueRangeMin ?: 0f)..(f?.valueRangeMax ?: 100f)
-                                    },
-                                    valueText = sliderValue.roundToInt().toString(),
-                                    onValueChange = { sliderValue = it },
-                                    onValueChangeFinished = {
-                                        counts = counts + (opt.id to sliderValue.roundToInt())
-                                        dirty = true
+                                if (useInputBox) {
+                                    var text by remember(opt.id) { mutableStateOf((counts[opt.id] ?: defaultCount).toString()) }
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            "数量(克)",
+                                            fontSize = 14.sp,
+                                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                                        )
+                                        TextField(
+                                            value = text,
+                                            onValueChange = { input ->
+                                                val filtered = input.filter { it.isDigit() }
+                                                text = filtered
+                                                counts = counts + (opt.id to (filtered.toIntOrNull() ?: 0))
+                                                dirty = true
+                                            },
+                                            label = "",
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
                                     }
-                                )
+                                } else {
+                                    var sliderValue by remember(opt.id) { mutableFloatStateOf((counts[opt.id] ?: defaultCount).toFloat()) }
+                                    SliderPreference(
+                                        title = "数量",
+                                        value = sliderValue,
+                                        valueRange = run {
+                                            val f = liveField as? SelectAndCountModelField
+                                            (f?.valueRangeMin ?: 0f)..(f?.valueRangeMax ?: 100f)
+                                        },
+                                        valueText = sliderValue.roundToInt().toString(),
+                                        onValueChange = { sliderValue = it },
+                                        onValueChangeFinished = {
+                                            counts = counts + (opt.id to sliderValue.roundToInt())
+                                            dirty = true
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
