@@ -8,6 +8,8 @@
 
 ## 2026-09-22
 
+- test 5fae0c33：检查桩跟进上游 API（NotificationUtil/verifyPendingTasks/setRunning/Log）；三项必查无新增裸 get、无时区改动，TaskAlternative.doFarmTask 保留直接构造（trigger 靠异常判未触发）；13 项回归+Debug 编译通过。
+- merge cacacbe5：合并 origin/MIUIX-api102（16 个上游提交：TaskAlternative 备用接口、通知重构、饲料 taskId 分派、施肥核算等），10 文件 31 处冲突；果园保按场景次数+批量核算改传参，其余取上游并转 opt/MyUtils。
 - docs：AGENTS.md 补全回归清单（13 项检查+对照说明），新增代码与数据地图、合并速览两节；INDEX 同步。
 - docs：使用说明补日志按账号分目录/AI 类型与 Gemini 令牌，删§10基础手抄表改指自动生成文档；README 文档表补全；GR-Sync 记 12 福利任务已移植。
 - docs：CHANGELOG 上半部分 09-19/09-21/09-22 共 63 条压缩为一行一条，头部新增写作约定（单条约一行、只写改了什么加关键取舍），文末详细记录区冻结只读；09-17 及以前逐字未动。
