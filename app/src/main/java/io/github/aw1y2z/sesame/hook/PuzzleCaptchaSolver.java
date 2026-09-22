@@ -508,6 +508,7 @@ public final class PuzzleCaptchaSolver {
         try {
             capture(target, web, (bitmap, error) -> {
                 if (bitmap == null) {
+                    Log.captcha("拼图验证🧩matched-after 截图失败：" + error);
                     return;
                 }
                 try {
@@ -536,6 +537,7 @@ public final class PuzzleCaptchaSolver {
             capture(target, web, (bitmap, error) -> {
                 proceed.run(); // 图已经拷出来了，不必等落盘
                 if (bitmap == null) {
+                    Log.captcha("拼图验证🧩matched_submit 截图失败（不影响本次已完成的拖动）：" + error);
                     return;
                 }
                 try {

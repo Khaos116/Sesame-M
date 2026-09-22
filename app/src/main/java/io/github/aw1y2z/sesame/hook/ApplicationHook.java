@@ -455,7 +455,8 @@ public class ApplicationHook extends XposedModule {
                             @Override
                             public boolean initialize(String expectedUid, TaskLifecycle.Freeze owner) {
                                 if (!Objects.equals(expectedUid, getUserId())) return false;
-                                init = initHandler(true, owner);
+                                // 这条路径始终在后台线程调用，理论上不会拿到 null，但拆箱到 boolean 前仍显式判空更安全
+                                init = Boolean.TRUE.equals(initHandler(true, owner));
                                 BaseModel base = Model.getModel(BaseModel.class);
                                 return base != null && (init || !base.isEnable())
                                         && Objects.equals(expectedUid, UserIdMap.getCurrentUid());
@@ -467,9 +468,9 @@ public class ApplicationHook extends XposedModule {
                             }
                         });
                         AccountSwitchController.hostReady();
-                        if (initHandler(true)) {
-                            init = true;
-                        }
+                        // 主线程调用，重载已转后台线程执行：返回值是 Boolean（可能为 null 代表"已转后台，结果稍后自报"），
+                        // 不能拆箱判断；成功后 initializeHandler 会自己置 init=true，此处无需依赖返回值
+                        initHandler(true);
                     }
                 });
                 Log.i(TAG, "hook service onCreate successfully");
@@ -662,7 +663,14 @@ public class ApplicationHook extends XposedModule {
             }
             initializing = true;
             final Boolean f = force;
-            new Thread(() -> runInit(f, owner), "Sesame-InitHandler").start();
+            new Thread(() -> {
+                try {
+                    runInit(f, owner);
+                } catch (Throwable t) {
+                    initializing = false;
+                    Log.err(TAG, "Sesame-InitHandler err:", t);
+                }
+            }, "Sesame-InitHandler").start();
             return null;
         }
         return runInit(force, owner);
@@ -676,7 +684,10 @@ public class ApplicationHook extends XposedModule {
      */
     private synchronized Boolean runInit(Boolean force, TaskLifecycle.Freeze owner) {
         try (TaskLifecycle.Work work = TaskLifecycle.enterInitialization(owner)) {
-            if (work == null) return false;
+            if (work == null) {
+                Log.i(TAG, "重载被 TaskLifecycle 拒绝（账号切换窗口期），本次跳过，等下次触发");
+                return false;
+            }
             boolean initialized = initializeHandler(force);
             if (initialized && owner == null) BaseModel.initData();
             return initialized;
@@ -890,7 +901,11 @@ public class ApplicationHook extends XposedModule {
                 if (work == null) return;
                 String targetUid = getUserId();
                 if (targetUid == null || targetUid.equals(UserIdMap.getCurrentUid())) return;
-                if (initHandler(true)) {
+                // 主线程调用，重载已转后台线程执行，返回值不能拆箱判断（可能为 null）；
+                // 加载成功/失败 initializeHandler 自己会 Toast，这里只在真正触发了重载时记录切换
+                // （false 是前置校验没过——未登录/无权限/已在初始化中——initHandler 内部已经自己提示过，不重复）
+                Boolean triggered = initHandler(true);
+                if (!Boolean.FALSE.equals(triggered)) {
                     Log.record("用户已切换");
                     Toast.show("用户已切换");
                 }

@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.data;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import lombok.Data;
@@ -49,6 +50,8 @@ public class AppConfig {
     private Boolean showToast = true;
     private Integer toastOffsetY = 0;
     private Boolean enableOnGoing = false;
+    // d1ad4438 由 closeCaptchaDialogVPN 更名而来：旧配置文件仍是老字段名，用别名接住，避免老用户设置被静默重置
+    @JsonAlias("closeCaptchaDialogVPN")
     private Boolean closeCaptchaDialog = true;
 
     public Boolean getNewRpc() {

@@ -716,11 +716,15 @@ public class AntOrchard extends ModelTask {
                     continue;
                 }
 
-                // 跳过黑名单任务
+                // 跳过黑名单任务：动态黑名单（用户配置/自动拉黑确认）+ 静态黑名单（已知失效/需要前端行为配合，见 ORCHARD_TASK_BLACKLIST）
                 String groupId = jo.optString("groupId", "");
+                String taskId = jo.optString("taskId", "");
                 JSONObject displayConfig = jo.optJSONObject("taskDisplayConfig");
                 String title = displayConfig != null ? displayConfig.optString("title", "未知任务") : "未知任务";
-                if (AntOrchardTaskList.getValue().contains(title)) {
+                if (AntOrchardTaskList.getValue().contains(title)
+                        || ORCHARD_TASK_BLACKLIST.contains(title)
+                        || ORCHARD_TASK_BLACKLIST.contains(groupId)
+                        || ORCHARD_TASK_BLACKLIST.contains(taskId)) {
                     continue;
                 }
 

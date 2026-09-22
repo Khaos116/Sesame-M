@@ -974,7 +974,16 @@ private fun accountDisplayName(folderOrUid: String): String {
     return try {
         val body = FileUtil.readFromFile(FileUtil.getSelfIdFile(userId))
         val user = JsonUtil.parseObject(body, UserEntity.UserDto::class.java)?.toEntity()
-        user?.let { "${it.showName ?: it.account}(${it.account})" } ?: folderOrUid
+        user?.let {
+            val name = it.showName?.takeIf { s -> s.isNotEmpty() }
+            val acc = it.account?.takeIf { s -> s.isNotEmpty() }
+            when {
+                name != null && acc != null -> "$name($acc)"
+                name != null -> name
+                acc != null -> acc
+                else -> folderOrUid
+            }
+        } ?: folderOrUid
     } catch (_: Exception) {
         folderOrUid
     }
