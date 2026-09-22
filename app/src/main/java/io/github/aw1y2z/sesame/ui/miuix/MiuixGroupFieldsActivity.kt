@@ -288,6 +288,7 @@ private fun GroupFieldRow(
             "SELECT", "SELECT_ONE", "SELECT_AND_COUNT", "SELECT_AND_COUNT_ONE" -> {
                 ArrowPreference(
                     title = field.name ?: "",
+                    summary = field.description,
                     onClick = {
                         activity.startActivity(
                             Intent(activity, MiuixSelectionEditActivity::class.java).apply {

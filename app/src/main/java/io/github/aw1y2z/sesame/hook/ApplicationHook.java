@@ -915,22 +915,30 @@ public class ApplicationHook extends XposedModule {
     }
 
     private static void execHandler() {
-        if (init && mainTask != null && !AccountSwitchController.isBusy()) mainTask.startTask(false);
+        if (init && mainTask != null && !AccountSwitchController.isBusy()) {
+            try {
+                NotificationUtil.setRunning();
+            } catch (Exception e) {
+                Log.printStackTrace(e);
+            }
+            mainTask.startTask(false);
+        }
     }
 
     private static void execDelayedHandler(long delayMillis) {
         if (mainHandler == null || !TaskLifecycle.isOpen()) return;
         long generation = TaskLifecycle.generation();
+        // 调度时立即记录下次执行时间，所有任务完成时 updateLastExecText 会一并写入
+        try {
+            NotificationUtil.setNextExecTime(System.currentTimeMillis() + delayMillis);
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+        }
         mainHandler.postDelayed(() -> {
             try (TaskLifecycle.Work work = TaskLifecycle.enter(generation)) {
                 if (work != null) execHandler();
             }
         }, delayMillis);
-        try {
-            NotificationUtil.updateNextExecText(System.currentTimeMillis() + delayMillis);
-        } catch (Exception e) {
-            Log.printStackTrace(e);
-        }
     }
 
     /** Coalesces an early normal dispatch; never interrupts a running dispatcher. */

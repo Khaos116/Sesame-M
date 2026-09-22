@@ -39,7 +39,9 @@ import io.github.aw1y2z.sesame.entity.WalkPath;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
+import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.model.extensions.ExtensionsHandle;
+import io.github.aw1y2z.sesame.model.task.antFarm.AntFarmRpcCall;
 import io.github.aw1y2z.sesame.model.task.antStall.AntStall;
 import io.github.aw1y2z.sesame.model.task.antStall.AntStallRpcCall;
 import io.github.aw1y2z.sesame.util.Log;
@@ -590,10 +592,10 @@ public class AntSports extends ModelTask {
                         int limitConfigNum = jo.optInt("limitConfigNum");
                         taskName = taskName.replaceAll("（.*/.*）", "(" + currentNum + "/" + limitConfigNum + ")");
                     }
-                    if (jo.optBoolean("needSignUp") && !signUpTask(taskId)) {
+                    if (jo.optBoolean("needSignUp") && !signUpTask(taskId, taskName)) {
                         continue;
                     }
-                    if (completeTask(taskAction, taskId, taskName)) {
+                    if (completeTask(taskAction, taskId, taskName, jo.optString("sceneCode", ""))) {
                         TimeUtil.sleep(2000);
                     }
                     continue;
@@ -602,26 +604,28 @@ public class AntSports extends ModelTask {
                 //兜底操作
                 String taskAction = jo.optString("taskAction");
                 String taskId = jo.optString("taskId");
-                completeTask(taskAction, taskId, taskName);
+                completeTask(taskAction, taskId, taskName, jo.optString("sceneCode", ""));
             }
         } catch (Throwable t) {
             Log.err(TAG, "sportsTasks err:", t);
         }
     }
 
-    private Boolean signUpTask(String taskId) {
+    private Boolean signUpTask(String taskId, String taskName) {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.signUpTask(taskId));
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 return true;
             }
+            //检查并标记黑名单任务
+            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntSportsTaskList", taskName, jo);
         } catch (Throwable t) {
             Log.err(TAG, "signUpTask err:", t);
         }
         return false;
     }
 
-    private Boolean completeTask(String taskAction, String taskId, String taskName) {
+    private Boolean completeTask(String taskAction, String taskId, String taskName, String sceneCode) {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.completeTask(taskAction, taskId));
             //检查并标记黑名单任务
@@ -630,6 +634,10 @@ public class AntSports extends ModelTask {
                 Log.other("运动任务🧾完成[得运动币:" + taskName + "]");
                 TimeUtil.sleep(1000);
                 return true;
+            }
+            // 另一种实现方案（见 TaskAlternative）；运动历史上从未出现 400000040，属休眠兜底
+            if (TaskAlternative.hit(jo, sceneCode)) {
+                TaskAlternative.trigger(null, taskId, taskName, taskId, sceneCode, "运动任务", msg -> Log.other(msg));
             }
         } catch (Throwable t) {
             Log.err(TAG, "completeTask err:", t);
@@ -701,6 +709,8 @@ public class AntSports extends ModelTask {
                 Log.other("运动中心🧊领取[" + title + "]奖励[" + coinAmount + "运动能量]");
                 return true;
             }
+            //检查并标记黑名单任务
+            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntSportsTaskList", title, jo);
         } catch (Throwable t) {
             Log.err(TAG, "receiveCoinAsset err:", t);
         }

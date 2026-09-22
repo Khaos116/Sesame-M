@@ -93,6 +93,17 @@ public class ModelField<T> implements Serializable {
         return description;
     }
 
+    /**
+     * 配置页在标题下渲染的补充说明（为空则不渲染）。
+     * 用泛型自返回以支持链式调用（如 {@code new XxxField(...).setDescription("...")}）。
+     */
+    public <F extends ModelField<T>> F setDescription(String description) {
+        this.description = description;
+        @SuppressWarnings("unchecked")
+        F f = (F) this;
+        return f;
+    }
+
     /** 依赖链最大层数，仅用于防御配置成环 */
     private static final int MAX_DEPENDS_ON_DEPTH = 16;
 

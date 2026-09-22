@@ -78,7 +78,12 @@ public class MessageUtil {
     public static void printErrorMessage(String tag, JSONObject jo, String errorMessageField) {
         try {
             String memo = jo.optString(errorMessageField);
-            if (isServerBusy(jo) && !shouldLogServerBusy(tag)) {
+            if (isServerBusy(jo)) {
+                if (!shouldLogServerBusy(tag)) {
+                    return;
+                }
+                // 102 高频错误：只打一行 JSON（去掉文案行，避免每次都刷两条）
+                Log.i(tag, jo.toString());
                 return;
             }
             Log.record(tag + " error:" + memo);
@@ -177,7 +182,10 @@ public class MessageUtil {
                 } else if (jo.has("resultView")) {
                     printErrorMessage(tag, jo, "resultView");
                 } else {
-                    Log.i(tag, jo.toString());
+                    // 服务端繁忙（102）已有 printErrorMessage 统一降噪，这里跳过避免重复刷行
+                    if (!isServerBusy(jo)) {
+                        Log.i(tag, jo.toString());
+                    }
                 }
                 return false;
             }
@@ -290,6 +298,18 @@ public class MessageUtil {
         BLACKLIST_LIST_TARGETS.put("MemberCreditSesameTaskList", new String[]{"AntMember", "会员芝麻信用任务芝麻粒"});
     }
 
+    /** 400000040「不支持rpc调用」；它不等于任务做不了，见另一种实现方案。 */
+    public static final String CODE_UNSUPPORTED_RPC = "400000040";
+
+    /** 失败响应是否命中"接口不支持调用"（按错误码，不按文案）。 */
+    public static boolean isUnsupportedRpc(JSONObject jo) {
+        if (jo == null) {
+            return false;
+        }
+        return CODE_UNSUPPORTED_RPC.equals(jo.optString("code", "").trim())
+                || CODE_UNSUPPORTED_RPC.equals(jo.optString("errorCode", "").trim());
+    }
+
     public static void checkResultCodeAndMarkTaskBlackList(String listTitle, String taskTitle, JSONObject jo) {
         try {
             if (jo == null) {
@@ -325,8 +345,12 @@ public class MessageUtil {
 
             // 判据：desc 命中"不支持rpc调用"＝立即拉黑；其它字段命中＝只作为"连续命中确认"的依据
             // （字段不统一，放宽判定范围必须更保守，避免一次误判就把任务停掉 3 天）
-            boolean canAddBlackList = strongHit;
-            boolean needConfirm = weakHit && !strongHit;
+            // 例外：400000040（同一文案的规范化错误码）**不等于任务做不了**——2026-09-22 实测庄园抽抽乐/
+            // 芭芭农场/金豆乐园都能用 com.alipay.antfarm.doFarmTask 做成，且响应可能撒谎（回 102 但已生效）。
+            // 据它立即拉黑会把能做的任务永久拉黑 ⇒ 降级为"连续确认"，给另一种实现方案与列表核对留出机会
+            boolean unsupportedRpc = isUnsupportedRpc(jo);
+            boolean canAddBlackList = strongHit && !unsupportedRpc;
+            boolean needConfirm = (weakHit && !strongHit) || unsupportedRpc;
             // 少数列表有自己的额外判据（服务端错误码、特有文案），其余列表走上面的默认判据
             switch (listTitle) {
                 // 运动任务：错误码/文案指明任务 id 非法时可直接拉黑
@@ -371,17 +395,15 @@ public class MessageUtil {
                     if (message.isEmpty()) {
                         message = jo.optString("memo", "");
                     }
-                    // 任务Id非法、入参非法等不可恢复错误码；或服务端明确不支持 rpc 调用
-                    boolean unsupported = code.contains("400000040");
+                    // 任务Id非法、入参非法等不可恢复错误码可直接拉黑；400000040「不支持rpc调用」不在此列
+                    // （金豆已有另一种实现方案 doFarmTask + 列表核对，见 GoldenBeansTasks），降级为连续确认
                     boolean invalid = code.contains("20020012")
                             || code.contains("TASK_ID_INVALID")
-                            || code.contains("ILLEGAL_ARGUMENT")
-                            || message.contains("不支持rpc调用")
-                            || message.contains("不支持RPC调用");
-                    if (unsupported || invalid) {
+                            || code.contains("ILLEGAL_ARGUMENT");
+                    if (invalid) {
                         canAddBlackList = true;
                     }
-                    needConfirm = message.contains("任务全局配置不存在");
+                    needConfirm = needConfirm || message.contains("任务全局配置不存在");
                     break;
                 }
 
@@ -429,6 +451,9 @@ public class MessageUtil {
     public static void MarkTaskBlackListConfirm(String ModelFieldsType, String listTitle, String TaskListName, String taskTitle) {
         try {
             String key = autoBlackKey(ModelFieldsType, listTitle, taskTitle);
+            // 必须先确保已从磁盘载入：AutoBlackListMap 是懒加载的，新进程里不调 ensureLoaded
+            // 会读不到历史记录，命中次数永远从 0 起算（表现为始终"第1/3次命中"，永远拉不上）
+            AutoBlackListMap.ensureLoaded();
             AutoBlackRecord record = AutoBlackRecord.parse(AutoBlackListMap.get(key));
             long today = todayIndex();
             if (record == null || today - record.lastDay > BLACKLIST_CONFIRM_WINDOW_DAYS) {
@@ -539,8 +564,16 @@ public class MessageUtil {
                 "【限时】开宝箱得2次机会", "【限时】开宝箱得3次机会"});
         RELEASED_DEFAULTS.put("AntOrchard|AntOrchardTaskList", new String[]{
                 "逛助农好货得肥料", "钓鱼1次", "逛一逛闪购外卖", "逛好物最高得1500肥料"});
+        // 芝麻粒游戏/浏览/签到类：实测（2026-09-22 抓包 logs/chk_sesame3）服务端对 taskFeedback 不校验是否真参与过，
+        // 未报名任务一发即 success ⇒ 原先"预置拉黑"的这些条目全部释放，交给任务循环自动完成；
+        // 保留预置的只剩真实交易/履约类（下单/租赁/订酒店/回收/雇佣/付钱/查车）
         RELEASED_DEFAULTS.put("AntMember|MemberCreditSesameTaskList", new String[]{
-                "去玩小游戏"});
+                "去玩小游戏", "去玩这城有良田", "去玩三国冰河时代", "去玩青云诀之伏魔", "去玩龙迹之城",
+                "去玩智商乐消消", "去玩挪了个箭", "去玩斗破苍穹", "去玩灵画师", "去玩浪漫餐厅",
+                "去玩烈焰觉醒", "去玩时光杂货店", "玩小游戏30秒", "玩任意游戏30秒", "玩30秒三国冰河时代",
+                "玩任意1个游戏", "添加桌面小组件", "坚持签到领奖励", "坚持逛裹酱领福利", "坚持看直播领福利",
+                "坚持种水果", "每日施肥领水果", "逛淘宝签到", "头条刷热点领现金", "618去淘金币赢20亿",
+                "去点淘逛一逛", "去淘金币逛一逛", "逛逛淘金币", "来淘金币赢20亿", "去逛一逛消消乐"});
     }
 
     /**
@@ -648,6 +681,8 @@ public class MessageUtil {
     private static void recordAutoBlack(String module, String listTitle, String taskTitle) {
         try {
             String key = autoBlackKey(module, listTitle, taskTitle);
+            // 同上：先确保载入，否则读不到旧的 retry，会把"解禁重试次数"反复重置为 0
+            AutoBlackListMap.ensureLoaded();
             AutoBlackRecord old = AutoBlackRecord.parse(AutoBlackListMap.get(key));
             AutoBlackRecord record = new AutoBlackRecord();
             record.hits = 0;

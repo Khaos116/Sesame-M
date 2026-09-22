@@ -69,6 +69,10 @@ public abstract class ModelTask extends Model {
                 }
                 Log.record("执行结束-" + task.getName());
                 synchronized (MAIN_TASK_MAP) { MAIN_TASK_MAP.remove(task); }
+                io.github.aw1y2z.sesame.util.NotificationUtil.trackTaskEnd();
+                if (io.github.aw1y2z.sesame.util.NotificationUtil.getRunningCount() == 0) {
+                    io.github.aw1y2z.sesame.util.NotificationUtil.updateLastExecText();
+                }
             }
         }
 
@@ -185,6 +189,11 @@ public abstract class ModelTask extends Model {
         boolean submitted = false;
         try {
             if (isEnable() && check() && mainPending.compareAndSet(false, true)) {
+                boolean isFirst = io.github.aw1y2z.sesame.util.NotificationUtil.getRunningCount() == 0;
+                io.github.aw1y2z.sesame.util.NotificationUtil.trackTaskStart();
+                if (isFirst) {
+                    io.github.aw1y2z.sesame.util.NotificationUtil.setStatusTextExec();
+                }
                 Runnable admitted = () -> {
                     try { mainRunnable.run(); }
                     finally {

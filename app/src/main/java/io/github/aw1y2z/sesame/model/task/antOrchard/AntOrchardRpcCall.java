@@ -5,6 +5,7 @@ import android.util.Base64;
 import java.util.List;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
+import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
@@ -82,6 +83,17 @@ public class AntOrchardRpcCall {
         return ApplicationHook.requestString("com.alipay.antiep.finishTask", args);
     }
 
+    /**
+     * 按 bizKey 完成任务（{@code com.alipay.antfarm.doFarmTask}）。
+     * <p>乐园游戏类任务（taskId 形如 {@code ORCHARD_NCLY_*}、groupId {@code ORCHARD_NCLY_GAME_IAA} 等）
+     * 服务端拒绝 {@code com.alipay.antiep.finishTask}（400000040 不支持rpc调用），与庄园抽抽乐同型；
+     * 庄园的正解就是这条接口（2026-09-22 实测 cclyx / ipccl 前缀的游戏任务走它全部成功）。
+     */
+    public static String doFarmTask(String bizKey, String taskSceneCode) {
+        // 另一种实现方案 payload 只剩一份实现，见 TaskAlternative.request（version 沿用本模块的 VERSION）
+        return TaskAlternative.request(bizKey, taskSceneCode, VERSION);
+    }
+
     public static String triggerTbTask(String taskId, String taskPlantType) {
         return ApplicationHook.requestString("com.alipay.antfarm.triggerTbTask", "[{\"requestType\":\"NORMAL\",\"sceneCode\":\"ORCHARD\",\"source\":\"ch_appcenter__chsub_9patch\",\"taskId\":\"" + taskId + "\",\"taskPlantType\":\"" + taskPlantType + "\",\"version\":\"" + VERSION + "\"}]");
     }
@@ -142,7 +154,9 @@ public class AntOrchardRpcCall {
      * 领取回访奖励
      */
     public static String receiveOrchardVisitAward() {
-        return ApplicationHook.requestString("com.alipay.antorchard.receiveOrchardVisitAward", "[{\"requestType\":\"NORMAL\",\"sceneCode\":\"ORCHARD\",\"source\":\"ch_appcenter__chsub_9patch\",\"version\":\"" + VERSION + "\"}]");
+        // 2026-09-22 抓包（logs/chk_orchard 14:20:10）：官方报文带 diversionSource=DEFAULT；
+        // 缺这个字段服务端回 102「参数异常」（模块 14:23 实测命中）
+        return ApplicationHook.requestString("com.alipay.antorchard.receiveOrchardVisitAward", "[{\"diversionSource\":\"DEFAULT\",\"requestType\":\"NORMAL\",\"sceneCode\":\"ORCHARD\",\"source\":\"ch_appcenter__chsub_9patch\",\"version\":\"" + VERSION + "\"}]");
     }
 
 

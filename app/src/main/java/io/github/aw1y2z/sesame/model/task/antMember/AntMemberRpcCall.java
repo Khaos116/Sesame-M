@@ -5,6 +5,7 @@ import org.json.JSONObject;
 
 import io.github.aw1y2z.sesame.entity.RpcEntity;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
+import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.RandomUtil;
 
 public class AntMemberRpcCall {
@@ -447,6 +448,22 @@ public class AntMemberRpcCall {
     public static String feedBackSesameTaskNew(String taskTemplateId) {
         String requestData = "[{\"actionType\":\"TO_COMPLETE\",\"bizType\":\"LIFE_RECORD\",\"sceneCode\":\"zml\",\"templateId\":\"" + taskTemplateId + "\",\"version\":\"new\"}]";
         return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.creditaccumulate.CreditAccumulateStrategyRpcManager.taskFeedback", requestData);
+    }
+
+    /**
+     * 另一种实现方案的 version：本模块**原有取值**，收敛到 {@link TaskAlternative} 时原样保留，不改已实测路径的报文。
+     */
+    public static final String DO_FARM_TASK_VERSION = "20250812.01";
+
+    /**
+     * 另一种实现方案：按 bizKey 完成任务（{@code com.alipay.antfarm.doFarmTask}）。
+     * <p>游戏中心任务与庄园抽抽乐、芭芭农场、金豆乐园同源：`doTaskSend` 常被服务端以
+     * 400000040「不支持rpc调用」拒绝，而这条接口能把它们做成（2026-09-22 在三处实测通过）。
+     * <p>它的响应**不可信**（可能回 102「服务器正在开小差」而任务其实已生效），
+     * 调用方必须用任务列表状态核对，不能据响应判成败。version 经实测不被校验，这里沿用本模块原值。
+     */
+    public static String doFarmTask(String bizKey, String taskSceneCode) {
+        return TaskAlternative.request(bizKey, taskSceneCode, DO_FARM_TASK_VERSION);
     }
 
     /**

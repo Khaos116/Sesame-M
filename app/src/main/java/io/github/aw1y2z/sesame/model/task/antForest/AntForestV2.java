@@ -60,6 +60,7 @@ import io.github.aw1y2z.sesame.entity.AlipayForestHunt;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
+import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.model.extensions.ExtensionsHandle;
 import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 import io.github.aw1y2z.sesame.model.task.antFarm.AntFarm.TaskStatus;
@@ -803,7 +804,6 @@ public class AntForestV2 extends ModelTask {
             }
             Statistics.save();
             FriendWatch.save();
-            NotificationUtil.updateLastExecText("收:" + totalCollected + " 帮:" + totalHelpCollected);
         }
     }
 
@@ -1688,7 +1688,6 @@ public class AntForestV2 extends ModelTask {
                 Log.printStackTrace(e);
             } finally {
                 Statistics.save();
-                NotificationUtil.updateLastExecText("收:" + totalCollected + " 帮:" + totalHelpCollected);
                 notifyMain();
             }
         };
@@ -2737,6 +2736,11 @@ public class AntForestV2 extends ModelTask {
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 Log.forest("森林任务🧾️完成[" + taskTitle + "]");
                 return true;
+            }
+            // 另一种实现方案（见 TaskAlternative）
+            if (TaskAlternative.hit(jo, sceneCode)) {
+                TaskAlternative.trigger(null, taskType, taskTitle, taskType, sceneCode, "森林任务", msg -> Log.forest(msg));
+                return false;
             }
             Log.record("完成任务[" + taskTitle + "]失败");
         } catch (Throwable t) {

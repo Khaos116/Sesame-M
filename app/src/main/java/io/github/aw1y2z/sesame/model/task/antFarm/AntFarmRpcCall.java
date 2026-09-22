@@ -10,6 +10,7 @@ import java.util.Random;
 import java.util.UUID;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
+import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.StringUtil;
@@ -133,8 +134,8 @@ public class AntFarmRpcCall {
 
     //{"bizKey":"ccl_rongrongxiaoji","requestType":"RPC","sceneCode":"ANTFARM","source":"antfarm_villa","taskSceneCode":"ANTFARM_DAILY_DRAW_TASK"}
     public static String doFarmTask(String bizKey, String taskSceneCode) {
-        String args1 = "[{\"bizKey\":\"" + bizKey + "\",\"requestType\":\"RPC\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"taskSceneCode\":\"" + taskSceneCode + "\",\"version\":\"" + VERSION + "\"}]";
-        return ApplicationHook.requestString("com.alipay.antfarm.doFarmTask", args1);
+        // 另一种实现方案 payload 只剩一份实现，见 TaskAlternative.request（version 沿用本模块的 VERSION）
+        return TaskAlternative.request(bizKey, taskSceneCode, VERSION);
     }
 
     //{"bizKey":"SHH_liyunrui","requestType":"NORMAL","sceneCode":"ANTFARM","source":"H5","version":"1.8.2302070202.46"}]}

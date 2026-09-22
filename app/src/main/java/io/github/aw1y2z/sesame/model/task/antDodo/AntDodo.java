@@ -17,6 +17,7 @@ import io.github.aw1y2z.sesame.entity.AlipayAntDodoTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayUser;
 import io.github.aw1y2z.sesame.entity.CustomOption;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
+import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.model.task.antFarm.AntFarm.TaskStatus;
 import io.github.aw1y2z.sesame.model.task.antForest.AntForestV2;
 import io.github.aw1y2z.sesame.model.task.antOcean.AntOceanRpcCall;
@@ -341,6 +342,11 @@ public class AntDodo extends ModelTask {
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 Log.forest("神奇物种🦕完成[" + taskTitle + "]");
                 return true;
+            }
+            // 另一种实现方案（见 TaskAlternative）；物种暂无游戏类任务，属同型兜底
+            if (TaskAlternative.hit(jo, sceneCode)) {
+                TaskAlternative.trigger(null, taskType, taskTitle, taskType, sceneCode, "神奇物种", msg -> Log.forest(msg));
+                return false;
             }
         } catch (Throwable t) {
             Log.err(TAG, "finishTask err:", t);

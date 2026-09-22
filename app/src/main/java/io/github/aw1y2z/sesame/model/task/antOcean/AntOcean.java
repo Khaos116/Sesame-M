@@ -18,8 +18,10 @@ import io.github.aw1y2z.sesame.entity.AlipayUser;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
+import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.model.normal.answerAI.AnswerAI;
 import io.github.aw1y2z.sesame.model.task.antFarm.AntFarm.TaskStatus;
+import io.github.aw1y2z.sesame.model.task.antFarm.AntFarmRpcCall;
 import io.github.aw1y2z.sesame.model.task.antForest.AntForestRpcCall;
 import io.github.aw1y2z.sesame.util.JsonUtil;
 import io.github.aw1y2z.sesame.util.Log;
@@ -837,16 +839,78 @@ public class AntOcean extends ModelTask {
         return false;
     }
 
-    private static boolean isTargetTask(String taskType) {
-        // 在这里添加其他任务类型，以便后续扩展
-        return "DAOLIU_TAOJINBI".equals(taskType) // 去逛淘金币看淘金仔
-                || "DAOLIU_NNYY".equals(taskType) // 逛余额宝新春活动
-                || "ANTOCEAN_TASK#DAOLIU_GUANGHUABEIBANGHAI".equals(taskType) // 逛逛花呗活动会场
-                || "BUSINESS_LIGHTS01".equals(taskType) // 逛一逛市集15s
-                || "DAOLIU_ELEMEGUOYUAN".equals(taskType) // 去逛饿了么夺宝
-                || "ZHUANHUA_NONGCHANGYX".equals(taskType) // 去玩趣味小游戏
-                || "ZHUANHUA_HUIYUN_OZB".equals(taskType); // 一键传球欧洲杯
+    /**
+     * 帮**一位**好友清理海洋，用于完成「每日任务：帮好友清理垃圾」。
+     * <p>与 {@link #queryUserRanking()} 的批量清理不同：不受「清理海域|动作」「清理海域|好友列表」开关约束，
+     * 只为完成该日常任务清理一个 canClean=true 的好友即止（官方动作实测 = queryFriendPage + cleanFriendOcean）。
+     *
+     * @return 是否真的清理成功
+     */
+    private boolean helpCleanOneFriend() {
+        try {
+            JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.queryUserRanking());
+            if (!MessageUtil.checkResultCode(TAG, jo)) {
+                return false;
+            }
+            if (cleanOneFromFillFlagList(jo.optJSONArray("fillFlagVOList"))) {
+                return true;
+            }
+            // 排行榜中较后位置的好友可能没带 canClean 标记，向服务端补问一批（最多 20 个）
+            JSONArray allRankingList = jo.optJSONArray("allRankingList");
+            if (allRankingList == null) {
+                return false;
+            }
+            List<String> idList = new ArrayList<>();
+            for (int i = 0; i < allRankingList.length() && idList.size() < 20; i++) {
+                JSONObject rankItem = allRankingList.optJSONObject(i);
+                String userId = rankItem == null ? "" : rankItem.optString("userId", "");
+                if (userId.isEmpty() || userId.equals(UserIdMap.getCurrentUid())) {
+                    continue;
+                }
+                idList.add(userId);
+            }
+            if (idList.isEmpty()) {
+                return false;
+            }
+            jo = MyUtils.newJSONObject(AntOceanRpcCall.fillUserFlag(new JSONArray(idList).toString()));
+            if (!MessageUtil.checkResultCode(TAG, jo)) {
+                return false;
+            }
+            return cleanOneFromFillFlagList(jo.optJSONArray("fillFlagVOList"));
+        } catch (Throwable t) {
+            Log.err(TAG, "helpCleanOneFriend err:", t);
+        }
+        return false;
+    }
 
+    /**
+     * 从 fillFlagVOList 里挑一个好友清理，最多试 3 个，成功即止。
+     * <p>只做"能不能清"的筛选，不看「好友列表」配置——配置为空时也要能完成日常任务。
+     */
+    private boolean cleanOneFromFillFlagList(JSONArray fillFlagVOList) {
+        if (fillFlagVOList == null) {
+            return false;
+        }
+        try {
+            int tried = 0;
+            for (int i = 0; i < fillFlagVOList.length() && tried < 3; i++) {
+                JSONObject fillFlag = fillFlagVOList.optJSONObject(i);
+                if (fillFlag == null || !fillFlag.optBoolean("canClean")) {
+                    continue;
+                }
+                String userId = fillFlag.optString("userId", "");
+                if (userId.isEmpty() || userId.equals(UserIdMap.getCurrentUid())) {
+                    continue;
+                }
+                tried++;
+                if (cleanFriendOcean(userId)) {
+                    return true;
+                }
+            }
+        } catch (Throwable t) {
+            Log.err(TAG, "cleanOneFromFillFlagList err:", t);
+        }
+        return false;
     }
 
     private void queryTaskList() {
@@ -900,6 +964,9 @@ public class AntOcean extends ModelTask {
     private Boolean finishOceanTask(JSONObject task) {
         try {
             if (task.has("taskProgress")) {
+                // 进度类任务（如"连续N天来海洋"）无法用 RPC 直接完成，也不能拉黑（否则会永久跳过真任务）；
+                // 这里显式记录，避免"列表拿到了却没动作、日志也没有"
+                Log.other("海洋任务⏭️跳过[进度任务暂不自动完成]#taskType=" + task.optString("taskType"));
                 return false;
             }
             JSONObject bizInfo = MyUtils.newJSONObject(task.optString("bizInfo"));
@@ -908,26 +975,49 @@ public class AntOcean extends ModelTask {
             if (AntOceanAntiepTaskList.getValue().contains(taskTitle)) {
                 return false;
             }
+            String sceneCode = task.optString("sceneCode");
+            String taskType = task.optString("taskType");
+            // 答题任务走独立流程
             if (taskTitle.equals("每日任务：答题学海洋知识")) {
-                // 答题操作
                 if (answerQuestion()) {
                     Log.forest("海洋任务🧾完成[" + taskTitle + "]");
                     return true;
                 }
+                return false;
             }
-            //不完成限时任务号容易黑
-            //else if (taskTitle.startsWith("随机任务：") || taskTitle.startsWith("绿色任务：")|| taskTitle.startsWith("限时任务：")) {
-            else if (taskTitle.startsWith("随机任务：") || taskTitle.startsWith("绿色任务：")) {
-                String sceneCode = task.optString("sceneCode");
-                String taskType = task.optString("taskType");
-                JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.finishTask(sceneCode, taskType));
-                //检查并标记黑名单任务
-                MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOceanAntiepTaskList", taskTitle, jo);
-                if (MessageUtil.checkSuccess(TAG, jo)) {
-                    Log.forest("海洋任务🧾完成[" + taskTitle + "]");
+            // 帮好友清理垃圾：服务端 bizInfo.autoCompleteTask=false ⇒ finishTask 必被拒（400000040 不支持rpc调用）。
+            // 实测（2026-09-22 抓包 logs/chk_ocean）官方动作 = queryFriendPage + cleanFriendOcean(cleanedUserId)，
+            // 清理成功后服务端**自行**把该任务翻成 FINISHED，随后由调用点的 receiveTaskAward 领奖，
+            // 全程没有 finishTask，也不需要客户端申报
+            if ("FRIENDRUBBISCLEAN_EVERYDAY_NEW".equals(taskType) || taskTitle.contains("帮好友清理垃圾")) {
+                if (helpCleanOneFriend()) {
+                    Log.forest("海洋任务🧾完成[" + taskTitle + "]#帮好友清理垃圾");
                     return true;
                 }
+                Log.other("海洋任务⚠️未完成[" + taskTitle + "]#taskType=" + taskType + "，本次没找到可清理的好友");
+                return false;
             }
+            // 限时任务不自动完成（自动完成易触发风控），显式记录而不是静默跳过
+            if (taskTitle.startsWith("限时任务：")) {
+                Log.other("海洋任务⏭️跳过[" + taskTitle + "]#taskType=" + taskType + "，限时任务不自动完成");
+                return false;
+            }
+            // 其余 TODO 一律尝试完成：原先按中文文案 + taskType 白名单精确分派，服务端一改文案
+            // 或换个 taskType 变体就会整类任务一个请求都不发（列表拿到了却没动作、日志也没有）。
+            // 做不了的由自动拉黑机制接管，避免用"服务端字符串精确相等"这种不稳定假设当开关
+            JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.finishTask(sceneCode, taskType));
+            //检查并标记黑名单任务
+            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOceanAntiepTaskList", taskTitle, jo);
+            if (MessageUtil.checkSuccess(TAG, jo)) {
+                Log.forest("海洋任务🧾完成[" + taskTitle + "]");
+                return true;
+            }
+            // 另一种实现方案（见 TaskAlternative）
+            if (TaskAlternative.hit(jo, sceneCode)) {
+                TaskAlternative.trigger(null, taskType, taskTitle, taskType, sceneCode, "海洋任务", msg -> Log.forest(msg));
+                return false;
+            }
+            Log.other("海洋任务⚠️未完成[" + taskTitle + "]#taskType=" + taskType + "，需在支付宝内手动完成");
         } catch (Throwable t) {
             Log.err(TAG, "finishOceanTask err:", t);
         }
