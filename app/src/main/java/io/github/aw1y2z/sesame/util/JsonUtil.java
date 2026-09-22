@@ -299,7 +299,7 @@ public class JsonUtil {
                 Map.Entry<String, JsonNode> entry = it.next();
                 JsonNode rewrittenValue = rewritten.get(entry.getKey());
                 if (rewrittenValue == null) {
-                    continue;
+                    return false;
                 }
                 if (!dataContainedIn(entry.getValue(), rewrittenValue)) {
                     return false;
