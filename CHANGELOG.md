@@ -8,6 +8,7 @@
 
 ## 2026-09-22
 
+- chore：版本号 1.1.9 → 1.2.0（tag `v1.2.0`），含 v1.1.9 之后 24 个提交（1 次上游合并：备用完成接口/通知重构/饲料分派等）+ 无损回写判定与 agy 审查 7 项修复。
 - fix 2117cf04：修上游无损回写判定bug（对象丢key从忽略改为拦截，数组分支本就正确），删海洋/新村两处合并遗留冗余import；隔离探针8断言新码全过、旧码2挂；回归与编译通过。
 - fix c185d797：修agy审查7项：会员核对失败返回null防误报完成、海洋补查从第20人起、调度即刷通知下次执行、计数改AtomicInteger、果园核对Map去static、空响应抛JSONException、删运动冗余import；回归与编译通过。
 - test 5fae0c33：检查桩跟进上游 API（NotificationUtil/verifyPendingTasks/setRunning/Log）；三项必查无新增裸 get、无时区改动，TaskAlternative.doFarmTask 保留直接构造（trigger 靠异常判未触发）；13 项回归+Debug 编译通过。
