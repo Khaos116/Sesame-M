@@ -19,15 +19,30 @@ public class NotificationUtil {
 
     @Getter
     private static volatile long lastNoticeTime = 0;
-    private static String titleText = "";
+    private static String titleText = "Sesame-M";
     private static String contentText = "";
+    /** 活跃任务计数，>0 表示有异步任务仍在执行。由 ModelTask 在 startTask/finally 里增减 */
+    private static volatile int runningCount = 0;
+
+    public static void trackTaskStart() {
+        runningCount++;
+    }
+
+    public static void trackTaskEnd() {
+        runningCount--;
+        if (runningCount < 0) runningCount = 0;
+    }
+
+    public static int getRunningCount() {
+        return runningCount;
+    }
 
     public static void start(Context context) {
         try {
             NotificationUtil.context = context;
             NotificationUtil.stop();
-            titleText = "启动中";
-            contentText = "暂无消息";
+            titleText = "Sesame-M";
+            contentText = "启动中";
             mNotifyManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
             Intent it = new Intent(Intent.ACTION_VIEW);
             it.setData(Uri.parse("alipays://platformapi/startapp?appId="));
@@ -101,7 +116,7 @@ public class NotificationUtil {
             if (forestPauseTime > System.currentTimeMillis()) {
                 status = "触发异常，等待至" + TimeUtil.getCommonDate(forestPauseTime);
             }
-            titleText = status;
+            contentText = status;
             lastNoticeTime = System.currentTimeMillis();
             sendText();
         } catch (Exception e) {
@@ -109,19 +124,27 @@ public class NotificationUtil {
         }
     }
 
-    public static void updateNextExecText(long nextExecTime) {
-        try {
-            titleText = nextExecTime > 0 ? "下次执行 " + TimeUtil.getTimeStr(nextExecTime) : "";
-            sendText();
-        } catch (Exception e) {
-            Log.printStackTrace(e);
-        }
+    /** 下次执行时间，由 execDelayedHandler 设置，updateLastExecText 时一并写入 */
+    private static volatile long nextExecTime = 0;
+
+    public static void setNextExecTime(long nextExecTime) {
+        NotificationUtil.nextExecTime = nextExecTime;
     }
 
-    public static void updateLastExecText(String content) {
+    /**
+     * 所有任务完成时调用：更新「上次执行」时间，并写入「下次执行」时间。
+     * 由 ModelTask.finally 中 runningCount == 0 时统一触发。
+     */
+    public static void updateLastExecText() {
         try {
-            contentText = "上次执行  " + TimeUtil.getTimeStr(System.currentTimeMillis()) + " " + content;
-            lastNoticeTime = System.currentTimeMillis();
+            long now = System.currentTimeMillis();
+            String lastPart = "上次执行  " + TimeUtil.getTimeStr(now);
+            if (nextExecTime > 0) {
+                lastPart += "  下次执行 " + TimeUtil.getTimeStr(nextExecTime);
+                nextExecTime = 0;
+            }
+            contentText = lastPart;
+            lastNoticeTime = now;
             sendText();
         } catch (Exception e) {
             Log.printStackTrace(e);
@@ -129,7 +152,26 @@ public class NotificationUtil {
     }
 
     public static void setStatusTextExec() {
-        updateStatusText("Sesane-M执行中");
+        try {
+            contentText = "自动执行中";
+            lastNoticeTime = System.currentTimeMillis();
+            sendText();
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+        }
+    }
+
+    /**
+     * 任务运行中持续刷新通知，防止系统因「长时间无更新」将通知折叠/隐藏。
+     * 每次调用只更新 lastNoticeTime，不改变文本内容。
+     */
+    public static void setRunning() {
+        try {
+            lastNoticeTime = System.currentTimeMillis();
+            sendText();
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+        }
     }
 
     private static void sendText() {
@@ -138,21 +180,6 @@ public class NotificationUtil {
             if (!StringUtil.isEmpty(contentText)) {
                 builder.setContentText(contentText);
             }
-            //Notification.BigTextStyle style = new Notification.BigTextStyle();
-            //builder.setStyle(style);
-            /*Notification.InboxStyle style = new Notification.InboxStyle();
-            if (hasStatus) {
-                if (hasNextExecText) {
-                    style.addLine(statusText + "，" + nextExecText);
-                } else {
-                    style.addLine(statusText);
-                }
-            } else if (hasNextExecText) {
-                style.addLine(nextExecText);
-            }
-            if (!StringUtil.isEmpty(lastExecText)) {
-                style.addLine(lastExecText);
-            }*/
             mNotifyManager.notify(NOTIFICATION_ID, builder.build());
         } catch (Exception e) {
             Log.printStackTrace(e);

@@ -78,7 +78,12 @@ public class MessageUtil {
     public static void printErrorMessage(String tag, JSONObject jo, String errorMessageField) {
         try {
             String memo = jo.getString(errorMessageField);
-            if (isServerBusy(jo) && !shouldLogServerBusy(tag)) {
+            if (isServerBusy(jo)) {
+                if (!shouldLogServerBusy(tag)) {
+                    return;
+                }
+                // 102 高频错误：只打一行 JSON（去掉文案行，避免每次都刷两条）
+                Log.i(tag, jo.toString());
                 return;
             }
             Log.record(tag + " error:" + memo);
@@ -177,7 +182,10 @@ public class MessageUtil {
                 } else if (jo.has("resultView")) {
                     printErrorMessage(tag, jo, "resultView");
                 } else {
-                    Log.i(tag, jo.toString());
+                    // 服务端繁忙（102）已有 printErrorMessage 统一降噪，这里跳过避免重复刷行
+                    if (!isServerBusy(jo)) {
+                        Log.i(tag, jo.toString());
+                    }
                 }
                 return false;
             }

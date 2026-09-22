@@ -761,7 +761,6 @@ public class AntForestV2 extends ModelTask {
             }
             Statistics.save();
             FriendWatch.save();
-            NotificationUtil.updateLastExecText("收:" + totalCollected + " 帮:" + totalHelpCollected);
         }
     }
 
@@ -1539,7 +1538,6 @@ public class AntForestV2 extends ModelTask {
                 Log.printStackTrace(e);
             } finally {
                 Statistics.save();
-                NotificationUtil.updateLastExecText("收:" + totalCollected + " 帮:" + totalHelpCollected);
                 notifyMain();
             }
         };

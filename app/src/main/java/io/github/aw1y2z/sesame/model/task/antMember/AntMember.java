@@ -553,7 +553,12 @@ public class AntMember extends ModelTask {
             }
             Long id = taskConfigInfo.getLong("id");
             String awardParamPoint = taskConfigInfo.getJSONObject("awardParam").getString("awardParamPoint");
-            String targetBusiness = taskConfigInfo.getJSONArray("targetBusiness").getString(0);
+            JSONArray targetBusinessArr = taskConfigInfo.optJSONArray("targetBusiness");
+            if (targetBusinessArr == null || targetBusinessArr.length() == 0) {
+                Log.other("会员任务⏭️跳过[" + name + "]#无 targetBusiness 配置");
+                return false;
+            }
+            String targetBusiness = targetBusinessArr.getString(0);
             for (int i = left; i <= right; i++) {
                 JSONObject jo = new JSONObject(AntMemberRpcCall.applyTask(name, id));
                 TimeUtil.sleep(300);

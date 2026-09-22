@@ -781,16 +781,29 @@ public class ApplicationHook extends XposedModule {
     }
 
     private static void execHandler() {
+        try {
+            NotificationUtil.setRunning();
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+        }
         mainTask.startTask(false);
     }
 
     private static void execDelayedHandler(long delayMillis) {
-        mainHandler.postDelayed(() -> mainTask.startTask(false), delayMillis);
+        // 调度时立即记录下次执行时间，所有任务完成时 updateLastExecText 会一并写入
         try {
-            NotificationUtil.updateNextExecText(System.currentTimeMillis() + delayMillis);
+            NotificationUtil.setNextExecTime(System.currentTimeMillis() + delayMillis);
         } catch (Exception e) {
             Log.printStackTrace(e);
         }
+        mainHandler.postDelayed(() -> {
+            try {
+                NotificationUtil.setRunning();
+            } catch (Exception e) {
+                Log.printStackTrace(e);
+            }
+            mainTask.startTask(false);
+        }, delayMillis);
     }
 
     private static void stopHandler() {

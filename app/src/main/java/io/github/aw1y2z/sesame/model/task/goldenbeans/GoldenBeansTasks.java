@@ -48,7 +48,7 @@ public final class GoldenBeansTasks {
         this.autoBlacklist = autoBlacklist;
     }
 
-    /** 本次签到是否失败（失败时不计入"已完成"，避免提前置 FLAG_TASKS_DONE 导致当天不再重试） */
+    /** 本次签到是否失败（失败时本入口计为未完成） */
     private boolean signFailed;
 
     /**
@@ -249,7 +249,7 @@ public final class GoldenBeansTasks {
                 if (isBlacklisted(blacklistKey, taskName)) {
                     if (STATUS_FINISHED.equals(taskStatus) || STATUS_TO_RECEIVE.equals(taskStatus)) {
                         GoldenBeansSupport.pause(interval);
-                        // 领奖失败要计入未完成，否则会提前置 FLAG_TASKS_DONE（与下面非黑名单分支保持一致）
+                        // 领奖失败要计入未完成，下轮还会重试（与下面非黑名单分支保持一致）
                         if (claimAward(entry, taskId, taskName)) {
                             changed = true;
                         } else {
