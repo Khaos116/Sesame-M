@@ -4,6 +4,7 @@ static String STATUS_FINISHED="FINISHED",STATUS_TO_RECEIVE="TO_RECEIVE",STATUS_R
 static int finishes,claims;static boolean claimSuccess=true,blacklisted=false;
 boolean isBlacklisted(String a,String b){return blacklisted;} boolean isPayTask(String a){return false;} String blacklistKey(JSONObject t){return "task";} String displayName(JSONObject t){return "task";}
 boolean finishTask(GoldenBeansEntry e,String a,String b){finishes++;return true;}boolean claimAward(GoldenBeansEntry e,String a,String b){claims++;return claimSuccess;}
+boolean verifyPendingTasks(GoldenBeansEntry e){return false;}
 public static void main(String[]a){
  assert new Review().runTaskList(new GoldenBeansEntry(),0);
  assert finishes==1 && claims==1;

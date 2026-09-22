@@ -40,6 +40,13 @@ class ProgramChildTaskExecutor implements ChildTaskExecutor {
 class SystemChildTaskExecutor extends ProgramChildTaskExecutor {}
 """
 
+STUBS_UTIL = """
+package io.github.aw1y2z.sesame.util;
+public class NotificationUtil { public static void trackTaskStart() {} public static void trackTaskEnd() {}
+ public static int getRunningCount() { return 0; } public static void setStatusTextExec() {}
+ public static void updateLastExecText() {} }
+"""
+
 with tempfile.TemporaryDirectory(prefix="sesame-account-check-") as directory:
     out = Path(directory)
     for name in ("TaskLifecycle", "BaseTask", "ModelTask", "ChildTaskExecutor"):
@@ -63,6 +70,7 @@ with tempfile.TemporaryDirectory(prefix="sesame-account-check-") as directory:
             """)
         (out / f"{name}.java").write_text(source, encoding="utf-8")
     (out / "Stubs.java").write_text(STUBS, encoding="utf-8")
+    (out / "NotificationUtil.java").write_text(STUBS_UTIL, encoding="utf-8")
     shutil.copy(Path(__file__).with_name("AccountLifecycleCheck.java"), out)
     shutil.copy(Path(__file__).with_name("TaskCompletionCheck.java"), out)
     # Compile the actual async entry methods with deterministic queued/rejected workers.
