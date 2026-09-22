@@ -12,7 +12,7 @@ import io.github.aw1y2z.sesame.util.XHelpers;
 
 /**
  * 只反射读支付宝自己的账号服务，不碰密码/凭证，不做加载期自动登录。
- * 移植自 GR 分支，把 XposedHelpers 换成 M 自己的 XHelpers 反射封装，见 doc/MyFix.md。
+ * 移植自 GR 分支，把 XposedHelpers 换成 M 自己的 XHelpers 反射封装，见 docs/MyFix.md。
  */
 final class HostAccountSwitchBridge {
     static final class Account {

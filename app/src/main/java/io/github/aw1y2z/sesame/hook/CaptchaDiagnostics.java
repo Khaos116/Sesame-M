@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import io.github.aw1y2z.sesame.util.FileUtil;
 import io.github.aw1y2z.sesame.util.diagnostics.ValidationDiagnosticJournal;
 
-/** 纯诊断观测：不代为提交、不截图、不模拟输入。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 纯诊断观测：不代为提交、不截图、不模拟输入。移植自 GR 分支，见 docs/MyFix.md。 */
 final class CaptchaDiagnostics {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final String SESSION = UUID.randomUUID().toString();

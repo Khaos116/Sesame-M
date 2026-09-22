@@ -1,78 +1,85 @@
 # 修改记录
 
 简明改动清单，按时间倒序追加，方便快速查看每次改了什么。上半部分为一行摘要 + 对应 commit；
-文末「详细记录」为原 `doc/MyFix.md` 迁入的移植/合并原委与取舍理由。`doc/MyFix.md` 只放规则。
+文末「详细记录」为原 `docs/MyFix.md` 迁入的移植/合并原委与取舍理由（已冻结，只读不再追加）。`docs/MyFix.md` 只放规则。
+
+写作约定：每天一节，每次改动一条（`- 类型 commit：一句话`），单条约一行、尽量不超 150 字，只写改了什么加关键取舍；
+推理过程、日志证据、被否掉的方案不写入（要查时看 `git log` / 当次对话记录）。已写超的由整理人直接压缩，原文在 git 历史里可找回。
 
 ## 2026-09-22
 
-- chore：版本号 1.1.8 → 1.1.9（`gradle.properties`），tag `v1.1.9`。1.1.8 → 1.1.9 之间是 v1.1.8 之后的 13 个提交（含 3 次合并 `origin/MIUIX-api102`），主要是昵称显示 null / 主线程 NPE / 配置字段迁移丢设置 / 合种浇水次数编辑回归等一批 bug 修复，见下方详细记录。
-- merge `5bf5d90b`→`b76684c8`→`13ec4981`：三次合并 `origin/MIUIX-api102`（3066428a→d4419981）+ 三轮自查，主要修复：①顶部/配置页昵称显示 `null`——`buildSelfFromAccountModel` 反射拿不到昵称的半成品 entity 挡住好友库兜底，改用 `mergeSelfEntity` 合并（`UserIdMap`/`UserEntity`）；②`ApplicationHook` 主线程 `initHandler(true)` 拆箱 NPE（470/893 行合并时漏改，仿 268 行改成不判断返回值直接调用）；③`AppConfig` 字段 `closeCaptchaDialogVPN→closeCaptchaDialog` 改名后老用户设置被 Jackson 静默重置，加 `@JsonAlias`；④`MiuixMainActivity.accountDisplayName` 昵称/账号为 null 或空串时拼出字面 "null" 或重复/空白标题，改成按值判空组合处理；⑤`0c7e0484`"合种浇水支持逐项设量" 的 `withCount`/`defaultCount` 范围界定错了两次——`withCount` 收窄成 4 个字段会让十几个无关字段的次数编辑 UI 整个消失，`defaultCount` 直接取 `valueRangeMin` 会让默认构造函数本来就是 0 的大多数字段新勾选默认次数变成 0（业务侧当"今日已达上限"直接跳过，勾了等于没勾且不报错），都改成只在合种浇水那两个字段生效，其余维持原样；`check_merge_config.py` 测试桩类的 `valueRangeMin` 默认值也跟着改成 0（对齐生产环境真实默认构造函数），此前写 1 掩盖了⑤这个 bug。回归全过，Debug 编译通过，未做真机验证，详细取舍见 `git log`。
-- fix：`AntOrchard.java` 静态黑名单 `ORCHARD_TASK_BLACKLIST` 从未被读取，接入 `handleTaskList` 跳过判断，解决 `taskType=70000` 反复报"任务全局配置不存在"（依据账号2今日 `error` 日志）；`PuzzleCaptchaSolver` 的 `matched_submit`/`matched-after` 截图失败此前完全静默，补 `Log.captcha` 记录失败原因。金豆模块几个 taskType、农场子任务 `sceneCode=10021 taskType=104321` 同样报错但单日单次证据不足，未处理；`resultCode 102`/`error 48`/捐赠无标的物/能量罩/限速提示/权益已领取等确认是正常瞬时状态，不用改。
+- docs：AGENTS.md 补全回归清单（13 项检查+对照说明），新增代码与数据地图、合并速览两节；INDEX 同步。
+- docs：使用说明补日志按账号分目录/AI 类型与 Gemini 令牌，删§10基础手抄表改指自动生成文档；README 文档表补全；GR-Sync 记 12 福利任务已移植。
+- docs：CHANGELOG 上半部分 09-19/09-21/09-22 共 63 条压缩为一行一条，头部新增写作约定（单条约一行、只写改了什么加关键取舍），文末详细记录区冻结只读；09-17 及以前逐字未动。
+- docs：`doc/` 并入 `docs/`（`MyFix.md`、`GR-Sync.md`、每日异常反馈.txt、`INDEX.md` 共 4 个文件），`AGENTS.md`/`CHANGELOG.md` 内链与约 50 处代码注释引用同步更新；纯文档改动，未跑回归与编译。
+- chore：版本号 1.1.8 → 1.1.9（tag `v1.1.9`），含 v1.1.8 之后的 13 个提交（3 次上游合并）：昵称 null、主线程 NPE、配置迁移丢设置、合种浇水次数编辑等修复。
+- merge `5bf5d90b`→`b76684c8`→`13ec4981`：三次合并 `origin/MIUIX-api102` + 自查：昵称 null 改 `mergeSelfEntity`、`initHandler` 拆箱 NPE、`closeCaptchaDialog` 改名加 `@JsonAlias`、`accountDisplayName` 判空、`withCount`/`defaultCount` 只限合种浇水字段；回归全过，Debug 编译通过，未真机验证。
+- fix：`AntOrchard` 静态黑名单接入 `handleTaskList`（解决 `taskType=70000` 反复报错）；拼图截图失败补 `Log.captcha`；其余单次报错证据不足未处理。
 
 ## 2026-09-21
 
-- chore `65c50523`：版本号 1.1.7 → 1.1.8（`gradle.properties`），tag `v1.1.8`。1.1.7 → 1.1.8 之间是 v1.1.7 之后的 8 个提交（含 1 次合并 `origin/MIUIX-api102` 至 3066428a），主要是拼图验证码识别修复（模板内缩解决真机火焰图错配 751→672）、松手前截图 `matched_submit`、拖动轨迹补 GR 随机抖动，以及上游界面内边距/输入框对齐/新用户副标题修复。
-- merge `f133ba53`：再次合并 `origin/MIUIX-api102`（d7ec910c → 3066428a，3 个上游提交：统一 Miuix 页面水平内边距 16dp、配置页文本输入框宽度与行标题对齐、配置页新用户副标题空白修复 + `UserIdMap` 优先从“我的账号模型”取自身信息）。2 处冲突：日志页 `LazyColumn`（保留本分支“不用 reverseLayout + asReversed + 跟随滚动”，只吸收 16dp）、配置页账号列表（保留本分支 `accountDisplayName` + “UID:”副标题，上游的空白回退是给旧结构用的，本分支副标题恒非空）。GMT+8/JSON 创建/JSON 读取三项检查：合并涉及的 9 个文件无 `Calendar`/`new JSONObject`/裸 `get*()`，无新增；`GeminiAI` 未受影响。全部回归与 Debug 编译通过。
-- fix `5af6d005`：拼图拖动轨迹补上 GR 的随机效果（`PuzzleSwipe`，对照 GR `MotionEventSimulator.simulateSwipe`）：按下后随机停 30~80ms 再开始移动（原来固定 16ms）；途中每个 MOVE 的 X 抖 ±3px、Y 抖 ±2px（叠在原有的正弦弧线上）；最后一个 MOVE 和 UP 仍精确落在终点，抖动不影响提交位置。总时长不变（停顿占用移动时间，与 GR 一致）。GR 是 15 步、无弧线，本项目保留 16ms 步长和弧线。未真机验证。
-- fix `5af6d005`：拼图匹配的模板框内缩 8px（`PuzzleSliderMatcherCore.estimateOptimized` 里 `sourceLeft += SOURCE_INSET`）。用户给了真机未压缩截图 `matched-d751`（火焰）和 `matched-after-d751-a1`（页面刷新后的芽形新图）：WebView 整屏 1280x2720，按钮左缘 171。用同参数离线回放复现了 751（0.388，`extended-range`）；把滑块图叠到缺口上目测验证，真缺口是 672，751 会多拖约 79px。原因：`sourceLeft` 传的是按钮左缘=照片左缘，模板最左一列压在“照片/白底”边界上，这条竖边在目标区域不存在，把相关分拉低；`sourceLeft` 取 168→690、171→751、≥174→672（0.71，strong-best）。内缩后火焰 672、芽形 610（分数 0.83，与肉眼一致）。夹具：`check_puzzle_matcher` 新增两张真机 PNG（`real-flame-d751.png`、`real-sprout-d610.png`）；夹具读取器改为交集读取（模板内缩后请求区域比夹具 ROI 右边略大，超出部分补黑）；被遮挡粉三角内缩后旧边缘匹配直接给 702（真值 703），不再走到轮廓分支，所以轮廓分支改为单独回放。**未解决**：用户观察到火焰那次手指“移动 x 小于实际值就提交了”，这与匹配偏大（751>672）方向相反，需要那次运行日志里的“触摸距离/终点/轨道截断/拖动已完成(INPUT_FINISHED 还是别的)”和新增的 `matched_submit` 截图才能定位。（早先用手机拍的 JPEG 回放得出的“芽形识别错”结论作废：JPEG 边缘糊，不能代表真机。）未真机验证。
-- feat `5af6d005`：拼图拖到终点、松手前再截一张 `matched_submit-d<位移>-a<第几次>`（`PuzzleSwipe` 加 `BeforeRelease` 钩子：最后一次 MOVE 后等 150ms 让页面画到终点，截到图才抬起，最长 800ms 兜底）。截图保留：`matched-*` 最新 10 张、`matched_submit-*` 最新 10 张，互不挤占，合计最多 20 张（`PuzzleSampleFiles` 加 `SUBMIT_MARK`，`check_puzzle_samples` 覆盖）。起因：用户真机自动拖 4 次，第 1 次位置偏，第 2–4 次肉眼位置对但服务端判错、手动拖却通过；**原因未定**，需要 `matched_submit` 截图确认提交时滑块位置。已知可疑点：轨迹匀速直线、松手前无停顿、每次轨迹同构（风控可能看轨迹）。未真机验证。
-- chore `3e920ab6`：版本号 1.1.6 → 1.1.7（`gradle.properties`），tag `v1.1.7`。1.1.6 → 1.1.7 之间是 v1.1.6 之后的 51 个提交（含 2 次合并 `origin/MIUIX-api102`），主要是拼图验证码增强（重试/次数可配置/H5 触发/截图管理）、账号名命名的日志目录与导出文件、上游配置保存与界面更新。tag `v1.1.6` 仍指向当时的版本号提交，之后的改动全部归在 1.1.7。
-- ui `c1806e72`：主页四个 Tab 顶部右侧的“当前账号: ”前缀去掉，只显示账号名称与账号（`TabTitleRow` 是四个 Tab 共用的，一处改动全覆盖；取不到账号时仍显示“未知账号”）；首页顶部标题 `Sesame-M` 改为 `芝麻粒M`（按用户要求的写法；`AGENTS.md` 里写的品牌名是“芝麻粒-M”带连字符，如需统一再改）。日志页/配置页/设置页的标题（日志、配置、设置）不变。
-- merge `b9b10dde`：再次合并 `origin/MIUIX-api102`（2dda9ba3 → d7ec910c，17 个上游提交：配置保存改为临时文件原子替换并修复跨进程旧快照覆盖、配置编辑器输入即生效、模块级开关（气泡/状态栏禁删/VPN 弹窗）迁到全局 `AppConfig`、抓包记录开关统一到日志页并移除按账号的 `debugMode`、分组页执行功能、新版保护地自动前进/自动任务/动物伙伴（大富翁）、庄园饲料领奖遇 102 跳过本轮剩余任务、首页/日志页样式、miuix 升到 0.9.4）。6 处冲突：`ModelTask`、`BaseModel`、`AntFarm`、`AntForestV2`（2 处）、`MiuixMainActivity`（3 处）、`FileUtil`，取舍与 GMT+8/JSON 复查见下方详细记录。合并后 Debug 与 Release（R8）构建成功，13 项回归全部通过。
-- fix `e0fec4b2`：运行日志页右上角“分享”给出的文件名不带账号名（用户确认装了两个版本，导出的 `runtime.2026-09-21.log` 仍没有账号名，期望切到哪个账号导出/分享的就是哪个账号且带名字）。根因：日志页右上角有“导出”（`FileUtil.exportFile`，会按 `exportName` 加账号名）和“分享”（`Intent.ACTION_SEND` + `FileProvider`）两个图标，“分享”直接分享原文件，接收方看到的是原始文件名 `runtime.日期.log`，`EXTRA_SUBJECT` 也是原名，完全没走命名逻辑（上一条只改了导出路径，没发现这条）。改为分享前先 `FileUtil.copyForShare` 把日志复制到 `cacheDir/share/` 并按 `exportName` 命名（如 `runtime.2026-09-21.C158.log`），分享这个副本；副本目录里只留这一份（先清上次的）；`provider_paths.xml` 加 `<cache-path name="share" path="share/"/>`；失败提示“分享失败”。日志页里的账号名来自当前发布的日志目录（`current_log_user.txt`），所以切到哪个账号，导出/分享的就是哪个账号的运行日志。`audit_regressions` 加了 `copyForShare` 用例（文件名带账号名、内容一致、旧副本被清、源文件不存在返回 null）。其它文件的出口已逐一核对：日志导出/异常统计导出走 `exportFile`，配置导出 `[名字]-config_v2.json`，`statistics.json`（`Statistics.INSTANCE` 是全模块累计，不分账号；`MiuixMainActivity.exportStatistics/importStatistics` 目前没有调用方）无账号，没有其它直接分享原文件的入口。完整清单：日志页“导出”（所有日志类型）、日志页“分享”（运行日志）、错误页“导出统计”（异常请求统计）、配置页“导出”（`[名字]-config_v2.json`）——均已带账号名。未真机验证。
-- fix `872cd694`：导出文件名补漏 + 拼图扫描重复循环 + 被动扫描误报（用户给了有验证弹窗的 `runtime.2026-09-21.log`，账号 3，13:00:23 起，1.1.6）。① **导出文件名没带账号名**：`FileUtil.exportName` 原来只用目录名，目录还叫 uid（升级后支付宝没重启迁移过、或新账号没有 `self.json`）时导出名带的是 uid 甚至没有账号。现在目录还是纯数字 uid 时用 `AccountFolderName.displayLabel(uid)`（括号前面的名字→括号里面的账号→uid）；文件名里已有 uid 的旧异常统计文件（`rpc-failures.日期.uid.json`）把 uid 换成账号名；default 目录/目录外的文件（如 `statistics.json`，全局文件，无账号）保持原名。其它导出：配置导出 `[名字]-config_v2.json`、异常统计导出都走这两处，已一并覆盖；`audit_regressions` 把 `exportName` 纳入并加了用例（账号名目录、uid 目录有/无账号名、旧异常统计文件、default、目录外）。② **扫描循环没有停**：`poll()` 不检查 `polling`，拖动完成时置 `polling=false` 后排着队的那一次仍会执行并继续排队，`retry()` 又新开一条，同时跑两条循环（日志里“监视窗口期结束，没有可处理的拼图窗口”连续打印两次即证据）。改为令牌：`startPolling()` 换新令牌，旧循环下一次触发发现令牌不符或 `polling=false` 就退出。③ **被动扫描误报**：13:00:27 的“被动扫描发现拼图滑块”是一个 `center=(236,1354)`、按钮宽 80、没有轨道的普通页面按钮（颜色连通块识别会命中蓝/红按钮）。现在被动扫描要按钮和轨道终点都识别到才转为正常流程。④ **复盘信息**：“识别成功，开始拖动”日志带上滑块位置（`center=… buttonWidth=… trackEnd=…`）；拖完 1.5 秒窗口仍在时再截一张“拖动之后”的图存成 `matched-after-d<位移>-a<第几次>`（属于 matched，保留），对照拖动前的 `matched-d<位移>` 能看出滑块停在缺口的哪里。**这份日志说明的**：H5 触发链路真机跑通——13:00:31 `render.alipay.com/p/yuyan/180020010001270421` 经 `startActivityForResult` 与 `WebView.loadUrl` 打开，命中 GR 的指纹；第 1/4 次识别缺口位移 655px、方法 `cluster-best-pixel-refined`、分数 0.400（偏低），拖完窗口仍在，判定没通过；之后重试一直只看到那个没有轨道的疑似按钮，没有再拖，13:00:51 窗口期结束。**原因未定**（可能是位移算错、也可能拖动后页面进了别的状态），需要 `puzzle/<账号名>/` 里的 `matched-d655` 截图（以及新版的 `matched-after-…`）才能判断。未真机验证。
-- fix `45f82c05`：账号名读取顺序（用户要求：先取括号前面的，没有再取括号里面的，最后才用 uid）。`AccountFolderName.Source` 由返回单个名字改为按优先级返回候选 `[showName, account]`，`displayLabel`/`resolve` 取第一个安全化后非空且不叫 default 的；两个都不可用才用 uid。即 ① 账号列表括号前面的名字（备注，没有用昵称，如 C176）→ ② 括号里面的账号（邮箱/手机号安全化后，如 `user_example_com`、`138_1234`）→ ③ uid。`check_account_folder.py` 补了优先级、名字不可用改用账号、两者都不可用回退 uid 的用例。未真机验证。
-- feat `ffcffb21`：账号目录和导出文件名改用账号名（用户要求：导出文件名不要用 uid，用配置页账号列表括号前面的名字如 C176/C158，没有再用括号里面的账号，最后才用 uid；读取顺序见下一条）。名字取 `showName`（有备注用备注，没有用昵称）。新增 `util/AccountFolderName`：日志目录 `log/<账号名>/`、拼图截图目录 `puzzle/<账号名>/`、导出文件名（`runtime.日期.C176.log`、`rpc-failures.日期.C176.json`）、配置导出 `[C176]-config_v2.json`、首页当前账号显示都用它。规则：① 名字做文件名安全处理（非字母数字/连字符替换成下划线，最长 24 字符，中文保留，`../` 之类不会带出路径）；② 读不到 `self.json`/名字和账号都不可用时用 uid，uid 不合法用 `default`（后来又加了“括号里面的账号”这一级，见下一条）；③ 两个账号同名时后来者加 uid 后 4 位（`C176-8038`），靠目录里的 `.uid` 标记文件记归属，重启后不变；④ 首次用名字时把旧的 uid 目录改名成名字目录（日志、截图历史保留）；⑤ 每个 uid 一个进程只解析一次：日志写入器按目录路径创建，中途换目录会把日志拆成两半，所以全新账号（还没有 `self.json`）本次运行用 uid，下次启动才用名字；⑥ 模块 App 进程读 `current_log_user.txt`（存的是目录名）时按目录名取，不再按 uid 解析（`FileUtil.getLogDirectoryByName`），首页当前账号由目录里的 `.uid` 找回 uid 再读 `self.json`，仍显示“名字(账号)”。`current_log_user.txt` 里存的从 uid 变成账号名。副作用：昵称/备注改了，下次启动会用新名字建新目录，旧目录不会自动合并；异常统计文件里已有的旧文件名仍含 uid（导出时会再追加名字）。`check_account_folder.py` 直接编译生产类回放上述规则；`audit_regressions` 的日志检查加了 `AccountFolderName` 桩并把 `getLogDirectoryByName` 纳入。`AGENTS.md` 里 `log/<userId>/` 的描述同步。未真机验证。
-- fix `0ebf9d0e`：截图只保留 `matched`（用户反馈：`no-slider` 也没清理掉，应该只留 matched）。此前靠“验证结束那一刻清干净”，但结束时可能刚好有截图在处理、或下一轮监视已启动并生成新截图，用户看到的目录里就会有无关截图；且 `no-track`/`match-failed` 也被当成有验证码保留。改为存放分离：只有真正拖动过的（`matched-d<位移>`）放在账号 `puzzle/` 目录，每号最多保留最新 10 张；没识别到滑块/没轨道/匹配失败的放到 `puzzle/tmp/`，验证结束（拖动后 1.5 秒检查完、60 秒监视窗口期结束）时整个删掉，**新一轮监视开始前也先清一次**，同时清掉旧版本留在主目录里名字不含 `-matched-` 的散落文件。清理后写一行“已清理 N 张没有拖动过的截图，只保留 matched”。代价：`match-failed`（滑块和轨道都识别到但匹配不可信）的截图也不再保留，若以后需要用它校准匹配再改回。文件规则抽成不依赖 Android 的 `PuzzleSampleFiles`（路径、按时间轮换、清理），新增 `checks/check_puzzle_samples.py` 直接编译生产类用临时目录回放：matched 每号最多 10 张、旧版本遗留的无关文件不占名额、过程中的无验证码截图进 `tmp/`（另有 16 张兜底）、清理后只剩 matched 且 `tmp/` 被移除、重复清理是空操作；写检查时还发现并修了“主目录轮换会把旧版本遗留的无关文件也算进 10 张名额”的小问题。未真机验证。
-- fix `10875385`：验证结束后 SD 卡上仍有没验证码的截图（用户反馈：日志已打印“监视窗口期结束，没有可处理的拼图窗口”，无验证码截图却没清掉）。清理逻辑本身（`cleanupNoSlider` 在监视结束/拖动结束后删 `no-slider`）无问题，原因有两个：① `no-track`（找到疑似按钮但没有轨道）原来被算成“包含验证码”永久保留——按钮识别只是颜色连通块，普通页面上的蓝/红按钮也会命中，这种图并没有验证码；现在 `no-slider` 与 `no-track` 都算无验证码，结束时一起删，只留滑块和轨道都识别到的（`match-failed`、`matched-d…`）；② `H5RiskTrigger` 的通用关键词（risk/verify/validate/slider）太宽，普通页面也命中，导致不停启动 60 秒监视和截图（多次出现“监视窗口期结束”就是这个信号）——现收窄到与 GR 一致的指纹：`captcha`（覆盖 captcha.alipay.com/captcha_/aicaptcha）、模板 ID `180020010001270421`、`x-dispose-trace`、`disposeapplication`、`disposedname`、`disposename`。清理执行后写一行“验证结束，已清理 N 张没有验证码的截图”，以后能直接确认清理是否执行。未真机验证；若清理仍没生效，看该日志行是否出现、异常日志里有无 `PuzzleCaptchaSolver`。
-- fix `10875385`：拼图尝试次数的归零时机（用户要求：重新打开、切换账号、验证成功后都要重置）。`ATTEMPTS` 从按窗口根视图计数改为按验证码 WebView 计数：每次重新弹出验证码都是新的 WebView 所以从 0 开始（同一 Activity 的 decor 被多次验证复用时，按窗口计数会把上一次的次数带过来）；验证成功（拖动后窗口关闭）时 `ATTEMPTS.remove(web)`；换号（`TaskLifecycle.generation()` 变化）时 `attemptsOf` 整体清空；重启支付宝进程静态状态本就重建。另核实：代码里已没有“只自动拖一次”的文案，用户看到的“默认只自动执行 1 次”是旧包的日志/配置标题。未真机验证。
-- feat `5489f7a9`：拼图自动验证拖错后允许重试，次数可配置（用户反馈：验证码滑错一次后就不再滑第二次，且有时会计算错误，希望 3-5 次并能自己设置）。原因：沿用 GR 的“每个验证码窗口只自动拖动一次”（`USED` 集合），失败后窗口不变、页面刷新出新图，但已被标记用过。改为 `ATTEMPTS` 计数：新增配置项「拼图验证每个窗口最多自动尝试次数(1-5，计算错了会重试)」（`BaseModel.puzzleMaxAttempts`，默认 4，范围 1-5，读不到配置时按 4；上限 5 是为了不因连续失败加重风控）。拖完 1.5 秒后窗口还在且未到上限，就 `retry` 清掉该窗口的截图计数/诊断去重，重新监视最多 30 秒；窗口关闭视为通过并解除验证暂停。新一轮仍要求滑块回到轨道左端、匹配可信才动手，所以页面还在刷新（旧图/错误提示）时不会乱拖；达到上限不再重试并提示手动完成。**取舍**：GR 只拖一次是因为连续失败可能加重风控，这里按用户要求放宽；若发现风控加重，把配置调回 1-2。「自动处理图片拼图滑块验证」开关标题同步改为“拖错后按下面的次数重试”。未真机验证。
-- fix `188b96eb`：拼图截图每个账号最多保留 10 张包含验证码的（原为 6 张；用户要求不要保留太多，遇到识别不了的会自己把截图发来）。无验证码的截图仍在验证结束后删除。此前 CHANGELOG 里写的“只留最新 6 张”均已改为 10 张。
-- fix `76c6edbd` `61d52f05`（规则后改）：`puzzle/` 截图目录里出现好几张没有验证码的图（用户反馈）。原因：处理流程启动后每秒对最大的 WebView 截图（最多 12 次），识别不到滑块就存 `no-slider`，验证码图片未加载、窗口已关、或被 H5 打开监视误触发扫到无关页面时都会存下无验证码的图，还会把真验证码的截图挤出“只留 6 张”的名额。先按用户意见改为：过程中多存几张（方便看过程），**验证结束后删掉没包含验证码的，只留包含验证码的**——结束点是拖动后 1.5 秒检查完、或 60 秒监视窗口期结束（被动静默扫描不存无滑块截图）；`cleanupNoSlider` 在工作线程删除所有 `*-no-slider.png`。包含验证码的截图（`no-track`/`match-failed`/`matched-d…`）仍只留最新 10 张，无验证码的截图另设上限（16 张）兜底，互不挤占。文件名后缀即原因。（曾短暂改成“每窗口只存 1 张”，用户否掉了，以本条为准。）
-- 真机验证：用户装 `2c005d55` 编译的包后，手动触发验证码，**拼图自动验证成功一次**（触发→截图→识别→匹配→拖动整条链路通了）。这同时推翻了此前“手动触发的验证不会自动处理”的说法：手动触发也被某个触发点接住了。当时没有导出运行日志，不知道具体是弹窗钩子、H5 打开监视还是页面恢复扫描；单次成功不代表成功率，GR 自述部分图片仍会失败。
-- chore `5ed2af90`：版本号 1.1.5 → 1.1.6（`gradle.properties`），tag `v1.1.6` 指向该提交；此后的提交（`e0a85a88` 起，见上）不在 tag 内，按用户要求不重打 tag，本地 Release 包为 tag 之后的代码编译。
-- fix `2c005d55`：H5 触发补漏（复查对照 GR `H5RiskOpenHook` 后核实成立）。① `Activity.startActivity/startActivityForResult` 原先只读 `getDataString()`，H5 容器的 URL 多在 extras 里，读到 null 后被转成字符串 "null" 必然不命中——现拼 action/data/component/extras（同 GR `intentToText`），日志里的来源摘要仍只保留域名+路径（先从 extras 文本取 URL，取不到用 component）。② 风险关键词补上 GR 的支付宝风控处置页指纹：模板 ID `180020010001270421`、`x-dispose-trace`、`disposeapplication`、`disposedname`、`disposename`（`captcha.alipay.com`/`captcha_`/`aicaptcha` 已被通用词 `captcha` 覆盖）。**没加** `security`：太宽，会命中大量无关页面，GR 也没有。③ 页面恢复被动扫描的类名由精确匹配 `XRiverActivity`/`AlipayLogin` 改为按关键字包含（xriver/nebula/h5activity/以 `.alipaylogin` 结尾），覆盖 NebulaActivity、H5Activity 等容器；仍只静默扫描 8 秒，识别到拼图滑块才转正常流程。未真机验证。
-- fix `5be07610`：拼图验证触发对齐 GR，修复“验证码弹出但验证记录一条都没有”。对照 GR 的 `CaptchaHook`/`SimplePageManager`：① 我的 `CaptchaDialog.show()` 钩子先 `getDialogInstance` 再 `collectDialogInfo`，任何一步取不到就直接 `return`，一行日志都不写——现在先记录再取细节，取不到弹窗对象/文字也照样写「验证记录」（`来源[CaptchaDialog:类名]`，文字可为空），并把弹窗对象直接交给 `PuzzleCaptchaSolver.arm(source, dialog)`，扫描时优先用它，不再依赖窗口跟踪列表；② GR 在 XRiver 页和登录/首页（`AlipayLogin`）恢复时就挂验证码处理器，我原先只在接口报错/弹窗/H5 URL 才启动——新增 `armPassive`：这两个页面恢复时静默扫描 8 秒（不写验证记录、不存无滑块截图），一旦识别到拼图滑块才转为正常流程并写“被动扫描发现拼图滑块”。仍是推测：不知道用户这次验证码具体走哪条路径，运行日志（1.1.6 11:02–11:14）里没有任何接口验证要求；新增的“钩子已挂载/H5 验证页监视已挂载”运行日志能区分“钩子没挂上”和“没触发”。未真机验证。
-- feat `b3026e22`：验证码出现方式补充「H5 验证页监视」并加钩子挂载日志。依据：11:02 起的 1.1.6 真机运行日志到 11:14 没有任何接口返回 1009/“请验证”（也没有风控暂停），用户却在做任务时被弹出验证码——说明这次验证码是宿主自己拉起的页面，不经过 `RpcRequestGuard`，也没有命中 `CaptchaDialog` 记录，验证记录因此为空、拼图处理没被触发。新增 `H5RiskTrigger`（思路来自 GR `H5RiskOpenHook`，那边只做诊断）：挂钩 `android.webkit.WebView.loadUrl`、`com.alipay.mywebview.sdk.WebView.loadUrl`、`Activity.startActivity/startActivityForResult`，URL 含 captcha/slider/risk/verify/validate 时写一条验证记录（`来源[H5:…]`，只记域名+路径，不记参数，避免带出令牌）并 `PuzzleCaptchaSolver.arm`；同一页面 30 秒内去重。`CaptchaHook` 的 `CaptchaDialog.show()` 监视钩子和 `H5RiskTrigger` 现在都会在运行日志留“已挂载/挂载失败”，下次能区分“钩子没挂上”和“没触发”。风险：关键词较宽（含 risk/verify），可能命中无关页面，只会多记几条验证记录并启动 60 秒监视，不会自动拖动（拖动要求识别到滑块并匹配成功）；`loadUrl` 之外的打开方式（如 Nebula 的 startApp/openUrl）没有监视。未真机验证。
-- fix `e0a85a88`：拼图验证码截图目录改为 `sesame-M/puzzle/<账号名>/`（`FileUtil.getCurrentUserPuzzleDirectory`），不再放在 `log/<账号ID>/puzzle/` 下：用户在旧位置找不到文件，且放在 log 下清理日志时会被一起删。同时把之前 CHANGELOG 里写的截图位置更正为新目录。
-- fix `ee878329`：拼图自动拖动后 1.5 秒发现验证窗口已关闭时，调用 `RpcRequestGuard.clearVerifyPause()` 解除验证暂停（复查发现遗漏：旧版简单滑块成功后会解除，拼图路径没有，触发验证的接口要多等最多 5 分钟）。窗口关闭不一定是通过，但解除无害：仍需验证时接口会再次返回“请验证”并重新暂停、重新监视。
-- feat `fcee963f`：自动处理「对准图片」的拼图滑块验证码（移植 GR2026 `2609141630` 的图像匹配，流程重写为精简版）。核实：GR 的 `libsesame.so` 只有 AES/庄园饲料任务/签名校验，**没有任何验证码识别**，识别全在 Java。新增 `PuzzleSliderMatcherCore`/`PuzzleTextureMatcherCore`/`PuzzleOccludedContourMatcher`/`PuzzleSliderGeometry`/`PuzzleSliderMatcher`（与 GR 两个版本完全一致，纯 Java），`PuzzleCaptchaSolver`（验证被要求后每秒扫描窗口最多 60 次 → 找 `com.alipay.mywebview.sdk.WebView`/`android.webkit.WebView` → `PixelCopy` 截图 → 工作线程按颜色连通块识别滑块按钮与轨道终点 → 图像匹配得缺口位移 → 主线程拖动），`PuzzleSwipe`（触摸序列：带压力/接触面积/轻微弧线，屏幕坐标换算成视图内坐标，最后一次 MOVE 落在精确终点，中途失效补 CANCEL）。触发点：`RpcRequestGuard` 遇“请验证”（与验证记录同一处）、`CaptchaDialog.show()` 常开钩子（`CaptchaHook`，不受“关闭代理/VPN 弹窗”开关影响，含 VPN/代理字样的弹窗跳过）。`ApplicationHook.initSimplePageManager` 现在不分版本都开窗口监控（栈顶 Activity/对话框跟踪），“向右滑动”简单滑块处理器仍只在支付宝 ≤10.6.58 注册。新增配置「自动处理图片拼图滑块验证」（`BaseModel.autoPuzzleSlider`，默认开）。约束沿用 GR 经验：每个验证码窗口最多自动拖动一次，识别不可信不动手，只在验证被要求后的窗口期扫描；延迟回调与工作线程都用 `TaskLifecycle.enter(generation)` 包住。截图保存在 `sesame-M/puzzle/<账号名>/`（只留最新 10 张；最初放在日志目录下，后改），过程写进「验证记录」日志（`拼图验证🧩…`）。**验证情况**：匹配算法用 GR 记录的 9 个真实脱敏样本离线回放通过（新增 `checks/check_puzzle_matcher.py`，夹具 `checks/fixtures/puzzle-slider/`）；`check_rpc_guard` 补了触发断言。**没有在真机上验证**：滑块按钮识别沿用 GR 参考设备布局（宽 1264、按钮约 (236,1787)）的颜色/位置常量，别的布局可能识别不到——识别不到只记日志并保存截图，不会乱拖；截图发来即可校准。GR 自述“部分图片验证失败问题尚待定位”，成功率不保证。**没移植**：悬浮“点击开始”控制按钮、手动触摸中断监视、H5 风险页 URL 钩子、HTTP 抓包与页面探针（后者用来在没有 1009/CaptchaDialog 的情况下发现验证页；手动触发的验证目前不会自动处理）、后台模式（要求窗口可见）、原生对话框里的拼图滑块路径。GMT+8/JSON：本次新增代码无日历/JSON 使用（截图文件名用毫秒时间戳）。
-- refactor `602eca3d`：删除「版本伪装」功能（`VersionHook` 整个类、扩展功能页“版本伪装”卡片、`ApplicationHook` 里的注册/加载/日志、`version_config.json` 读写、`getEffectiveVersion`）。依据：09-19 真机日志（伪装开启、提前伪装生效，`已伪装173次`）弹出的仍是需对准图片的滑块，伪装版本改变不了服务端下发的验证码类型；默认早已改回关闭，用户日志里“开关=关”，`SimplePageManager` 因支付宝 12.x > 10.6.58 本就不启用。`alipayVersion` 现在始终是真实版本，行为与默认关闭一致，上游 `MIUIX-api102` 没有这个类，删除不产生合并冲突。`checks/audit_regressions` 去掉对 `VersionHook.handleRead` 的断言；`doc/GR-Sync.md` 该条标注已删除。旧设备上遗留的 `version_config.json` 无人读取，可手动删除。9 项回归与 debug 编译通过。
-- merge `5e34fbb4`：再次合并 `origin/MIUIX-api102`（b1293b40 → 2dda9ba3，5 个上游提交：小鸡睡觉/起床按空间类型取值判断、使用说明与配置项说明文档/README、VPN 弹窗屏蔽功能、翻倍卡额外能量收取简化）。冲突与取舍：① `SimplePageManager`：上游删掉了 `CaptchaDialog.show()` 钩子（VPN 弹窗改由 `CaptchaHook` 统一挂钩），取上游；原先接在那里的 `CaptchaTriggerStats.recordDialog` 最初移到 `CaptchaHook.hookCaptchaDialogShowAndClose` 的“非 VPN/代理弹窗”分支（只受「关闭请检查是否使用了代理软件或VPN」开关控制）；后续 `5be07610` 改为独立常开的 `CaptchaDialog.show()` 钩子（`hookCaptchaDialogArm`），不再受该开关影响，见下方 2026-09-21 详细记录。② `BaseModel`：my_dev 早已在 `137cf239` 修过同一个 boot() 被注释的问题，上游又新增一份同 key 的 `closeCaptchaDialogVPN`（标签“屏蔽VPN/代理弹窗”，默认开）导致重复定义无法编译，删掉上游那份，保留 my_dev 的字段（标签、默认关不变）与 boot 里 `setupHook` + `updateHooks`；`ApplicationHook` 里上游多加的一句 `CaptchaHook.setupHook(classLoader)` 保留（重复调用只重复打印日志）。③ `AntFarm`：my_dev 已整段删除自动睡觉，不引入上游的 `animalSleepNow`；起床处保留 my_dev 的 opt 读取与 `countDown` 判断，只采用上游“比对 `spaceType` 取值 == `ChickFamily`”（上游自述未实机验证，若服务端家庭空间取值不是 ChickFamily，家庭起床将不再触发）。自动合并部分：`CaptchaHook` 上游把 VPN 判断放宽为包含“VPN”或“代理”即关闭弹窗（原为整句精确匹配），照收，注意误关风险；`AntForestV2` 翻倍卡额外能量改为 `leftEnergy > 0` 即收，字段「倍卡额外能量(大于该值收取)」不再生效，字段暂留。GMT+8/JSON 创建/JSON 读取复查：本次合并新增/修改代码无新的 Calendar/裸 JSON 构造/裸 `get*()`，`AntForestV2` 用 `MyUtils.newJSONObject`。9 项回归与 debug 编译通过。
-- fix `0530538c`：「验证记录」一条都没有。真机日志（支付宝 12.12.20.8000，伪装=关）显示 05:49 `cook` 返回 1009 后只有“风控验证🔐已将支付宝切到前台”，没有任何验证记录。根因：`initSimplePageManager` 在支付宝版本 > 10.6.58.99999 时整体不启用，`CaptchaDialog.show()` 钩子与 Activity 处理器都没注册，1533a213 的两个记录点在新版支付宝上永远不触发（伪装关闭后更是如此）。修复：`RpcRequestGuard` 遇“需验证”类失败（与 `showVerification` 同条件）时调用 `CaptchaTriggerStats.recordRisk(method, message)`，类型「风控要求验证(接口返回)」，不依赖界面 Hook，直接记录返回验证要求的接口。另补 `BaseCaptchaHandler` 找到滑动文字时的 `recordSlide`（仅低版本/伪装开启时有用）。局限：只能记到接口要求验证的时刻；界面弹窗形态（拼图/滑块）在高版本仍拿不到。未真机验证。
-- fix `0530538c`：`RpcRequestGuard` 退避时长修正（用户指出“人气大爆发”不该停 24 小时、风控验证 1009 也不该停 24 小时）。① `errorMessage()` 补读 `resultView`：`loanpromoweb.promo.signin.query` 的“人气大爆发，请稍后再试”原先被当成“响应未提供错误原因”，非核心接口连续 3 次就走 `!core && failures>=3 → 24 小时`；现识别为临时繁忙（`isBusy`：人气大爆发/系统繁忙/请稍后再试），非核心接口按 5 分钟(前 2 次)/30 分钟退避，核心接口行为不变。② “请验证后继续”类（文案含“验证”或 cheating traffic）不再持久化暂停：只在内存暂停 5 分钟（`VERIFY_PAUSE`，按请求键 + `TaskLifecycle.generation()`），不写 `RuntimeInfo`，所以重启支付宝（进程重建）或切换账号（代数变化）后立即失效，请求重发即可重新弹出验证；用户反馈 24 小时（后又改成持久化 30 分钟~6 小时递增）都不对，因为持久化状态会带过重启。复查意见处理：验证暂停 30 分钟缩为 5 分钟（手动验证通过后不必久等；`showVerification` 本身 10 分钟节流），并新增 `RpcRequestGuard.clearVerifyPause()`，`BaseCaptchaHandler` 自动滑动成功后立即清除；`recordSlide` 不再 `String.valueOf` 包 null；`CaptchaTriggerStats` 去重由单变量改为按签名的 Map，接口/Activity/弹窗交替出现时各自去重。未采纳：`isBusy` 增加“活动太火爆”等变体（没有日志证据，日后见到再补）。非验证类的风控拒绝（“访问被拒绝”、无文案的 1009）仍持久化，30 分钟/2 小时/6 小时递增。旧版本已写入 `RuntimeInfo` 的 24 小时暂停：请求键前缀 `RpcRequestGuard.v1.` 改为 `v2.`，旧键不再被读取，整体作废（其余合法暂停会在下一次失败时重新学到）。③ 1009 但文案是“系统繁忙，请稍后再试”（neverland）按临时繁忙 5/30 分钟，不再当风控。`RpcFailurePolicy.RISK_DENIED_MS` 常量保留，`IsolatedRewardTask`/`OtherRequestGate` 的奖励请求层仍用它，未改。`check_rpc_guard.py` 更新原 24 小时断言并新增：验证暂停只在内存 30 分钟且不落盘、换号（代数变化）解除、1009 繁忙短退避、`resultView` 读取、人气大爆发连续 4 次不停一天。未真机验证；1009 若过于频繁重复触发会被 riskPause 递增到 6 小时，时长是按“先短后长”定的默认值，觉得不合适可再调。
-- docs `0530538c`：复核 09-21 账号 2088702045701743 日报（53 次，GMT+8 00:40–09:31）+ 运行日志，结论：无需新增跳过规则。① 网络 48 共 18 类各 1 次，集中 01:46–01:49（约 3 分钟断网），守卫已按 1/5 分钟退避；② `receiveFarmTaskAward` 102 “开小差”6 个任务 ID 各 2–5 次，已有 5 分钟→30 分钟→6 小时退避；③ 金豆 `GOLDENBEAN_GAME_ZH0_LYJX_V1`/`ZH0_NCSCC` 已自动拉黑，`WAKUANG` “任务已完结”、`KUAIDI_VITALITY` “任务实例无效”各 1 次（此前每天 11+ 次，已收敛）；④ `walk.go` GO_STEP_NOT_ENOUGH、`signin.query PLAY102632271`（“人气大爆发”）均已暂停 24 小时；⑤ `donation` 218 “自营项目没指定标的物”1 次，紧接着回退到公益捐蛋成功（日志 23:40:23），属预期；⑥ `receiveFamilyAward` V07 “权益已领取”、`collectEnergy` `TARGET_USER_PROTECT_BY_ENERGY_SHIELD`（列表后被加罩的竞态）是良性结果，只占日报计数，不处理；⑦ `cook` 1009（06:49，来源 `antfarmzuofanrw`）今天唯一一次风控验证，已暂停 24 小时。证据不足/暂不处理：⑤⑥ 若日后次数明显增多再考虑不计入失败统计。
+- chore `65c50523`：版本号 1.1.7 → 1.1.8（tag `v1.1.8`），8 个提交：拼图识别/截图/轨迹修复 + 上游界面修复。
+- merge `f133ba53`：合并 `origin/MIUIX-api102`（3 个上游提交：界面内边距/输入框对齐/副标题 + `UserIdMap` 取自身信息），2 处冲突保留本分支；三项检查无新增，回归与编译通过。
+- fix `5af6d005`：拼图拖动轨迹补 GR 随机效果（按下停 30~80ms、MOVE 抖 ±3/±2px，落点精确）；未真机验证。
+- fix `5af6d005`：拼图模板框内缩 8px，真机火焰图错配 751→672（芽形 610）；手指提前提交问题未定位，需 `matched_submit` 截图；未真机验证。
+- feat `5af6d005`：松手前加截 `matched_submit`（等 150ms，800ms 兜底），`matched`/`matched_submit` 各留 10 张；服务端判错原因未定；未真机验证。
+- chore `3e920ab6`：版本号 1.1.6 → 1.1.7（tag `v1.1.7`），51 个提交：拼图增强、账号名目录与导出、上游配置保存与界面。
+- ui `c1806e72`：主页 Tab 去掉“当前账号：”前缀；首页标题 `Sesame-M` 改为芝麻粒M（与 `AGENTS.md` 品牌名写法待统一）。
+- merge `b9b10dde`：合并 `origin/MIUIX-api102`（17 个上游提交），6 处冲突取舍见文末详细记录；Debug 与 Release 构建成功，13 项回归通过。
+- fix `e0fec4b2`：日志页“分享”改走 `copyForShare` 副本带账号名；导出/分享/统计各出口已核对均带账号名；未真机验证。
+- fix `872cd694`：导出文件名 uid 目录补账号名、拼图扫描循环加令牌防双跑、被动扫描要求按钮+轨道同时识别；655 位移未通过原因未定；未真机验证。
+- fix `45f82c05`：账号名读取顺序定为括号前名字→括号内账号→uid；补回归用例；未真机验证。
+- feat `ffcffb21`：新增 `AccountFolderName`，日志/截图目录与导出文件名改用账号名（含安全化、同名加 uid 后 4 位、旧 uid 目录改名迁移）；未真机验证。
+- fix `0ebf9d0e`：`puzzle/` 只保留拖动过的 `matched`（每号 10 张），其余进 `tmp/` 验证结束即删；`match-failed` 不再保留；未真机验证。
+- fix `10875385`：`no-track` 改判无验证码随结束清理；H5 关键词收窄到 GR 指纹；未真机验证。
+- fix `10875385`：拼图尝试计数改按 WebView，验证成功/重弹/换号重置；未真机验证。
+- feat `5489f7a9`：拼图拖错允许重试，新增 `puzzleMaxAttempts`（默认 4，范围 1-5）；未真机验证。
+- fix `188b96eb`：拼图截图每号保留 10 张（含验证码的，原为 6 张）。
+- fix `76c6edbd` `61d52f05`：验证结束删无验证码截图（含码的留 10 张，无码的另设 16 张兜底）；“每窗口只存 1 张”曾被否。
+- 真机验证：`2c005d55` 包手动触发拼图自动验证成功一次（整链路通，成功率不保证）。
+- chore `5ed2af90`：版本号 1.1.5 → 1.1.6（tag `v1.1.6`）；之后提交不重打 tag。
+- fix `2c005d55`：H5 触发补漏（intent 拼 extras 文本、补 GR 风控指纹、被动扫描类名改关键字包含）；未真机验证。
+- fix `5be07610`：`CaptchaDialog` 钩子先记录后取细节 + 新增页面恢复被动扫描 `armPassive`；未真机验证。
+- feat `b3026e22`：新增 `H5RiskTrigger`（`WebView.loadUrl` + `startActivity` 挂钩，命中指纹记验证记录并 arm）；关键词宽只记不拖；未真机验证。
+- fix `e0a85a88`：拼图截图目录改到 `sesame-M/puzzle/<账号名>/`，不再放 log 下。
+- fix `ee878329`：拼图拖动后窗口关闭即 `clearVerifyPause`，不再多等 5 分钟。
+- feat `fcee963f`：新增拼图滑块自动处理（移植 GR 图像匹配 + 自研 solver/swipe/触发/截图/配置 `autoPuzzleSlider` 默认开）；9 样本离线回放通过；未真机验证。
+- refactor `602eca3d`：删除版本伪装（真机验证伪装改不了服务端下发类型）；`docs/GR-Sync.md` 标注已删；回归与编译通过。
+- merge `5e34fbb4`：合并 `origin/MIUIX-api102`（5 个上游提交），`SimplePageManager`/`BaseModel`/`AntFarm` 三处冲突取舍见文末详细记录；回归与编译通过。
+- fix `0530538c`：`RpcRequestGuard` 遇需验证失败直接记验证记录（不依赖界面 Hook）；高版本弹窗形态仍拿不到；未真机验证。
+- fix `0530538c`：退避修正——“人气大爆发”等按临时繁忙短退避；验证暂停只内存 5 分钟不落盘（v1→v2 旧键作废）；1009 繁忙不再当风控；未真机验证。
+- docs `0530538c`：复核 09-21 账号日报（53 次），结论无需新增跳过规则（断网/102 退避中/已拉黑/良性结果/单次证据不足）。
 
 ## 2026-09-19
 
-- merge `2544c90a`：再次合并 `origin/MIUIX-api102`（93140f06 → b1293b40，2 个上游提交“修复广播来源未校验并清理注释代码与统一日志截断”“修复20:01后回退公益捐蛋导致当天重复捐蛋”）到 `my_dev`，3 个文件冲突（`ApplicationHook`、`BaseModel`、`AntFarm`）；三项必查无问题，十项回归通过。详见详细记录。
-- feat `1533a213`：新增独立日志类型「验证记录」，统计哪些功能会触发弹出验证码。`Log.captcha`（不计入 `countModuleLog`）写 `captcha.日期.log`，同时以 `CAPTCHA` tag 写运行日志；日志页与首页开关新增「验证记录」（`AppConfig.enableCaptchaLog` 默认开）。`CaptchaTriggerStats` 在 `CaptchaDialog.show()` 之后（以及处理器在 Activity 里找不到“向右滑动验证”但界面有验证文字时）记一行：类型（向右滑动/对准图片拼图/未识别）、来源、**当时运行中的模块**（`ModelTask.runningTaskNames`）、**最近 5 个 RPC**（`RpcRequestGuard.recentRequests`）、界面文字；同来源同类型 30 秒去重；每轮执行开头打印“验证码触发统计(本进程)：模块 N次”。归因是推断（弹窗前最近的请求/运行中的模块是嫌疑对象），手动在支付宝里操作触发的验证会显示“无运行中模块”；计数进程重启清零，事件本身都在日志里。只观测，不点击/拖动/关闭弹窗。未真机验证。
-- fix `7f17e603`：版本伪装默认改回关闭。1.1.5 默认开启并做了定向提前伪装，真机日志（18:01，184719 包）显示日志模块早读被改写（`早期伪装(日志模块)2次`）、之后 173 次读取全部被改写，但弹出的仍是需对准图片的滑块——通过 `PackageManager` 伪装版本对验证码类型无效，主动向服务端谎报版本有风险却无收益。`enableVersionHook` 缺省 `false`、`sEarlyFake` 缺省 `false`；新建配置写 `defaultOffApplied` 标记；`loadVersionConfig` 一次性把没有该标记、且正好是 1.1.5 自动写入的默认值（开启 + 10.6.58.8000 + 1881）的配置改回关闭并打标记（用户改过版本名/版本号的不动；在 1.1.5 手动开启且没改默认值的也会被关一次，需在扩展页重新开启）；移除“旧默认自动迁移为开启”；扩展页说明改为默认关闭、不建议开启。诊断日志保留。**发现的显示问题（未修）**：日志里“实际版本”会显示伪装值，疑似系统缓存了 `PackageInfo` 对象而我们就地改写，只影响该行显示。
-- feat `d1d87b26`：庄园多阶段饲料任务每轮打印进度日志 `庄园饲料任务[标题]阶段 x/y，待领 Ng，状态 S`（同一状态只打一次）。用户反馈界面仍显示 180/240、右边“可领取”从 30g 变 60g：界面的 180/240 是**已领取额**，做完没领的显示在“可领取”，180+60=240 即 8 阶段已做满，光看界面分不清阶段是否做满，加日志便于核对。仅日志，无逻辑改动。
-- fix `0c409ef7`：庄园多阶段饲料任务先做完所有阶段再领奖，待领额按累计减已领计算（对照 AG）。用户反馈饲料任务停在 180/240、没做完 8 阶段，而 AG 会做到 240/240 一次领 240g。日志（1.1.5，18:18 编译）里庄园阶段只有“还有待领取的饲料”，无任何“饲料任务🧾完成”：上一版按轮执行只是 GR 的“做一阶段→领 30g”加了循环，`receiveFarmTaskAward` 用 `awardCount + foodStock > foodStockLimit` 判断容量，领不了就停，任务卡在“有奖没领、也不做下一阶段”。现：① 按轮执行时，FINISHED 状态的多阶段任务（`rightsTimesLimit>1`、`rightsTimes<limit`）**先继续 `doFarmTask` 把所有阶段做完**，不做一阶段就领一阶段（用户明确要求“完成任务就行，不用马上领，用了饲料再领”，也与 AG 最终 240/240 一次领一致），奖励累积；阶段做不了时才退回领奖，避免服务端不允许时卡死；全部阶段做完（`rightsTimes==limit`）或喂鸡腾出容量后由领奖路径/既有 `checkUnReceiveTaskAward` 一起领；仅按轮执行生效，`checkUnReceiveTaskAward` 的单独领奖遍历行为不变；② 容量判断和入账改用待领额 `pendingAward = awardCount − alreadyReceiveStageAwardCount`（AG `getMultiStageAccumulatedAward`），原先拿累计总额（如 240g）判断，会把放得下的待领奖励误判成超上限；差值为 0 时退回 `awardCount`，单阶段任务行为不变；③ `alreadyTried` 按“动作(do/receive/stage)+状态+进度+待领额”去重；④ 最大轮数 10→20。**不确定**：服务端是否允许有待领奖励时继续 `doFarmTask`（AG 走这条路径，未在 M 实测）；`alreadyReceiveStageAwardCount` 的语义按 AG 的用法推断。未真机验证，无回归覆盖。
-- fix `03b52936`：定向提前伪装没生效——调用方识别失败。真机日志（`runtime.2026-09-19.<账号>`，1.1.5，18:18 编译）显示 `提前伪装=开`、开关就绪前早读 12 次、`早期伪装(日志模块)0次`，来源栏又变回 `VectorChain/VectorNativeHooker` 框架帧：`callerFrames` 只在栈顶 24 帧里找最后一个 hook 机制帧，多层 hook 嵌套（LSPatch 加载器等）时框架帧超过窗口，于是把框架帧当成调用方，`fromLoggingModule` 认不出 `com.alipay.mobile.common.logging.`。改为扫描整个栈、按类名跳过 hook 机制帧（`org.matrix.vector`/`org.lsposed`/`LSPatch_`/`libxposed`）、反射/`ApplicationPackageManager` 帧和本模块帧（R8 短名类不含 `.` 一律跳过；`io.github.aw1y2z` 包）；来源样本相同的只留一条，每种类型上限由 3 提到 6，便于看全 12 次早读的来源。仍是假设：日志模块识别出来后是否真能改变验证码类型，取决于 `LogContextImpl` 缓存的版本是否就是那个。未真机验证。
-- fix `dddb5807`：日志查看器切换 tag 筛选或修改搜索文本后回到列表顶部。`MiuixLogViewerActivity.LogScreen` 里 `listState` 与筛选条件互不相干，过滤结果变了但滚动位置保留，停在结果中间；加 `LaunchedEffect(selectedTag, searchQuery) { listState.requestScrollToItem(0) }`（列表顶部是最新一条，与既有 `updateEntries` 的“跟回顶部”一致，用 `requestScrollToItem` 也不受列表因结果为空被移除/重建的影响）。搜索输入每敲一个字也会回顶，属预期。未真机验证，无回归覆盖（Compose UI）。
-- fix `53744e13`：版本伪装对支付宝日志模块的“早读”做定向提前伪装。真机日志（`runtime176-3`，1.1.5，模块 17:51 编译）的来源栏显示：开关就绪前支付宝读自身版本 11 次，来源是 `com.alipay.mobile.common.logging.ContextInfo.b < LogContextImpl.<init>`、`logging.util.perf.Judge.<init>`（日志/上下文模块，启动时读一次并缓存，最可能就是发给服务端的“应用版本”）和 `com.alipay.mobile.quinox.startup.UpgradeHelper.getUpdatedTimeFromPackageInfo < upgrade`（升级检查）；这些读取发生在配置加载前，此时开关为关，读到的是真实版本 12.12.20.8000，所以“已伪装”只对之后的读取有效，用户实测弹出的仍是需要对准图片的滑块。现 `sEarlyFake` 缺省为开（读不到配置——首次运行、文件读取失败——就按默认开启、默认版本 10.6.58.8000），`preloadEarlyEnable` 只在配置文件明确关闭时才把它关掉，`handleRead` 对“紧邻 2 个调用帧属于 `com.alipay.mobile.common.logging.`”的早读改写版本，其它早读（quinox 升级检查等）保持真实版本，不像全局提前伪装那样波及支付宝启动逻辑。`earlyEnable` 语义随之改为缺省为真、写成 `false` 可关闭（`saveVersionConfig` 仅在为 `false` 时写回）；诊断行新增“提前伪装=开/关”和“早期伪装(日志模块)N次”，早期伪装只计数不打日志（日志系统可能未就绪）；`callerFrames` 兼容 LSPatch/`org.matrix.vector` 帧。`audit_regressions` 中伪装取值的断言改指 `earlyName()/earlyCode()`。**仍是假设**：LogContextImpl 缓存的版本是否就是决定验证码类型的那个，需要下次弹验证码时看是否变成简单滑块；也可能 `Judge`/`quinox` 才是。未真机验证。
-- feat `2bedc9d7`：庄园饲料任务按轮执行，全部完成后当天不再查询（对照 AG 的多阶段任务处理）。原先每次执行 `listFarmTask(TODO)` + `listFarmTask(FINISHED)` 各一次，多次任务（如“试玩庄园火爆小游戏”每次 30g，日志里 09:30/09:59/10:04/10:59/11:11/16:17 各做一次）每轮只推进一次、并且完成后每轮仍继续查询。现 `runFarmTaskRounds`：每轮一次 `listFarmTask(null)` 同时处理 TODO 和 FINISHED；服务端列表里没有需要处理的任务 → 记当日标记 `antFarm::farmTaskAllDone`（`Status` 按账号存储、次日清）不再查询；有任务但本轮无推进（失败/冷却/饲料满领不了）→ 停、不记标记、下次再试；有推进 → 再来一轮，最多 10 轮；同一任务同一状态/进度本次只试一次（`alreadyTried`，对照 AG `actionKey`），避免“成功但状态不变”的任务白跑满 10 轮。附带：`receiveFarmTaskAward` 对非饲料奖励（工具等）RPC 成功后改返回 true（原返回 false 会被按轮执行当成一直没做完）；不支持 RPC 完成的 bizKey 抽成 `isUnsupportedFarmTask`，不计入“需要处理”。**代价**：当天新冒出的任务要等次日才会再查；饲料满领不了奖的任务会让标记迟迟不记（与原先每轮都查一致）。范围只有庄园饲料任务，其它模块的一次性任务未动。三项必查：无日历/日期代码，无 JSON 创建，读取全为 `opt*`。未真机验证，无回归覆盖（`AntFarm` 过大）。
-- feat `99f33eb7`：导出的日志文件名带账号。`FileUtil.exportFile` 对 `log/<userId>/` 下的文件在扩展名前插入 userId（`runtime.2026-09-19.log` → `runtime.2026-09-19.2088702045701743.log`），多账号导出到同一下载目录不再重名/覆盖，也能看出是谁的；与 `rpc-failures.日期.账号.json` 命名一致；文件名已含账号（异常统计）或取不到账号（`default`）时保持原名。日志**内容**仍不写 uid/昵称（`Log.withUser` 的隐私约定不变），只是文件名带账号，分享文件时要注意。用 uid 而非昵称/序号，因为独立 App 进程读不到昵称映射，而账号目录名就是 uid。未真机验证，无回归覆盖（`exportFile` 依赖 `Environment`）。
-- fix `2621d373`：版本伪装诊断的“来源”改进。首轮真机日志（`runtime176-2`，1.1.5）显示：支付宝在开关就绪前读自身版本 11 次（真实版本，全部走 `int` 重载），`PackageInfoFlags` 重载 0 次，91 毫秒后出现“版本伪装已生效”，即配置加载后的读取会被改写；但来源栏 6 条全是 `yb2.callAfter<ac2.intercept<VectorChain`——本模块 hook 框架类被 R8 混淆成 `yb2/ac2`，按包名过滤不掉，真正的调用方没显示。现改为在栈顶 20 帧里找最后一个 hook 机制帧（LSPosed/Vector/libxposed/`ApplicationPackageManager`），取其后 4 帧为调用方，且每种类型（早读/已伪装…）各留 3 条，不再被早读占满名额。仍不能断定服务端验证码类型看的是早读还是之后的读取，需要弹出验证码那一轮的日志对照。未真机验证。
-- fix `307c8080`：版本伪装补两处可能的漏洞。① 只 hook 了 `getPackageInfo(String, int)`，API 33+ 的 `getPackageInfo(String, PackageInfoFlags)` 重载被绕开：现两个重载共用 `handleRead` 改写（int 重载内部委托到 Flags 重载时跳过，避免重复）；② 支付宝在 `Application.attach` 就读走并缓存了自身版本，此时配置未加载、开关为关：新增可选开关 `version_config.json` 的 `"earlyEnable": true`（配合 `"enableVersionHook": true`），在 `initVersionHook` 时提前打开开关；**默认不启用**，因为提前伪装会让支付宝启动阶段的版本校验（热修复/容器版本匹配等）也看到假版本，存在让支付宝异常的风险，没有实测前不敢做成默认。模块自己记录“实际版本”改用 `VersionHook.readRealVersionName` 绕过伪装。与上一条诊断日志配套，装包跑一轮后按诊断行判断是否需要打开 `earlyEnable`。`audit_regressions` 里“伪装取 `getFakeVersionName()/getFakeVersionCode()`”的断言随逻辑挪到 `handleRead` 而改指新位置。外部审查后再修两处（核对成立）：`sInIntOverload` 原来对所有包名置位，支付宝探测未安装的微信/QQ 时原方法抛 `NameNotFoundException`，`XHelpers` 此时不执行 `afterHookedMethod`，标志残留在常驻线程上会让该线程之后的 `Flags` 重载伪装被永久跳过，现只对支付宝自己的包名置位；`saveVersionConfig` 覆盖写文件时没带 `earlyEnable`，用户手写的开关会在迁移或扩展页保存时被抹掉，现读取时记下并在保存时写回。**未验证伪装能否让服务端下发“滑到最右”的简单滑块；也可能支付宝的版本并不来自 `PackageManager`（如自带 BuildConfig/元数据），此时无论怎么改这里都无效。**（更新：其中 `earlyEnable` “默认不启用、全局提前伪装”的设计已被最上方“定向提前伪装”取代——缺省为真，且只对日志模块生效。）
-- feat `307c8080`：版本伪装诊断日志。`VersionHook.diagnostics()` 每轮执行在“编译时间”后打印一行：开关、Hook 是否注册、支付宝读取自身版本的次数（开关就绪前=拿到真实版本 / 已伪装 / 开关关闭时 / `PackageInfoFlags` 重载，后者只统计不改写并排除 int 重载内部委托），首次附带读取来源（去掉本模块/Xposed/反射帧的前 3 个调用方，最多 6 条，启动早期只缓存不直接打日志）。背景：运行日志（1.1.5）显示“应用版本：10.6.58.8000（实际 12.12.20.8000，已伪装）”，但 0 次“版本伪装已生效”，无法确认支付宝自己读到的是否被改写；可能原因是它在 `Application.attach` 就读走了版本（此时配置未加载、开关为关），或走了未 hook 的 `PackageInfoFlags` 重载。判读见方法注释。每轮执行打印“模块版本”与“编译时间”原本就有（`ApplicationHook`，与 GR 一致），未改。未真机验证。
-- fix `307c8080`：版本伪装对老用户不生效——1.1.5 的“默认开启”只写进新建的 `version_config.json`，≤1.1.4 建的旧文件（关闭、版本名空、版本号 0）不会被改，用户反馈庄园使用美食弹出的仍是需对准的滑块；运行日志（模块 1.1.2）里 `应用版本：12.12.20.8000`、无“版本伪装已生效”也印证这点。`VersionHook.loadVersionConfig` 现把“关闭且版本名空、版本号 ≤0”的旧默认视为未改动，迁移为默认开启 10.6.58.8000/1881 并保存；用户改过的配置不动。**伪装是否真能让服务端下发“滑到最右”的简单滑块仍未验证**（GR 声称 ≤10.6.58 可自动过简单滑块，当前真实版本是 12.12.20）。
-- fix `96e664f5`：没开通/未认证的功能一天最多请求一次（按账号）。运行日志 `runtime.2026-09-19.log` 的 196 次失败里 150 次是 `com.alipay.antfarm.collectManurePot` 返回 `G04`“肥料已经存满了，去开通芭芭农场种果树吧”（小号没实名开不了芭芭农场，两个肥料罐每轮同步都重复请求）。在所有请求收口的 `RpcRequestGuard` 加统一规则：响应文案含“去开通/请先开通/请先认证/请先实名/未认证/未实名”即该请求暂停 24 小时（按账号隔离，与既有暂停机制一致；只匹配对本人的提示，“好友未开通”这类针对他人的状态不算）。`check_rpc_guard.py` 补充：G04 后一天内跳过、到期恢复，好友类文案不暂停。既有断言“会员 `NOT_CERTIFIED`/“请先实名认证” 4 次调用共发出 3 次”随新规则改为 1 次（属未认证，一天一次）。先前在 `AntOrchard`/`AntFarm` 里逐点加标记的做法已撤回（未提交）。**遗留**：暂停是 24 小时不是自然日；只有日志里出现过的 `G04` 这一种被实测覆盖，其它接口的“未开通”文案（如各模块自己打印的“绿色经营未开通”是本地判断，不经此规则）需要日志里出现后再补关键词。未真机验证。
-- merge `e73337e7`：再次合并 `origin/MIUIX-api102`（d51b841f → 93140f06，1 个上游提交“修复光盘行动图片清空失效并收紧异常捕获与日志截断”）到 `my_dev`，2 个文件冲突（`TokenConfig`、`BaseModel`）；三项必查无问题，十项回归通过，`GeminiAI` 未受影响。详见详细记录。
-- merge `458b043a`：合并 `origin/MIUIX-api102`（4f975462 → d51b841f，7 个上游提交）到 `my_dev`，9 个文件冲突（含上游删除 `GeminiAI`/`TongyiAI`、新增 `CustomAI` 通用 AI 答题）；三项必查、九项回归 + `check_standalone_no_xposed_class` 通过。详见详细记录。
-- fix `a2e8b421`（另 `95a76ac0`、`9e940446` 补测试按钮与日志）：**恢复被合并误删的 `GeminiAI`**（海外用户正在使用，不能删除）。`GeminiAI`/`AnswerAIInterface`/`audit_regressions` 的 `GeminiAI` 检查及 `Answers.java.in` 全部恢复；`AnswerAI` 重新提供「AI类型」选项（字段 id 沿用 `useGeminiAI`，`GEMINI`=1，令牌沿用 `useGeminiAIToken`，已选 Gemini 的配置不丢），`CustomAI` 实现 `AnswerAIInterface` 作为另一选项（`CUSTOM`=0，占旧通义千问的 0 号位，通义千问不恢复）。规则写入 `doc/MyFix.md` 第 5 条与 `AGENTS.md`，合并时不得再删。「测试响应」按钮改为按当前选中的 AI 类型测试（选 GEMINI 测 Gemini 令牌，否则测自定义AI）。按钮文案改为「AI答题 | 测试响应」；`AnswerAI.boot()` 在「AI答」未开启时直接返回，不再打印“接口地址/模型名/令牌未填齐”（上游原有的日志噪音）。两类 AI 字段仍平铺显示，未做按类型折叠。
-- fix `a352b1d1`：补看遗漏的第三个账号日报 `rpc-failures.2026-09-18.2088942846628038.json`（50 次）：① 好友浇水 `transferEnergy` `ENERGY_INSUFFICIENT` 36 次——原先落入 default 分支继续浇下一个好友，现在自己能量不足即结束本轮浇水；② 1009“系统繁忙”（`neverland.queryItemList`）不再拉起支付宝，`showVerification()` 只在消息含“验证”/`cheating traffic` 时触发（暂停 24 小时的旧行为不变）。
-- feat `a352b1d1`：森林新增「找能量」`findEnergyCollect`（默认关，需同时开「收集能量」）：调用 `alipay.antforest.forest.h5.takeLook` 逐个获取推荐好友，进主页交给现有 `collectUserEnergy` 收取；接口与流程对照 AG，来源见详细记录。朋友文件里的「升级发财树领红包」未移植（见详细记录）。
-- fix `ac8624fa`：复核 09-19 两个账号异常日报（70+21 次）。① `receiveFarmTaskAward` 102“服务器正在开小差”（`cclyx_3bei_xjcmx_2`、`cclyx_sgbhsd_1c_zm3c`、`cclyx_3bei_dgls_2`、`cclyx_wdhysj_1cV2`、`IP_chouchoule_juankuan`，连续多日每天 8~12 次）：同任务当天第 5 次起退避改 6 小时，前 4 次仍 5/5/30/30 分钟，不永久拉黑；② 我的快递 `KUAIDI_VITALITY` 领奖（无原因，两账号共 15 次，09-17 为 13 次）：失败后当天不再重复领，成功行为不变。暂不处理：48 网络错误（01:50~01:53 集中，已有退避）；`energyRain*` 1009（风控，已暂停 24 小时）；`donation` 218“自营项目没有指定标的物”（1 次，配置项问题，证据不足）；`walk.go`“走慢一点”（业务限速，3 次）；`B_FREE_SEAT`、`TARGET_USER_PROTECT_BY_ENERGY_SHIELD`（正常业务提示）；金豆/`ORCHARD`/`loanpromoweb signin.query` 无原因各 1~3 次（后者较 09-17 的 19 次已大幅下降），证据不足。
-- feat `ac8624fa`：版本伪装 `VersionHook` 默认开启，默认版本 10.6.58.8000 / 1881（对齐 GR2026 `AppConfig` 默认值，高于新接口最低支持 10.3.96.8100；AG 无此功能）。仅对**新建**的 `version_config.json` 生效——已存在的配置文件（含旧默认的 `enableVersionHook=false`）不改，需在扩展页手动打开或删除该文件。改版本后需重启支付宝。（更新：“仅对新建配置生效”的限制已由 `307c8080` 的旧默认配置迁移逻辑取消，老用户会自动迁移为开启。）
-- feat `ac8624fa`：`RpcRequestGuard` 遇风控 1009/“验证后继续”暂停时调用 `ApplicationHook.showVerification()`，把支付宝拉到前台让验证界面弹出（账号切换中不拉，10 分钟内只拉一次）；`check_rpc_guard.py` 补充：首次触发拉起、已暂停不重复、48 网络错误不拉起。（更新：`a352b1d1` 起收窄为消息含“验证”/`cheating traffic` 才拉起，普通 `1009` 系统繁忙不再拉起。）
-- fix `2b11076a`：庄园 `AntFarm.run()`、运动 `AntSports.run()` 的各子任务分别隔离（新增 `step()`），单个子任务抛出异常只记日志并跳过自己，不再中断本轮后续任务。
-- feat `2b11076a`：运动同步步数——当前步数超过 18000 不再同步（readDailyStep hook 与主动推送均跳过）。
-- fix `2b11076a`：运动同步步数不再被异常打断——`steps.query` 查询失败/被保护暂停时不再让整轮运动任务提前 return，仍继续推送步数；推送遇到临时异常不再当天放弃，下一轮重试（仅接口不存在才标记当天跳过）。
-- fix `2b11076a`：`RpcRequestGuard` 请求键对 `enterFarm` 补充 `userId`/`farmId`，好友庄园 enterFarm 失败（繁忙/网络）不再暂停自己庄园的 enterFarm 导致整轮庄园任务被跳过；补充回归。
-- merge `6b8c1236`：合并 `origin/MIUIX-api102`（至 4f975462）到 `my_dev`，解决 20 个文件冲突；修复合并后 `AntFarm.competition()` 在 20:01 后跳过分支 `return;` 缺返回值的编译错误（改为 `return true;`），Java/Kotlin 编译通过。
+- merge `2544c90a`：合并 `origin/MIUIX-api102`（2 个上游提交），3 文件冲突；三项必查无问题，十项回归通过。
+- feat `1533a213`：新增「验证记录」独立日志（`Log.captcha` + CAPTCHA tag + 开关），记类型/来源/运行中模块/最近 5 个 RPC；只观测不干预；未真机验证。
+- fix `7f17e603`：版本伪装默认改回关闭（真机证明伪装改不了验证码类型，有风险无收益），1.1.5 默认值迁回关闭；“实际版本显示伪装值”未修。
+- feat `d1d87b26`：庄园多阶段饲料任务每轮打印进度日志（仅日志）。
+- fix `0c409ef7`：庄园多阶段任务先做完全部阶段再领奖，待领额按累计减已领算（对照 AG）；服务端是否允许待定；未真机验证。
+- fix `03b52936`：定向提前伪装调用方识别改全栈扫描（LSPatch 多层嵌套下 24 帧窗口不够）；能否改变验证码类型仍是假设；未真机验证。
+- fix `dddb5807`：日志查看器切换筛选/搜索后回到列表顶部；无回归覆盖。
+- fix `53744e13`：版本伪装对日志模块早读定向提前伪装（`sEarlyFake` 缺省开，其余早读不动）；是否命中决定类型仍待验证；未真机验证。
+- feat `2bedc9d7`：庄园饲料任务按轮执行（`runFarmTaskRounds`，最多 10 轮），做完当天不再查询；新任务次日才查；未真机验证。
+- feat `99f33eb7`：导出的日志文件名带 uid（防多账号覆盖）；内容仍不写 uid；未真机验证。
+- fix `2621d373`：版本伪装诊断来源改全栈找 hook 帧后 4 帧；仍需弹验证码那轮日志对照；未真机验证。
+- fix `307c8080`：版本伪装补 Flags 重载 hook + `earlyEnable` 可选提前伪装；另修线程标志残留与保存丢开关；能否生效未验证。
+- feat `307c8080`：版本伪装诊断日志（每轮打印开关/注册/读取次数与来源）；未真机验证。
+- fix `307c8080`：版本伪装旧默认配置迁移为开启（用户改过的不动）；能否下发简单滑块未验证。
+- fix `96e664f5`：`RpcRequestGuard` 加统一规则——未开通/未认证提示按账号暂停 24 小时；遗留：按 24h 非自然日；未真机验证。
+- merge `e73337e7`：合并 `origin/MIUIX-api102`（1 个上游提交），2 文件冲突；三项必查无问题，十项回归通过。
+- merge `458b043a`：合并 `origin/MIUIX-api102`（7 个上游提交，上游删 `GeminiAI`/`TongyiAI` 加 `CustomAI`），9 文件冲突；三项必查、九项回归 + 独立进程检查通过。
+- fix `a2e8b421`：恢复被合并误删的 `GeminiAI`（海外用户在用），`AnswerAI` 同时提供 GEMINI=1 与 CUSTOM=0；规则写入 MyFix 与 AGENTS。
+- fix `a352b1d1`：补看第三个账号日报——好友浇水能量不足即结束本轮；1009 系统繁忙不再拉起支付宝。
+- feat `a352b1d1`：森林新增「找能量」`findEnergyCollect`（默认关）；发财树红包未移植。
+- fix `ac8624fa`：复核两账号日报——农场 102 第 5 次起退避 6 小时；快递失败当天不再重领；其余已有退避/良性/证据不足。
+- feat `ac8624fa`：版本伪装默认开启（仅新建配置；老用户由 `307c8080` 迁移）。
+- feat `ac8624fa`：风控暂停时 `showVerification` 拉起支付宝（10 分钟一次；后收窄为仅含验证文案才拉）。
+- fix `2b11076a`：庄园/运动各子任务 `step()` 隔离，单个异常只跳过自己。
+- feat `2b11076a`：运动步数超 18000 不再同步。
+- fix `2b11076a`：运动同步 `steps.query` 失败不再提前 return，临时异常下轮重试。
+- fix `2b11076a`：`enterFarm` 请求键补 `userId`/`farmId`，好友失败不再暂停自家庄园；补回归。
+- merge `6b8c1236`：合并 `origin/MIUIX-api102`，20 文件冲突；修 `AntFarm.competition()` 缺返回值编译错误；编译通过。
 
 ## 2026-09-17
 
@@ -109,7 +116,7 @@
 - `56cc9a38` fix（诊断方向错误，已被 `1f6ec478` 取代真正修复，规则本身不算错保留未撤）：
   怀疑是 R8 混淆导致的崩溃，把 hook 包从只 keep `ApplicationHook` 一个类改成整包 `-keep`；
   重装后同样的崩溃复现，说明根因不在这里，见上一条真正的修复。
-- `330c746d` docs: 补全 2026-09-15 三轮合并/修复记录到 `doc/MyFix.md`/`CHANGELOG.md`；新增
+- `330c746d` docs: 补全 2026-09-15 三轮合并/修复记录到 `docs/MyFix.md`/`CHANGELOG.md`；新增
   `AGENTS.md`（Claude Code 和 Codex 都会读的项目须知）；顶栏/配置列表账号显示格式调整
   （`C176: 账号` 改 `C176(账号)`；配置列表 UID 一行改用 `ArrowPreference` 的 `summary`
   小字副标题，不再跟标题同号大小挤在一起）。
@@ -143,7 +150,7 @@
 
 - `c30facbc` fix: 修复移植审查确认的 17 项问题（切号任务隔离、金豆额度与领奖、视频冷却与调度、
   日志兼容与账号同步、分页/捐赠边界、VPN Hook 初始化、鱼塘时区、版本默认值、Gemini 答案和运动币气泡）；
-  新增本地 JVM 回归检查，详见 `doc/MyFix.md` 对应记录。
+  新增本地 JVM 回归检查，详见 `docs/MyFix.md` 对应记录。
 - `5759d512` feat: 从新版GR快照移植12个独立小额福利任务（dayDaySave/luckCard/factCheck/
   forestPlantRewards/dailyCash/promoprodRewards/wealthDay/youthPrivilege/weeklyWelfare/
   healthIslandRewards/myBankWelfare/other）+ videoRewards 视频红包真实观看验证
@@ -152,7 +159,7 @@
 - `137cf239` fix: 修复验证码VPN弹窗拦截开关从未生效的问题（`boot()` 整段被注释掉）
 - `6a31c9e1` feat: 新增全局自动切号功能（账号轮询，最小间隔2小时）
 
-## 详细记录（自 doc/MyFix.md 迁移）
+## 详细记录（自 docs/MyFix.md 迁移）
 
 ### 2026-09-21（再续）：合并 MIUIX-api102 至 3066428a
 
@@ -229,7 +236,7 @@
 
 **5. 删除「版本伪装」（`602eca3d`）**
 - 依据：09-19 真机日志（伪装开启、提前伪装生效，`已伪装173次`）弹出的仍是需对准图片的滑块，伪装版本改变不了服务端下发的验证码类型；默认早已改回关闭，运行日志里“开关=关”。
-- 范围：`VersionHook` 整个类、扩展功能页“版本伪装”卡片、`ApplicationHook` 里的注册/加载/日志、`version_config.json` 读写、`getEffectiveVersion`、`audit_regressions` 里对 `VersionHook.handleRead` 的断言；`alipayVersion` 现在始终是真实版本。`doc/GR-Sync.md` 该条改写为“最初不迁入→my_dev 移植→2026-09-21 验证无效后删除”。上游没有这个类，无合并冲突；旧设备上的 `version_config.json` 无人读取，可手动删除。
+- 范围：`VersionHook` 整个类、扩展功能页“版本伪装”卡片、`ApplicationHook` 里的注册/加载/日志、`version_config.json` 读写、`getEffectiveVersion`、`audit_regressions` 里对 `VersionHook.handleRead` 的断言；`alipayVersion` 现在始终是真实版本。`docs/GR-Sync.md` 该条改写为“最初不迁入→my_dev 移植→2026-09-21 验证无效后删除”。上游没有这个类，无合并冲突；旧设备上的 `version_config.json` 无人读取，可手动删除。
 
 **6. 拼图滑块自动验证（移植 GR2026 `2609141630`，`fcee963f` 起）**
 - 先核实：GR 的 `libsesame.so`（两个版本 4 个架构逐一比对，哈希相同）JNI 导出只有 AES 加解密、庄园饲料任务、`unlockSesame`、签名校验（`Validator`），没有任何验证码识别/图像符号；`guard.cpp` 是签名校验，`watermark.cpp` 是水印。识别全在 Java：`PixelCopy` 截图 → 边缘/纹理/被遮挡轮廓匹配 → `MotionEvent` 拖动。`Puzzle*` 五个类在两个 GR 版本里完全一致；流程类（`BaseCaptchaHandler`、`MotionEventSimulator`、`SimplePageManager`）有差异，参考较新的 `1630`。GR 与本项目同为 GPLv3。
@@ -306,7 +313,7 @@
 
 **3. 导出日志文件名带账号**：`FileUtil.exportFile` 对 `log/<userId>/` 下的文件在扩展名前插入 userId（`runtime.2026-09-19.log` → `runtime.2026-09-19.2088702045701743.log`），多账号导出到同一下载目录不再重名/覆盖，与 `rpc-failures.日期.账号.json` 命名一致；文件名已含账号或取不到账号（`default`）时保持原名。日志**内容**仍不写 uid/昵称，只是文件名带账号，分享文件时要注意；用 uid 而非昵称/序号是因为独立 App 进程读不到昵称映射，而账号目录名就是 uid。未真机验证，`exportFile` 依赖 `Environment` 无回归覆盖。
 
-**文档改动汇总补充**：`CHANGELOG.md` 新增本节；此前“本日文档改动汇总”所列 `doc/MyFix.md` 第 5 条与 `AGENTS.md` 一行不变。
+**文档改动汇总补充**：`CHANGELOG.md` 新增本节；此前“本日文档改动汇总”所列 `docs/MyFix.md` 第 5 条与 `AGENTS.md` 一行不变。
 
 ### 2026-09-19（续）：没开通/未认证的功能一天最多请求一次；文档改动汇总
 
@@ -324,8 +331,8 @@
 
 **本日文档改动汇总**（按要求一并记录）：
 - `CHANGELOG.md`：顶部 09-19 摘要与本节及“移植找能量”“合并 MIUIX-api102（两次）”“第三个账号日报”等详细记录。
-- `doc/MyFix.md`：新增硬性规则第 5 条——`GeminiAI`（含 `AnswerAIInterface`）海外用户正在使用，合并时不能删除，配置 id `useGeminiAI`/`useGeminiAIToken` 不能改。
-- `AGENTS.md`：合并说明里加一行“合并时不要删 `GeminiAI`”，指向 `doc/MyFix.md` 第 5 条。
+- `docs/MyFix.md`：新增硬性规则第 5 条——`GeminiAI`（含 `AnswerAIInterface`）海外用户正在使用，合并时不能删除，配置 id `useGeminiAI`/`useGeminiAIToken` 不能改。
+- `AGENTS.md`：合并说明里加一行“合并时不要删 `GeminiAI`”，指向 `docs/MyFix.md` 第 5 条。
 - `gradle.properties` 版本号 `1.1.2` → `1.1.5`（用户已提交为 `2357cd25 v1.1.5`）。
 
 ### 2026-09-19（续）：合并 MIUIX-api102 至 93140f06
@@ -409,7 +416,7 @@
 
 ### 2026-09-17（续）：每日异常报告复核及绿色经营签到场景隔离
 
-按 `doc/每日异常反馈.txt` 分析当日报告：36 类、123 次失败（GMT+8，00:15–09:30），网络错误 48 次、无原因 42 次、庄园繁忙 25 次、饲料槽满 2 次、行走限制 3 次、安全验证 2 次、能量罩 1 次。报告只有失败次数及首末时间，没有成功响应、每次失败时间或安装版本，不能据此判定现有退避没有生效。
+按 `docs/每日异常反馈.txt` 分析当日报告：36 类、123 次失败（GMT+8，00:15–09:30），网络错误 48 次、无原因 42 次、庄园繁忙 25 次、饲料槽满 2 次、行走限制 3 次、安全验证 2 次、能量罩 1 次。报告只有失败次数及首末时间，没有成功响应、每次失败时间或安装版本，不能据此判定现有退避没有生效。
 
 确认并修复：M 与本地 GR 的绿色经营均调用 `signInQuery` 查询 `PLAY102632271`、`PLAY102232206` 两个场景。M 的共享 `RpcRequestGuard` 请求键遗漏 `sceneId`，导致两个场景共用失败累计和冷却，一个场景成功会清掉另一个场景的历史；日报同样遗漏该字段，将 19 次查询失败合在一起。请求键对非空 `sceneId` 追加字段名和值；无此字段的请求保持旧键，保留已有冷却。日报白名单新增 `sceneId`，继续脱敏、截断并按场景分别累计。不改变请求参数，不新增永久跳过规则。旧日报无法反推场景，旧版混合冷却不迁移到任一具体场景；升级后按新键重新累计。回归先复现跨场景成功清空失败，修复后验证三次失败后的暂停、另一场景仍可请求及日报分组。
 
@@ -843,7 +850,7 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 
 ### 2026-09-14：修三个 M 自己的 bug——用户明确只管 M，不追究 XU 是否也修了
 
-上一条 GMT+8 记录之外，核对 XU 自己 `doc/MyFix.md` 提到的几个待修项时，发现两个 XU 文档说"待修改"但**它自己当前代码也没真改**的问题，同时另外自己挖出一个新的：
+上一条 GMT+8 记录之外，核对 XU 自己 `docs/MyFix.md` 提到的几个待修项时，发现两个 XU 文档说"待修改"但**它自己当前代码也没真改**的问题，同时另外自己挖出一个新的：
 
 1. **`AntFarm.listFarmTask()` 未知任务状态中断整批处理**（已修）：[AntFarm.java](../app/src/main/java/io/github/aw1y2z/sesame/model/task/antFarm/AntFarm.java) 原 1675 行 `TaskStatus.valueOf(jo.getString("taskStatus"))` 裸调用，`TaskStatus` 枚举只有 `TODO`/`FINISHED`/`RECEIVED` 三个值（4392 行），服务端一旦返回没见过的状态直接抛 `IllegalArgumentException`，只被循环外层的 `catch` 兜住——意味着**这一轮循环里排在后面的所有庄园任务都不会被处理**，不是只跳过那一项。改成每项单独 `try/catch IllegalArgumentException`，未知状态记日志后 `continue` 跳过当前项，不影响其余项目。顺手把循环体内复用外层变量名 `jo`（原来重新赋值会覆盖外层 `jo`）改成独立的 `taskJo`，避免变量名混淆，没有引入行为变化。
 2. **`ApplicationHook.onPackageReady()` 用包名冒充进程名**（已修）：原 199 行 `lpparam.processName = param.getPackageName();`——libxposed 102 的 `PackageReadyParam` 不直接暴露真实进程名，之前图省事直接拿包名顶替，导致 `handleLoadPackage()` 里"主进程跑业务、子进程只装抓包"的分流判断在目标包的 `:xxx` 子进程触发这个回调时收到的还是主包名，分不清是不是子进程。新增 `getRealProcessName()`：优先反射调用 `ActivityThread.currentProcessName()`（API 28+ 的标准做法），拿不到则退回读 `/proc/self/cmdline`（覆盖 M `minSdk 26-27` 这段 API 28 以下的设备），两条路都失败才退回包名兜底——保留原来的行为下限，不会比之前更差。
@@ -900,7 +907,7 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 
 ### 2026-09-12：福气鱼塘（FishTask）移植——以 Sure-Xu 的 Java 版为底，对照 Sesame-AG 修正
 
-用户要求把福气鱼塘做了，指定用 Sure-Xu 的 Java 实现打底（Sure-Xu 已从 GR 原版修过 6 个已知缺陷，见其 `doc/GR-Sync.md`），如果 XU 版本有问题再参照 Sesame-AG（Kotlin 实现，用户更信任的参考）修。
+用户要求把福气鱼塘做了，指定用 Sure-Xu 的 Java 实现打底（Sure-Xu 已从 GR 原版修过 6 个已知缺陷，见其 `docs/GR-Sync.md`），如果 XU 版本有问题再参照 Sesame-AG（Kotlin 实现，用户更信任的参考）修。
 
 **为什么不直接参照 AG**：AG 的 `task/antFishPond/AntFishPond.kt`（1473 行）绑定在它自研的通用任务状态机框架（`TaskFlowEngine`/`TaskFlowAdapter`/`TaskFlowPhase`/`TaskFlowDecision` 等）上，这套框架 M 完全没有，其它任何模块也不用；照抄意味着要先把整套状态机框架搬进来，工作量和架构侵入性都远超这一个功能本身需要的范围。Sure-Xu 的 `model/task/fish/FishTask.java`（2370 行）是普通过程式 Java，`extends ModelTask` 后 `getName/getGroup/getFields/check/run` 的方法签名和 M 的 `ModelTask`/`Model` 抽象类完全一致（两边本来就是同源分支），机械翻译包名风险低得多。
 
@@ -919,7 +926,7 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 
 ### 2026-09-12：处理上次审计留的三个候选——writeDishImage 做了，VersionHook 做了（默认关），福气鱼塘查了源头还未做
 
-**福气鱼塘**：检查了 `E:\Work\Sesame-AG`（Kotlin，`task/antFishPond/AntFishPond.kt` + `AntFishPondRpcCall.kt`）和 `E:\Work\Sure-Xu`（Java，`model/task/fish/FishTask.java` + `FishConfig.java`，与 GR 文件名/结构几乎一致）——**两边都已经有这个功能**，其中 Sure-Xu 是从 GR 移植过来的 Java 版本，且 Sure-Xu 自己的 `doc/GR-Sync.md` 记录了移植时顺带修过的 6 个 GR 原版缺陷（成功兑换也写失败标记、循环末尾无条件清零失败计数、自动黑名单开关未接入、状态查询与广告处理互相重入、任务等待忽略中断、浏览循环次数用 `max` 未限制上限等）。~~结论：以后真做这个功能时……本次没有动手移植~~——已经做了，见上面（更晚）的"福气鱼塘（FishTask）移植"记录，用的正是这里说的 Sure-Xu Java 版本打底。
+**福气鱼塘**：检查了 `E:\Work\Sesame-AG`（Kotlin，`task/antFishPond/AntFishPond.kt` + `AntFishPondRpcCall.kt`）和 `E:\Work\Sure-Xu`（Java，`model/task/fish/FishTask.java` + `FishConfig.java`，与 GR 文件名/结构几乎一致）——**两边都已经有这个功能**，其中 Sure-Xu 是从 GR 移植过来的 Java 版本，且 Sure-Xu 自己的 `docs/GR-Sync.md` 记录了移植时顺带修过的 6 个 GR 原版缺陷（成功兑换也写失败标记、循环末尾无条件清零失败计数、自动黑名单开关未接入、状态查询与广告处理互相重入、任务等待忽略中断、浏览循环次数用 `max` 未限制上限等）。~~结论：以后真做这个功能时……本次没有动手移植~~——已经做了，见上面（更晚）的"福气鱼塘（FishTask）移植"记录，用的正是这里说的 Sure-Xu Java 版本打底。
 
 **VersionHook 版本伪装——确认判断错了，已移植，默认关闭**：上次审计只读了 `VersionHook.java` 本身就下判断"个人偏好，不移植"，这次用户要求查清楚具体干什么、有没有用，深挖了实际生效路径才发现：这不是简单的"跳过本地判断分支"，而是**向支付宝服务端主动谎报一个更低的客户端版本号**，目的是规避服务端对高版本客户端才触发的拼图验证码风控（GR 原注释："使其认为安装了低版本，从而避免高版本特有的拼图验证"）。用户知悉这个真实性质后仍要求移植，默认关闭。
 
@@ -949,12 +956,12 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 
 **这处修复比 GR 自己做得更完整，不是照抄**：核对 GR 当前代码发现它自己都没改全——`dayCalendar` 在 Service `onCreate` 处确实用了 `MyUtils.getInstance()`（GMT+8），但 `updateDay()` 里跨天时重新赋值 `dayCalendar = (Calendar) nowCalendar.clone()` 用的 `nowCalendar` 仍然是裸 `Calendar.getInstance()`——意味着 GR 自己的模块跑过第一次跨天之后，`dayCalendar` 会静默从 GMT+8 语义退回系统时区语义，这是 GR 自己遗留的不一致 bug。这次没有照抄 GR 的半成品，`onCreate` 初始化和 `updateDay()` 跨天重新赋值两处一起改成 GMT+8，保持 `dayCalendar` 全生命周期语义一致。
 
-**发现但没有动、需要以后单独处理的同类风险**：[ApplicationHook.java](../app/src/main/java/io/github/aw1y2z/sesame/hook/ApplicationHook.java) `setWakenAtTimeAlarm()` 里自定义唤醒时间段那部分（`Calendar nowCalendar = Calendar.getInstance()`，用于跟 `TimeUtil.getTodayCalendarByTimeStr(wakenAtTime)` 比较判断这个自定义闹钟今天是否还没过）**故意没有改**——`getTodayCalendarByTimeStr` 内部同样用裸 `Calendar.getInstance()` 构造"今天 HH:MM"，如果只把这里的 `nowCalendar` 单独改成 GMT+8 而不动 `TimeUtil` 本身，两边用不同时区反而会产生新的、更隐蔽的比较错位。`doc/GR-Sync.md` 早前已经点出 `TimeUtil` 大部分方法仍是系统默认时区、改动面很大，这次维持"不做半吊子修复"的原则，把这处留给以后专门做 `TimeUtil` 统一 GMT+8 改造时一起处理，不在这次顺手改一半。
+**发现但没有动、需要以后单独处理的同类风险**：[ApplicationHook.java](../app/src/main/java/io/github/aw1y2z/sesame/hook/ApplicationHook.java) `setWakenAtTimeAlarm()` 里自定义唤醒时间段那部分（`Calendar nowCalendar = Calendar.getInstance()`，用于跟 `TimeUtil.getTodayCalendarByTimeStr(wakenAtTime)` 比较判断这个自定义闹钟今天是否还没过）**故意没有改**——`getTodayCalendarByTimeStr` 内部同样用裸 `Calendar.getInstance()` 构造"今天 HH:MM"，如果只把这里的 `nowCalendar` 单独改成 GMT+8 而不动 `TimeUtil` 本身，两边用不同时区反而会产生新的、更隐蔽的比较错位。`docs/GR-Sync.md` 早前已经点出 `TimeUtil` 大部分方法仍是系统默认时区、改动面很大，这次维持"不做半吊子修复"的原则，把这处留给以后专门做 `TimeUtil` 统一 GMT+8 改造时一起处理，不在这次顺手改一半。
 
 **核对过、确认已经覆盖或不适用，不是遗漏**：
 
-- **FishTask（福气鱼塘）**：`36d110b9`/`c3ae5375`/`549fcd7b`/`6c8cb85b`/`73507243` 等 9 个提交，`doc/GR-Sync.md` 早前已列为同步候选，本次重新确认这块工作量（独立 RPC 层 + 任务列表 + 黑名单 + 设置项注册）没有变化，仍未移植，维持"以后单独做一次完整任务"的结论，不在本次顺手做。
-- **VersionHook 版本伪装**（`3013cb36` 新增 237 行 `VersionHook.java` + `cea6d5f9` 给 `AppConfig` 加 `enableFakeVersionSlider`/`fakeVersionName`/`fakeVersionCode`）：读了 `VersionHook.java` 全文确认——这就是拦截 `PackageManager.getPackageInfo()` 伪造支付宝版本号的功能，且用的是传统 Xposed API（`de.robv.android.xposed.XC_MethodHook`/`XposedHelpers`），M 现在只依赖 `io.github.libxposed:api:102.0.0`，连编译都过不了。这正是 `doc/GR-Sync.md` 一开始就点名的"GR 的版本伪装……属于具体版本/个人偏好，不直接覆盖"那一条，本次读源码确认判断依然成立，不是漏做。
+- **FishTask（福气鱼塘）**：`36d110b9`/`c3ae5375`/`549fcd7b`/`6c8cb85b`/`73507243` 等 9 个提交，`docs/GR-Sync.md` 早前已列为同步候选，本次重新确认这块工作量（独立 RPC 层 + 任务列表 + 黑名单 + 设置项注册）没有变化，仍未移植，维持"以后单独做一次完整任务"的结论，不在本次顺手做。
+- **VersionHook 版本伪装**（`3013cb36` 新增 237 行 `VersionHook.java` + `cea6d5f9` 给 `AppConfig` 加 `enableFakeVersionSlider`/`fakeVersionName`/`fakeVersionCode`）：读了 `VersionHook.java` 全文确认——这就是拦截 `PackageManager.getPackageInfo()` 伪造支付宝版本号的功能，且用的是传统 Xposed API（`de.robv.android.xposed.XC_MethodHook`/`XposedHelpers`），M 现在只依赖 `io.github.libxposed:api:102.0.0`，连编译都过不了。这正是 `docs/GR-Sync.md` 一开始就点名的"GR 的版本伪装……属于具体版本/个人偏好，不直接覆盖"那一条，本次读源码确认判断依然成立，不是漏做。
 - **扩展页面重写**（`41e74688`，559 行 `ExtensionsActivity.java` + 对应布局 XML）：内容基本就是上面版本伪装功能的开关 UI，外加下面 `writeDishImage` 手动工具的入口，两者本身都不搬，这个 XML UI 重写自然也不适用——M 的扩展页面是 `ui/miuix/MiuixExtensionsActivity.kt`（Compose），架构完全不同，没有直接对应关系。
 - **`writeDishImage`/`writeDishImageWithRandomIds`**（`2a6d496b`，`TokenConfig.java` 新增两个方法）：光盘行动（森林任务的一种，上传餐前餐后照片换能量）手动补图片 ID 的便捷工具，只在上面提到的扩展页面里被调用（手动点按钮用）。M 的 `TokenConfig.java` 已经有 `saveDishImage`/`checkDishImage`/`clearDishImage` 这套底层能力，缺的只是这两个方便手动调用的包装方法和对应 UI 入口。**这是本次审计里唯一一个"未评估过、可能有用但没做"的候选**——是否需要在 Compose 扩展页面里加个手动补光盘图片 ID 的入口，需要用户确认后再做，本次没有主动加。
 - **其余提交**（`560281dc`/`9a0c4408`/`48820e4c`/`51fbc6db`/`083587dd`/`189010b6` 等）：纯版本号/更新日志/构建脚本版本号文本变化，符合用户之前定的"版本号更新记录不用看"的范围，跳过。
@@ -971,10 +978,10 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 
 用户要求参考 GR 去掉 SO 调用："本来就能直接调用的庄园功能，不需要调用 so"。核查后发现 M 当时的实际状态：
 
-- [ApplicationHook.java](../app/src/main/java/io/github/aw1y2z/sesame/hook/ApplicationHook.java) 原 295 行 `System.load(LibraryUtil.getLibSesamePath(context))` 在支付宝 Service `onCreate` 时**无条件强制加载** SO——这是 `doc/GR-Sync.md` 早前点名过的"M 现在还在真调用它"的那处。
+- [ApplicationHook.java](../app/src/main/java/io/github/aw1y2z/sesame/hook/ApplicationHook.java) 原 295 行 `System.load(LibraryUtil.getLibSesamePath(context))` 在支付宝 Service `onCreate` 时**无条件强制加载** SO——这是 `docs/GR-Sync.md` 早前点名过的"M 现在还在真调用它"的那处。
 - 但 [AntFarm.java](../app/src/main/java/io/github/aw1y2z/sesame/model/task/antFarm/AntFarm.java) 原 `doFarmTask()` 里唯一会调用 native 方法的分支（`LibraryUtil.doFarmTask(task)`）**早就是整段注释掉的死代码**，实际生效的是紧接着的 `AntFarmRpcCall.doFarmTask(bizKey)` 这条纯 Java RPC 路径。换句话说：**SO 被强制加载进内存，但没有任何地方真正调用它的 native 方法**——纯粹是加载开销和 APK 体积的浪费，用户的判断是对的。
 
-`doc/GR-Sync.md` 之前记录 GR 自己的处理是"已注释这一加载，并用 Java 实现庄园任务；其仓库仍保留 SO，旧配置 UI 也仍尝试加载，所以 GR 本身并非完全无 SO"——只是注释掉调用，SO 文件和桥接类都还留着。这次没有照 GR 这个"半吊子"做法抄，而是按 Sure-Xu 在其 `MyFix.md` 里记录的更彻底方式（"本次已删除四个架构的 libsesame.so、旧包名 LibraryUtil 桥接类、强制加载"）直接整个删掉：
+`docs/GR-Sync.md` 之前记录 GR 自己的处理是"已注释这一加载，并用 Java 实现庄园任务；其仓库仍保留 SO，旧配置 UI 也仍尝试加载，所以 GR 本身并非完全无 SO"——只是注释掉调用，SO 文件和桥接类都还留着。这次没有照 GR 这个"半吊子"做法抄，而是按 Sure-Xu 在其 `MyFix.md` 里记录的更彻底方式（"本次已删除四个架构的 libsesame.so、旧包名 LibraryUtil 桥接类、强制加载"）直接整个删掉：
 
 - 删除 [ApplicationHook.java](../app/src/main/java/io/github/aw1y2z/sesame/hook/ApplicationHook.java) 里的 `System.load(...)` 调用及其 `LibraryUtil` import。
 - 删除 [AntFarm.java](../app/src/main/java/io/github/aw1y2z/sesame/model/task/antFarm/AntFarm.java) 里那段已经注释掉的 `LibraryUtil.doFarmTask` 死代码。
@@ -982,7 +989,7 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 - 删除 `app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86,x86_64}/libsesame.so` 四个架构的二进制文件。
 - [app/build.gradle](../app/build.gradle) 里原来指向这个目录的 `sourceSets { main { jniLibs.srcDirs = ['src/main/jniLibs'] } }` 也一并删掉（参考 Sure-Xu `app/build.gradle`，那边压根没有这条自定义 jniLibs 目录声明）；`packaging { jniLibs { useLegacyPackaging = true } }` 保留不动，这条是给 AndroidX/Compose 自带的 native 库（比如 `libandroidx.graphics.path.so`）用的，跟本次删的东西无关。
 
-**没有动的**：`app/src/main/cpp/watermark.cpp` 和 `CMakeLists.txt`——这是另一个独立的 native 产物（水印相关），`doc/GR-Sync.md` 早前已确认它从未接入 Gradle 构建（不产生任何 .so，`WatermarkUtil` 一直走 Java 回退值），跟这次"庄园功能调用 SO"是两回事。既然不产生二进制、不影响 APK 体积，本次没有顺手删，需要的话应该单独确认。
+**没有动的**：`app/src/main/cpp/watermark.cpp` 和 `CMakeLists.txt`——这是另一个独立的 native 产物（水印相关），`docs/GR-Sync.md` 早前已确认它从未接入 Gradle 构建（不产生任何 .so，`WatermarkUtil` 一直走 Java 回退值），跟这次"庄园功能调用 SO"是两回事。既然不产生二进制、不影响 APK 体积，本次没有顺手删，需要的话应该单独确认。
 
 **验证**：`./gradlew compileNormalDebugJavaWithJavac -q` 编译通过，无新增警告或错误。实际跑了一次 `./gradlew assembleNormalRelease`：三个产物体积从上一次归档记录的 `arm64-v8a 15,168,233` / `armeabi-v7a 15,146,501` / `universal 16,397,519` 字节，降到本次 `14,753,727` / `14,753,411` / `14,767,934` 字节（universal 减少约 1.6MB，两个 ABI 专属包各减少约 400KB——两次构建之间还有其它改动，不是纯粹的 SO 体积差，但方向和量级符合预期）。`apksigner verify --print-certs` 对新产物验证通过，签名指纹与此前一致。未运行模拟器/真机验证移除 SO 加载后模块整体功能是否正常（尤其是曾经依赖 SO 才能工作、后来才切换到 Java RPC 路径的庄园饲料任务，这次只确认了编译期没有残留引用，没有做运行期回归测试）。
 
@@ -992,7 +999,7 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 
 **修了 2 处**：
 
-1. **`familyEatTogether`（请客吃饭）同款 GMT+8 时区 bug**（原 3843-3853 行）：用 `TimeUtil.isAfterTimeStr`/`isBeforeTimeStr` 判断当前处于早/午/晚餐哪个时段，这两个方法内部用系统默认时区的 `Calendar.getInstance()` 构造时间边界（见 [TimeUtil.java](../app/src/main/java/io/github/aw1y2z/sesame/util/TimeUtil.java) `isCompareTimeStr`/`getCalendarByTimeMillis`），跟上一条记录里 `deliverMsgSend` 的时区 bug 是同一根因、同一个 `TimeUtil` 系统时区问题的另一处命中。改成直接用 `MyUtils.getInstance().get(Calendar.HOUR_OF_DAY)` 取 GMT+8 小时数比较，不再经过 `TimeUtil` 的字符串时间比较。**没有**顺手给 `TimeUtil.isAfterTimeStr`/`isBeforeTimeStr` 本身加 GMT+8 重载——那样改动面更大（`doc/GR-Sync.md` 早前统计过这两个方法在全项目还有很多其它调用点），只在这一处绕开。
+1. **`familyEatTogether`（请客吃饭）同款 GMT+8 时区 bug**（原 3843-3853 行）：用 `TimeUtil.isAfterTimeStr`/`isBeforeTimeStr` 判断当前处于早/午/晚餐哪个时段，这两个方法内部用系统默认时区的 `Calendar.getInstance()` 构造时间边界（见 [TimeUtil.java](../app/src/main/java/io/github/aw1y2z/sesame/util/TimeUtil.java) `isCompareTimeStr`/`getCalendarByTimeMillis`），跟上一条记录里 `deliverMsgSend` 的时区 bug 是同一根因、同一个 `TimeUtil` 系统时区问题的另一处命中。改成直接用 `MyUtils.getInstance().get(Calendar.HOUR_OF_DAY)` 取 GMT+8 小时数比较，不再经过 `TimeUtil` 的字符串时间比较。**没有**顺手给 `TimeUtil.isAfterTimeStr`/`isBeforeTimeStr` 本身加 GMT+8 重载——那样改动面更大（`docs/GR-Sync.md` 早前统计过这两个方法在全项目还有很多其它调用点），只在这一处绕开。
 2. **`assignFamilyMember`（顶梁柱）空列表保护缺失**（原 3778 行）：`jsonObject.getJSONArray("assignConfigList")` 取到空/缺失数组时直接往下 `RandomUtil.nextInt(0, assignConfigList.length() - 1)` 会传入非法区间（`0, -1`）抛异常。虽然外层 `try/catch` 会吞掉（不炸整个 `family()`），但对齐 Sesame-AG `assignFamilyMember` 的显式判空提前返回，改成 `optJSONArray` + 判空/判 0 长度提前 return 并打日志，问题原因更清楚，不是"莫名其妙这一轮顶梁柱没执行"。
 
 **对照过，判断不需要改的差异**（AG 更完善，但不构成 M 这边的实际缺陷）：
@@ -1008,7 +1015,7 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 
 用户反馈"之前就是道早安有问题"，所以 GR2026 才整体改用从 Sesame-AG 移植来的 `AntFarmFamily.kt`（上一条家庭功能记录里已经确认 M 的 Java `family()` 没有照抄 GR 的 Kotlin 重写）。这次直接对照 Sesame-AG 当前的 `AntFarmFamily.kt#deliverMsgSend`（`E:\Work\Sesame-AG\app\src\main\java\io\github\aoguai\sesameag\task\antFarm\AntFarmFamily.kt:1023-1184`）逐行核对 M 的 [AntFarm.java](../app/src/main/java/io/github/aw1y2z/sesame/model/task/antFarm/AntFarm.java) 同名方法，找到两个真实缺陷并修了：
 
-1. **时间窗口用了系统默认时区，不是北京时间**（AntFarm.java 原 3909-3920 行）：AG 用 `MyUtils.getInstance()`（GMT+8）判断"是否在 06:00-10:00"，M 原来是裸 `Calendar.getInstance()`。宿主设备系统时区不是东八区时，这个窗口判断会整体偏移，导致道早安要么提前不执行要么错过窗口——这类问题 `doc/GR-Sync.md` 早前就点名过 M 的 `TimeUtil` 大部分方法仍是系统默认时区，这是其中一个具体命中的实例。改成 `MyUtils.getInstanceGMT8()`（通过 `MyUtils.getInstance()`，本会话早前加的委托）。
+1. **时间窗口用了系统默认时区，不是北京时间**（AntFarm.java 原 3909-3920 行）：AG 用 `MyUtils.getInstance()`（GMT+8）判断"是否在 06:00-10:00"，M 原来是裸 `Calendar.getInstance()`。宿主设备系统时区不是东八区时，这个窗口判断会整体偏移，导致道早安要么提前不执行要么错过窗口——这类问题 `docs/GR-Sync.md` 早前就点名过 M 的 `TimeUtil` 大部分方法仍是系统默认时区，这是其中一个具体命中的实例。改成 `MyUtils.getInstanceGMT8()`（通过 `MyUtils.getInstance()`，本会话早前加的委托）。
 2. **`QueryExpandContent` 调用失败或响应字段对不上就直接放弃整次道早安**（AntFarm.java 原 4018-4028 行）：原来 `resp3.getString("content")` 只认一个字段名，`MessageUtil.checkMemo` 校验不过或者字段名对不上（`getString` 抛 `JSONException`）就整个方法 return，即使上一步 `DeliverContentExpand`（resp2）已经拿到了可用文案也不会用。AG 的实现把 `QueryExpandContent` 当作"可选二次校验"（doc comment 原话），失败时回退用 resp2 的文案，且用多个候选字段名（`content`/`expandContent`/`deliverContent`/`msgContent`/`text`，顶层找不到再进 `data` 里找）尽量取值，不会因为一个字段名对不上就整体判失败。移植了 AG 的 `extractGreetingContent()` 辅助方法（新增私有静态方法，同名），并把 `resp3` 处理改成失败/取不到内容时用 `extractGreetingContent(resp2)` 兜底，两边都取不到才真正放弃。
 
 **没有动的**：`family()` 其余六项子功能（签到/顶梁柱/领奖/喂鸡/请客/分享好友）这次没有逐个跟 AG 对照——用户这次问题明确指向道早安，没有要求全量审计；如果这几项也有类似问题，需要单独排查。`AntFarm.java` 里还有 3 处裸 `Calendar.getInstance()`（1217/1285/1459 行），但都在"捐蛋排位"相关代码里，不属于 family 功能范围，这次没有顺手改。
@@ -1076,11 +1083,11 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 - [AntFarm.java](../app/src/main/java/io/github/aw1y2z/sesame/model/task/antFarm/AntFarm.java)：`resultCode`（"3D16"/"100" 两处）、`taskConfigResultVO` 判空（原来 `optJSONObject` 取出后直接 `.getString("awardType")`，对象为 null 时必炸；改成 `taskConfigResultVO == null ? "null" : taskConfigResultVO.optString(...)`，M 其余 `awardType` 调用点本来就已经是 `optString`，未改动）。对齐 GR `e61005f1`、`c0013c97`。
 - [ApplicationHook.java](../app/src/main/java/io/github/aw1y2z/sesame/hook/ApplicationHook.java)：`checkTask.get(10, TimeUnit.SECONDS)` → `30` 秒（对齐 GR `72384f8c`，理由是 10 秒在网络稍慢时容易误判超时）；加载成功 Toast 附带版本号（`"芝麻粒加载成功:" + modelVersion`，只搬了"带上版本号"这个点子，没搬 GR 那次顺带把品牌名改成"芝麻粒GR"的部分，对齐 GR `66338683` 但保留 M 自己的名字）。
 - [GeminiAI.java](../app/src/main/java/io/github/aw1y2z/sesame/model/normal/answerAI/GeminiAI.java)：`OkHttpClient` 从每次请求 `new OkHttpClient().newBuilder().build()` 改成类级别单例 `CLIENT`（连接池/线程池复用），对齐 GR `cd72d38b`。**只搬了单例这一处**，GR 同一提交里对请求体/超时策略的其余改动没有搬（那属于下面"明确没有移植"的 GeminiAI 大改的一部分，两次提交内容有重叠，拆开处理）。`TongyiAI.java` 有一模一样的 `new OkHttpClient()` 反模式，但 GR 这次提交没碰过它，不在本次移植范围内，没有顺手改。
-- [WatermarkUtil.java](../app/src/main/java/io/github/aw1y2z/sesame/util/WatermarkUtil.java)：native 库未加载时的水印兜底文案从固定的"免费模块 交流QQ群:xxx"改成 `BuildConfig.VERSION_NAME + "  " + BuildConfig.BUILD_TIME`。对齐 GR `e22079f9`。**这个改动在 M 上实际意义更大**：`doc/GR-Sync.md` 已经确认 M 的 `watermark.cpp`/CMakeLists.txt 是死代码、没接入 Gradle 构建，`isLibraryLoaded` 恒为 `false`，也就是说这个"兜底"文案其实是 M 当前唯一会走到的路径，不是极端情况兜底。
+- [WatermarkUtil.java](../app/src/main/java/io/github/aw1y2z/sesame/util/WatermarkUtil.java)：native 库未加载时的水印兜底文案从固定的"免费模块 交流QQ群:xxx"改成 `BuildConfig.VERSION_NAME + "  " + BuildConfig.BUILD_TIME`。对齐 GR `e22079f9`。**这个改动在 M 上实际意义更大**：`docs/GR-Sync.md` 已经确认 M 的 `watermark.cpp`/CMakeLists.txt 是死代码、没接入 Gradle 构建，`isLibraryLoaded` 恒为 `false`，也就是说这个"兜底"文案其实是 M 当前唯一会走到的路径，不是极端情况兜底。
 
 **明确没有移植（评估过，判断当前不适合硬搬）**：
 
-- **`model/task/fish`（福气鱼塘）**：`main_my` 里有独立的 `FishTask`/`AntFishpondTaskListMap` 等一整套模块（提交 `8b01744e` 起 9 个提交）。`doc/GR-Sync.md` 之前已经把这个列为同步候选，本次没有再重复评估细节；工作量和风险都不小（RPC 层、任务列表、黑名单、设置项注册全套），按"宁可不做也不要做一半"的原则本次不动，需要时应单独作为一次完整任务来做。
+- **`model/task/fish`（福气鱼塘）**：`main_my` 里有独立的 `FishTask`/`AntFishpondTaskListMap` 等一整套模块（提交 `8b01744e` 起 9 个提交）。`docs/GR-Sync.md` 之前已经把这个列为同步候选，本次没有再重复评估细节；工作量和风险都不小（RPC 层、任务列表、黑名单、设置项注册全套），按"宁可不做也不要做一半"的原则本次不动，需要时应单独作为一次完整任务来做。
 - ~~`AntFarmFamily.kt`（小鸡家庭）~~：这条评估是错的，见下一条记录——当时只看了 GR 的新 Kotlin 文件有多大，没有去核对 M 自己的 `AntFarm.java` 其实已经有一份更成熟的 Java 实现覆盖了签到/顶梁柱/喂鸡/请客/道早安/分享好友六项，规模判断严重失真。真正缺的只有"装修金购买家具"一项，已在下一条记录里补上。
 - ~~GeminiAI 请求改造~~：用户后续明确要求必须做，已在下一条记录里补上完整迁移，不再是"没有移植"。
 - ~~MainActivity.java 显示编译时间~~：用户后续明确要求必须做，已在下一条记录里以 Miuix Compose 的等价方式补上，不再是"跳过"。

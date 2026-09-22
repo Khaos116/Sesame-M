@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 import io.github.aw1y2z.sesame.util.JsonUtil;
 
-/** 已确认的健康岛阶段奖励协议；解析与参数构造不发起请求。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 已确认的健康岛阶段奖励协议；解析与参数构造不发起请求。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class HealthIslandStageProtocol {
     public static final String BASE_METHOD = "com.alipay.neverland.biz.rpc.queryBaseinfo";
     public static final String QUERY_METHOD = "com.alipay.neverland.biz.rpc.queryMapStageRewardInfo";

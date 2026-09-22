@@ -8,7 +8,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.*;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 /**
- * 福气鱼塘设置项。对齐 Sure-Xu model/task/fish/FishConfig.java（已从 GR 原版修过若干缺陷，见 doc/MyFix.md）。
+ * 福气鱼塘设置项。对齐 Sure-Xu model/task/fish/FishConfig.java（已从 GR 原版修过若干缺陷，见 docs/MyFix.md）。
  */
 public class FishConfig {
     private static BooleanModelField autoFishTaskBlacklist;

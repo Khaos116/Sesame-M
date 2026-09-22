@@ -7,7 +7,7 @@ import java.util.Objects;
 
 /**
  * 自动切号的纯策略判断：到没到切换间隔、当前是否空闲、要切到哪个账号。
- * 不碰任何 IO/反射，方便单独验证逻辑。移植自 GR 分支，见 doc/MyFix.md。
+ * 不碰任何 IO/反射，方便单独验证逻辑。移植自 GR 分支，见 docs/MyFix.md。
  */
 final class AccountSwitchState {
     private String account;

@@ -19,7 +19,7 @@ import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 /**
  * 福气鱼塘任务。对齐 Sure-Xu model/task/fish/FishTask.java（Sure-Xu 已从 GR 原版修过若干缺陷，
- * 见 doc/MyFix.md 的移植记录），机械翻译包名与 M 的日志/状态工具类调用，未改动业务逻辑本身——
+ * 见 docs/MyFix.md 的移植记录），机械翻译包名与 M 的日志/状态工具类调用，未改动业务逻辑本身——
  * 抓包字段、任务类型判断、等待时长都照抄，没有 M 自己的真机验证依据去改。
  */
 public class FishTask extends ModelTask {
@@ -319,7 +319,7 @@ public class FishTask extends ModelTask {
 
     /**
      * 是否在允许的运行时段内：05:00-23:00，按北京时间判断。原版用 TimeUtil.getNow()（系统默认
-     * 时区），跟本次会话里其它几处 GMT+8 bug 根因相同，这里一并改成 MyUtils.getInstance()，见 doc/MyFix.md。
+     * 时区），跟本次会话里其它几处 GMT+8 bug 根因相同，这里一并改成 MyUtils.getInstance()，见 docs/MyFix.md。
      */
     private boolean isAllowedTime() {
         Calendar calendar = MyUtils.getInstance();

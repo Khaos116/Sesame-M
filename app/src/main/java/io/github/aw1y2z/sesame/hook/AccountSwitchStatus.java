@@ -11,7 +11,7 @@ import io.github.aw1y2z.sesame.util.FileUtil;
 
 /**
  * 自动切号当前所处阶段，只是给设置弹窗显示用的诊断文案，不存账号身份信息。
- * 移植自 GR 分支并简化（去掉了原版的任务队列诊断字段），见 doc/MyFix.md。
+ * 移植自 GR 分支并简化（去掉了原版的任务队列诊断字段），见 docs/MyFix.md。
  */
 public final class AccountSwitchStatus {
     private static String last;

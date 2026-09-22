@@ -4,7 +4,7 @@ package io.github.aw1y2z.sesame.rpc.intervallimit;
  * Pure request-budget and pacing rules for the bounded opt-in reward layer:
  * at most six requests per run and at least 1500 ms between calls. Process-wide
  * per-method intervals for the legacy modules stay with RpcIntervalLimit.
- * 移植自 GR 分支，见 doc/MyFix.md。
+ * 移植自 GR 分支，见 docs/MyFix.md。
  */
 public final class RequestBudgetPolicy {
     public static final int MAX_REQUESTS = 6;

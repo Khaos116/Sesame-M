@@ -2,7 +2,7 @@ package io.github.aw1y2z.sesame.hook;
 
 /**
  * 设置弹窗里"切换间隔"输入框的取值规则：留空按开关状态给默认值/保留旧值，
- * 关闭时永远不会因为输入框内容非法而保存失败。移植自 GR 分支，见 doc/MyFix.md。
+ * 关闭时永远不会因为输入框内容非法而保存失败。移植自 GR 分支，见 docs/MyFix.md。
  */
 public final class AccountSwitchIntervalDraft {
     /** 账号之间固定切换缓冲（秒）。 */

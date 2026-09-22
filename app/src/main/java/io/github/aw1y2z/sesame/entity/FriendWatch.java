@@ -109,7 +109,7 @@ public class FriendWatch extends IdAndName {
         if (last == 0L) {
             return true;
         }
-        // 按北京时间判断跨天/星期一，同类问题见 AntFarm.deliverMsgSend / familyEatTogether 的修复记录（doc/MyFix.md）
+        // 按北京时间判断跨天/星期一，同类问题见 AntFarm.deliverMsgSend / familyEatTogether 的修复记录（docs/MyFix.md）
         Calendar cLast = MyUtils.getInstance();
         cLast.setTimeInMillis(last);
         Calendar cNow = MyUtils.getInstance();

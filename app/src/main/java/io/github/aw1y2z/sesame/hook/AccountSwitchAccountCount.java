@@ -11,7 +11,7 @@ import io.github.aw1y2z.sesame.util.FileUtil;
 
 /**
  * 本机可轮询账号数，只是给设置弹窗显示用的缓存，不存账号身份信息。
- * 移植自 GR 分支，见 doc/MyFix.md。
+ * 移植自 GR 分支，见 docs/MyFix.md。
  */
 public final class AccountSwitchAccountCount {
     private static final long FRESH_MS = 90_000L;

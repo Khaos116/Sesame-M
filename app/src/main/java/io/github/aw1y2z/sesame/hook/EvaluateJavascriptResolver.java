@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
  * 有的宿主 WebView 实际 View 不继承 android.webkit.WebView，且方法可能为非 public
  * 声明；只用 Class#getMethods() 找不到会导致页面状态探针全部失败。此解析器先按
  * public 方法查找，再沿父类层级用 getDeclaredMethods() 并 setAccessible 查找，
- * 仍找不到时返回有界的候选方法名用于诊断。移植自 GR 分支，见 doc/MyFix.md。
+ * 仍找不到时返回有界的候选方法名用于诊断。移植自 GR 分支，见 docs/MyFix.md。
  */
 final class EvaluateJavascriptResolver {
 

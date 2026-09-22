@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** 纯参数构造；种植奖励在确认资格前故意不启用。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 纯参数构造；种植奖励在确认资格前故意不启用。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class ForestPlantProtocol {
     private ForestPlantProtocol() { }
     public static String queryArgs(int page) {

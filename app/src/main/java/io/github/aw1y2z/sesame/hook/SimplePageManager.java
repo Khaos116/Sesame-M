@@ -228,7 +228,7 @@ public class SimplePageManager {
     /**
      * 前后台状态跟踪。用 started 计数而不是 resumed/paused 配对：Activity 之间切换时
      * 计数 1→2→1 不会瞬时误判为后台。计数下限钳制为 0，防止重复 stopped 事件导致负数。
-     * 移植自 GR 分支，给视频页观察器判断是否需要采样用，见 doc/MyFix.md。
+     * 移植自 GR 分支，给视频页观察器判断是否需要采样用，见 docs/MyFix.md。
      */
     private static void hookActivityStartedCount() {
         try {

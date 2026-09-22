@@ -3,7 +3,7 @@ package io.github.aw1y2z.sesame.util.diagnostics;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** 只对本地生成的诊断做严格投影，绝不透传宿主任意文本。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 只对本地生成的诊断做严格投影，绝不透传宿主任意文本。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class CaptchaDiagnosticEvent {
     private CaptchaDiagnosticEvent() { }
 

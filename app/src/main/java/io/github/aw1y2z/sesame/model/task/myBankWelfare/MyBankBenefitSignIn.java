@@ -6,7 +6,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
 
-/** 独立的福利金签到，跟网商会员权益签到是两回事。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 独立的福利金签到，跟网商会员权益签到是两回事。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class MyBankBenefitSignIn extends IsolatedRewardTask {
     private BooleanModelField signIn;
 

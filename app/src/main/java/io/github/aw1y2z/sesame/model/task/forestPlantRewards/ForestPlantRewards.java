@@ -7,7 +7,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
 
-/** 森林绿植活动只读探测。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 森林绿植活动只读探测。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class ForestPlantRewards extends IsolatedRewardTask {
     private BooleanModelField inspect;
     @Override public String getName() { return "森林绿植活动"; }

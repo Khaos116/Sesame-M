@@ -18,7 +18,7 @@ import io.github.aw1y2z.sesame.hook.AccountSwitchStatus;
 
 /**
  * 账号轮询设置：全局开关，跟具体登录哪个账号无关，所以用独立弹窗而不是挂进
- * 按账号存储的 ModelField 配置系统。移植自 GR 分支，见 doc/MyFix.md。
+ * 按账号存储的 ModelField 配置系统。移植自 GR 分支，见 docs/MyFix.md。
  */
 public final class AccountSwitchSettingsDialog {
     private AccountSwitchSettingsDialog() { }

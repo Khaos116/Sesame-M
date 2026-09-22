@@ -8,7 +8,7 @@ import io.github.aw1y2z.sesame.util.Log;
 
 /**
  * 理财稳当当签到：仅签到，不涉及储蓄/投资/自动扣款/任务完成请求。
- * 移植自 GR 分支，见 doc/MyFix.md。
+ * 移植自 GR 分支，见 docs/MyFix.md。
  */
 public final class DayDaySave extends IsolatedRewardTask {
     private BooleanModelField checkIn;

@@ -10,7 +10,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.StringModelField;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
 
-/** 只用已获得的即将到期碎片兑换用户指定的礼品。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 只用已获得的即将到期碎片兑换用户指定的礼品。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class HealthIslandRewards extends IsolatedRewardTask {
     private static final String PREFIX = "com.alipay.neverland.biz.rpc.";
     private BooleanModelField exchange;

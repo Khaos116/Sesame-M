@@ -4,7 +4,7 @@ package io.github.aw1y2z.sesame.rpc.intervallimit;
  * Unified failure classification and cooldown durations for the bounded opt-in
  * reward request layer. Risk-control denial gets the longest pause but is never
  * recorded as "unsupported": the cooldown expires and the method stays eligible.
- * 移植自 GR 分支，见 doc/MyFix.md。
+ * 移植自 GR 分支，见 docs/MyFix.md。
  */
 public final class RpcFailurePolicy {
     /** Explicit risk-control refusal, confirmed on device for error=1009. */

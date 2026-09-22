@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.TimeZone;
 import io.github.aw1y2z.sesame.util.JsonUtil;
 
-/** 只读的SUPER930积分余额查询。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 只读的SUPER930积分余额查询。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class MyBankPointsProtocol {
     public static final String METHOD = "com.alipay.loanpromoweb.promo.group.point.pointBanlance";
     private static final ObjectMapper JSON = JsonUtil.copyMapper();

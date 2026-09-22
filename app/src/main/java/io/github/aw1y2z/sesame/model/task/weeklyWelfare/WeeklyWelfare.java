@@ -9,7 +9,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
 
-/** 黄金票每周福利：只消费服务端当天返回的档位。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 黄金票每周福利：只消费服务端当天返回的档位。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class WeeklyWelfare extends IsolatedRewardTask {
     private static final String PREFIX = "com.alipay.finaggexpbff.needle.weeklyWelfare.";
     private static final String INDEX = "[{\"chInfo\":\"goldbill\",\"modeBitMask\":513}]";

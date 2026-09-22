@@ -2,7 +2,7 @@ package io.github.aw1y2z.sesame.model.task.rewardSupport;
 
 import java.util.Objects;
 
-/** Pure policy shared by the new opt-in reward tasks. 移植自 GR 分支，见 doc/MyFix.md。 */
+/** Pure policy shared by the new opt-in reward tasks. 移植自 GR 分支，见 docs/MyFix.md。 */
 public final class RewardRunPolicy {
     private RewardRunPolicy() { }
 

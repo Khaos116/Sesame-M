@@ -4,7 +4,7 @@ import java.util.Locale;
 
 /**
  * 只按当前顶层 Activity 类名判断：登录页/身份验证页/验证码页不允许自动切号，
- * 避免在这些页面上再叠一次登录操作。移植自 GR 分支，见 doc/MyFix.md。
+ * 避免在这些页面上再叠一次登录操作。移植自 GR 分支，见 docs/MyFix.md。
  */
 final class AccountSwitchPagePolicy {
     private AccountSwitchPagePolicy() { }

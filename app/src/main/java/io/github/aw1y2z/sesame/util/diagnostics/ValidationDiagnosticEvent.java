@@ -1,6 +1,6 @@
 package io.github.aw1y2z.sesame.util.diagnostics;
 
-/** 固定诊断词汇表，不透传任何宿主文本/标识/响应体。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 固定诊断词汇表，不透传任何宿主文本/标识/响应体。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class ValidationDiagnosticEvent {
     private ValidationDiagnosticEvent() { }
 

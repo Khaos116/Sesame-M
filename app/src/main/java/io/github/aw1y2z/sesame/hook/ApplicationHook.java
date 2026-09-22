@@ -320,7 +320,7 @@ public class ApplicationHook extends XposedModule {
                         Log.i(TAG, "Service onCreate");
                         context = appService.getApplicationContext();
                         // 庄园饲料任务已全部走 AntFarmRpcCall 的 Java RPC 实现（见 AntFarm.java），
-                        // 不再需要加载 libsesame.so；已移除强制加载，jniLibs/util/LibraryUtil 一并删除，见 doc/MyFix.md
+                        // 不再需要加载 libsesame.so；已移除强制加载，jniLibs/util/LibraryUtil 一并删除，见 docs/MyFix.md
                         // 初始化滑块验证（支付宝版本 > 10.6.58.99999 时 initSimplePageManager 内部会跳过）
                         try {
                             initSimplePageManager();
@@ -569,7 +569,7 @@ public class ApplicationHook extends XposedModule {
             List<String> wakenAtTimeList = BaseModel.getWakenAtTimeList().getValue();
             if (wakenAtTimeList != null && !wakenAtTimeList.isEmpty()) {
                 // 之前这里特意没跟 TimeUtil.getTodayCalendarByTimeStr 用同一时区（那时 TimeUtil 还是系统时区），
-                // 现在 TimeUtil 已经整体改成 GMT+8（见 doc/MyFix.md），这里改用 TimeUtil.getNow() 保持一致，
+                // 现在 TimeUtil 已经整体改成 GMT+8（见 docs/MyFix.md），这里改用 TimeUtil.getNow() 保持一致，
                 // 不会再产生比较错位
                 Calendar nowCalendar = TimeUtil.getNow();
                 for (int i = 1, len = wakenAtTimeList.size(); i < len; i++) {

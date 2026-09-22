@@ -7,7 +7,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
 
-/** 好运卡任务状态查询；任务动作要明确校验过负载才会真正执行。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 好运卡任务状态查询；任务动作要明确校验过负载才会真正执行。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class LuckCardStatus extends IsolatedRewardTask {
     private BooleanModelField inspect;
     private BooleanModelField triggerTasks;

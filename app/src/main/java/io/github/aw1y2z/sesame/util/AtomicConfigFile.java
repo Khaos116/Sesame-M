@@ -12,7 +12,7 @@ import java.util.Arrays;
 /**
  * 配置文件专用的原子替换写入：先写临时文件、校验回读一致后再 rename 到目标路径，
  * 不会出现"写到一半被杀进程导致配置文件截断"的情况。
- * 移植自 GR 分支的账号轮询功能，参见 doc/MyFix.md。
+ * 移植自 GR 分支的账号轮询功能，参见 docs/MyFix.md。
  */
 public final class AtomicConfigFile {
     interface Operations {

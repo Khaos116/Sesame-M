@@ -197,7 +197,7 @@ public class TimeUtil {
 
     /**
      * 固定 GMT+8 的日历实例，等价于 {@link #getNow()}，供 {@code MyUtils.getInstance()} 委托、
-     * 以及合并 fork 代码时按名字直接映射调用点，见 doc/MyFix.md。
+     * 以及合并 fork 代码时按名字直接映射调用点，见 docs/MyFix.md。
      */
     public static Calendar getInstanceGMT8() {
         return getNow();

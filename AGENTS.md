@@ -1,11 +1,12 @@
 # Sesame-M 项目说明
 
-开始任何任务前，先用 UTF-8 编码读取以下两份文档，了解项目背景和历史改动：
+开始任何任务前，先用 UTF-8 编码读取必读文档；其余按任务按需读取，不要全量通读。完整文件地图见 `docs/INDEX.md`。
 
-- `doc/MyFix.md` —— 只放长期规则和背景资料（不记日志）。文件开头有「硬性规则」一节（GMT+8 时间处理、MyUtils JSON 创建、JSON 使用 `.opt*()` 读取及判空），是长期约束，touch 到相关代码必须遵守。
-- `CHANGELOG.md` —— 所有变更日志：上半部分一行摘要（按时间倒序，标 commit hash），文末「详细记录」为改了什么、跳过了什么、为什么。每次合并/修 bug/加功能都写这里，不要写进 `doc/MyFix.md`。
+- 必读：`docs/MyFix.md` —— 只放长期规则和背景资料（不记日志）。文件开头有「硬性规则」一节（GMT+8 时间处理、MyUtils JSON 创建、JSON 使用 `.opt*()` 读取及判空），是长期约束，touch 到相关代码必须遵守。
+- 按需：`CHANGELOG.md` —— 所有变更日志：上半部分一行摘要（按时间倒序，标 commit hash），文末「详细记录」为改了什么、跳过了什么、为什么。文件很大，只读最近约 80 行或按关键字 grep，不要全读。每次合并/修 bug/加功能都写这里，不要写进 `docs/MyFix.md`。
+- 按需：`docs/使用说明.md`（用户手册）、`docs/配置项说明.md`（自动生成的配置项表）、`docs/GR-Sync.md`（移植 GR 代码时）、`docs/每日异常反馈.txt`（分析异常统计时）——何时读哪份见 `docs/INDEX.md`。
 
-这两份文档是本项目当前状态和历史决策取舍的权威来源，比重新审查代码或凭经验猜测更准确、更省时间。
+这几份文档是本项目当前状态和历史决策取舍的权威来源，比重新审查代码或凭经验猜测更准确、更省时间。
 
 ## 每次合并必查：GMT+8、JSON 创建、JSON 读取
 
@@ -17,7 +18,7 @@
 
 合并提交前必须复查这三项并运行相关回归；在 `CHANGELOG.md` 分别记录处理结果、例外及遗留项，不能未核对就声称“全部正常”。历史记录描述的是当时状态，当前结论以实际源码为准。
 
-**合并时不要删 `GeminiAI`**：海外用户正在使用，上游删除它时必须保留，详见 `doc/MyFix.md` 硬性规则第 5 条。
+**合并时不要删 `GeminiAI`**：海外用户正在使用，上游删除它时必须保留，详见 `docs/MyFix.md` 硬性规则第 5 条。
 
 ## 提交前的回归检查
 
@@ -26,15 +27,24 @@
 ```text
 python checks/account_lifecycle/run.py
 python checks/audit_regressions/run.py
-python checks/check_reward_cooldown.py
-python checks/check_log_follow.py
-python checks/check_merge_config.py
-python checks/check_rpc_guard.py
-python checks/check_gr_followups.py
-python checks/check_manifest_permissions.py
+python checks/check_account_folder.py
 python checks/check_account_switch.py
+python checks/check_gr_followups.py
+python checks/check_log_follow.py
+python checks/check_manifest_permissions.py
+python checks/check_merge_config.py
+python checks/check_puzzle_matcher.py
+python checks/check_puzzle_samples.py
+python checks/check_reward_cooldown.py
+python checks/check_rpc_guard.py
+python checks/check_standalone_no_xposed_class.py
 java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin --console=plain
 ```
+
+改了哪块就重点看对应的检查（`check_rpc_guard` 管退避暂停、`check_merge_config` 管字段合并迁移、
+`check_manifest_permissions` 管权限声明、`check_standalone_no_xposed_class` 管独立进程引用、
+`check_account_folder` 管账号名目录、`check_puzzle_matcher`/`check_puzzle_samples` 管拼图匹配与截图；
+各脚本头几行注释写了精确范围），提交前全量跑一遍最稳。
 
 涉及打包/签名相关改动（`build.gradle`、`proguard-rules.pro`、签名配置）额外跑一遍 `:app:assembleNormalRelease` 确认 R8 混淆和签名没问题。
 
@@ -60,3 +70,35 @@ Sesame-M：支付宝自动化脚本的 Xposed 模块（`libxposed` API 102），
 - `RpcRequestGuard`（`rpc/intervallimit/RpcRequestGuard.java`）：所有 RPC 请求（新旧两套 `RpcBridge`）统一收口的失败退避层，按账号隔离。新增业务代码走 RPC 不需要自己再实现限流/退避，两套 Bridge 已经接好了。
 - `AppConfig` vs `BaseModel`（ModelField）两套配置系统不是一回事：`AppConfig` 是跟 App 独立进程共享的全局配置（存 `appConfig.json`，App 和被注入的支付宝进程都能读），`BaseModel`/各任务模块的 `ModelField` 是按账号存的业务配置（存 `config_v2.json`，只有注入进程里能看到）。哪个字段该放哪边要想清楚，之前把 `batteryPerm` 同时留在两边过，处理迁移花了不少功夫。
 - 日志文件按账号分目录（`log/<账号名>/`，账号名依次取配置页账号列表括号前面的名字（如 `C176`）、括号里面的账号、userId，用第一个能用的；见 `util/AccountFolderName.java`），当前账号通过 `FileUtil.publishCurrentLogUser()` 原子发布到 `current_log_user.txt`，独立 App 进程靠读这个文件名来判断"现在是哪个账号"（App 进程本身不知道支付宝那边登录的是谁）。
+
+## 代码与数据地图（改 bug 用）
+
+- 任务模块：`model/task/` 下 31 个业务目录，每个模块是 `data/task/ModelTask.java` 的子类（入口 `run()`；
+  `prepare()`/`boot()` 在 `data/Model.java`），配置字段用 `ModelField` 声明。增删字段后跑
+  `docs/tools/gen_fields.ps1` 重生成 `docs/配置项说明.md`（`AppConfig` 的普通字段脚本扫不到，需手工维护）。
+- 发 RPC：走 `rpc/bridge/`（`RpcBridge` 接口，新旧两套实现），失败退避收口在
+  `rpc/intervallimit/RpcRequestGuard.java`，业务侧不要自己写限流/退避。文案类规则（风控、未开通）与
+  自动黑名单逻辑见 `docs/使用说明.md` §六。
+- 总入口：`hook/ApplicationHook.java`（被注入支付宝进程后）；验证码链路 `hook/CaptchaHook`、
+  `H5RiskTrigger`、`PuzzleCaptchaSolver`；账号切换 `hook/AccountSwitchController.java`。
+- 数据文件都在手机 `sesame-M/`（全览见使用说明 §三）：`config/<uid>/` 仍用 uid；`log/<账号名>/`、
+  `puzzle/<账号名>/`、导出文件名用账号名（规则在 `util/AccountFolderName.java`）；独立 App 进程靠
+  `current_log_user.txt` 知道当前账号。当日状态 `Status` 按账号存、次日清；风控暂停 `RuntimeInfo`；题库 `TokenConfig`。
+- 日志入口：运行 `runtime.日期.账号名.log`、各分类、`error`、`captcha.日期.log`（验证记录）；
+  异常统计 `rpc-failures.日期.账号.json`（分析流程见 `docs/每日异常反馈.txt`）；拼图截图 `puzzle/<账号名>/`。
+- UI 是 Compose+Miuix（`ui/miuix/`），只做展示，不要在这里放业务状态。
+
+常见坑（都踩过，动手前先对一下）：
+
+- 新起线程、`postDelayed` 等会跨切号窗口的代码用 `TaskLifecycle.enter()` 包住，否则切号中途还在用旧账号状态跑。
+- 独立 App 进程（`ui/` 及直调的 `util` 方法）禁引 `ApplicationHook`/任何 Xposed 类，`check_standalone_no_xposed_class.py` 会拦。
+- 改配置后用返回键退出落盘，重启支付宝最稳（跨进程靠广播重载）。
+- 全新账号首次运行日志目录仍是 uid，下次启动才用账号名；昵称/备注改了会建新目录，旧目录不自动合并。
+
+## 合并步骤速览
+
+1. `my_dev` 上 `git merge origin/MIUIX-api102`（不要 rebase；PR 走 `MIUIX-api102`）。
+2. 冲突先 `git show <merge-base>:<file>` 看分叉点状态：假冲突（位置相邻）取 my_dev，真清理先 grep 确认无人用再跟。
+3. 最终所有新增/修改文件过三项必查（GMT+8、JSON 创建、JSON 读取），`GeminiAI` 必须保留。
+4. 全量回归 + Debug 编译（碰打包/签名再加 Release）。
+5. `CHANGELOG.md` 记一行（`类型 commit：一句话`，约一行，推理过程不写）。

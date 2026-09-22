@@ -8,7 +8,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
 
-/** 网商银行福利金查询与会员签到，各动作独立开关。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 网商银行福利金查询与会员签到，各动作独立开关。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class MyBankWelfare extends IsolatedRewardTask {
     private BooleanModelField signIn;
     private BooleanModelField inspectPoints;

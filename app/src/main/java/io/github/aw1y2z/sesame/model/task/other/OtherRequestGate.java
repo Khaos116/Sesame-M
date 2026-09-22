@@ -13,7 +13,7 @@ import io.github.aw1y2z.sesame.util.Log;
  * 请求次数、事件循环里的固定 ID 遍历都没有上限，命中风控也不会暂停后续轮次。
  * 这两个任务的调用形状（一次 run 里请求次数随服务端数据变化，不是固定 1-2 次查询）
  * 跟 IsolatedRewardTask 的"query/onceToday"模型不匹配，所以没有直接复用那个基类，
- * 而是单独包一层同样基于 RequestBudgetPolicy/RpcFailurePolicy 的闸门。见 doc/MyFix.md。
+ * 而是单独包一层同样基于 RequestBudgetPolicy/RpcFailurePolicy 的闸门。见 docs/MyFix.md。
  */
 final class OtherRequestGate {
     /** 覆盖账户查询+宝箱+任务+天赋+图鉴+守护+事件等全部分支的宽松上限，超出说明业务分支异常，不该继续重试。 */

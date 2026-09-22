@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import io.github.aw1y2z.sesame.util.JsonUtil;
 
-/** 查询可用的福利金权益；不会开通储蓄/理财产品。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 查询可用的福利金权益；不会开通储蓄/理财产品。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class MyBankBenefitProtocol {
     public static final String QUERY_METHOD = "com.alipay.loanpromoweb.promo.virtualProfit.queryEnableVirtualProfitV2";
     public static final String USE_METHOD = "com.alipay.loanpromoweb.promo.virtualProfit.batchUseVirtualProfit";

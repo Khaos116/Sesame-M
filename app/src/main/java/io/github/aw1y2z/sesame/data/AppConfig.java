@@ -40,7 +40,7 @@ public class AppConfig {
     // null 表示尚未选择全局开关，沿用当前账号的旧设置。
     private Boolean batteryPerm;
 
-    // 对齐 GR2026 MyUtils 的恒真风控跳过函数，这里改为可配置项而非硬编码 true，见 doc/MyFix.md
+    // 对齐 GR2026 MyUtils 的恒真风控跳过函数，这里改为可配置项而非硬编码 true，见 docs/MyFix.md
     private Boolean closeVerification = true;
     private Boolean closeErrorFunction = true;
     private Boolean closeUnRpc = true;

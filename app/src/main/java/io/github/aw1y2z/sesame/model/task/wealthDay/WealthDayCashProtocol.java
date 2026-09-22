@@ -9,7 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import io.github.aw1y2z.sesame.util.JsonUtil;
 
-/** 从 WealthDayBff 恢复的现金卡协议；不会自动完成活动任务。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 从 WealthDayBff 恢复的现金卡协议；不会自动完成活动任务。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class WealthDayCashProtocol {
     public static final String QUERY_METHOD = "com.alipay.wealthdaybff.open2025.query";
     public static final String QUERY_ARGS = "[{\"cardIds\":[\"cash\"],\"pageParams\":{}}]";

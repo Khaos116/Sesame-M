@@ -6,7 +6,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
 
-/** 支真假题目查询：只读探测。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 支真假题目查询：只读探测。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class FactCheckRewards extends IsolatedRewardTask {
     private BooleanModelField inspect;
     @Override public String getName() { return "支真假题目查询"; }

@@ -23,7 +23,7 @@ import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 /**
  * Serial execution, request bounds and per-account cooldown for the new
- * (2026-09-14 GR 快照) 批量小额福利任务的公共基类。移植自 GR 分支，见 doc/MyFix.md。
+ * (2026-09-14 GR 快照) 批量小额福利任务的公共基类。移植自 GR 分支，见 docs/MyFix.md。
  */
 public abstract class IsolatedRewardTask extends ModelTask {
     protected interface Allowed { boolean isAllowed(); }

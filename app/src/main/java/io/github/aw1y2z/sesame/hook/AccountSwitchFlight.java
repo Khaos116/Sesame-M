@@ -4,7 +4,7 @@ import java.util.Objects;
 
 /**
  * 一次登录切换调用的结果核对：等确认目标账号连续两次读到才算数，避免读到一次就误判。
- * 移植自 GR 分支，见 doc/MyFix.md。
+ * 移植自 GR 分支，见 docs/MyFix.md。
  */
 class AccountSwitchFlight {
     enum Outcome { WAIT, SUCCESS, REJECTED, LATE, CANCELLED }

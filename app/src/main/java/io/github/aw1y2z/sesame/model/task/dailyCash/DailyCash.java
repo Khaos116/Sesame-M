@@ -10,7 +10,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
 
-/** SIGN_TASK_CENTER 签到与可选的现有余额领取。移植自 GR 分支，见 doc/MyFix.md。 */
+/** SIGN_TASK_CENTER 签到与可选的现有余额领取。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class DailyCash extends IsolatedRewardTask {
     private static final String PREFIX = "alipay.membertangram.biz.rpc.newtaskcenter.";
     private static final String QUERY = "[{\"activityId\":\"SIGN_TASK_CENTER\",\"source\":\"sousuo\"}]";

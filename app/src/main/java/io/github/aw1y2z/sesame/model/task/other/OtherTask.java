@@ -16,7 +16,7 @@ import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.util.Log;
 
 /**
- * 其他任务（好家无忧卡）。移植自 GR 分支，见 doc/MyFix.md。
+ * 其他任务（好家无忧卡）。移植自 GR 分支，见 docs/MyFix.md。
  * <p>
  * 原版没有请求预算/风控冷却保护，这次移植按用户要求补上：每轮请求数上限、请求间隔、
  * 命中风控自动暂停 24 小时（见 {@link OtherRequestGate}），不改动原有的业务判断逻辑。

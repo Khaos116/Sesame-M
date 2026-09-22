@@ -7,7 +7,7 @@ import org.json.JSONObject;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 
-/** 好家无忧卡活动用到的 RPC。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 好家无忧卡活动用到的 RPC。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class HaoJiaRpcCall {
     private static final String CHANNEL = "jiaofei_card_promo";
     private static final String OPERATION_PARAM_ID = "independent_component_program2023082800847098";

@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import io.github.aw1y2z.sesame.util.JsonUtil;
 
-/** 移植自 GR 分支，见 doc/MyFix.md。 */
+/** 移植自 GR 分支，见 docs/MyFix.md。 */
 public final class PromoprodQueryProtocol {
     public static final String METHOD = "alipay.promoprod.task.query.queryTaskList";
     public static final String ARGS = "[{\"consultAccessFlag\":true,\"planId\":\"AP17187348\"}]";

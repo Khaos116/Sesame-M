@@ -9,7 +9,7 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.TimeZone;
 
-/** 独立的每日诊断日志流，只落固定词汇的事件。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 独立的每日诊断日志流，只落固定词汇的事件。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class ValidationDiagnosticJournal {
     private ValidationDiagnosticJournal() { }
 

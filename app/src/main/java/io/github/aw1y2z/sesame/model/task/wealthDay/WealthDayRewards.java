@@ -7,7 +7,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
 
-/** 开门红理财节现金卡查询，可选领取。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 开门红理财节现金卡查询，可选领取。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class WealthDayRewards extends IsolatedRewardTask {
     private BooleanModelField collectCash;
     private IntegerModelField maxCashFen;

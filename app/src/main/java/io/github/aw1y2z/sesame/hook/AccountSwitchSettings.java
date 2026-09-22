@@ -16,7 +16,7 @@ import io.github.aw1y2z.sesame.util.JsonUtil;
 /**
  * 自动切号是全局开关，独立存一个文件（不放进 ConfigV2），切换/加载某个账号的配置
  * 不会影响这两个设置。移植自 GR 分支并简化（去掉原版桥接进 ModelField 系统的部分，
- * M 这边改用独立设置弹窗），见 doc/MyFix.md。
+ * M 这边改用独立设置弹窗），见 docs/MyFix.md。
  */
 public final class AccountSwitchSettings {
     private AccountSwitchSettings() { }

@@ -6,7 +6,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
 
-/** 只读任务状态；领取动作等确认过接口契约再做。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 只读任务状态；领取动作等确认过接口契约再做。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class PromoprodRewards extends IsolatedRewardTask {
     private BooleanModelField inspect;
     private BooleanModelField claimCompleted;

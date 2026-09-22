@@ -7,7 +7,7 @@ import java.util.Iterator;
 import java.util.Map;
 import io.github.aw1y2z.sesame.util.JsonUtil;
 
-/** 福利券查询与使用参数。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 福利券查询与使用参数。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class MyBankCouponProtocol {
     public static final String QUERY_METHOD = "com.alipay.loanpromoweb.promo.cert.query";
     public static final String QUERY_ARGS = "[{\"certTemplateIdSet\":[\"CT02048186\",\"CT32675397\"]}]";

@@ -2,7 +2,7 @@ package io.github.aw1y2z.sesame.model.task.weeklyWelfare;
 
 import java.util.function.BooleanSupplier;
 
-/** 签到与独立的第七日奖励领取控制，不依赖Android。移植自 GR 分支，见 doc/MyFix.md。 */
+/** 签到与独立的第七日奖励领取控制，不依赖Android。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class WeeklyWelfareFlow {
     private WeeklyWelfareFlow() { }
 
