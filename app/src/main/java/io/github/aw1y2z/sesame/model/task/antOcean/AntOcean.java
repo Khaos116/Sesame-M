@@ -861,7 +861,7 @@ public class AntOcean extends ModelTask {
                 return false;
             }
             List<String> idList = new ArrayList<>();
-            for (int i = 0; i < allRankingList.length() && idList.size() < 20; i++) {
+            for (int i = 20; i < allRankingList.length() && idList.size() < 20; i++) {
                 JSONObject rankItem = allRankingList.optJSONObject(i);
                 String userId = rankItem == null ? "" : rankItem.optString("userId", "");
                 if (userId.isEmpty() || userId.equals(UserIdMap.getCurrentUid())) {

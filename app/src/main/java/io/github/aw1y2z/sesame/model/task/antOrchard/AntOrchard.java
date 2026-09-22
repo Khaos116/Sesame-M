@@ -869,7 +869,7 @@ public class AntOrchard extends ModelTask {
      * `doFarmTask` 已发出、但响应不足以判定成败的任务：{@code taskId -> 标题}。
      * <p>由 {@link #verifyPendingTasksByList()} 在列表处理完后用任务列表状态核对。
      */
-    private static final LinkedHashMap<String, String> pendingVerifyTasks = new LinkedHashMap<>();
+    private final LinkedHashMap<String, String> pendingVerifyTasks = new LinkedHashMap<>();
 
     /** 同轮核对配置（见 TaskAlternative.verify） */
     private static final TaskAlternative.VerifyConfig VERIFY_CFG = new TaskAlternative.VerifyConfig(
@@ -881,7 +881,7 @@ public class AntOrchard extends ModelTask {
      *
      * @return 生效的接口名（finishTask / doFarmTask）；两条都失败或异常返回 null
      */
-    private static String finishTaskTwice(String sceneCode, String taskTitle, String taskId) {
+    private String finishTaskTwice(String sceneCode, String taskTitle, String taskId) {
         try {
             JSONObject finishResponse = MyUtils.newJSONObject(AntOrchardRpcCall.finishTask(sceneCode, taskId));
             if (MessageUtil.checkSuccess(TAG, finishResponse)) {
@@ -914,7 +914,7 @@ public class AntOrchard extends ModelTask {
      * <p>为什么以任务列表为准：见 {@link #finishTaskTwice} 的注释——响应会撒谎（回 102 但已做成），
      * 服务端是异步推进状态的，只有任务列表的 {@code taskStatus} 才是最终判据。
      */
-    private static void verifyPendingTasksByList() {
+    private void verifyPendingTasksByList() {
         TaskAlternative.verify(pendingVerifyTasks, VERIFY_CFG, () -> {
             JSONObject jo = MyUtils.newJSONObject(AntOrchardRpcCall.orchardListTask());
             if (!MessageUtil.checkResultCode(TAG, jo)) {

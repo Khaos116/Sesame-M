@@ -40,7 +40,11 @@ public final class TaskAlternative {
     }
 
     public static JSONObject doFarmTask(String bizKey, String taskSceneCode, String version) throws JSONException {
-        return new JSONObject(request(bizKey, taskSceneCode, version));
+        String raw = request(bizKey, taskSceneCode, version);
+        if (raw == null) {
+            throw new JSONException("doFarmTask empty response");
+        }
+        return new JSONObject(raw);
     }
 
     /** 日志片段 {@code resultCode/memo}（{@code desc}、{@code resultDesc} 兜底）。 */

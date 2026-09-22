@@ -9,6 +9,7 @@ import android.os.Build;
 import lombok.Getter;
 import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class NotificationUtil {
     private static Context context;
@@ -22,19 +23,18 @@ public class NotificationUtil {
     private static String titleText = "Sesame-M";
     private static String contentText = "";
     /** 活跃任务计数，>0 表示有异步任务仍在执行。由 ModelTask 在 startTask/finally 里增减 */
-    private static volatile int runningCount = 0;
+    private static final AtomicInteger runningCount = new AtomicInteger();
 
     public static void trackTaskStart() {
-        runningCount++;
+        runningCount.incrementAndGet();
     }
 
     public static void trackTaskEnd() {
-        runningCount--;
-        if (runningCount < 0) runningCount = 0;
+        if (runningCount.decrementAndGet() < 0) runningCount.set(0);
     }
 
     public static int getRunningCount() {
-        return runningCount;
+        return runningCount.get();
     }
 
     public static void start(Context context) {
@@ -129,6 +129,23 @@ public class NotificationUtil {
 
     public static void setNextExecTime(long nextExecTime) {
         NotificationUtil.nextExecTime = nextExecTime;
+    }
+
+    /**
+     * 立即把已记录的下次执行时间刷到通知栏（只写下次执行，不碰上次执行）。
+     * <p>调度时可能根本没有任何任务启动（切号忙、检查未过等提前 return），此时不会有
+     * ModelTask 经过 finally 触发 updateLastExecText，不立即刷就会僵死。
+     */
+    public static void flushNextExecText() {
+        try {
+            if (nextExecTime > 0) {
+                contentText = "下次执行 " + TimeUtil.getTimeStr(nextExecTime);
+                lastNoticeTime = System.currentTimeMillis();
+                sendText();
+            }
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+        }
     }
 
     /**

@@ -983,8 +983,10 @@ public class AntMember extends ModelTask {
     private void verifyPendingTasks() {
         TaskAlternative.verify(pendingVerifyTasks, VERIFY_CFG, () -> {
             Set<String> notDone = new LinkedHashSet<>();
-            collectNotDoneIds(AntMemberRpcCall.queryModularTaskList(), notDone);
-            collectNotDoneIds(AntMemberRpcCall.queryTaskList(), notDone);
+            if (!collectNotDoneIds(AntMemberRpcCall.queryModularTaskList(), notDone)
+                    || !collectNotDoneIds(AntMemberRpcCall.queryTaskList(), notDone)) {
+                return null;
+            }
             return notDone;
         });
     }
@@ -994,11 +996,11 @@ public class AntMember extends ModelTask {
      * <p>两套列表结构不同（v3 {@code data.taskModuleList[].taskList[]}、
      * v4 {@code data.gameTaskModule.gameTaskList[]}），这里都解析一遍，避免漏判导致误拉黑。
      */
-    private static void collectNotDoneIds(String response, Set<String> out) {
+    private static boolean collectNotDoneIds(String response, Set<String> out) {
         try {
             JSONObject data = MyUtils.newJSONObject(response).optJSONObject("data");
             if (data == null) {
-                return;
+                return false;
             }
             JSONArray modules = data.optJSONArray("taskModuleList");
             if (modules != null) {
@@ -1011,8 +1013,10 @@ public class AntMember extends ModelTask {
             if (gameTaskModule != null) {
                 collectNotDoneFromArray(gameTaskModule.optJSONArray("gameTaskList"), out);
             }
+            return true;
         } catch (Throwable t) {
             Log.err(TAG, "collectNotDoneIds err:", t);
+            return false;
         }
     }
 

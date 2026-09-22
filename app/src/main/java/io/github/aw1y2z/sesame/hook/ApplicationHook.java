@@ -931,6 +931,7 @@ public class ApplicationHook extends XposedModule {
         // 调度时立即记录下次执行时间，所有任务完成时 updateLastExecText 会一并写入
         try {
             NotificationUtil.setNextExecTime(System.currentTimeMillis() + delayMillis);
+            NotificationUtil.flushNextExecText();
         } catch (Exception e) {
             Log.printStackTrace(e);
         }

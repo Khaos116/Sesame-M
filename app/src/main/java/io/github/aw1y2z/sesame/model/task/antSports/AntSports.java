@@ -41,7 +41,6 @@ import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.model.extensions.ExtensionsHandle;
-import io.github.aw1y2z.sesame.model.task.antFarm.AntFarmRpcCall;
 import io.github.aw1y2z.sesame.model.task.antStall.AntStall;
 import io.github.aw1y2z.sesame.model.task.antStall.AntStallRpcCall;
 import io.github.aw1y2z.sesame.util.Log;
