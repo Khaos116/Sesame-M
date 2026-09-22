@@ -149,8 +149,10 @@ public class UserIdMap {
                                 String remarkName = (String) remarkNameField.get(userObject);
                                 Integer friendStatus = (Integer) friendStatusField.get(userObject);
                                 UserEntity userEntity = new UserEntity(userId, account, friendStatus, name, nickName, remarkName);
-                                if (selfEntity == null && Objects.equals(selfId, userId)) {
-                                    selfEntity = userEntity;
+                                if (Objects.equals(selfId, userId)) {
+                                    // 账号模型实体通常只有 uid/account 可靠，昵称/姓名反射读不到；
+                                    // 与好友库资料合并，避免配置页昵称显示为 null
+                                    selfEntity = mergeSelfEntity(selfEntity, userEntity);
                                 }
                                 UserIdMap.add(userEntity);
                             } catch (Throwable t) {
@@ -205,6 +207,34 @@ public class UserIdMap {
             Log.printStackTrace(t);
             return null;
         }
+    }
+
+    /**
+     * 合并自身实体：账号模型的 uid/account 最可靠，昵称/姓名等展示字段优先取好友库资料补全。
+     */
+    private static UserEntity mergeSelfEntity(UserEntity base, UserEntity friend) {
+        if (base == null) {
+            return friend;
+        }
+        if (friend == null) {
+            return base;
+        }
+        return new UserEntity(
+                firstNonEmpty(base.getUserId(), friend.getUserId()),
+                firstNonEmpty(base.getAccount(), friend.getAccount()),
+                base.getFriendStatus() != null ? base.getFriendStatus() : friend.getFriendStatus(),
+                firstNonEmpty(friend.getRealName(), base.getRealName()),
+                firstNonEmpty(friend.getNickName(), base.getNickName()),
+                firstNonEmpty(friend.getRemarkName(), base.getRemarkName())
+        );
+    }
+
+    /** 取第一个非空字符串，都为空返回 null */
+    private static String firstNonEmpty(String a, String b) {
+        if (a != null && !a.isEmpty()) {
+            return a;
+        }
+        return b != null && !b.isEmpty() ? b : null;
     }
 
     /** 安全读取字段：依次尝试多个候选字段名，缺失或抛错时返回 null */

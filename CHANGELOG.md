@@ -3,6 +3,10 @@
 简明改动清单，按时间倒序追加，方便快速查看每次改了什么。上半部分为一行摘要 + 对应 commit；
 文末「详细记录」为原 `doc/MyFix.md` 迁入的移植/合并原委与取舍理由。`doc/MyFix.md` 只放规则。
 
+## 2026-09-22
+
+- merge（待提交）：再次合并 `origin/MIUIX-api102`（3066428a → ee219f3a，上游含 `ca1621c7` 修复顶部/配置页昵称显示为 `null`）。根因：`f133ba53` 带进的 `UserIdMap.buildSelfFromAccountModel()` 反射只能稳定拿到当前支付宝的 `userId`/`account`，昵称/姓名字段拿不到，好友列表兜底又只判 `selfEntity == null`（半成品 entity 已非 null），正确昵称被挡在外面；`UserEntity.showName` 昵称/备注都缺时又直接是 null，未做兜底。上游 `ca1621c7` 改法：好友循环遇到自己改用 `mergeSelfEntity` 合并（uid/account 用账号模型、昵称/姓名优先取好友库），`UserEntity` 昵称备注都缺时兜底用真实姓名，`maskName`/`fullName` 空安全拼接。3 处冲突：①`UserIdMap.java` 自动合并成功、无冲突；②`ApplicationHook.java`——`f8fa8e9f`（上游）把 `initHandler` 改成主线程转后台线程执行避免切号卡死界面，和本分支已有的 `TaskLifecycle` 并发准入包装（`initHandler(force, owner)`/`enterInitialization`）撞了同一处重命名，手工合并为“主线程判断转后台线程 + 后台线程内仍走 TaskLifecycle 守卫”，双方诉求都保留，`initializing` 复位挪到 `runInit` 的 `finally`；③`MiuixMainActivity.kt` 配置页账号列表——沿用上次 `f133ba53` 的既有决定，保留本分支 `accountDisplayName` + “UID:”副标题结构（下游 `items.forEach` 按 `Pair` 解构，上游改的 `Triple` 类型不兼容），放弃上游这处的结构改动；额外把 `accountDisplayName` 的字符串拼接也补上 `showName ?: account` 空安全，堵住残余的字面 "null"。GMT+8/JSON 创建/JSON 读取三项检查：合并涉及的 10 个文件里新增代码无 `Calendar`/`new JSONObject`/裸 `get*()`；`GeminiAI` 未受影响。Debug 编译（Java+Kotlin）通过，9 项回归脚本全部 PASS，未做真机验证。
+
 ## 2026-09-21
 
 - chore `65c50523`：版本号 1.1.7 → 1.1.8（`gradle.properties`），tag `v1.1.8`。1.1.7 → 1.1.8 之间是 v1.1.7 之后的 8 个提交（含 1 次合并 `origin/MIUIX-api102` 至 3066428a），主要是拼图验证码识别修复（模板内缩解决真机火焰图错配 751→672）、松手前截图 `matched_submit`、拖动轨迹补 GR 随机抖动，以及上游界面内边距/输入框对齐/新用户副标题修复。

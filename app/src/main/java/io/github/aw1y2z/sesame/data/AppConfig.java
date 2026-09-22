@@ -49,7 +49,7 @@ public class AppConfig {
     private Boolean showToast = true;
     private Integer toastOffsetY = 0;
     private Boolean enableOnGoing = false;
-    private Boolean closeCaptchaDialogVPN = true;
+    private Boolean closeCaptchaDialog = true;
 
     public Boolean getNewRpc() {
         return newRpc;
@@ -83,12 +83,12 @@ public class AppConfig {
         enableOnGoing = value;
     }
 
-    public Boolean getCloseCaptchaDialogVPN() {
-        return closeCaptchaDialogVPN;
+    public Boolean getCloseCaptchaDialog() {
+        return closeCaptchaDialog;
     }
 
-    public void setCloseCaptchaDialogVPN(Boolean value) {
-        closeCaptchaDialogVPN = value;
+    public void setCloseCaptchaDialog(Boolean value) {
+        closeCaptchaDialog = value;
     }
 
     public Boolean getLanguageSimplifiedChinese() {

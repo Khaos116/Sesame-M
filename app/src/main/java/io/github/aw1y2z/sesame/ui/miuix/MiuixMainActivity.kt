@@ -822,11 +822,11 @@ fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
             enableOnGoing = it
             activity.broadcastReloadConfig()
         }
-        var closeCaptchaDialogVPN by remember { mutableStateOf(AppConfig.INSTANCE.closeCaptchaDialogVPN ?: true) }
-        BooleanSwitch("屏蔽VPN/代理弹窗", closeCaptchaDialogVPN) {
-            AppConfig.INSTANCE.closeCaptchaDialogVPN = it
+        var closeCaptchaDialog by remember { mutableStateOf(AppConfig.INSTANCE.closeCaptchaDialog ?: true) }
+        BooleanSwitch("屏蔽部分弹窗", closeCaptchaDialog) {
+            AppConfig.INSTANCE.closeCaptchaDialog = it
             AppConfig.save()
-            closeCaptchaDialogVPN = it
+            closeCaptchaDialog = it
             activity.broadcastReloadConfig()
         }
     }
@@ -974,7 +974,7 @@ private fun accountDisplayName(folderOrUid: String): String {
     return try {
         val body = FileUtil.readFromFile(FileUtil.getSelfIdFile(userId))
         val user = JsonUtil.parseObject(body, UserEntity.UserDto::class.java)?.toEntity()
-        user?.let { "${it.showName}(${it.account})" } ?: folderOrUid
+        user?.let { "${it.showName ?: it.account}(${it.account})" } ?: folderOrUid
     } catch (_: Exception) {
         folderOrUid
     }
