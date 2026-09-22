@@ -5,6 +5,7 @@
 
 ## 2026-09-22
 
+- chore：版本号 1.1.8 → 1.1.9（`gradle.properties`），tag `v1.1.9`。1.1.8 → 1.1.9 之间是 v1.1.8 之后的 13 个提交（含 3 次合并 `origin/MIUIX-api102`），主要是昵称显示 null / 主线程 NPE / 配置字段迁移丢设置 / 合种浇水次数编辑回归等一批 bug 修复，见下方详细记录。
 - merge `5bf5d90b`→`b76684c8`→`13ec4981`：三次合并 `origin/MIUIX-api102`（3066428a→d4419981）+ 三轮自查，主要修复：①顶部/配置页昵称显示 `null`——`buildSelfFromAccountModel` 反射拿不到昵称的半成品 entity 挡住好友库兜底，改用 `mergeSelfEntity` 合并（`UserIdMap`/`UserEntity`）；②`ApplicationHook` 主线程 `initHandler(true)` 拆箱 NPE（470/893 行合并时漏改，仿 268 行改成不判断返回值直接调用）；③`AppConfig` 字段 `closeCaptchaDialogVPN→closeCaptchaDialog` 改名后老用户设置被 Jackson 静默重置，加 `@JsonAlias`；④`MiuixMainActivity.accountDisplayName` 昵称/账号为 null 或空串时拼出字面 "null" 或重复/空白标题，改成按值判空组合处理；⑤`0c7e0484`"合种浇水支持逐项设量" 的 `withCount`/`defaultCount` 范围界定错了两次——`withCount` 收窄成 4 个字段会让十几个无关字段的次数编辑 UI 整个消失，`defaultCount` 直接取 `valueRangeMin` 会让默认构造函数本来就是 0 的大多数字段新勾选默认次数变成 0（业务侧当"今日已达上限"直接跳过，勾了等于没勾且不报错），都改成只在合种浇水那两个字段生效，其余维持原样；`check_merge_config.py` 测试桩类的 `valueRangeMin` 默认值也跟着改成 0（对齐生产环境真实默认构造函数），此前写 1 掩盖了⑤这个 bug。回归全过，Debug 编译通过，未做真机验证，详细取舍见 `git log`。
 - fix：`AntOrchard.java` 静态黑名单 `ORCHARD_TASK_BLACKLIST` 从未被读取，接入 `handleTaskList` 跳过判断，解决 `taskType=70000` 反复报"任务全局配置不存在"（依据账号2今日 `error` 日志）；`PuzzleCaptchaSolver` 的 `matched_submit`/`matched-after` 截图失败此前完全静默，补 `Log.captcha` 记录失败原因。金豆模块几个 taskType、农场子任务 `sceneCode=10021 taskType=104321` 同样报错但单日单次证据不足，未处理；`resultCode 102`/`error 48`/捐赠无标的物/能量罩/限速提示/权益已领取等确认是正常瞬时状态，不用改。
 
