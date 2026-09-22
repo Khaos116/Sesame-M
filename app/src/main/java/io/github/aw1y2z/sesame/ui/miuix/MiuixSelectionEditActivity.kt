@@ -140,10 +140,13 @@ fun SelectionEditContent(
     val liveField = ConfigV2.INSTANCE.getModelFields(modelCode)?.get(field.code) ?: field
     val single = liveField.type == "SELECT_ONE" || liveField.type == "SELECT_AND_COUNT_ONE"
     val withCount = liveField.type == "SELECT_AND_COUNT" || liveField.type == "SELECT_AND_COUNT_ONE"
-    // 新勾选项默认值取字段数值下限（合种浇水=0、浇水好友=1 等），对所有 withCount 字段通用，不只是合种浇水
-    val defaultCount = if (withCount) ((liveField as? SelectAndCountModelField)?.valueRangeMin?.toInt() ?: 1) else 1
     // 合种浇水两列表用数值输入框而非滑块（取值范围大，滑块不好操作）
     val useInputBox = liveField.code == "cooperateWaterList" || liveField.code == "cooperateWaterTotalLimitList"
+    // 新勾选项默认值：只有合种浇水这两个字段取数值下限（本来就允许 0）；其余绝大多数 SelectAndCountModelField
+    // 字段用的是 (min=0, max=100) 的默认构造函数，valueRangeMin 也是 0——如果不加区分地取下限当默认值，
+    // 勾选新好友/新场景后不手动拖一下滑块，保存下来的次数就是 0，业务侧会把 0 次当"今日已达上限"直接跳过，
+    // 等于勾了等于没勾。所以非 useInputBox 字段维持原来的默认 1。
+    val defaultCount = if (useInputBox) ((liveField as? SelectAndCountModelField)?.valueRangeMin?.toInt() ?: 0) else 1
 
     @Suppress("UNCHECKED_CAST")
     val smf = when {
@@ -380,11 +383,16 @@ fun SelectionEditContent(
                                             value = text,
                                             onValueChange = { input ->
                                                 val filtered = input.filter { it.isDigit() }
-                                                text = filtered
-                                                counts = counts + (opt.id to (filtered.toIntOrNull() ?: 0))
+                                                val max = (liveField as? SelectAndCountModelField)?.valueRangeMax?.toInt()
+                                                val clamped = filtered.toIntOrNull()?.let { n ->
+                                                    if (max != null && n > max) max.toString() else filtered
+                                                } ?: filtered
+                                                text = clamped
+                                                counts = counts + (opt.id to (clamped.toIntOrNull() ?: 0))
                                                 dirty = true
                                             },
                                             label = "",
+                                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                                             modifier = Modifier.fillMaxWidth()
                                         )
                                     }

@@ -111,7 +111,7 @@ open class Field(val type: String, val code: String, var value: Any?) {
     val expandValue = emptyList<IdAndName>()
     fun setObjectValue(v: Any?) { value = v }
 }
-class SelectAndCountModelField(code: String, v: Map<String, Int>, val valueRangeMin: Float = 1f) : Field("SELECT_AND_COUNT", code, v) {
+class SelectAndCountModelField(code: String, v: Map<String, Int>, val valueRangeMin: Float = 0f) : Field("SELECT_AND_COUNT", code, v) {
     fun clear() { value = emptyMap<String, Int>() }
     fun add(id: String, count: Int) { value = (value as Map<String, Int>) + (id to count) }
 }
@@ -126,13 +126,17 @@ fun edit(liveField: Field, add: String? = null, newCount: Int? = null) {
     val smf = liveField
     @@WITH_COUNT@@
     check(withCount == liveField.type.startsWith("SELECT_AND_COUNT"))
+    @@USE_INPUT_BOX@@
     @@DEFAULT_COUNT@@
+    // 默认构造函数下 valueRangeMin 是 0（真实生产代码同款），非 useInputBox 字段绝不能把新勾选默认值也带成 0，
+    // 否则等于勾了等于没勾（业务侧把 0 次当"今日已达上限"直接跳过）
+    if (!useInputBox) check(defaultCount == 1) { "非 useInputBox 字段的默认值必须是 1，实际是 $defaultCount" }
     @@INITIAL@@
     var sel = initialState.second
     var counts = sel.associateWith { initialState.third[it] ?: 1 }
     if (add != null) {
         sel = if (liveField.type == "SELECT_AND_COUNT_ONE") setOf(add) else sel + add
-        counts = counts + (add to (newCount ?: 1))
+        counts = counts + (add to (newCount ?: defaultCount))
     }
     val configField = liveField
     @@SAVE@@
@@ -153,9 +157,14 @@ fun main() {
     check(single.value == KVNode("B", 6))
     edit(Field("SELECT", "plain", setOf("A")))
     edit(Field("SELECT_ONE", "plainSingle", "A"))
+    // 合种浇水（useInputBox）：valueRangeMin=0 是本来就允许的默认值，跟其它字段区分开验证
+    val cooperate = SelectAndCountModelField("cooperateWaterList", mapOf("A" to 5))
+    edit(cooperate, "C")
+    check((cooperate.value as Map<*, *>)["C"] == 0) { "合种浇水新勾选默认值应为 0，实际是 ${(cooperate.value as Map<*, *>)["C"]}" }
     println("PASS: all count fields retain counts, edit counts and replace single selection")
 }
 '''.replace("@@WITH_COUNT@@", re.search(r"val withCount = [^\n]+", selection_ui)[0]) \
+    .replace("@@USE_INPUT_BOX@@", re.search(r"val useInputBox = [^\n]+", selection_ui)[0]) \
     .replace("@@DEFAULT_COUNT@@", re.search(r"val defaultCount = [^\n]+", selection_ui)[0]) \
     .replace("@@INITIAL@@", method(selection_path, "    val initialState = remember(")) \
     .replace("@@SAVE@@", method(selection_path, "        when (configField.type)"))
