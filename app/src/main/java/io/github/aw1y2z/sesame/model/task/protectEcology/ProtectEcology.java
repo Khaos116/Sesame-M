@@ -66,8 +66,8 @@ public class ProtectEcology extends ModelTask {
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();
         modelFields.addField(cooperateWater = new BooleanModelField("cooperateWater", "合种 | 浇水", false));
-        modelFields.addField(cooperateWaterList = new SelectAndCountModelField("cooperateWaterList", "合种 | 日浇水量列表", new LinkedHashMap<>(), CooperateUser::getList, "请填写浇水克数(每日)").setDependsOn("cooperateWater"));
-        modelFields.addField(cooperateWaterTotalLimitList = new SelectAndCountModelField("cooperateWaterTotalLimitList", "合种 | 总浇水量列表", new LinkedHashMap<>(), CooperateUser::getList, "请填写浇水克数(上限总量)").setDependsOn("cooperateWater"));
+        modelFields.addField(cooperateWaterList = new SelectAndCountModelField("cooperateWaterList", "合种 | 日浇水量列表", new LinkedHashMap<>(), CooperateUser::getList, "请填写浇水克数(每日)", 0, 1000).setDependsOn("cooperateWater"));
+        modelFields.addField(cooperateWaterTotalLimitList = new SelectAndCountModelField("cooperateWaterTotalLimitList", "合种 | 总浇水量列表", new LinkedHashMap<>(), CooperateUser::getList, "请填写浇水克数(上限总量)", 0, 1000).setDependsOn("cooperateWater"));
         modelFields.addField(protectMarathonType = new ChoiceModelField("protectMarathonType", "碳中和 | 马拉松", ProtectType.NONE, ProtectType.nickNames));
         modelFields.addField(protectMarathonList = new SelectAndCountModelField("protectMarathonList", "碳中和 | 马拉松列表", new LinkedHashMap<>(), AlipayMarathon::getList, "请填写助力能量克数(上限总量)").setDependsOn("protectMarathonType"));
         modelFields.addField(protectNewAncientTreeType = new ChoiceModelField("protectNewAncientTreeType", "碳中和 | " + "古树医生", ProtectType.NONE, ProtectType.nickNames));
