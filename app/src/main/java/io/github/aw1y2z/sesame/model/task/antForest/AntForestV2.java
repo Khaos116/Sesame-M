@@ -186,6 +186,7 @@ public class AntForestV2 extends ModelTask {
 
     private IntegerModelField CollectSelfEnergyThreshold;
     private IntegerModelField collectRobExpandEnergy;
+    private BooleanModelField collectRobExpandEnergyEnable;
     private BooleanModelField collectWateringBubble;
     private BooleanModelField batchRobEnergy;
     private BooleanModelField balanceNetworkDelay;
@@ -304,7 +305,8 @@ public class AntForestV2 extends ModelTask {
         modelFields.addField(energyPvp = new BooleanModelField("energyPvp", "1V1能量挑战 | 开关", false));
         modelFields.addField(collectWateringBubble = new BooleanModelField("collectWateringBubble", "收取金球", false));
         modelFields.addField(wateredFriendList = new SelectAndCountModelField("wateredFriendList", "统计 | 应被好友浇水", new LinkedHashMap<>(), AlipayUser::getList, "请填写被浇水次数(用于核对金球)", 1, 3));
-        modelFields.addField(collectRobExpandEnergy = new IntegerModelField("collectRobExpandEnergy", "倍卡额外能量(大于该值收取)", 100, 0, 1000000));
+        modelFields.addField(collectRobExpandEnergyEnable = new BooleanModelField("collectRobExpandEnergyEnable", "倍卡额外能量", true));
+        modelFields.addField(collectRobExpandEnergy = new IntegerModelField("collectRobExpandEnergy", "倍卡额外能量(大于该值收取)", 0, 0, 1000000).setDependsOn("collectRobExpandEnergyEnable"));
         modelFields.addField(expiredEnergy = new BooleanModelField("expiredEnergy", "收取过期能量", false));
         modelFields.addField(queryInterval = new StringModelField("queryInterval", "查询间隔(毫秒或毫秒范围)", "500-1000"));
         modelFields.addField(collectInterval = new StringModelField("collectInterval", "收取间隔" + "(毫秒或毫秒范围)", "1000" + "-1500"));
@@ -1582,11 +1584,15 @@ public class AntForestV2 extends ModelTask {
         if (extInfo.isEmpty()) {
             return;
         }
+        // 关闭"倍卡额外能量"开关：不收取额外能量
+        if (!collectRobExpandEnergyEnable.getValue()) {
+            return;
+        }
         try {
             JSONObject jo = new JSONObject(extInfo);
             double leftEnergy = Double.parseDouble(jo.optString("leftEnergy", "0"));
-            // 有额外能量就收取（无阈值限制，与翻倍卡开关状态无关）
-            if (leftEnergy > 0) {
+            // 开关开启：受数值限制，只有大于"倍卡额外能量"阈值才收取
+            if (leftEnergy > collectRobExpandEnergy.getValue()) {
                 collectRobExpandEnergy(propId, propType);
             }
         } catch (Throwable th) {

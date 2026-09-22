@@ -33,10 +33,13 @@ public class UserEntity {
         this.nickName = nickName;
         this.remarkName = remarkName;
         String showNameTmp;
-        if (StringUtil.isEmpty(remarkName)) {
+        if (!StringUtil.isEmpty(remarkName)) {
+            showNameTmp = remarkName;
+        } else if (!StringUtil.isEmpty(nickName)) {
             showNameTmp = nickName;
         } else {
-            showNameTmp = remarkName;
+            // 昵称、备注都没有时兜底用真实姓名（可能为 null）
+            showNameTmp = realName;
         }
         String maskNameTmp;
         if (realName != null && realName.length() > 1) {
@@ -59,8 +62,11 @@ public class UserEntity {
             }
         }*/
         this.showName = showNameTmp;
-        this.maskName = showNameTmp + "|" + maskNameTmp;
-        this.fullName = showNameTmp + "|" + realName + "(" + account + ")";
+        // 空安全拼接：任一项为 null 时用空串代替，避免持久化出 "null|null" 这类脏数据
+        String safeShow = showNameTmp == null ? "" : showNameTmp;
+        String safeMask = maskNameTmp == null ? "" : maskNameTmp;
+        this.maskName = safeShow + "|" + safeMask;
+        this.fullName = safeShow + "|" + (realName == null ? "" : realName) + "(" + (account == null ? "" : account) + ")";
     }
 
     public String getShowName() {
