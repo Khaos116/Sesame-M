@@ -131,8 +131,13 @@ public class Statistics {
                 JsonUtil.copyMapper().readerForUpdating(INSTANCE).readValue(json);
                 String formatted = JsonUtil.toFormatJsonString(INSTANCE);
                 if (formatted != null && !formatted.equals(json)) {
-                    Log.i(TAG, "重新格式化 statistics.json");
-                    FileUtil.write2File(formatted, statisticsFile);
+                    // 回写只允许改格式、不许改数据
+                    if (JsonUtil.isRewriteLossless(json, formatted)) {
+                        Log.i(TAG, "重新格式化 statistics.json");
+                        FileUtil.write2File(formatted, statisticsFile);
+                    } else {
+                        Log.i(TAG, "statistics.json 加载结果与磁盘数据不一致，已跳过重新格式化");
+                    }
                 }
             }
             else {

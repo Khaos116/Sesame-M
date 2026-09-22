@@ -11,6 +11,7 @@ import java.util.Set;
 import io.github.aw1y2z.sesame.data.ConfigV2;
 import io.github.aw1y2z.sesame.data.ModelFields;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
+import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.idMap.GoldenBeansTaskListMap;
@@ -38,6 +39,12 @@ public final class GoldenBeansTasks {
 
     private final SelectModelField blacklist;
     private final boolean autoBlacklist;
+
+    /**
+     * `doFarmTask` 已发出、但响应不足以判定成败的任务：{@code taskId -> 展示名}。
+     * <p>由 {@link #verifyPendingTasks} 在本入口列表处理完后按任务列表状态核对。
+     */
+    private final Map<String, String> pendingVerifyTasks = new LinkedHashMap<>();
 
     /**
      * @param blacklist     黑名单配置字段，可为 null
@@ -303,6 +310,11 @@ public final class GoldenBeansTasks {
                 unresolved = true;
             }
 
+            // 核对本轮 doFarmTask 的结果（响应不可信，以任务列表为准）
+            if (verifyPendingTasks(entry)) {
+                changed = true;
+            }
+
             Log.record("金豆[" + entry.alias + "]任务🗂️共[" + total + "]个#完成[" + handled + "]个");
             if (changed) {
                 GoldenBeansSupport.pause(interval);
@@ -375,19 +387,59 @@ public final class GoldenBeansTasks {
                 Log.goldenBeans("金豆[" + entry.alias + "]任务🧾完成[" + taskName + "]");
                 return true;
             }
-            // 命中不可自动完成的任务时按错误特征自动加入黑名单
-            MessageUtil.checkResultCodeAndMarkTaskBlackList("GoldenBeansTaskList", taskId, jo);
             String failMessage = GoldenBeansSupport.describe(jo);
-            if (failMessage.contains("不支持rpc调用") || failMessage.contains("不支持RPC调用")) {
-                Log.goldenBeans("金豆[" + entry.alias + "]任务🏴[" + taskName + "]不支持自动化#已加入黑名单");
+            // 另一种实现方案（见 TaskAlternative）；乐园游戏类任务会被 finishTaskantorchard 以 400000040 拒绝
+            if (TaskAlternative.hit(jo, entry.taskSceneCode)) {
+                TaskAlternative.trigger(pendingVerifyTasks, taskId, taskName, taskId, entry.taskSceneCode,
+                        goldenbeansRpcCall.VERSION, "金豆[" + entry.alias + "]任务", msg -> Log.goldenBeans(msg));
                 return false;
             }
+            // 其它错误码（支付/配置类）= 真做不了，仍计入自动拉黑
+            MessageUtil.checkResultCodeAndMarkTaskBlackList("GoldenBeansTaskList", taskId, jo);
             Log.goldenBeans("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]完成失败[" + failMessage + "]");
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "finishTask err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
         }
         return false;
+    }
+
+    /**
+     * 核对「已触发但响应不可信」的任务：等几秒后重拉本入口任务列表，**仍未完成**的才计入自动拉黑。
+     * <p>为什么以列表为准：{@code doFarmTask} 会回 102「服务器正在开小差」但任务其实已生效，
+     * 服务端是异步推进状态的，只有列表里的 {@code taskStatus} 才是最终判据。
+     *
+     * @return 是否有任务确认完成（用于决定是否再同步一次列表）
+     */
+    private boolean verifyPendingTasks(GoldenBeansEntry entry) {
+        // 日志前缀含入口别名，故每入口现构一份
+        TaskAlternative.VerifyConfig cfg = new TaskAlternative.VerifyConfig(
+                "goldenbeans", "GoldenBeansTaskList", "金豆夺宝任务",
+                "金豆[" + entry.alias + "]任务", "🧾完成", false, msg -> Log.goldenBeans(msg));
+        return TaskAlternative.verify(pendingVerifyTasks, cfg, () -> {
+            JSONObject syncJo = GoldenBeansSupport.parse(goldenbeansRpcCall.pullOf(
+                    entry.bizType, entry.source, "FARM_TASK", "TASK_LIST"));
+            if (!GoldenBeansSupport.ok(syncJo)) {
+                return null;
+            }
+            JSONArray taskList = syncJo.optJSONArray("taskList");
+            if (taskList == null) {
+                return null;
+            }
+            Set<String> stillTodo = new LinkedHashSet<>();
+            for (int i = 0; i < taskList.length(); i++) {
+                JSONObject task = taskList.optJSONObject(i);
+                if (task == null
+                        || !STATUS_TODO.equals(task.optString("taskStatus", "").trim().toUpperCase())) {
+                    continue;
+                }
+                String taskId = task.optString("taskId", "").trim();
+                if (!taskId.isEmpty()) {
+                    stillTodo.add(taskId);
+                }
+            }
+            return stillTodo;
+        });
     }
 
     private boolean claimAward(GoldenBeansEntry entry, String taskId, String taskName) {

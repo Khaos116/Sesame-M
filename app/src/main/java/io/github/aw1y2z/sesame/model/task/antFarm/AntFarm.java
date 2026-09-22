@@ -1729,10 +1729,12 @@ public class AntFarm extends ModelTask {
         return false;
     }
 
-    private Boolean doVideoTask() {
+    private Boolean doVideoTask(String title) {
         try {
             JSONObject jo = new JSONObject(AntFarmRpcCall.queryTabVideoUrl());
             if (!MessageUtil.checkMemo(TAG, jo)) {
+                //检查并标记黑名单任务
+                MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDoFarmTaskList", title, jo);
                 return false;
             }
             String videoUrl = jo.getString("videoUrl");
@@ -1743,24 +1745,24 @@ public class AntFarm extends ModelTask {
                 jo = new JSONObject(AntFarmRpcCall.videoTrigger(contentId));
                 if (jo.optBoolean("success")) {
                     return true;
-                } else {
-                    Log.record(jo.getString("resultMsg"));
-                    Log.i(jo.toString());
                 }
-            } else {
-                Log.record(jo.getString("resultMsg"));
-                Log.i(jo.toString());
             }
+            Log.record(jo.optString("resultMsg"));
+            Log.i(jo.toString());
+            //检查并标记黑名单任务
+            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDoFarmTaskList", title, jo);
         } catch (Throwable t) {
             Log.err(TAG, "doVideoTask err:", t);
         }
         return false;
     }
 
-    private Boolean doAnswerTask() {
+    private Boolean doAnswerTask(String title) {
         try {
             JSONObject jo = new JSONObject(DadaDailyRpcCall.home("100"));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
+                //检查并标记黑名单任务
+                MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDoFarmTaskList", title, jo);
                 return false;
             }
             JSONObject question = jo.getJSONObject("question");
@@ -1774,6 +1776,8 @@ public class AntFarm extends ModelTask {
             String answer = AnswerAI.getAnswer(question.optString("title"), JsonUtil.jsonArrayToList(labels));
             jo = new JSONObject(DadaDailyRpcCall.submit("100", answer, questionId));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
+                //检查并标记黑名单任务
+                MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDoFarmTaskList", title, jo);
                 return false;
             }
             JSONObject extInfo = jo.getJSONObject("extInfo");
@@ -1817,19 +1821,28 @@ public class AntFarm extends ModelTask {
         try {
             String title = task.getString("title");
             String bizKey = task.getString("bizKey");
+            String taskId = task.optString("taskId");
             if (bizKey.contains("HEART_DONAT") || bizKey.equals("BAIDUJS_202512") || bizKey.equals("BABAFARM_TB")) {
                 return false;
             }
-            if (Objects.equals(title, "庄园小视频")) {
-                isDoTask = doVideoTask();
-            } else if (Objects.equals(title, "庄园小课堂")) {
-                isDoTask = doAnswerTask();
+            // 按稳定 taskId 分派（2026-09-22 抓包实测）：
+            //   视频任务 taskId="VIDEO_TASK"、答题任务 taskId="ANSWER"
+            // 注意视频任务的标题实际是「看庄园小视频」——原先写的是 equals("庄园小视频")，
+            // 少一个"看"字，导致这两类任务**从来没有走对过接口**（一直落到通用 doFarmTask 分支）
+            if ("VIDEO_TASK".equals(taskId)) {
+                isDoTask = doVideoTask(title);
+            } else if ("ANSWER".equals(taskId)) {
+                isDoTask = doAnswerTask(title);
             } else {
                 JSONObject jodoFarmTask = new JSONObject(AntFarmRpcCall.doFarmTask(bizKey));
                 //检查并标记黑名单任务（此处是庄园饲料任务，应写入饲料黑名单而非抽抽乐）
                 MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDoFarmTaskList", title, jodoFarmTask);
                 if (MessageUtil.checkResultCode(TAG, jodoFarmTask)) {
                     isDoTask=true;
+                } else {
+                    // 留痕：标题被服务端改得完全不像时会落到这里（并可能被自动拉黑），
+                    // 日志里的 bizKey/taskId 用于后续把分派改成稳定字段
+                    Log.other("饲料任务⚠️未完成[" + title + "]#bizKey=" + bizKey + "#taskId=" + task.optString("taskId"));
                 }
             }
 
@@ -1862,7 +1875,10 @@ public class AntFarm extends ModelTask {
                 if (MessageUtil.isServerBusy(jo) && !farmTaskAwardBusy) {
                     farmTaskAwardBusy = true;
                     Log.record("服务端繁忙🌧️本轮跳过剩余饲料任务领取");
+                    return false;
                 }
+                //检查并标记黑名单任务
+                MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDoFarmTaskList", task.optString("title", ""), jo);
                 return false;
             }
             if (awardType.equals("ALLPURPOSE")) {
@@ -2814,7 +2830,36 @@ public class AntFarm extends ModelTask {
         return false;
     }
 
+    // 抽抽乐任务统计：跨场景累加，整个抽抽乐流程跑完只打一行
+    // （原先在 doFarmDrawTask 里打，日场/IP 场各一条，一轮下来同一条统计重复出现）
+    private int drawStatScenes;
+    private int drawStatTotal;
+    private int drawStatReceived;
+    private int drawStatFinished;
+    private int drawStatTodo;
+    private int drawStatDone;
+    private int drawStatSkipped;
+
     private void drawMachineGroups() {
+        drawStatScenes = 0;
+        drawStatTotal = 0;
+        drawStatReceived = 0;
+        drawStatFinished = 0;
+        drawStatTodo = 0;
+        drawStatDone = 0;
+        drawStatSkipped = 0;
+        try {
+            drawMachineGroupsInner();
+        } finally {
+            if (drawStatScenes > 0) {
+                Log.farm("抽抽乐📊任务统计[" + drawStatScenes + "场共" + drawStatTotal + "个]#已领=" + drawStatReceived
+                        + "完成待领=" + drawStatFinished + "待做=" + drawStatTodo
+                        + "已做=" + drawStatDone + "跳过=" + drawStatSkipped);
+            }
+        }
+    }
+
+    private void drawMachineGroupsInner() {
         try {
             JSONObject jo = new JSONObject(AntFarmRpcCall.queryLoveCabin(UserIdMap.getCurrentUid()));
             if (MessageUtil.checkMemo(TAG, jo)) {
@@ -2887,61 +2932,97 @@ public class AntFarm extends ModelTask {
                 return;
             }
             JSONArray farmTaskList = jo.getJSONArray("farmTaskList");
+            int total = farmTaskList.length();
+            int received = 0, finished = 0, todo = 0, todoDone = 0, todoSkipped = 0;
             for (int i = 0; i < farmTaskList.length(); i++) {
                 jo = farmTaskList.getJSONObject(i);
                 String taskStatus = jo.getString("taskStatus");
                 String title = jo.getString("title");
+                String taskId = jo.optString("taskId");
                 if (TaskStatus.RECEIVED.name().equals(taskStatus)) {
+                    received++;
                     continue;
                 }
                 if (TaskStatus.FINISHED.name().equals(taskStatus)) {
-                    String taskId = jo.getString("taskId");
+                    finished++;
                     String awardType = jo.optString("awardType");
                     receiveFarmDrawTaskAward(taskId, title, awardType, taskSceneCode);
                     continue;
                 }
                 //黑名单任务跳过
                 if (AntFarmDrawMachineTaskList.getValue().contains(title)) {
+                    todoSkipped++;
+                    Log.farm("抽抽乐⏭️跳过[" + title + "]#黑名单");
                     continue;
                 }
 
                 if (TaskStatus.TODO.name().equals(taskStatus)) {
+                    todo++;
                     int rightsTimesLimit = jo.optInt("rightsTimesLimit");
                     int rightsTimes = jo.optInt("rightsTimes");
+                    int remain = rightsTimesLimit - rightsTimes;
+                    boolean matched = false;
 
-                    if (jo.optString("taskId").contains("EXCHANGE") || jo.optString("taskId").contains("FKDWChuodong") || jo.optString("taskId").contains("GYG2") || jo.optString("taskId").equals("jiatingdongrirongrongwu")) {
-                        for (int j = 0; j < (rightsTimesLimit - rightsTimes); j++) {
+                    if (taskId.contains("EXCHANGE") || taskId.contains("FKDWChuodong") || taskId.contains("GYG2") || taskId.equals("jiatingdongrirongrongwu")) {
+                        for (int j = 0; j < remain; j++) {
                             JSONObject jodoFarmTask = new JSONObject(AntFarmRpcCall.doFarmTask(jo.optString("bizKey"), taskSceneCode));
                             //检查并标记黑名单任务
                             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDrawMachineTaskList", title, jodoFarmTask);
                         }
                         TimeUtil.sleep(1000);
+                        matched = true;
                     }
-                    if (jo.optString("taskId").contains("SHANGYEHUA")) {
-                        for (int j = 0; j < (rightsTimesLimit - rightsTimes); j++) {
-                            JSONObject jofinishTask = new JSONObject(AntFarmRpcCall.finishTask(jo.optString("taskId"), taskSceneCode));
+                    // 兜底：其余任务（商业化/玩游戏/开宝箱/浏览等）统一走完成接口。
+                    // 不再按 title/desc 关键字分派：服务端文案一改就会整类任务不执行（列表拿到了却没有任何动作），
+                    // 这里改为全部尝试，确实做不了的交给自动拉黑机制剔除
+                    if (!matched) {
+                        // 服务端偶发返回 limit==times 的 TODO 任务，此时仍尝试一次，避免有任务却整轮不执行
+                        int tryTimes = remain > 0 ? remain : 1;
+                        String via = null;
+                        String bizKey = jo.optString("bizKey");
+                        for (int j = 0; j < tryTimes; j++) {
+                            JSONObject jofinishTask = new JSONObject(AntFarmRpcCall.finishTask(taskId, taskSceneCode));
+                            if (MessageUtil.checkSuccess(TAG, jofinishTask)) {
+                                via = "finishTask";
+                                continue;
+                            }
+                            // 游戏类任务的 taskType 服务端拒绝走 finishTask（400000040 不支持rpc调用），
+                            // 再用任务的 bizKey 走一次 doFarmTask，两条路都失败才判定该任务做不了
+                            JSONObject jodoFarmTask = bizKey.isEmpty()
+                                    ? null
+                                    : new JSONObject(AntFarmRpcCall.doFarmTask(bizKey, taskSceneCode));
+                            if (jodoFarmTask != null && MessageUtil.checkSuccess(TAG, jodoFarmTask)) {
+                                via = "doFarmTask";
+                                continue;
+                            }
                             //检查并标记黑名单任务
                             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDrawMachineTaskList", title, jofinishTask);
                         }
                         TimeUtil.sleep(2000);
-                    }
-
-                    //完成浏览类游戏任务
-                    if ((jo.optString("title").contains("玩"))&&jo.optString("desc").contains("玩") && jo.optString("desc").contains("s")) {
-                        for (int j = 0; j < (rightsTimesLimit - rightsTimes); j++) {
-                            JSONObject jofinishTask = new JSONObject(AntFarmRpcCall.finishTask(jo.optString("taskId"), taskSceneCode));
-                            //检查并标记黑名单任务
-                            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDrawMachineTaskList", title, jofinishTask);
+                        if (via != null) {
+                            todoDone++;
+                            Log.farm("抽抽乐🧾完成[" + title + "]#" + via);
+                        } else {
+                            todoSkipped++;
+                            Log.farm("抽抽乐⚠️未完成[" + title + "]#taskId=" + taskId + "#remain=" + remain + "，需在支付宝内手动完成");
                         }
-                        TimeUtil.sleep(2000);
+                    } else {
+                        todoDone++;
                     }
                     TimeUtil.sleep(1000);
                 }
                 TimeUtil.sleep(2000);
-                String taskId = jo.getString("taskId");
                 String awardType = jo.optString("awardType");
                 receiveFarmDrawTaskAward(taskId, title, awardType, taskSceneCode);
             }
+            // 统计累加到 drawStat*，由 drawMachineGroups 在抽抽乐全部场景跑完后统一打一行
+            drawStatScenes++;
+            drawStatTotal += total;
+            drawStatReceived += received;
+            drawStatFinished += finished;
+            drawStatTodo += todo;
+            drawStatDone += todoDone;
+            drawStatSkipped += todoSkipped;
         } catch (Throwable t) {
             Log.err(TAG, "doFarmDrawActivityTimeTask err:", t);
         }

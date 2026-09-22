@@ -210,8 +210,14 @@ public class ConfigV2 {
                 JsonUtil.copyMapper().readerForUpdating(INSTANCE).readValue(json);
                 String formatted = INSTANCE.toSaveStr();
                 if (formatted != null && !formatted.equals(json)) {
-                    Log.i(TAG, "格式化配置: " + userName);
-                    FileUtil.write2File(formatted, configV2File);
+                    // 回写只允许改格式、不许改数据；判定不过就保留磁盘原文
+                    if (!JsonUtil.isRewriteLossless(json, formatted)) {
+                        Log.record("配置加载结果与磁盘数据不一致，已跳过格式化回写以免覆盖丢失: " + userName);
+                    } else {
+                        Log.i(TAG, "格式化配置: " + userName);
+                        FileUtil.backupConfigV2WithRolling(userId);
+                        FileUtil.write2File(formatted, configV2File);
+                    }
                 }
             } else {
                 File defaultConfigV2File = FileUtil.getDefaultConfigV2File();

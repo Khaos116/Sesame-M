@@ -14,7 +14,9 @@ import io.github.aw1y2z.sesame.data.task.ModelTask;
 import io.github.aw1y2z.sesame.entity.AlipayAntStallTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayUser;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
+import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.model.task.antFarm.AntFarm.TaskStatus;
+import io.github.aw1y2z.sesame.model.task.antFarm.AntFarmRpcCall;
 import io.github.aw1y2z.sesame.model.task.readingDada.ReadingDada;
 import io.github.aw1y2z.sesame.util.*;
 import io.github.aw1y2z.sesame.util.idMap.AntFarmDoFarmTaskListMap;
@@ -680,9 +682,14 @@ public class AntStall extends ModelTask {
                 case "ANTSTALL_NORMAL_DAILY_QA":
                     return ReadingDada.answerQuestion(bizInfo);
                 case "ANTSTALL_NORMAL_INVITE_REGISTER":
-                    inviteRegister();
+                    // 邀请新用户注册：需要真实好友，模块只能辅助邀请；没邀请成功就用黑名单兜底
+                    if (inviteRegister.getValue() && !inviteRegister()) {
+                        MessageUtil.MarkTaskBlackList("AntStall", "AntStallTaskList", "新村任务", title);
+                    }
                     return false;
                 case "ANTSTALL_P2P_DAILY_SHARER":
+                    // 分享助力：需要真人分享给好友，模块没有可执行路径，直接黑名单兜底
+                    MessageUtil.MarkTaskBlackList("AntStall", "AntStallTaskList", "新村任务", title);
                     return false;
                 case "ANTSTALL_TASK_taojinbihuanduan": {
                     // 进入淘宝芭芭农场
@@ -729,6 +736,11 @@ public class AntStall extends ModelTask {
                     }
                     return true;
                 }
+                default:
+                    // 未识别的 taskType 不再静默跳过（原先 switch 无 default，落到方法末尾 return false，
+                    // 调用点直接 continue 且无日志，表现为"列表拿到了却没动作"）：先留痕，再兜底走通用完成接口
+                    Log.other("新村任务⚠️未识别类型[" + title + "]#taskType=" + taskType + "，尝试兜底完成");
+                    return finishTask(taskType, title);
             }
         }
         catch (Throwable t) {
@@ -783,7 +795,14 @@ public class AntStall extends ModelTask {
             JSONObject jo = new JSONObject(AntStallRpcCall.finishTask(taskType));
             //检查并标记黑名单任务
             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntStallTaskList", title, jo);
-            return MessageUtil.checkSuccess(TAG, jo);
+            if (MessageUtil.checkSuccess(TAG, jo)) {
+                return true;
+            }
+            // 另一种实现方案（见 TaskAlternative）；新村 taskSceneCode 固定 ANTSTALL_TASK
+            if (TaskAlternative.hit(jo, "ANTSTALL_TASK")) {
+                TaskAlternative.trigger(null, taskType, title, taskType, "ANTSTALL_TASK", "新村任务", msg -> Log.farm(msg));
+            }
+            return false;
         }
         catch (Throwable t) {
             Log.err(TAG, "finishTask err:", t);
@@ -791,18 +810,18 @@ public class AntStall extends ModelTask {
         return false;
     }
     
-    private void inviteRegister() {
+    private Boolean inviteRegister() {
         if (!inviteRegister.getValue()) {
-            return;
+            return false;
         }
         try {
             JSONObject jo = new JSONObject(AntStallRpcCall.rankInviteRegister());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
-                return;
+                return false;
             }
             JSONArray friendRankList = jo.optJSONArray("friendRankList");
             if (friendRankList == null || friendRankList.length() <= 0) {
-                return;
+                return false;
             }
             for (int i = 0; i < friendRankList.length(); i++) {
                 JSONObject friend = friendRankList.getJSONObject(i);
@@ -817,13 +836,15 @@ public class AntStall extends ModelTask {
                 jo = new JSONObject(AntStallRpcCall.friendInviteRegister(userId));
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     Log.farm("蚂蚁新村⛪邀请[" + UserIdMap.getMaskName(userId) + "]开通新村");
-                    return;
+                    return true;
                 }
             }
+            return false;
         }
         catch (Throwable t) {
             Log.err(TAG, "inviteRegister err:", t);
         }
+        return false;
     }
     
     private String shareP2P() {

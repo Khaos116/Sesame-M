@@ -1,6 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.goldenbeans;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
+import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -164,6 +165,19 @@ public class goldenbeansRpcCall {
         params.put("taskType", taskType);
         params.put("version", VERSION);
         return request("com.alipay.antieptask.finishTaskantorchard", params);
+    }
+
+    /**
+     * 另一种实现方案：按 bizKey 完成任务（{@code com.alipay.antfarm.doFarmTask}）。
+     * <p>乐园游戏类任务（taskId 形如 {@code GOLDENBEAN_GAME_*} / {@code ZHIMA_youxi_*}）会被
+     * {@code finishTaskantorchard} 以 400000040「不支持rpc调用」拒绝，而这条接口能把它们做成
+     * （2026-09-22 在庄园抽抽乐、芭芭农场实测：任务转 RECEIVED、rightsTimes 0→1）。
+     * <p>它的响应**不可信**——实测常回 102「服务器正在开小差」而任务其实已生效，
+     * 所以调用方必须用任务列表状态核对，不能据响应判成败。
+     */
+    public static String doFarmTask(String bizKey, String taskSceneCode) throws Exception {
+        // 另一种实现方案 payload 只剩一份实现，见 TaskAlternative.request（version 沿用本模块的 VERSION）
+        return TaskAlternative.request(bizKey, taskSceneCode, VERSION);
     }
 
     /** 领取任务奖励（默认农场入口） */

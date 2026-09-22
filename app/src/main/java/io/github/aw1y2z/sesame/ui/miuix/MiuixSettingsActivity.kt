@@ -234,6 +234,23 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
  */
 @Composable
 fun FieldItem(field: ModelField<*>, onFieldChanged: (() -> Unit)? = null) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        FieldItemBody(field, onFieldChanged)
+        // 字段说明统一在这里渲染；BOOLEAN 的说明由 SwitchPreference(summary) 承载，不重复
+        val description = field.description
+        if (field.type != "BOOLEAN" && !description.isNullOrBlank()) {
+            Text(
+                text = description,
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 6.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun FieldItemBody(field: ModelField<*>, onFieldChanged: (() -> Unit)? = null) {
     // 用字段名唯一标识展开状态，避免 LazyColumn 复用导致错位
     val fieldKey = "${field.type}:${field.name}"
     var expanded by remember { mutableStateOf(false) }

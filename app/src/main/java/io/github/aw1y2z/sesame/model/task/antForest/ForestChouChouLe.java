@@ -3,11 +3,11 @@ package io.github.aw1y2z.sesame.model.task.antForest;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import io.github.aw1y2z.sesame.hook.Toast;
+import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Statistics;
@@ -51,9 +51,6 @@ public class ForestChouChouLe {
         String taskUid = UserIdMap.getCurrentUid();
         try {
             boolean doublecheck;
-            Set<String> presetBad = new LinkedHashSet<>();
-            presetBad.add("FOREST_NORMAL_DRAW_SHARE"); // 邀请好友任务（跳过）
-            presetBad.add("FOREST_ACTIVITY_DRAW_SHARE");
 
             // =====================================================
 
@@ -103,6 +100,9 @@ public class ForestChouChouLe {
                                 if (rightsTimesLimit - rightsTimes > 0) {
                                     doublecheck = true;
                                 }
+                            } else {
+                                //检查并标记黑名单任务
+                                MessageUtil.checkResultCodeAndMarkTaskBlackList("AntForestHuntTaskList", taskName, sginRes);
                             }
                             continue;
                         }
@@ -178,29 +178,16 @@ public class ForestChouChouLe {
                         // 统一处理 FOREST_NORMAL_DRAW 和 FOREST_ACTIVITY_DRAW开头任务
                         if ((taskType.startsWith("FOREST_NORMAL_DRAW") || taskType.startsWith("FOREST_ACTIVITY_DRAW")) && taskStatus.equals("TODO")) {
                             TimeUtil.sleep(1000);
-                            // 调用对应完成接口
-                            JSONObject result;
-                            if (taskType.contains("XLIGHT")) {
-                                result = new JSONObject(AntForestRpcCall.finishTask4Chouchoule(taskType, taskSceneCode));
-                            } else {
-                                result = new JSONObject(AntForestRpcCall.finishTaskopengreen(taskType, taskSceneCode));
-                            }
-                            //检查并标记黑名单任务
-                            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntForestHuntTaskList", taskName, result);
-                            if (MessageUtil.checkSuccess(TAG, result)) {
-                                Log.forest("森林寻宝🧾完成[" + taskName + "]");
+                            // 三条腿见 chouChouLeFinishTask（XLIGHT=广告类先走 4Chouchoule，其余先走 opengreen）
+                            if (chouChouLeFinishTask(taskType, taskSceneCode, taskName, taskType.contains("XLIGHT"))) {
                                 doublecheck = true;
                             }
                             continue;
                         }
                         if (taskStatus.equals("TODO")) {
-                            //兜底完成任务操作
+                            //兜底完成任务操作（三条腿见 chouChouLeFinishTask，非 XLIGHT 先走 opengreen）
                             TimeUtil.sleep(1000);
-                            JSONObject result = new JSONObject(AntForestRpcCall.finishTaskopengreen(taskType, taskSceneCode));
-                            //检查并标记黑名单任务
-                            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntForestHuntTaskList", taskName, result);
-                            if (MessageUtil.checkSuccess(TAG, result)) {
-                                Log.forest("森林寻宝🧾完成[" + taskName + "]");
+                            if (chouChouLeFinishTask(taskType, taskSceneCode, taskName, false)) {
                                 doublecheck = true;
                             }
                         }
@@ -292,6 +279,40 @@ public class ForestChouChouLe {
         } catch (Throwable t) {
             Log.printStackTrace(TAG, t);
         }
+    }
+
+    /**
+     * 抽抽乐任务的三条腿：4Chouchoule ↔ opengreen 互备（XLIGHT 先走前者），都被拒时再换
+     * doFarmTask（见 {@link TaskAlternative}）。
+     *
+     * @return 已成功或已触发（true 时调用方应 {@code doublecheck = true} 重拉列表核对）
+     */
+    private boolean chouChouLeFinishTask(String taskType, String taskSceneCode, String taskName, boolean xlight) {
+        try {
+            JSONObject result = new JSONObject(xlight
+                    ? AntForestRpcCall.finishTask4Chouchoule(taskType, taskSceneCode)
+                    : AntForestRpcCall.finishTaskopengreen(taskType, taskSceneCode));
+            if (!MessageUtil.checkSuccess(TAG, result)) {
+                result = new JSONObject(xlight
+                        ? AntForestRpcCall.finishTaskopengreen(taskType, taskSceneCode)
+                        : AntForestRpcCall.finishTask4Chouchoule(taskType, taskSceneCode));
+            }
+            //检查并标记黑名单任务
+            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntForestHuntTaskList", taskName, result);
+            if (MessageUtil.checkSuccess(TAG, result)) {
+                Log.forest("森林寻宝🧾完成[" + taskName + "]");
+                return true;
+            }
+            if (TaskAlternative.hit(result, taskSceneCode)) {
+                TaskAlternative.trigger(null, taskType, taskName, taskType, taskSceneCode,
+                        "森林寻宝", msg -> Log.forest(msg));
+                return true;
+            }
+            Log.other("森林寻宝⚠️未完成[" + taskName + "]#taskType=" + taskType);
+        } catch (Throwable t) {
+            Log.err(TAG, "chouChouLeFinishTask err:", t);
+        }
+        return false;
     }
 
     private String shareComponentRecall(String sceneCode, String shareId) {
