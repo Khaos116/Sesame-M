@@ -8,6 +8,7 @@
 
 ## 2026-09-22
 
+- fix c185d797：修agy审查7项：会员核对失败返回null防误报完成、海洋补查从第20人起、调度即刷通知下次执行、计数改AtomicInteger、果园核对Map去static、空响应抛JSONException、删运动冗余import；回归与编译通过。
 - test 5fae0c33：检查桩跟进上游 API（NotificationUtil/verifyPendingTasks/setRunning/Log）；三项必查无新增裸 get、无时区改动，TaskAlternative.doFarmTask 保留直接构造（trigger 靠异常判未触发）；13 项回归+Debug 编译通过。
 - merge cacacbe5：合并 origin/MIUIX-api102（16 个上游提交：TaskAlternative 备用接口、通知重构、饲料 taskId 分派、施肥核算等），10 文件 31 处冲突；果园保按场景次数+批量核算改传参，其余取上游并转 opt/MyUtils。
 - docs：AGENTS.md 补全回归清单（13 项检查+对照说明），新增代码与数据地图、合并速览两节；INDEX 同步。
