@@ -719,11 +719,13 @@ public class AntFarm extends ModelTask {
                 Log.record("小鸡无需睡觉🛌");
                 return false;
             }
-            // 走哪条路由由**小鸡当前所在的空间**决定，而不是"亲密家庭功能开关"：
+            // 路由优先级：亲密家庭开关开启时优先走"家庭"接口；开关关着时再按 spaceType 兜底（处理小鸡恰在家庭空间、或在好友家等情形）：
             // 开关关着、但小鸡人在家庭空间时，原先会去调个人小屋的睡觉接口 → 小鸡不在那儿，静默失败，
             // 于是"家庭里的小鸡不睡觉"。（起床逻辑本来就按 spaceType 判断，两边不一致才是根因）
             // 只判字段是否存在不够：其它空间（如小鸡在好友家）也可能带 spaceType，必须比对取值
-            if (SPACE_TYPE_CHICK_FAMILY.equals(jo.optString("spaceType"))) {
+            // 亲密家庭开启时优先在"家庭"睡觉，避免跑到个人小窝（外面）睡；
+            // 开关关着时也按 spaceType 兜底（小鸡恰在家庭空间时仍走家庭接口）
+            if (family.getValue() || SPACE_TYPE_CHICK_FAMILY.equals(jo.optString("spaceType"))) {
                 return familySleep(resolveFamilyGroupId(jo));
             }
             return animalSleep();
@@ -752,7 +754,8 @@ public class AntFarm extends ModelTask {
                 return false;
             }
             if (sleepInfo.getLong("sleepBeginTime") + TimeUnit.MINUTES.toMillis(sleepMinutes.getValue()) <= System.currentTimeMillis()) {
-                if (SPACE_TYPE_CHICK_FAMILY.equals(jo.optString("spaceType"))) {
+                // 亲密家庭开启时优先在"家庭"起床；否则按 spaceType 兜底
+                if (family.getValue() || SPACE_TYPE_CHICK_FAMILY.equals(jo.optString("spaceType"))) {
                     return familyWakeUp();
                 }
                 return animalWakeUp();
