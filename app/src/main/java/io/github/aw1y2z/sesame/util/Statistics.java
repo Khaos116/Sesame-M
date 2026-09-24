@@ -8,6 +8,7 @@ import java.io.File;
 import java.util.Calendar;
 
 import io.github.aw1y2z.sesame.R;
+import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 import androidx.annotation.Keep;
 import lombok.Data;
 
@@ -17,6 +18,7 @@ public class Statistics {
     private static final String TAG = Statistics.class.getSimpleName();
     
     public static final Statistics INSTANCE = new Statistics();
+    private static String loadedUserId;
     
     private TimeStatistics year = new TimeStatistics();
     private TimeStatistics month = new TimeStatistics();
@@ -28,6 +30,9 @@ public class Statistics {
      * 也可能正好撞上 save() 的序列化过程。
      */
     public static synchronized void addData(DataType dt, int i) {
+        String userId = UserIdMap.getCurrentUid();
+        if (!AccountFolderName.isValidUid(userId)) return;
+        if (!userId.equals(loadedUserId)) load(userId);
         Statistics stat = INSTANCE;
         switch (dt) {
             case COLLECTED:
@@ -124,8 +129,15 @@ public class Statistics {
     }
     
     public static synchronized Statistics load() {
+        return load(UserIdMap.getCurrentUid());
+    }
+
+    public static synchronized Statistics load(String userId) {
+        unload();
+        if (!AccountFolderName.isValidUid(userId)) return INSTANCE;
+        loadedUserId = userId;
         try {
-            File statisticsFile = FileUtil.getStatisticsFile();
+            File statisticsFile = FileUtil.getStatisticsFile(userId);
             if (statisticsFile.exists()) {
                 String json = FileUtil.readFromFile(statisticsFile);
                 JsonUtil.copyMapper().readerForUpdating(INSTANCE).readValue(json);
@@ -151,7 +163,7 @@ public class Statistics {
             Log.i(TAG, "统计文件格式有误，已重置统计文件");
             try {
                 JsonUtil.copyMapper().updateValue(INSTANCE, new Statistics());
-                FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatisticsFile());
+                FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatisticsFile(userId));
             }
             catch (JsonMappingException e) {
                 Log.printStackTrace(TAG, e);
@@ -161,6 +173,7 @@ public class Statistics {
     }
     
     public static synchronized void unload() {
+        loadedUserId = null;
         try {
             JsonUtil.copyMapper().updateValue(INSTANCE, new Statistics());
         }
@@ -174,6 +187,9 @@ public class Statistics {
     }
     
     public static synchronized void save(Calendar nowCalendar) {
+        String userId = UserIdMap.getCurrentUid();
+        if (!AccountFolderName.isValidUid(userId)) return;
+        if (!userId.equals(loadedUserId)) load(userId);
         if (updateDay(nowCalendar)) {
             Log.system(TAG, "重置 statistics.json");
         }
@@ -181,7 +197,7 @@ public class Statistics {
             // 每次落盘都记一行会淹没有效日志（实测约 75 行/天），降为由「抓包记录」开关控制的调试日志
             Log.debug(TAG + ", 保存 statistics.json");
         }
-        FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatisticsFile());
+        FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatisticsFile(userId));
     }
     
     public static Boolean updateDay(Calendar nowCalendar) {

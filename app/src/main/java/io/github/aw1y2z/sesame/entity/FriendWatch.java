@@ -18,6 +18,7 @@ public class FriendWatch extends IdAndName {
     private static final String TAG = FriendWatch.class.getSimpleName();
 
     private static JSONObject joFriendWatch;
+    private static String loadedUserId;
 
     private String startTime;
 
@@ -41,8 +42,11 @@ public class FriendWatch extends IdAndName {
         return super.compareTo(o);
     }
 
-    public static void friendWatch(String id, int collectedEnergy) {
+    public static synchronized void friendWatch(String id, int collectedEnergy) {
         try {
+            String userId = UserIdMap.getCurrentUid();
+            if (!AccountFolderName.isValidUid(userId)) return;
+            if (!userId.equals(loadedUserId)) load();
             JSONObject joSingle = joFriendWatch.optJSONObject(id);
             if (joSingle == null) {
                 joSingle = new JSONObject();
@@ -59,13 +63,19 @@ public class FriendWatch extends IdAndName {
 
     public static synchronized void save() {
         try {
-            FileUtil.write2File(joFriendWatch.toString(), FileUtil.getFriendWatchFile());
+            String userId = UserIdMap.getCurrentUid();
+            if (!AccountFolderName.isValidUid(userId)) return;
+            if (!userId.equals(loadedUserId)) load();
+            FileUtil.write2File(joFriendWatch.toString(), FileUtil.getFriendWatchFile(userId));
         } catch (Exception e){
             Log.err(TAG, "friendWatch save err:", e);
         }
     }
 
-    public static void updateDay() {
+    public static synchronized void updateDay() {
+        String userId = UserIdMap.getCurrentUid();
+        if (!AccountFolderName.isValidUid(userId)) return;
+        if (!userId.equals(loadedUserId)) load();
         if (!needUpdateAll(FileUtil.getFriendWatchFile().lastModified())) {
             return;
         }
@@ -94,15 +104,22 @@ public class FriendWatch extends IdAndName {
     }
 
     public static synchronized Boolean load() {
+        String userId = UserIdMap.getCurrentUid();
+        if (!AccountFolderName.isValidUid(userId)) {
+            unload();
+            return false;
+        }
         // MyUtils.newJSONObject 内部已经吞掉了 JSONException（null/非法 JSON 时返回空对象），
         // 不再需要这里再包一层 try/catch
-        String strFriendWatch = FileUtil.readFromFile(FileUtil.getFriendWatchFile());
+        String strFriendWatch = FileUtil.readFromFile(FileUtil.getFriendWatchFile(userId));
         joFriendWatch = strFriendWatch.isEmpty() ? new JSONObject() : MyUtils.newJSONObject(strFriendWatch);
+        loadedUserId = userId;
         return true;
     }
 
     public static synchronized void unload() {
         joFriendWatch = new JSONObject();
+        loadedUserId = null;
     }
 
     public static boolean needUpdateAll(long last) {
@@ -120,8 +137,13 @@ public class FriendWatch extends IdAndName {
     }
 
     public static List<FriendWatch> getList() {
+        return getList(UserIdMap.getCurrentUid());
+    }
+
+    public static List<FriendWatch> getList(String userId) {
         ArrayList<FriendWatch> list = new ArrayList<>();
-        String strFriendWatch = FileUtil.readFromFile(FileUtil.getFriendWatchFile());
+        if (!AccountFolderName.isValidUid(userId)) return list;
+        String strFriendWatch = FileUtil.readFromFile(FileUtil.getFriendWatchFile(userId));
         try {
             JSONObject joFriendWatch;
             if (StringUtil.isEmpty(strFriendWatch)) {
@@ -149,7 +171,7 @@ public class FriendWatch extends IdAndName {
         } catch (Throwable t) {
             Log.err(TAG, "FriendWatch getList: ", t);
             try {
-                FileUtil.write2File(new JSONObject().toString(), FileUtil.getFriendWatchFile());
+                FileUtil.write2File(new JSONObject().toString(), FileUtil.getFriendWatchFile(userId));
             } catch (Exception e) {
                 Log.printStackTrace(e);
             }

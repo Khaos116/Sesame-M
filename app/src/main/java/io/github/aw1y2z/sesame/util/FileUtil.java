@@ -508,7 +508,11 @@ public class FileUtil {
     }
     
     public static File getStatisticsFile() {
-        File statisticsFile = getFile(MAIN_DIRECTORY_FILE, "statistics.json");
+        return getStatisticsFile(UserIdMap.getCurrentUid());
+    }
+
+    public static File getStatisticsFile(String userId) {
+        File statisticsFile = getFile(getAccountDataDirectory(userId), "statistics.json");
         if (statisticsFile.exists()) {
             // 遗留自检：真正写失败时 write2File 已会 Toast + 打异常日志，这里降为调试日志，避免每次读写都刷一行
             Log.debug(TAG + ", [statistics]读:" + statisticsFile.canRead() + ";写:" + statisticsFile.canWrite());
@@ -517,6 +521,13 @@ public class FileUtil {
             Log.debug(TAG + ", statisticsFile.json文件不存在");
         }
         return statisticsFile;
+    }
+
+    private static File getAccountDataDirectory(String userId) {
+        if (!AccountFolderName.isValidUid(userId)) {
+            throw new IllegalArgumentException("无效账号 UID");
+        }
+        return getUserDataDirectoryFile(userId);
     }
     
     public static File getTreeIdMapFile() {
@@ -609,7 +620,11 @@ public class FileUtil {
     
     /** 自动拉黑记录（含日期），用于"超期自动解禁重试" */
     public static File getAutoBlackListMapFile() {
-        return getFile(MAIN_DIRECTORY_FILE, "AutoBlackList.json");
+        return getAutoBlackListMapFile(UserIdMap.getCurrentUid());
+    }
+
+    public static File getAutoBlackListMapFile(String userId) {
+        return getFile(getAccountDataDirectory(userId), "AutoBlackList.json");
     }
     
     public static File getAntStallTaskListMapFile() {
@@ -629,17 +644,26 @@ public class FileUtil {
     }
     
     public static File getExportedStatisticsFile() {
+        return getExportedStatisticsFile(UserIdMap.getCurrentUid());
+    }
+
+    public static File getExportedStatisticsFile(String userId) {
+        if (!AccountFolderName.isValidUid(userId)) return null;
         String storageDirStr = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) + File.separator + CONFIG_DIRECTORY_NAME;
         File storageDir = new File(storageDirStr);
         if (!storageDir.exists()) {
             storageDir.mkdirs();
         }
-        File exportedStatisticsFile = getFile(storageDir, "statistics.json");
+        File exportedStatisticsFile = getFile(storageDir, "statistics-" + userId + ".json");
         return exportedStatisticsFile;
     }
     
     public static File getFriendWatchFile() {
-        File friendWatchFile = getFile(MAIN_DIRECTORY_FILE, "friendWatch.json");
+        return getFriendWatchFile(UserIdMap.getCurrentUid());
+    }
+
+    public static File getFriendWatchFile(String userId) {
+        File friendWatchFile = getFile(getAccountDataDirectory(userId), "friendWatch.json");
         return friendWatchFile;
     }
     
@@ -756,6 +780,15 @@ public class FileUtil {
             // 读不到就当目录名是 uid
         }
         return folder;
+    }
+
+    /** 独立 App 进程从已发布的日志目录找当前 UID，不依赖注入进程的 UserIdMap。 */
+    public static String getPublishedUserId() {
+        String folder = getRuntimeLogFile().getParentFile().getName();
+        if ("default".equals(folder)) return null;
+        String userId = uidOfLogFolder(folder);
+        if (folder.equals(userId) && !new File(CONFIG_DIRECTORY_FILE, folder).isDirectory()) return null;
+        return AccountFolderName.isValidUid(userId) ? userId : null;
     }
 
     public static void publishCurrentLogUser(String userId) {

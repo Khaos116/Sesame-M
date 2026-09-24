@@ -4,10 +4,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 
 import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import io.github.aw1y2z.sesame.util.FileUtil;
+import io.github.aw1y2z.sesame.util.AccountFolderName;
 import io.github.aw1y2z.sesame.util.JsonUtil;
 import io.github.aw1y2z.sesame.util.Log;
 
@@ -26,6 +28,7 @@ public class AutoBlackListMap {
     private static final Map<String, String> readOnlyIdMap = Collections.unmodifiableMap(idMap);
 
     private static volatile boolean loaded = false;
+    private static volatile String loadedUserId;
 
     public static Map<String, String> getMap() {
         return readOnlyIdMap;
@@ -49,16 +52,19 @@ public class AutoBlackListMap {
 
     /** 首次访问时确保已从磁盘加载（记录只由模块自己写入，加载一次即可） */
     public static void ensureLoaded() {
-        if (!loaded) {
+        if (!loaded || !Objects.equals(loadedUserId, UserIdMap.getCurrentUid())) {
             load();
         }
     }
 
     public static synchronized void load() {
         idMap.clear();
+        String userId = UserIdMap.getCurrentUid();
+        loadedUserId = userId;
         loaded = true;
+        if (!AccountFolderName.isValidUid(userId)) return;
         try {
-            String body = FileUtil.readFromFile(FileUtil.getAutoBlackListMapFile());
+            String body = FileUtil.readFromFile(FileUtil.getAutoBlackListMapFile(userId));
             if (!body.isEmpty()) {
                 Map<String, String> newMap = JsonUtil.parseObject(body, new TypeReference<Map<String, String>>() {
                 });
@@ -72,7 +78,9 @@ public class AutoBlackListMap {
     }
 
     public static synchronized boolean save() {
-        return FileUtil.write2File(JsonUtil.toJsonString(idMap), FileUtil.getAutoBlackListMapFile());
+        String userId = UserIdMap.getCurrentUid();
+        if (!AccountFolderName.isValidUid(userId) || !userId.equals(loadedUserId)) return false;
+        return FileUtil.write2File(JsonUtil.toJsonString(idMap), FileUtil.getAutoBlackListMapFile(userId));
     }
 
     public static synchronized void clear() {

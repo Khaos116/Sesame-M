@@ -38,6 +38,7 @@ python checks/check_puzzle_samples.py
 python checks/check_reward_cooldown.py
 python checks/check_rpc_guard.py
 python checks/check_standalone_no_xposed_class.py
+python checks/check_statistics_accounts.py
 java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin --console=plain
 ```
 

@@ -440,8 +440,6 @@ public class ApplicationHook extends XposedModule {
                             }
                         });
                         dayCalendar = MyUtils.getInstance();
-                        Statistics.load();
-                        FriendWatch.load();
                         AccountSwitchController.configure(new AccountSwitchController.Host() {
                             @Override
                             public String readiness() {
@@ -716,7 +714,17 @@ public class ApplicationHook extends XposedModule {
                 //调用 startIfNeeded 方法，参数与 Kotlin 保持一致
                 ModuleHttpServerManager.getInstance().startIfNeeded(8080, "ET3vB^#td87sQqKaY*eMUJXP", processName, "com.eg.android.AlipayGphone");
 
+                if (!Objects.equals(userId, UserIdMap.getCurrentUid())) {
+                    try {
+                        Statistics.save();
+                    } catch (Exception e) {
+                        Log.printStackTrace(e);
+                    }
+                    FriendWatch.save();
+                }
                 UserIdMap.initUser(userId);
+                Statistics.load();
+                FriendWatch.load();
                 Model.initAllModel();
                 Log.record("模块版本：" + modelVersion);
                 Log.record("开始加载" + MyUtils.recordUserName(userId));

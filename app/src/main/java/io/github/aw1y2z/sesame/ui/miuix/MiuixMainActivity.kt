@@ -253,10 +253,19 @@ class MiuixMainActivity : MiuixBaseActivity() {
      * 必须进入配置返回后才刷新"的问题(此前 StatisticsTable 直接读静态单例,单例变化不会重组)。
      */
     fun refreshStatistics() {
-        if (!hasPermission) return
+        if (!hasPermission) {
+            Statistics.unload()
+            statisticsVersion++
+            return
+        }
         try {
-            Statistics.load()
-            Statistics.updateDay(TimeUtil.getNow())
+            val userId = FileUtil.getPublishedUserId()
+            if (userId == null) {
+                Statistics.unload()
+            } else {
+                Statistics.load(userId)
+                Statistics.updateDay(TimeUtil.getNow())
+            }
             statisticsVersion++
         } catch (e: Exception) {
             Log.printStackTrace(e)
@@ -350,12 +359,16 @@ class MiuixMainActivity : MiuixBaseActivity() {
     }
 
     fun exportStatistics(): Uri? {
-        return FileUtil.getExportedStatisticsFile()?.let { Uri.fromFile(it) }
+        val userId = FileUtil.getPublishedUserId() ?: return null
+        val exported = FileUtil.getExportedStatisticsFile(userId) ?: return null
+        return if (FileUtil.copyTo(FileUtil.getStatisticsFile(userId), exported)) Uri.fromFile(exported) else null
     }
 
     fun importStatistics(): Boolean {
-        val src = FileUtil.getExportedStatisticsFile()
-        if (src != null && FileUtil.copyTo(src, FileUtil.getStatisticsFile())) {
+        val userId = FileUtil.getPublishedUserId() ?: return false
+        val src = FileUtil.getExportedStatisticsFile(userId)
+        if (src != null && FileUtil.copyTo(src, FileUtil.getStatisticsFile(userId))) {
+            refreshStatistics()
             statisticsText = Statistics.getText(this)
             return true
         }
@@ -385,10 +398,13 @@ fun MainScreen(activity: MiuixMainActivity) {
     // 提到 MainScreen 一级,跨 tab 共享,切 tab 不会因为重新进入组合而闪回"未知账号"
     var currentAccount by remember { mutableStateOf("未知账号") }
     LaunchedEffect(Unit) {
+        var previousFolder: String? = null
         while (true) {
-            currentAccount = withContext(Dispatchers.IO) {
-                val userId = FileUtil.getRuntimeLogFile().parentFile?.name
-                if (userId == null || userId == "default") "未知账号" else accountDisplayName(userId)
+            val folder = withContext(Dispatchers.IO) { FileUtil.getRuntimeLogFile().parentFile?.name ?: "default" }
+            currentAccount = if (folder == "default") "未知账号" else accountDisplayName(folder)
+            if (folder != previousFolder) {
+                previousFolder = folder
+                activity.refreshStatistics()
             }
             delay(1000)
         }
