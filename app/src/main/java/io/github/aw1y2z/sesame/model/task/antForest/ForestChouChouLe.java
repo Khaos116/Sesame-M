@@ -210,7 +210,10 @@ public class ForestChouChouLe {
                     JSONObject drawAsset = jo.optJSONObject("drawAsset");
                     int blance = drawAsset != null ? drawAsset.optInt("blance") : 0;
 
-                    while (blance > 0) {
+                    final int MAX_DRAW_LOOP = 100;
+                    int drawLoop = 0;
+                    // 成功但余额不降时也要能退出，避免无上限连发
+                    while (blance > 0 && ++drawLoop <= MAX_DRAW_LOOP) {
                         jo = MyUtils.newJSONObject(AntForestRpcCall.drawopengreen(activityId, sceneCode, "task_entry", UserIdMap.getCurrentUid()));
                         if (MessageUtil.checkSuccess(TAG, jo)) {
                             drawAsset = jo.optJSONObject("drawAsset");

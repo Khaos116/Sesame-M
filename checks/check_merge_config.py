@@ -27,7 +27,8 @@ for key, path, signature in (
     ("@@BATTERY@@", "data/AppConfig.java", "    public static boolean shouldRequestBatteryPermission("),
     ("@@AUTO@@", "data/AppConfig.java", "    public static synchronized boolean shouldAutoPuzzleSlider("),
     ("@@LEGACY_BOOL@@", "data/AppConfig.java", "    private static boolean legacyModelBoolean("),
-    ("@@RANK@@", "model/task/antFarm/AntFarm.java", "    private boolean isStealRankTime("),
+    ("@@RANK@@", "model/task/antFarm/AntFarm.java", "    private boolean isCompetitionRoundActive("),
+    ("@@BATCH@@", "model/task/antOrchard/AntOrchard.java", "    private static boolean shouldBatchSpread("),
     ("@@RELOAD@@", "hook/ApplicationHook.java", "    private void scheduleAccountReload("),
     ("@@LIFECYCLE@@", "data/task/TaskLifecycle.java", "public final class TaskLifecycle"),
 ):

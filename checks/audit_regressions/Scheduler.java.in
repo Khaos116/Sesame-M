@@ -23,6 +23,7 @@ public class SchedulerCheck {
     static class ModelTask { static boolean pending; static boolean hasPendingMainTask() { return pending; } }
     static class NotificationUtil { static void setRunning() {} }
     static class Log { static void printStackTrace(Throwable t) {} }
+    static void startMainTask() { mainTask.startTask(false); }
     @@LIFECYCLE@@
     @@EXEC@@
     @@REQUEST@@

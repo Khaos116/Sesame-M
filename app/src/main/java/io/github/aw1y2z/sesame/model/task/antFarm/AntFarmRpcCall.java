@@ -113,6 +113,14 @@ public class AntFarmRpcCall {
         return ApplicationHook.requestString("com.alipay.antfarm.donation", args1);
     }
 
+    /**
+     * 爱心鸡结号(S2)捐蛋：真实接口使用 projectId（非 activityId），并带 cele:1。
+     */
+    public static String donationCompetition(String projectId, int donationAmount) {
+        String args1 = "[{\"cele\":1,\"donationAmount\":" + donationAmount + ",\"projectId\":\"" + projectId + "\",\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"version\":\"" + VERSION + "\"}]";
+        return ApplicationHook.requestString("com.alipay.antfarm.donation", args1);
+    }
+
     public static String listFarmTask() {
         String args1 = "[{\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"version\":\"" + VERSION + "\"}]";
         return ApplicationHook.requestString("com.alipay.antfarm.listFarmTask", args1);
@@ -714,6 +722,22 @@ public class AntFarmRpcCall {
     }
 
     /**
+     * 查询爱心鸡结号(S2)竞赛任务列表，响应含 taskList。
+     */
+    public static String listCompetitionTask() {
+        return ApplicationHook.requestString("com.alipay.antfarm.listCompetitionTask", "[{" + "  \"requestType\": \"NORMAL\"," + "  \"sceneCode\": \"ANTFARM\"," + "  \"source\": \"H5\"," + "  \"version\": \"" + VERSION + "\"" + "}]");
+    }
+
+    /**
+     * 领取爱心鸡结号(S2)竞赛任务奖励（如轮次-500颗蛋任务）。
+     * 注意：接口在 com.alipay.antieptask 包下，taskType 取任务项的 taskType 字段。
+     */
+    public static String receiveCompetitionTaskAward(String taskType, int awardCount) {
+        String args1 = "[{\"awardCountForReceive\":" + awardCount + ",\"ignoreLimit\":true,\"requestType\":\"RPC\",\"sceneCode\":\"ANTFARM_PK_COMPETITION\",\"source\":\"antfarm\",\"taskType\":\"" + taskType + "\"}]";
+        return ApplicationHook.requestString("com.alipay.antieptask.receiveTaskAwardantfarm", args1);
+    }
+
+    /**
      * 领取排位赛奖励
      */
     //{"requestType":"NORMAL","rightsId":"0501_16","sceneCode":"ANTFARM","source":"H5","version":"1.8.2302070202.46"}
@@ -723,6 +747,14 @@ public class AntFarmRpcCall {
 
     public static String receiveDonationCompetitionProgressAward() {
         return ApplicationHook.requestString("com.alipay.antfarm.receiveDonationCompetitionProgressAward", "[{\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"version\":\"" + VERSION + "\"" + "}]");
+    }
+
+    /**
+     * 爱心鸡结号(S2赛季)领取动作。
+     * 注：抓包中仅出现此唯一 S2 动作接口，真实「领取奖励」是否走它仍需点击领取的抓包确认。
+     */
+    public static String deliverChickTeam() {
+        return ApplicationHook.requestString("com.alipay.antfarm.DeliverChickTeam", "[{\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"version\":\"" + VERSION + "\"}]");
     }
 
 

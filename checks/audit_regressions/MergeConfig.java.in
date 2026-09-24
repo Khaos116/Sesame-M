@@ -39,6 +39,7 @@ public class MergeConfigCheck {
         static Calendar now = Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));
         static Calendar getNow() { return now; }
     }
+    static class MyUtils { static Calendar getInstance() { return TimeUtil.now; } }
     static class Handler {
         final List<Runnable> queued = new ArrayList<>();
         void removeCallbacks(Runnable r) { queued.removeIf(item -> item == r); }
@@ -58,6 +59,9 @@ public class MergeConfigCheck {
     @@AUTO@@
     @@LEGACY_BOOL@@
     @@RANK@@
+    static final int MAIN_SPREAD_DAILY_LIMIT = 200;
+    static final int BATCH_SPREAD_SIZE = 5;
+    @@BATCH@@
     @@RELOAD@@
 
     static ModelField<Object> field(String code, Object value) {
@@ -91,12 +95,17 @@ public class MergeConfigCheck {
         minutes.setConfigValue("720"); assert minutes.getValue() == 43200000;
         minutes.setConfigValue("1"); assert minutes.getValue() == 60000;
 
-        TimeUtil.now.set(Calendar.HOUR_OF_DAY, 9); TimeUtil.now.set(Calendar.MINUTE, 0);
-        assert test.isStealRankTime(0) && !test.isStealRankTime(30);
-        TimeUtil.now.set(Calendar.HOUR_OF_DAY, 19); TimeUtil.now.set(Calendar.MINUTE, 30);
-        assert test.isStealRankTime(30);
-        TimeUtil.now.set(Calendar.HOUR_OF_DAY, 20); TimeUtil.now.set(Calendar.MINUTE, 0);
-        assert !test.isStealRankTime(0) && !test.isStealRankTime(30);
+        TimeUtil.now.set(2026, Calendar.SEPTEMBER, 27, 19, 59);
+        assert test.isCompetitionRoundActive();
+        TimeUtil.now.set(Calendar.HOUR_OF_DAY, 20);
+        assert !test.isCompetitionRoundActive();
+        TimeUtil.now.set(2026, Calendar.SEPTEMBER, 28, 0, 0);
+        assert test.isCompetitionRoundActive();
+
+        assert shouldBatchSpread(0, 15) && shouldBatchSpread(10, 15);
+        assert !shouldBatchSpread(11, 15);
+        assert !shouldBatchSpread(0, 204) && shouldBatchSpread(4, 204);
+        assert shouldBatchSpread(199, 204) && !shouldBatchSpread(200, 204);
 
         test.scheduleAccountReload(); test.scheduleAccountReload();
         assert mainHandler.queued.size() == 1;

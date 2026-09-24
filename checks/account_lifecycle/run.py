@@ -25,26 +25,28 @@ class BaseModel { static void taskRpcRequest() {} static Value getTimedTaskModel
 class Log { static final java.util.concurrent.atomic.AtomicInteger completions = new java.util.concurrent.atomic.AtomicInteger();
  static void record(String s) { if (s.equals("🏁全部任务已执行完成")) completions.incrementAndGet(); }
  static void startModuleLogCount() {} static int stopModuleLogCount() { return 1; }
+ static int takeDroppedStaleLogCount() { return 0; } static void restoreDroppedStaleLogCount(int n) {}
  static void error(String s) { }
  static void printStackTrace(Throwable t) { throw new AssertionError(t); } }
+class RunGeneration { static RunGeneration bind(long n, java.util.function.LongSupplier g) { return null; }
+ static void restore(RunGeneration previous) {} static boolean isStale() { return false; } }
+class TaskCancelledException extends RuntimeException {}
 class ThreadUtil { static void shutdownAndWait(Thread t, long n, java.util.concurrent.TimeUnit u) {
  if(t != null) { t.interrupt(); if(n >= 0) try { t.join(u.toMillis(n)); } catch(InterruptedException e) { Thread.currentThread().interrupt(); } } } }
 class StringUtil { static boolean isEmpty(String s) { return s == null || s.isEmpty(); } }
 class Status { static boolean hasFlagToday(String s) { return true; } static void flagToday(String s) {} }
 class UserIdMap { static String getCurrentUid() { return "account"; } }
 class FileUtil { static void backupConfigV2WithRolling(String s) {} }
+class TimeUtil { static void sleep(long millis) { try { Thread.sleep(millis); }
+ catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new TaskCancelledException(); } } }
+class NotificationUtil { static void trackTaskStart() {} static void trackTaskEnd() {}
+ static int getRunningCount() { return 0; } static void setStatusTextExec() {}
+ static void updateLastExecText() {} }
 class ProgramChildTaskExecutor implements ChildTaskExecutor {
  public Boolean addChildTask(ModelTask.ChildModelTask t) { return true; }
  public Boolean removeChildTask(ModelTask.ChildModelTask t) { t.cancel(); return true; }
  public Boolean clearGroupChildTask(String g) { return true; } public Boolean clearAllChildTask() { return true; } }
 class SystemChildTaskExecutor extends ProgramChildTaskExecutor {}
-"""
-
-STUBS_UTIL = """
-package io.github.aw1y2z.sesame.util;
-public class NotificationUtil { public static void trackTaskStart() {} public static void trackTaskEnd() {}
- public static int getRunningCount() { return 0; } public static void setStatusTextExec() {}
- public static void updateLastExecText() {} }
 """
 
 with tempfile.TemporaryDirectory(prefix="sesame-account-check-") as directory:
@@ -70,7 +72,6 @@ with tempfile.TemporaryDirectory(prefix="sesame-account-check-") as directory:
             """)
         (out / f"{name}.java").write_text(source, encoding="utf-8")
     (out / "Stubs.java").write_text(STUBS, encoding="utf-8")
-    (out / "NotificationUtil.java").write_text(STUBS_UTIL, encoding="utf-8")
     shutil.copy(Path(__file__).with_name("AccountLifecycleCheck.java"), out)
     shutil.copy(Path(__file__).with_name("TaskCompletionCheck.java"), out)
     # Compile the actual async entry methods with deterministic queued/rejected workers.

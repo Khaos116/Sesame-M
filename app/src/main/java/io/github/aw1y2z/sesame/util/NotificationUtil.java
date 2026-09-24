@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import lombok.Getter;
 import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.model.normal.base.BaseModel;

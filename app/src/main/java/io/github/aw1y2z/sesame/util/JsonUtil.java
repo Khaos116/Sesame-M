@@ -299,6 +299,7 @@ public class JsonUtil {
                 Map.Entry<String, JsonNode> entry = it.next();
                 JsonNode rewrittenValue = rewritten.get(entry.getKey());
                 if (rewrittenValue == null) {
+                    // 只允许改格式、不许改数据：键消失即判定不无损
                     return false;
                 }
                 if (!dataContainedIn(entry.getValue(), rewrittenValue)) {

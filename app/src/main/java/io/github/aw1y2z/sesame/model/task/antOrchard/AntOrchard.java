@@ -93,6 +93,9 @@ public class AntOrchard extends ModelTask {
     private BooleanModelField assistFriend;
     private SelectModelField assistFriendList;
     private static int fertilizerProgress = 0;
+
+    /** 本次施肥是否用一键5次批量（由 canSpreadManure 判定，doSpreadManure 消费） */
+    private static boolean spreadUseBatchThisTime = false;
     private static final ArrayList<String> enableSceneList = new ArrayList<>();
 
     @Override
@@ -113,9 +116,9 @@ public class AntOrchard extends ModelTask {
         modelFields.addField(AutoAntOrchardTaskList = new BooleanModelField("AutoAntOrchardTaskList", "农场任务 | 自动黑名单", true).setDependsOn("orchardListTask"));
         modelFields.addField(AntOrchardTaskList = new SelectModelField("AntOrchardTaskList", "农场任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntOrchardTaskList::getList).setDependsOn("AutoAntOrchardTaskList"));
         modelFields.addField(orchardSpreadManure = new BooleanModelField("orchardSpreadManure", "农场施肥 | 开启", false));
-        modelFields.addField(useBatchSpread = new BooleanModelField("useBatchSpread", "一键施肥5次", false)
+        modelFields.addField(useBatchSpread = new BooleanModelField("useBatchSpread", "一键施肥5次(边界突破)", false)
                 .setDependsOn("orchardSpreadManure")
-                .setDescription("每次让服务端连续施肥 5 次，消耗 5 倍肥料；肥料不足 5 倍时跳过本次"));
+                .setDescription("按场景次数一键施肥 5 次；配置达到每日上限时尝试 199+5 至 204 次，肥料不足时退回单次"));
         modelFields.addField(orchardSpreadManureSceneList = new SelectAndCountModelField("orchardSpreadManureSceneList", "农场施肥 | 场景列表", new LinkedHashMap<>(), AlipayPlantScene::getList, "请填写每日施肥次数")
                 .setDependsOn("orchardSpreadManure")
                 .setDescription("只对勾选且服务端已下发的场景施肥"));
@@ -446,7 +449,10 @@ public class AntOrchard extends ModelTask {
      */
     private void orchardSpreadManure() {
         try {
-            while (true) {
+            // 轮次上限兜底：每轮最多施肥一次，按「上限/批量步长 + 余量」估算并留足两场景的量
+            final int MAX_SPREAD_ROUND = (MAIN_SPREAD_DAILY_LIMIT / BATCH_SPREAD_SIZE + 10) * 8;
+            int round = 0;
+            for (; round < MAX_SPREAD_ROUND; round++) {
                 boolean hasSpread = false;
                 boolean anySceneQualified = false;
                 // 遍历可用场景进行施肥
@@ -486,6 +492,9 @@ public class AntOrchard extends ModelTask {
                     break;
                 }
             }
+            if (round >= MAX_SPREAD_ROUND) {
+                Log.record("农场施肥⏭️已达单轮循环上限[" + MAX_SPREAD_ROUND + "]，本轮停止");
+            }
         } catch (Throwable t) {
             Log.err(TAG, "orchardSpreadManure err:", t);
         }
@@ -498,7 +507,7 @@ public class AntOrchard extends ModelTask {
         try {
             String sceneName = scene.name();
             String wua = getWua();
-            String result = AntOrchardRpcCall.orchardSpreadManure(useBatchSpread.getValue(), wua);
+            String result = AntOrchardRpcCall.orchardSpreadManure(spreadUseBatchThisTime, wua);
             JSONObject jo = MyUtils.newJSONObject(result);
 
             if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -507,7 +516,7 @@ public class AntOrchard extends ModelTask {
 
             JSONObject taobaoData = MyUtils.newJSONObject(jo.optString("taobaoData"));
             int cost = taobaoData.optInt("currentCost");
-            boolean batch = Boolean.TRUE.equals(useBatchSpread.getValue());
+            boolean batch = spreadUseBatchThisTime;
             Log.farm("芭芭农场🌳" + scene.nickname() + "施肥#消耗[" + cost + "g肥料]"
                     + (batch ? "#一键5次" : "") + "#目标[" + targetSpreadTimes(orchardSpreadManureSceneList.get(scene.name())) + "次]");
 
@@ -550,23 +559,29 @@ public class AntOrchard extends ModelTask {
         return ""; // 返回空字符串而不是null
     }
 
-    /** 主场景服务端每日施肥次数上限（`wateringLeftTimes` 是剩余次数） */
+    /** 服务端每日施肥次数名义上限（单次计，`wateringLeftTimes` 是剩余次数） */
     private static final int MAIN_SPREAD_DAILY_LIMIT = 200;
 
     /** 一键施肥一次顶 5 次（服务端按单次累加已施肥次数） */
     private static final int BATCH_SPREAD_SIZE = 5;
 
     /**
-     * 「每日次数」折算成服务端的单次施肥次数目标：勾了一键5次就 ×5，再封顶服务端主场景日上限。
-     * <p>服务端的已施肥次数按单次计（批量一次 +5），不折算的话次数=5 时一次批量就撞上限、循环立刻结束。
-     * <p>M configures per-scene counts; the caller passes this scene limit. No global field is read.
+     * M 按场景配置操作次数；批量时一次操作算 5 次，达到每日上限时保留上游 199+5 边界。
      */
     private int targetSpreadTimes(Integer configuredTimes) {
         int times = configuredTimes == null ? 0 : Math.max(configuredTimes, 0);
         if (Boolean.TRUE.equals(useBatchSpread.getValue())) {
             times *= BATCH_SPREAD_SIZE;
         }
-        return Math.min(times, MAIN_SPREAD_DAILY_LIMIT);
+        return Math.min(times, Boolean.TRUE.equals(useBatchSpread.getValue()) ? MAIN_SPREAD_DAILY_LIMIT + BATCH_SPREAD_SIZE : MAIN_SPREAD_DAILY_LIMIT);
+    }
+
+    private static boolean shouldBatchSpread(int usedTimes, int limit) {
+        if (limit > MAIN_SPREAD_DAILY_LIMIT) {
+            return usedTimes <= MAIN_SPREAD_DAILY_LIMIT - 1
+                    && usedTimes % BATCH_SPREAD_SIZE == BATCH_SPREAD_SIZE - 1;
+        }
+        return usedTimes + BATCH_SPREAD_SIZE <= limit;
     }
 
     /**
@@ -601,17 +616,32 @@ public class AntOrchard extends ModelTask {
                     int leftTimes = accountInfo.optInt("wateringLeftTimes");
                     int usedTimes = MAIN_SPREAD_DAILY_LIMIT - leftTimes;
 
+                    // 仅在每日次数配到 200（命中 199+5 漏洞）时才启用批量突破；其余数值精确施肥不批量
+                    boolean batchEnabled = Boolean.TRUE.equals(useBatchSpread.getValue());
+                    // 开启一键5次：前 (BATCH_SPREAD_SIZE-1)=4 次用单次把计数补到 ≡4(mod5)，之后持续批量。
+                    // 计数序列 4,9,…,194,199,204 恰好命中漏洞（199 处批量 +5 = 204），且不会落在 200~203。
+                    boolean batch = batchEnabled && shouldBatchSpread(usedTimes, limit);
                     // 一键5次时服务端一次要消耗 5 倍肥料，余额判据必须按批量算，否则会发出注定失败的请求
-                    boolean batch = Boolean.TRUE.equals(useBatchSpread.getValue());
                     int needCost = batch ? wateringCost * BATCH_SPREAD_SIZE : wateringCost;
                     if (happyPoint < needCost) {
-                        Log.record("农场施肥⏭️肥料不足[" + happyPoint + "/" + needCost + "g]" + (batch ? "#一键5次" : ""));
-                        return false;
+                        if (batch) {
+                            // 肥料不足 5 倍：退回单次（若还能施单次）
+                            batch = false;
+                            needCost = wateringCost;
+                            if (happyPoint < needCost) {
+                                Log.record("农场施肥⏭️肥料不足[" + happyPoint + "/" + needCost + "g]");
+                                return false;
+                            }
+                        } else {
+                            Log.record("农场施肥⏭️肥料不足[" + happyPoint + "/" + needCost + "g]");
+                            return false;
+                        }
                     }
                     if (usedTimes >= limit) {
                         Log.record("农场施肥⏭️已达次数上限[" + usedTimes + "/" + limit + "]");
                         return false;
                     }
+                    spreadUseBatchThisTime = batch;
                     return true;
 
                 case yeb:
@@ -626,9 +656,33 @@ public class AntOrchard extends ModelTask {
                         return false;
                     }
                     int currentProgress = progressInfo.optInt("spreadProgress");
-                    int dailyLimit = progressInfo.optInt("dailySpreadLimit");
 
-                    return currentProgress < limit && limit < dailyLimit;
+                    // 仅在每日次数配到 200（命中 199+5 漏洞）时才启用批量突破；其余数值精确施肥不批量
+                    boolean batchEnabledY = Boolean.TRUE.equals(useBatchSpread.getValue());
+                    // 余额宝场景同样适用 199+5 漏洞：前 (BATCH_SPREAD_SIZE-1) 次单次补到 ≡4(mod5)，之后持续批量
+                    boolean batchY = batchEnabledY && shouldBatchSpread(currentProgress, limit);
+                    // yeb 肥料与主账号同池，仅在批量（需 5 倍）时取主账号余额做判据
+                    if (batchY) {
+                        JSONObject yebMain = MyUtils.newJSONObject(AntOrchardRpcCall.orchardSyncIndex());
+                        if (!MessageUtil.checkResultCode(TAG, yebMain)) {
+                            // 同步校验失败拿不到余额：保守退回单次，避免发出注定失败的 5 倍批量
+                            batchY = false;
+                        } else {
+                            JSONObject yai = yebMain.optJSONObject("farmMainAccountInfo");
+                            int happyPointY = yai != null ? yai.optInt("happyPoint") : 0;
+                            int wateringCostY = yai != null ? yai.optInt("wateringCost") : 0;
+                            if (yai == null || happyPointY < wateringCostY * BATCH_SPREAD_SIZE) {
+                                // 肥料不足 5 倍：退回单次（沿用原 yeb 不判肥料，直接允许单次）
+                                batchY = false;
+                            }
+                        }
+                    }
+                    // 修正原 `limit < dailyLimit`：允许推进到漏洞上限 204（dailyLimit 名义 200），避免 yeb 完全不施肥
+                    if (currentProgress >= limit) {
+                        return false;
+                    }
+                    spreadUseBatchThisTime = batchY;
+                    return true;
 
                 default:
                     return false;

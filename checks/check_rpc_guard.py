@@ -24,6 +24,7 @@ with tempfile.TemporaryDirectory(prefix="sesame-rpc-guard-") as tmp:
 
     for name in ("rpc/intervallimit/RpcRequestGuard.java", "rpc/intervallimit/RpcFailurePolicy.java", "entity/RpcEntity.java", "util/RpcLog.java",
                  "util/diagnostics/RpcFailureJournal.java", "util/AtomicConfigFile.java",
+                 "util/RunGeneration.java", "util/TaskCancelledException.java",
                  "rpc/bridge/NewRpcBridge.java", "rpc/bridge/OldRpcBridge.java", "rpc/bridge/RpcBridge.java", "rpc/bridge/RpcVersion.java"):
         code = (SOURCE / name).read_text(encoding="utf-8")
         if name == "util/AtomicConfigFile.java":

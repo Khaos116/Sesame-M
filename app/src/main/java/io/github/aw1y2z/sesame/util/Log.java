@@ -180,10 +180,35 @@ public class Log {
         }
     }
 
+    /** 本线程在「代际作废」期间被静音的错误日志条数 */
+    private static final ThreadLocal<Integer> staleLogDropped = ThreadLocal.withInitial(() -> 0);
+
+    /** 取出并清零本线程被静音的错误日志条数 */
+    public static int takeDroppedStaleLogCount() {
+        int dropped = staleLogDropped.get();
+        staleLogDropped.set(0);
+        return dropped;
+    }
+
+    /** 还原上层残留计数：嵌套执行时与 {@link RunGeneration#restore} 一样分层，数字不串 */
+    public static void restoreDroppedStaleLogCount(int prev) {
+        if (prev == 0) {
+            staleLogDropped.remove();
+        } else {
+            staleLogDropped.set(prev);
+        }
+    }
+
     /**
      * 错误日志双写（异常日志 + 运行日志）：消息统一带 uid 前缀。
      */
     private static void writeError(String s) {
+        // 本代已作废：此后本线程的错误日志都是收尾噪音（成片 catch(Throwable) 各打一行），整段静音；
+        // 丢弃条数累计，任务收尾时报告，避免把这段时间的真故障无声吞掉
+        if (RunGeneration.isStale()) {
+            staleLogDropped.set(staleLogDropped.get() + 1);
+            return;
+        }
         boolean toError = io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewErrorLog();
         boolean toRuntime = io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog();
         if (!toError && !toRuntime) {
@@ -311,10 +336,17 @@ public class Log {
     }
 
     public static void printStackTrace(Throwable t) {
+        // 代际作废不是故障：不写堆栈，避免切号/重载时在每个剩余动作上刷屏
+        if (t instanceof TaskCancelledException) {
+            return;
+        }
         writeError(android.util.Log.getStackTraceString(t));
     }
 
     public static void printStackTrace(String tag, Throwable t) {
+        if (t instanceof TaskCancelledException) {
+            return;
+        }
         writeError(tag + ", " + android.util.Log.getStackTraceString(t));
     }
 
@@ -328,6 +360,9 @@ public class Log {
      * @param t   异常
      */
     public static void err(String tag, String msg, Throwable t) {
+        if (t instanceof TaskCancelledException) {
+            return;
+        }
         writeError(tag + ", " + msg + "\n" + android.util.Log.getStackTraceString(t));
     }
 

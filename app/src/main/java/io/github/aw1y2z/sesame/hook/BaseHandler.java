@@ -3,6 +3,9 @@ package io.github.aw1y2z.sesame.hook;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fi.iki.elonen.NanoHTTPD;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -63,9 +66,9 @@ public abstract class BaseHandler implements io.github.aw1y2z.sesame.hook.HttpHa
      * @return 鉴权是否通过
      */
     private boolean verifyToken(NanoHTTPD.IHTTPSession session) {
-        // 未设置Token，默认通过鉴权（与原Kotlin逻辑一致）
+        // 未配置令牌时一律拒绝：不做「无令牌即放行」的默认开放
         if (secretToken == null || secretToken.trim().isEmpty()) {
-            return true;
+            return false;
         }
         
         // 获取Authorization请求头
@@ -83,8 +86,9 @@ public abstract class BaseHandler implements io.github.aw1y2z.sesame.hook.HttpHa
             token = authHeader.trim();
         }
         
-        // 对比Token是否一致
-        return token.equals(secretToken);
+        // 常数时间比较，避免按字符逐位比较泄漏令牌
+        return MessageDigest.isEqual(token.getBytes(StandardCharsets.UTF_8),
+                secretToken.getBytes(StandardCharsets.UTF_8));
     }
     
     /**

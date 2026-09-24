@@ -55,6 +55,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.SelectOneModelField
 import io.github.aw1y2z.sesame.entity.IdAndName
 import io.github.aw1y2z.sesame.entity.KVNode
 import io.github.aw1y2z.sesame.util.FileUtil
+import io.github.aw1y2z.sesame.util.JsonUtil
 import io.github.aw1y2z.sesame.util.Log
 import io.github.aw1y2z.sesame.util.StringUtil
 import io.github.aw1y2z.sesame.util.ToastUtil
@@ -103,11 +104,11 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
 
     /**
      * 统一落盘入口（二级/三级/四级同款实现）：
-     * 先用 isModify() 短路「无改动」的情况，确认有改动后走 force=true，
+     * 先用 hasFieldChanges() 短路「无字段级改动」的情况，确认有改动后走 force=true，
      * 避免 ConfigV2.save() 内部再重复做一次全量序列化比较。
      */
     fun save() {
-        if (!ConfigV2.isModify(userId)) return
+        if (!ConfigV2.hasFieldChanges()) return
         if (ConfigV2.save(userId, true)) {
             ToastUtil.show(this, "保存成功！")
             sendRestartIfNeeded()
@@ -149,9 +150,15 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
         if (uri != null) {
             val file = ConfigPreload.getConfigFile(userId)
             try {
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    file.outputStream().use { input.copyTo(it) }
-                }
+                val text = context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() }
+                // 必须是合法的 config_v2（顶层含 modelFieldsMap）：只验 JSON 语法挡不住误选其它 JSON
+                if (text.isNullOrBlank()) throw IllegalArgumentException("empty config")
+                val node = JsonUtil.toNode(text) as? com.fasterxml.jackson.databind.JsonNode
+                if (node?.has("modelFieldsMap") != true) throw IllegalArgumentException("not a config_v2 json")
+                // 覆盖前先备份现有配置：即时快照与每日滚动备份各自独立
+                FileUtil.backupConfigV2BeforeWrite(userId ?: "")
+                FileUtil.backupConfigV2WithRolling(if (StringUtil.isEmpty(userId)) "默认" else userId!!)
+                if (!FileUtil.write2File(text, file)) throw IllegalStateException("write config failed")
                 if (!StringUtil.isEmpty(userId)) {
                     try {
                         val intent = Intent("com.eg.android.AlipayGphone.sesame.restart")

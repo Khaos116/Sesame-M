@@ -65,27 +65,27 @@ public class RuntimeInfo {
         FileUtil.write2File(joAll.toString(), FileUtil.runtimeInfoFile(userId));
     }
 
-    public Object get(RuntimeInfoKey key) throws JSONException {
+    public synchronized Object get(RuntimeInfoKey key) throws JSONException {
         return joCurrent.opt(key.name());
     }
 
-    public String getString(String key) {
+    public synchronized String getString(String key) {
         return joCurrent.optString(key);
     }
 
-    public Long getLong(String key, long def) {
+    public synchronized Long getLong(String key, long def) {
         return joCurrent.optLong(key, def);
     }
 
-    public boolean getBool(String key, boolean def) {
+    public synchronized boolean getBool(String key, boolean def) {
         return joCurrent.optBoolean(key, def);
     }
 
-    public String getString(RuntimeInfoKey key) {
+    public synchronized String getString(RuntimeInfoKey key) {
         return joCurrent.optString(key.name());
     }
 
-    public Long getLong(RuntimeInfoKey key) {
+    public synchronized Long getLong(RuntimeInfoKey key) {
         return joCurrent.optLong(key.name(), 0L);
     }
 

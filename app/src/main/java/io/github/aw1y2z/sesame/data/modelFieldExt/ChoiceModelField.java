@@ -36,6 +36,15 @@ public class ChoiceModelField extends ModelField<Integer> {
     }
 
     @Override
+    public void clampValue() {
+        // 越界选项回退默认值，避免运行期拿到非法下标
+        if (value != null && choiceArray != null && choiceArray.length > 0
+                && (value < 0 || value >= choiceArray.length)) {
+            value = defaultValue;
+        }
+    }
+
+    @Override
     public View getView(Context context) {
         return null;
     }

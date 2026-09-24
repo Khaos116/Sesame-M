@@ -624,9 +624,11 @@ public class AntOcean extends ModelTask {
                         }
                     }
                 }
-                seaAreaVO = seaAreaVOs.optJSONObject(seaAreaVOs.length() - 1);
-                String LastseaAreaStatus = seaAreaVO != null ? seaAreaVO.optString("status") : "";
-                if (LastseaAreaStatus.equals("WAIT_FOR_UNLOCK")) {
+            }
+            // 「最后一个海域待解锁」是整份响应级别的判断，放在循环外，避免逐海域重复触发修复
+            if (seaAreaVOs.length() > 0) {
+                JSONObject lastSeaAreaVO = seaAreaVOs.optJSONObject(seaAreaVOs.length() - 1);
+                if (lastSeaAreaVO != null && "WAIT_FOR_UNLOCK".equals(lastSeaAreaVO.optString("status"))) {
                     AntOceanRpcCall.repairSeaArea();
                 }
             }
