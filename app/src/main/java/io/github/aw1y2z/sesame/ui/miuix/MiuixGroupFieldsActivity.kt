@@ -111,12 +111,12 @@ class MiuixGroupFieldsActivity : MiuixBaseActivity() {
 
     /**
      * 统一落盘入口：本页字段变更只写内存，只有真正退出时才调用这里写一次磁盘。
-     * 先用 isModify() 判断是否有改动（无改动直接短路，不写盘、不提示），
+     * 先用 hasFieldChanges() 判断是否有字段级改动（无改动直接短路，不写盘、不提示），
      * 确认有改动后走 force=true，避免 ConfigV2.save() 内部再做一次全量序列化比较。
      */
     fun save() {
         if (userId == null) return
-        if (!ConfigV2.isModify(userId)) return
+        if (!ConfigV2.hasFieldChanges()) return
         if (ConfigV2.save(userId, true)) {
             ToastUtil.show(this, "保存成功！")
             sendRestartIfNeeded()

@@ -76,6 +76,10 @@ public class OldRpcBridge implements RpcBridge {
 
     @Override
     public RpcEntity requestObject(RpcEntity rpcEntity, int tryCount, int retryInterval) {
+        // 本代已作废就不再发请求，避免旧代继续消耗资产
+        if (RunGeneration.isStale()) {
+            throw new TaskCancelledException();
+        }
         if (ApplicationHook.isOffline()) {
             return null;
         }
@@ -126,12 +130,14 @@ public class OldRpcBridge implements RpcBridge {
                                             Thread.sleep(600 + RandomUtil.delay());
                                         } catch (InterruptedException e) {
                                             Log.printStackTrace(e);
+                                            Thread.currentThread().interrupt();
                                         }
                                     } else if (retryInterval > 0) {
                                         try {
                                             Thread.sleep(retryInterval);
                                         } catch (InterruptedException e) {
                                             Log.printStackTrace(e);
+                                            Thread.currentThread().interrupt();
                                         }
                                     }
                                 } else if (msg.contains("MMTPException")) {
@@ -147,12 +153,14 @@ public class OldRpcBridge implements RpcBridge {
                                             Thread.sleep(600 + RandomUtil.delay());
                                         } catch (InterruptedException e) {
                                             Log.printStackTrace(e);
+                                            Thread.currentThread().interrupt();
                                         }
                                     } else if (retryInterval > 0) {
                                         try {
                                             Thread.sleep(retryInterval);
                                         } catch (InterruptedException e) {
                                             Log.printStackTrace(e);
+                                            Thread.currentThread().interrupt();
                                         }
                                     }
                                     continue;

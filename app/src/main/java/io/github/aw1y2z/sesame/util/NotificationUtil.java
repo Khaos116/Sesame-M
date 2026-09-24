@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import lombok.Getter;
 import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
@@ -21,20 +23,22 @@ public class NotificationUtil {
     private static volatile long lastNoticeTime = 0;
     private static String titleText = "Sesame-M";
     private static String contentText = "";
-    /** 活跃任务计数，>0 表示有异步任务仍在执行。由 ModelTask 在 startTask/finally 里增减 */
-    private static volatile int runningCount = 0;
+    /** 活跃任务计数，>0 表示有异步任务仍在执行。由 ModelTask 拿到执行槽后 / finally 里增减 */
+    private static final AtomicInteger runningCount = new AtomicInteger(0);
 
     public static void trackTaskStart() {
-        runningCount++;
+        runningCount.incrementAndGet();
     }
 
     public static void trackTaskEnd() {
-        runningCount--;
-        if (runningCount < 0) runningCount = 0;
+        // 不再有实例锁串行化，增减来自不同线程 ⇒ 原子操作
+        if (runningCount.decrementAndGet() < 0) {
+            runningCount.set(0);
+        }
     }
 
     public static int getRunningCount() {
-        return runningCount;
+        return runningCount.get();
     }
 
     public static void start(Context context) {

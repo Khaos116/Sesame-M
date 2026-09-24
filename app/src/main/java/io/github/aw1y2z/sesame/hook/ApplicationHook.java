@@ -91,13 +91,13 @@ public class ApplicationHook extends XposedModule {
     private static final Map<String, PendingIntent> wakenAtTimeAlarmMap = new ConcurrentHashMap<>();
 
     @Getter
-    private static ClassLoader classLoader = null;
+    private static volatile ClassLoader classLoader = null;
 
     @Getter
-    private static Object microApplicationContextObject = null;
+    private static volatile Object microApplicationContextObject = null;
 
     // 新增：全局静态变量，存储当前进程名
-    public static String processName; // 供其他方法（如 startIfNeeded）调用
+    public static volatile String processName; // 供其他方法（如 startIfNeeded）调用
 
     /** 模块 App 自己的包名：须与 app/build.gradle 的 applicationId 一致，用于校验广播发送方 */
     private static final String MODULE_PACKAGE_NAME = "io.github.aw1y2z.sesame";
@@ -105,12 +105,12 @@ public class ApplicationHook extends XposedModule {
     private static final int SHELL_UID = 2000;
 
     @Getter
-    private static Context context = null; // 全局上下文，对应 Kotlin 的 appContext
+    private static volatile Context context = null; // 全局上下文，对应 Kotlin 的 appContext
     @SuppressLint("StaticFieldLeak")
-    private static Service service; // 目标 Service 实例，也是 Context 子类
+    private static volatile Service service; // 目标 Service 实例，也是 Context 子类
 
     @Getter
-    private static AlipayVersion alipayVersion = new AlipayVersion("");
+    private static volatile AlipayVersion alipayVersion = new AlipayVersion("");
 
     @Getter
     private static volatile boolean hooked = false;
@@ -298,14 +298,15 @@ public class ApplicationHook extends XposedModule {
 
                             @Override
                             public void run() {
-                                if (!init) {
-                                    return;
-                                }
-                                Log.record("应用版本：" + alipayVersion.getVersionString());
-                                Log.record("模块版本：" + modelVersion);
-                                Log.record("开始执行");
+                                int checkInterval = 0;
                                 try {
-                                    int checkInterval = BaseModel.getCheckInterval().getValue();
+                                    checkInterval = BaseModel.getCheckInterval().getValue();
+                                    if (!init) {
+                                        return;
+                                    }
+                                    Log.record("应用版本：" + alipayVersion.getVersionString());
+                                    Log.record("模块版本：" + modelVersion);
+                                    Log.record("开始执行");
                                     if (lastExecTime + 2000 > System.currentTimeMillis()) {
                                         Log.record("执行间隔较短，跳过执行");
                                         execDelayedHandler(checkInterval);
@@ -379,6 +380,11 @@ public class ApplicationHook extends XposedModule {
                                 } catch (Exception e) {
                                     Log.record("执行异常:");
                                     Log.printStackTrace(e);
+                                } finally {
+                                    // 单链之下"本轮没人排期"就等于永久停摆：兜住 !init、各处 return 与未捕获异常
+                                    if (!tickScheduled) {
+                                        execDelayedHandler(checkInterval > 0 ? checkInterval : FALLBACK_INTERVAL);
+                                    }
                                 }
                             }
                         });
@@ -786,8 +792,42 @@ public class ApplicationHook extends XposedModule {
         } catch (Exception e) {
             Log.printStackTrace(e);
         }
-        mainTask.startTask(false);
+        startMainTask();
     }
+
+    /** 起跳失败或取不到间隔时的兜底排期间隔（下限 1 分钟，避免自旋） */
+    private static final long FALLBACK_INTERVAL = 60_000;
+
+    /** 起跳的公共实现：线程起不来等异常不能逃到宿主主线程（执行槽已由 BaseTask 归还） */
+    private static void startMainTask() {
+        try {
+            if (Boolean.TRUE.equals(mainTask.startTask(false)) || tickScheduled) {
+                return;
+            }
+            // 没跑起来（check 不通过等）又无人排期：兜底续排，否则链断
+            execDelayedHandler(Math.max(BaseModel.getCheckInterval().getValue(), FALLBACK_INTERVAL));
+        } catch (Throwable t) {
+            Log.printStackTrace(t);
+        }
+    }
+
+    /** 是否已有待发的下一跳：单链之下既用它兜底续排，又不覆盖本轮更早的显式排期（定时执行、reLogin 快重试） */
+    private static volatile boolean tickScheduled = false;
+
+    /** 待发 tick 的预定触发时刻，仅用于"排期被覆盖"的日志归因 */
+    private static volatile long scheduledExecAt = 0;
+
+    /** 延迟触发的一跳：提成常量才能在下一次排期前 removeCallbacks 掉旧链（重载/切号会重建 mainTask） */
+    private static final Runnable MAIN_TICK = () -> {
+        tickScheduled = false;
+        scheduledExecAt = 0;
+        try {
+            NotificationUtil.setRunning();
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+        }
+        startMainTask();
+    };
 
     private static void execDelayedHandler(long delayMillis) {
         // 调度时立即记录下次执行时间，所有任务完成时 updateLastExecText 会一并写入
@@ -796,19 +836,25 @@ public class ApplicationHook extends XposedModule {
         } catch (Exception e) {
             Log.printStackTrace(e);
         }
-        mainHandler.postDelayed(() -> {
-            try {
-                NotificationUtil.setRunning();
-            } catch (Exception e) {
-                Log.printStackTrace(e);
-            }
-            mainTask.startTask(false);
-        }, delayMillis);
+        long newExecAt = System.currentTimeMillis() + delayMillis;
+        if (tickScheduled) {
+            // 后写覆盖前写（如 reLogin 覆盖"定时执行"）会让原排期静默失效，记一行便于归因
+            Log.record("排期被覆盖：原定 " + TimeUtil.getTimeStr(scheduledExecAt) + " → 改为 " + TimeUtil.getTimeStr(newExecAt));
+        }
+        // 先摘掉上一条排期，否则每次重载/切号都会多留一条幽灵链，每个 interval 触发两次
+        mainHandler.removeCallbacks(MAIN_TICK);
+        mainHandler.postDelayed(MAIN_TICK, delayMillis);
+        scheduledExecAt = newExecAt;
+        tickScheduled = true;
     }
 
     private static void stopHandler() {
         mainTask.stopTask();
         ModelTask.stopAllTask();
+        // 一并清掉待发 tick：否则重载后新周期第一轮会误判「已排期」而跳过续排，下一跳由上一周期的时刻决定
+        mainHandler.removeCallbacks(MAIN_TICK);
+        tickScheduled = false;
+        scheduledExecAt = 0;
     }
 
     public static void updateDay() {

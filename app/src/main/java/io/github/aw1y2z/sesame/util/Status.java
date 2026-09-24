@@ -55,6 +55,9 @@ public class Status {
     
     // other
     private final Set<String> flagLogList = new HashSet<>();
+
+    // 爱心鸡结号(S2)：上一个已捐蛋的轮次号；持久化以避免进程重启后同一轮重复捐
+    private String competitionDonatedRound;
     
     /**
      * 当日整型标记：tag -> 累计值（如金豆夺宝芝麻粒换豆当日已兑换金豆数）。
@@ -426,11 +429,37 @@ public class Status {
         return count < newCount;
     }
     
+    public static synchronized int getWaterFriendToday(String id) {
+        Integer count = INSTANCE.waterFriendLogList.get(id);
+        return count == null ? 0 : count;
+    }
+
     public static synchronized void waterFriendToday(String id, int count, String taskUid) {
         if (taskUid.equals(UserIdMap.getCurrentUid())) {
-            INSTANCE.waterFriendLogList.put(id, count);
+            // 累加当日已浇次数：覆盖式记账会让「部分失败后再浇满」越过用户配置
+            INSTANCE.waterFriendLogList.put(id, getWaterFriendToday(id) + count);
             save();
         }
+    }
+
+    /** 显式清零当日浇水次数：累加语义下不能用「加 0」代替重置 */
+    public static synchronized void resetWaterFriendToday(String id, String taskUid) {
+        if (taskUid.equals(UserIdMap.getCurrentUid())) {
+            INSTANCE.waterFriendLogList.put(id, 0);
+            save();
+        }
+    }
+
+    public static synchronized boolean isCompetitionDonated(String roundId) {
+        return roundId != null && roundId.equals(INSTANCE.competitionDonatedRound);
+    }
+
+    public static synchronized void markCompetitionDonated(String roundId) {
+        if (roundId == null || roundId.isEmpty()) {
+            return;
+        }
+        INSTANCE.competitionDonatedRound = roundId;
+        save();
     }
     
     public static synchronized int getVitalityExchangeBenefitCountToday(String skuId) {

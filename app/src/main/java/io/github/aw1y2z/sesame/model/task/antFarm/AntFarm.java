@@ -1098,8 +1098,6 @@ public class AntFarm extends ModelTask {
         return false;
     }
 
-    private static String lastCompetitionDonateRound = "";
-
     /**
      * 爱心鸡结号(S2赛季)自动化。
      * <p>
@@ -1130,9 +1128,9 @@ public class AntFarm extends ModelTask {
                 // 自动捐蛋（每轮一次，定向捐到 S2 项目）
                 if (competitionDonate.getValue()) {
                     String roundId = jo.optString("rankRoundId");
-                    if (!roundId.isEmpty() && !roundId.equals(lastCompetitionDonateRound)) {
+                    if (!roundId.isEmpty() && !Status.isCompetitionDonated(roundId)) {
                         donateToCompetition(competitionDonateAmount.getValue());
-                        lastCompetitionDonateRound = roundId;
+                        Status.markCompetitionDonated(roundId);
                     }
                 }
                 // 偷榜定时任务（周日20:00前 N 分钟执行一次）
@@ -1397,12 +1395,12 @@ public class AntFarm extends ModelTask {
             if (!MessageUtil.checkMemo(TAG, jo)) {
                 return false;
             }
-            // 优先用响应刷新余额，失败则按扣减估算
+            // 只用响应刷新余额；缺字段时保留原值，不做本地估算（估算会与服务端漂移叠加）
             try {
                 JSONObject d = jo.getJSONObject("donation");
                 harvestBenevolenceScore = d.getDouble("harvestBenevolenceScore");
             } catch (Throwable ignore) {
-                harvestBenevolenceScore -= donationAmount;
+                Log.record("爱心鸡结号❤️捐蛋响应缺少 donation 字段，余额暂不更新");
             }
             Log.farm("爱心鸡结号❤️[捐爱心蛋:" + projectName + "]捐赠" + donationAmount + "颗爱心蛋");
             return true;

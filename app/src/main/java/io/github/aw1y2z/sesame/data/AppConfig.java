@@ -19,6 +19,9 @@ public class AppConfig {
 
     public static final AppConfig INSTANCE = new AppConfig();
 
+    /** 上次 load 解析失败：内存此时只是默认值，必须禁止写盘，否则会把默认值整份固化 */
+    private static volatile boolean loadFailed = false;
+
     @JsonIgnore
     private boolean init;
 
@@ -133,11 +136,17 @@ public class AppConfig {
     public void setBatteryPerm(Boolean value) { batteryPerm = value; }
 
     public static Boolean save() {
+        if (loadFailed) {
+            // 上次加载失败，内存只是默认值：写盘会把用户配置整份固化，拒绝
+            Log.i(TAG, "上次APP配置加载失败，本次不写盘");
+            return false;
+        }
         return FileUtil.write2File(toSaveStr(), new File(APP_CONFIG_DIRECTORY_FILE, "appConfig.json"));
     }
 
     public static synchronized AppConfig load() {
         File appConfigFile = new File(APP_CONFIG_DIRECTORY_FILE, "appConfig.json");
+        loadFailed = false;
         try {
             if (appConfigFile.exists()) {
                 String json = FileUtil.readFromFile(appConfigFile);
@@ -157,13 +166,10 @@ public class AppConfig {
             }
         } catch (Throwable t) {
             Log.printStackTrace(TAG, t);
-            Log.i(TAG, "重置APP配置");
-            try {
-                unload();
-                FileUtil.write2File(toSaveStr(), appConfigFile);
-            } catch (Exception e) {
-                Log.printStackTrace(TAG, t);
-            }
+            // 解析失败只回落默认值、绝不写盘：瞬时 IO 抖动或半份文件不该把用户配置整份重置
+            Log.i(TAG, "解析APP配置失败，本次使用默认值（不写盘）");
+            loadFailed = true;
+            unload();
         }
         INSTANCE.setInit(true);
         return INSTANCE;

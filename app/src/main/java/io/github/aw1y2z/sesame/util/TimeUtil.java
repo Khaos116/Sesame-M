@@ -189,7 +189,12 @@ public class TimeUtil {
         try {
             Thread.sleep(millis);
         } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+            // 复位中断并正常返回：抛异常会被上层成片的 catch (Throwable) 吞掉，使停止语义失效
+            Thread.currentThread().interrupt();
+        }
+        // 检查点：本代已作废即结束本轮
+        if (RunGeneration.isStale()) {
+            throw new TaskCancelledException();
         }
     }
 

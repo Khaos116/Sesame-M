@@ -158,6 +158,25 @@ public class FileUtil {
     }
     
     /**
+     * 写盘前的即时快照（覆盖式，不受「每日一次」限制）：与 backupConfigV2WithRolling 的
+     * 每日滚动备份解耦，保证每次覆盖配置前都留有一份上一版，写坏时可回退。
+     */
+    public static void backupConfigV2BeforeWrite(String userId) {
+        try {
+            File originalFile = StringUtil.isEmpty(userId) ? getDefaultConfigV2File() : getConfigV2File(userId);
+            if (!originalFile.exists()) {
+                return;
+            }
+            File prevFile = new File(originalFile.getParentFile(), "config_v2.prev.json");
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Files.copy(originalFile.toPath(), prevFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (Exception e) {
+            Log.printStackTrace(FileUtil.class.getSimpleName(), e);
+        }
+    }
+
+    /**
      * 执行用户config_v2的n天滚动备份（每日一次，按A→B→C顺序循环）
      *
      * @param userId 用户ID（空则为默认用户）
@@ -282,7 +301,7 @@ public class FileUtil {
     }
     
     public static File getUserConfigDirectoryFile(String userId) {
-        File configDir = new File(CONFIG_DIRECTORY_FILE, userId);
+        File configDir = getUserDataDirectoryFile(userId);
         if (configDir.exists()) {
             if (configDir.isFile()) {
                 configDir.delete();
@@ -340,11 +359,11 @@ public class FileUtil {
     }
     
     public static File getSelfIdFile(String userId) {
-        return getFile(new File(CONFIG_DIRECTORY_FILE, userId), "self.json");
+        return getFile(getUserDataDirectoryFile(userId), "self.json");
     }
     
     public static File getFriendIdMapFile(String userId) {
-        return getFile(new File(CONFIG_DIRECTORY_FILE, userId), "friend.json");
+        return getFile(getUserDataDirectoryFile(userId), "friend.json");
     }
     
     public static File runtimeInfoFile(String userId) {
@@ -353,29 +372,36 @@ public class FileUtil {
     }
     
     public static File getCooperationIdMapFile(String userId) {
-        return getFile(new File(CONFIG_DIRECTORY_FILE, userId), "cooperation.json");
+        return getFile(getUserDataDirectoryFile(userId), "cooperation.json");
     }
     
     public static File getVitalityBenefitIdMap(String userId) {
-        return getFile(new File(CONFIG_DIRECTORY_FILE, userId), "vitalityBenefit.json");
+        return getFile(getUserDataDirectoryFile(userId), "vitalityBenefit.json");
     }
     
     public static File getGameCenterMallItemMap(String userId) {
-        return getFile(new File(CONFIG_DIRECTORY_FILE, userId), "gameCenterMallItem.json");
+        return getFile(getUserDataDirectoryFile(userId), "gameCenterMallItem.json");
     }
     
     public static File getFarmOrnamentsIdMapFile(String userId) {
-        return getFile(new File(CONFIG_DIRECTORY_FILE, userId), "farmOrnaments.json");
+        return getFile(getUserDataDirectoryFile(userId), "farmOrnaments.json");
     }
     
     public static File getMemberBenefitIdMapFile(String userId) {
-        return getFile(new File(CONFIG_DIRECTORY_FILE, userId), "memberBenefit.json");
+        return getFile(getUserDataDirectoryFile(userId), "memberBenefit.json");
     }
     
     public static File getPromiseSimpleTemplateIdMapFile(String userId) {
-        return getFile(new File(CONFIG_DIRECTORY_FILE, userId), "promiseSimpleTemplate.json");
+        return getFile(getUserDataDirectoryFile(userId), "promiseSimpleTemplate.json");
     }
     
+    /**
+     * 账号数据目录：userId 为空（「默认」配置）时回退到主目录，避免 {@code new File(dir, null)} 抛 NPE。
+     */
+    private static File getUserDataDirectoryFile(String userId) {
+        return StringUtil.isEmpty(userId) ? MAIN_DIRECTORY_FILE : new File(CONFIG_DIRECTORY_FILE, userId);
+    }
+
     /**
      * 取文件助手的公共实现：路径同名处若被历史脏数据占成了目录，先删掉再返回。
      * <p>原先每个 getXxxFile 都抄一遍「new File + exists/isDirectory/delete + return」，
@@ -408,7 +434,7 @@ public class FileUtil {
     }
 
     public static File getStatusFile(String userId) {
-        return getFile(new File(CONFIG_DIRECTORY_FILE, userId), "status.json");
+        return getFile(getUserDataDirectoryFile(userId), "status.json");
     }
     
     public static File getStatisticsFile() {

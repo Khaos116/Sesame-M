@@ -1,18 +1,24 @@
 package io.github.aw1y2z.sesame.data.task;
 
-import android.os.Build;
 import lombok.Getter;
 import io.github.aw1y2z.sesame.util.Log;
-import io.github.aw1y2z.sesame.util.ThreadUtil;
+import io.github.aw1y2z.sesame.util.RunGeneration;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public abstract class BaseTask {
 
     @Getter
     private volatile Thread thread;
+
+    /** 代际：stopTask 递增；正在跑的这一代在下一个检查点（sleep / RPC 桥）自行结束 */
+    private volatile long generation = 0;
+
+    /** 执行槽（只限本实例；重载后是新对象，跨实例靠代际令牌在检查点退出）：抢不到即放弃，由下一次调度重试 */
+    private final AtomicBoolean running = new AtomicBoolean(false);
 
     private final Map<String, BaseTask> childTaskMap = new ConcurrentHashMap<>();
 
@@ -38,38 +44,18 @@ public abstract class BaseTask {
 
     public synchronized void addChildTask(BaseTask childTask) {
         String childId = childTask.getId();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            childTaskMap.compute(childId, (key, value) -> {
-                if (value != null) {
-                    value.stopTask();
-                }
-                childTask.startTask();
-                return childTask;
-            });
-        } else {
-            BaseTask oldTask = childTaskMap.get(childId);
-            if (oldTask != null) {
-                oldTask.stopTask();
-            }
-            childTask.startTask();
-            childTaskMap.put(childId, childTask);
+        BaseTask oldTask = childTaskMap.put(childId, childTask);
+        if (oldTask != null) {
+            oldTask.stopTask();
         }
+        childTask.startTask();
     }
 
     public synchronized void removeChildTask(String childId) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            childTaskMap.compute(childId, (key, value) -> {
-                if (value != null) {
-                    ThreadUtil.shutdownAndWait(value.getThread(), -1, TimeUnit.SECONDS);
-                }
-                return null;
-            });
-        } else {
-            BaseTask oldTask = childTaskMap.get(childId);
-            if (oldTask != null) {
-                ThreadUtil.shutdownAndWait(oldTask.getThread(), -1, TimeUnit.SECONDS);
-            }
-            childTaskMap.remove(childId);
+        BaseTask oldTask = childTaskMap.remove(childId);
+        if (oldTask != null) {
+            // 与 stopTask 一致：只发信号，不在这里等（等待会卡住持锁者）
+            oldTask.stopTask();
         }
     }
 
@@ -82,36 +68,62 @@ public abstract class BaseTask {
     }
 
     public synchronized Boolean startTask(Boolean force) {
-        if (thread != null && thread.isAlive()) {
-            if (!force) {
-                return false;
-            }
+        if (force) {
             stopTask();
         }
-        thread = new Thread(this::run);
+        // 抢执行槽：旧代没退出就放弃本轮，交给下一次调度，而不是在锁里等它跑完
+        if (!running.compareAndSet(false, true)) {
+            Log.record(getId() + "⏭本实例上一代未退出，本轮跳过");
+            return false;
+        }
         try {
-            if (check()) {
-                thread.start();
-                for (BaseTask childTask : childTaskMap.values()) {
-                    if (childTask != null) {
-                        childTask.startTask();
-                    }
-                }
-                return true;
+            if (!check()) {
+                running.set(false);
+                return false;
             }
         } catch (Exception e) {
             Log.printStackTrace(e);
+            running.set(false);
+            return false;
         }
-        return false;
-    }
-
-    public synchronized void stopTask() {
-        if (thread != null && thread.isAlive()) {
-            ThreadUtil.shutdownAndWait(thread, 5, TimeUnit.SECONDS);
+        // 起跑前快照代际：stopTask 递增后，本代在下一个检查点作废
+        long myGen = generation;
+        thread = new Thread(() -> {
+            RunGeneration prev = RunGeneration.bind(myGen, () -> generation);
+            try {
+                run();
+            } catch (TaskCancelledException e) {
+                // 作废属正常收尾；逃出线程会被系统当成未捕获异常上报
+            } finally {
+                RunGeneration.restore(prev);
+                running.set(false);
+            }
+        });
+        try {
+            thread.start();
+        } catch (Throwable t) {
+            // 线程起不来（如 OOM: Thread too many）也要归还槽，否则该任务永久停摆
+            running.set(false);
+            throw t;
         }
         for (BaseTask childTask : childTaskMap.values()) {
             if (childTask != null) {
-                ThreadUtil.shutdownAndWait(childTask.getThread(), -1, TimeUnit.SECONDS);
+                childTask.startTask();
+            }
+        }
+        return true;
+    }
+
+    public synchronized void stopTask() {
+        // 递增代际即可让旧代在下一个检查点退出；不 join，避免把等待压给调用方（宿主 onDestroy 在主线程）
+        generation++;
+        Thread old = thread;
+        if (old != null) {
+            old.interrupt();
+        }
+        for (BaseTask childTask : childTaskMap.values()) {
+            if (childTask != null) {
+                childTask.stopTask();
             }
         }
         thread = null;

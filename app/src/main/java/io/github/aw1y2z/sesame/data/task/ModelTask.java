@@ -2,8 +2,6 @@ package io.github.aw1y2z.sesame.data.task;
 
 import static io.github.aw1y2z.sesame.model.normal.base.BaseModel.taskRpcRequest;
 
-import android.os.Build;
-
 import io.github.aw1y2z.sesame.util.FileUtil;
 import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -14,25 +12,34 @@ import io.github.aw1y2z.sesame.data.ModelGroup;
 import io.github.aw1y2z.sesame.data.ModelType;
 import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.NotificationUtil;
+import io.github.aw1y2z.sesame.util.RunGeneration;
 import io.github.aw1y2z.sesame.util.StringUtil;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
+import io.github.aw1y2z.sesame.util.TimeUtil;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public abstract class ModelTask extends Model {
 
     private static final Map<ModelTask, Thread> MAIN_TASK_MAP = new ConcurrentHashMap<>();
 
+    /** 本模型的代际编号：stopTask 递增，旧代在下一个检查点作废退出，无需 join 阻塞调用方 */
+    private volatile long generation = 0;
+
+    /** 执行槽（只限本实例；重载后是新对象，跨实例靠代际令牌在检查点退出）：抢不到即放弃，不用实例锁 */
+    private final AtomicBoolean running = new AtomicBoolean(false);
+
     private static final int MODEL_COUNT = Math.max(getModelArray().length, 1);
 
     /**
-     * 主任务线程池：模型主循环是长任务，每个模型占一条线程（core = 模型数）。
-     * <p>上限取 2 倍模型数：原先 maximumPoolSize 是 Integer.MAX_VALUE，pool 永远不会饱和，
-     * 也就永远是"来一个任务就新建一条线程"，CallerRunsPolicy 形同虚设；改为有限上限后，
-     * 极端情况下才会回退到调用线程执行（原来的兜底语义）。
+     * 主任务线程池：每个模型占一条线程（core = 模型数），上限 2 倍模型数，饱和后回退到调用线程执行。
+     * <p>SynchronousQueue 不排队，故不存在「撤销已提交但尚未开始的那一轮」这种操作。
      */
     private static final ThreadPoolExecutor MAIN_THREAD_POOL = new ThreadPoolExecutor(MODEL_COUNT, MODEL_COUNT * 2, 30L, TimeUnit.SECONDS, new SynchronousQueue<>(), new ThreadPoolExecutor.CallerRunsPolicy());
 
@@ -47,26 +54,47 @@ public abstract class ModelTask extends Model {
 
         @Override
         public void run() {
-            if (MAIN_TASK_MAP.get(task) != null) {
-                return;
-            }
+            // 执行槽已由 startTask 抢住；此处只取快照，stopTask 递增后本代作废
+            long myGen = task.generation;
             MAIN_TASK_MAP.put(task, Thread.currentThread());
+            // 绑定本代令牌：本线程的 sleep / RPC 入口据此感知作废
+            RunGeneration prevGen = RunGeneration.bind(myGen, () -> task.generation);
+            // 静音计数分层：记下上层残留，本轮只统计自己这段
+            int droppedPrev = Log.takeDroppedStaleLogCount();
+            // 与执行槽配对：只有真正拿到槽的线程才计入 runningCount
+            boolean isFirst = NotificationUtil.getRunningCount() == 0;
+            NotificationUtil.trackTaskStart();
+            if (isFirst) {
+                NotificationUtil.setStatusTextExec();
+            }
             Log.record("执行开始-" + task.getName());
             Log.startModuleLogCount();
             try {
                 task.run();
+            } catch (TaskCancelledException e) {
+                Log.record(task.getName() + "⏹代际已作废，本轮提前结束");
             } catch (Exception e) {
                 Log.printStackTrace(e);
             } finally {
+                // 作废期间被静音的错误日志条数一并报告，避免真故障无声丢失
+                int dropped = Log.takeDroppedStaleLogCount();
+                if (dropped > 0) {
+                    Log.record(task.getName() + "⏹代际已作废，其间静音错误日志 " + dropped + " 条");
+                }
+                Log.restoreDroppedStaleLogCount(droppedPrev);
+                // 还原而非清空：isSync 会在同一线程嵌套起跑，清掉会抹掉外层令牌
+                RunGeneration.restore(prevGen);
                 // 本轮模块未产生任何动作时，在运行日志中给出提示
                 if (Log.stopModuleLogCount() == 0) {
                     Log.record(task.getName() + "✅本轮无操作");
                 }
                 Log.record("执行结束-" + task.getName());
-                MAIN_TASK_MAP.remove(task);
-                io.github.aw1y2z.sesame.util.NotificationUtil.trackTaskEnd();
-                if (io.github.aw1y2z.sesame.util.NotificationUtil.getRunningCount() == 0) {
-                    io.github.aw1y2z.sesame.util.NotificationUtil.updateLastExecText();
+                // 身份化移除：只删本线程登记的那条，避免旧代收尾误删新一代条目
+                MAIN_TASK_MAP.remove(task, Thread.currentThread());
+                task.running.set(false);
+                NotificationUtil.trackTaskEnd();
+                if (NotificationUtil.getRunningCount() == 0) {
+                    NotificationUtil.updateLastExecText();
                 }
             }
         }
@@ -111,49 +139,23 @@ public abstract class ModelTask extends Model {
 
     public Boolean addChildTask(ChildModelTask childTask) {
         String childId = childTask.getId();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            return childTask == childTaskMap.compute(childId, (key, value) -> {
-                if (value != null) {
-                    value.cancel();
-                }
-                childTask.modelTask = this;
-                if (childTaskExecutor.addChildTask(childTask)) {
-                    return childTask;
-                }
-                return null;
-            });
-        } else {
-            synchronized (childTaskMap) {
-                ChildModelTask oldTask = childTaskMap.get(childId);
-                if (oldTask != null) {
-                    oldTask.cancel();
-                }
-                childTask.modelTask = this;
-                if (childTaskExecutor.addChildTask(childTask)) {
-                    childTaskMap.put(childId, childTask);
-                    return true;
-                }
-                return false;
-            }
+        childTask.modelTask = this;
+        // 提交放锁外：池满时 CallerRunsPolicy 会让提交线程就地跑完整段子任务，放进 compute 会卡住整桶
+        if (!childTaskExecutor.addChildTask(childTask)) {
+            return false;
         }
+        ChildModelTask oldTask = childTaskMap.put(childId, childTask);
+        if (oldTask != null) {
+            oldTask.cancel();
+        }
+        return true;
     }
 
     public void removeChildTask(String childId) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            childTaskMap.compute(childId, (key, value) -> {
-                if (value != null) {
-                    childTaskExecutor.removeChildTask(value);
-                }
-                return null;
-            });
-        } else {
-            synchronized (childTaskMap) {
-                ChildModelTask childTask = childTaskMap.get(childId);
-                if (childTask != null) {
-                    childTaskExecutor.removeChildTask(childTask);
-                }
-                childTaskMap.remove(childId);
-            }
+        ChildModelTask childTask = childTaskMap.remove(childId);
+        if (childTask != null) {
+            // 通知执行器放锁外，别在 CHM 桶锁内调用可能阻塞的代码
+            childTaskExecutor.removeChildTask(childTask);
         }
     }
 
@@ -165,34 +167,50 @@ public abstract class ModelTask extends Model {
         return startTask(false);
     }
 
-    public synchronized Boolean startTask(Boolean force) {
-        if (MAIN_TASK_MAP.containsKey(this)) {
-            if (!force) {
-                return false;
-            }
+    /**
+     * 启动一轮。不加 {@code synchronized}：互斥由 {@code running} 执行槽（CAS）保证，被挡住的只是执行
+     * 线程自己，不像实例锁那样把整轮时间压给 {@link #stopTask()} 的调用方（宿主 onDestroy 在主线程）。
+     * <p>抢槽在本方法内完成，故返回值如实反映「是否真的开始跑」：抢不到返回 false。
+     */
+    public Boolean startTask(Boolean force) {
+        if (force) {
             stopTask();
         }
         try {
-            if (isEnable() && check()) {
-                boolean isFirst = io.github.aw1y2z.sesame.util.NotificationUtil.getRunningCount() == 0;
-                io.github.aw1y2z.sesame.util.NotificationUtil.trackTaskStart();
-                if (isFirst) {
-                    io.github.aw1y2z.sesame.util.NotificationUtil.setStatusTextExec();
-                }
-                if (isSync()) {
-                    mainRunnable.run();
-                } else {
-                    MAIN_THREAD_POOL.execute(mainRunnable);
-                }
-                return true;
+            if (!isEnable() || !check()) {
+                return false;
             }
         } catch (Exception e) {
             Log.printStackTrace(e);
+            return false;
         }
-        return false;
+        if (!running.compareAndSet(false, true)) {
+            Log.record(getName() + "⏭本实例上一代未退出，本轮跳过");
+            return false;
+        }
+        try {
+            if (isSync()) {
+                mainRunnable.run();
+            } else {
+                try {
+                    MAIN_THREAD_POOL.execute(mainRunnable);
+                } catch (Throwable t) {
+                    // 没能提交就要归还槽，否则该模型再也起不来
+                    running.set(false);
+                    throw t;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+            return false;
+        }
     }
 
     public synchronized void stopTask() {
+        // 递增代际：旧代在下一个检查点自行退出，无需 join 阻塞调用方。
+        // 令牌只覆盖模型主线程；子任务线程未绑定，其取消仍依赖 cancel() 与 clearAllChildTask()
+        generation++;
         for (ChildModelTask childModelTask : childTaskMap.values()) {
             try {
                 childModelTask.cancel();
@@ -204,8 +222,11 @@ public abstract class ModelTask extends Model {
             childTaskExecutor.clearAllChildTask();
         }
         childTaskMap.clear();
-        MAIN_THREAD_POOL.remove(mainRunnable);
-        MAIN_TASK_MAP.remove(this);
+        // 身份化移除：只删自己登记的那条线程，避免误删新一代条目
+        Thread running = MAIN_TASK_MAP.get(this);
+        if (running != null) {
+            MAIN_TASK_MAP.remove(this, running);
+        }
     }
 
     public static void startAllTask() {
@@ -221,13 +242,19 @@ public abstract class ModelTask extends Model {
         //执行BaseModel中自定义执行请求
         taskRpcRequest();
         for (Model model : getModelArray()) {
+            // 已停止就不再启动后续模型，否则 MAIN_TASK 会把整轮跑完
+            if (RunGeneration.isStale()) {
+                Log.record("⏹已停止，本轮不再启动后续任务");
+                return;
+            }
             if (model != null) {
                 if (ModelType.TASK == model.getType()) {
                     if (((ModelTask) model).startTask(force)) {
+                        // 带代际检查的睡眠：停止时在下一个边界结束整轮（未绑定时同 Thread.sleep）
                         try {
-                            Thread.sleep(750);
-                        } catch (InterruptedException e) {
-                            Log.printStackTrace(e);
+                            TimeUtil.sleep(750);
+                        } catch (TaskCancelledException e) {
+                            return;
                         }
                     }
                 }

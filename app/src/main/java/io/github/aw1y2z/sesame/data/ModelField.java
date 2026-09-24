@@ -226,6 +226,13 @@ public class ModelField<T> implements Serializable {
         value = defaultValue;
     }
 
+    /**
+     * 加载后按本字段自身的刻度语义夹一遍越界值，默认不处理。
+     * <p>不能放进 {@link #setValue}：那是 Jackson 的入口，带单位换算的子类会被按错误刻度截断。
+     */
+    public void clampValue() {
+    }
+
     @JsonIgnore
     public View getView(Context context) {
         TextView btn = new TextView(context);

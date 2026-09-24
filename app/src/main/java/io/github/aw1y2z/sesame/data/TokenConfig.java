@@ -33,6 +33,9 @@ public class TokenConfig {
     private static final String TAG = TokenConfig.class.getSimpleName();
     
     public static final TokenConfig INSTANCE = new TokenConfig();
+
+    /** 上次 load 解析失败：内存此时只是默认值，必须禁止写盘，否则会把 Token 缓存整份固化 */
+    private static volatile boolean loadFailed = false;
     
     @JsonIgnore
     private boolean init;
@@ -185,12 +188,18 @@ public class TokenConfig {
     }
     
     public static synchronized Boolean save() {
+        if (loadFailed) {
+            // 上次加载失败，内存只是默认值：写盘会把 Token 缓存整份固化，拒绝
+            Log.i(TAG, "上次Token配置加载失败，本次不写盘");
+            return false;
+        }
         Log.record("保存Token配置");
         return FileUtil.setTokenConfigFile(toSaveStr());
     }
     
     public static synchronized TokenConfig load() {
         File tokenConfigFile = FileUtil.getTokenConfigFile();
+        loadFailed = false;
         try {
             if (tokenConfigFile.exists()) {
                 String json = FileUtil.readFromFile(tokenConfigFile);
@@ -207,13 +216,10 @@ public class TokenConfig {
             }
         } catch (Throwable t) {
             Log.printStackTrace(TAG, t);
-            Log.i(TAG, "重置Token配置");
-            try {
-                unload();
-                FileUtil.write2File(toSaveStr(), tokenConfigFile);
-            } catch (Exception e) {
-                Log.printStackTrace(TAG, t);
-            }
+            // 解析失败只回落默认值、绝不写盘：瞬时 IO 抖动或半份文件不该把 Token 缓存整份重置
+            Log.i(TAG, "解析Token配置失败，本次使用默认值（不写盘）");
+            loadFailed = true;
+            unload();
         }
         INSTANCE.setInit(true);
         return INSTANCE;
