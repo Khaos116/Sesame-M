@@ -93,10 +93,12 @@ public class OldRpcBridge implements RpcBridge {
         try {
             int count = 0;
             do {
+                if (RunGeneration.isStale()) throw new TaskCancelledException();
                 count++;
                 Object resp;
                 try {
                     RpcIntervalLimit.enterIntervalLimit(method);
+                    if (RunGeneration.isStale()) throw new TaskCancelledException();
                     if (guard.shouldSkip()) return rpcEntity;
                     if (rpcCallMethod.getParameterTypes().length == 12) {
                         resp = rpcCallMethod.invoke(
@@ -106,6 +108,8 @@ public class OldRpcBridge implements RpcBridge {
                                 null, method, args, "", true, null, null, false, curH5PageImpl, 0, "", false, -1, "");
                     }
                 } catch (Throwable t) {
+                    if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
+                    if (RunGeneration.isStale()) throw new TaskCancelledException();
                     guard.recordTransportFailure(t);
                     rpcEntity.setError();
                     Log.error("old rpc request | id: " + id + " | method: " + method + " err:");

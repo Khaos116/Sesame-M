@@ -10,6 +10,12 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent / "audit_regressions"))
 from run import method, ROOT, SOURCE
 
+# S2 is weekly; the round marker must survive status.json's daily reset.
+rollover = method("util/Status.java", "    public static synchronized Boolean updateDay(")
+assert "String donatedRound = INSTANCE.competitionDonatedRound;" in rollover
+assert "Status.unload();" in rollover
+assert "INSTANCE.competitionDonatedRound = donatedRound;" in rollover
+
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches/modules-2/files-2.1"
 jars = [str(next((cache / "com.fasterxml.jackson.core" / name / "2.18.2").glob(f"*/{name}-2.18.2.jar")))
         for name in ("jackson-databind", "jackson-core", "jackson-annotations")]

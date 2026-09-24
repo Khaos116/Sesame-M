@@ -137,10 +137,12 @@ public class NewRpcBridge implements RpcBridge {
         try {
             int count = 0;
             do {
+                if (RunGeneration.isStale()) throw new TaskCancelledException();
                 if (guard.shouldSkip()) return rpcEntity;
                 count++;
                 try {
                     RpcIntervalLimit.enterIntervalLimit(method);
+                    if (RunGeneration.isStale()) throw new TaskCancelledException();
                     if (guard.shouldSkip()) return rpcEntity;
                     newRpcCallMethod.invoke(
                             newRpcInstance, method, false, false, "json", parseObjectMethod.invoke(null, "{\"__apiCallStartTime\":" + System.currentTimeMillis() + ",\"apiCallLink\":\"XRiverNotFound\",\"execEngine\":\"XRiver\",\"operationType\":\"" + method + "\",\"requestData\":" + data + (relation == null ? "" : ",\"relationLocal\":" + relation) + "}"), "", null, true, false, 0, false, "", null, null, null, Proxy.newProxyInstance(loader, bridgeCallbackClazzArray, new InvocationHandler() {
@@ -209,6 +211,8 @@ public class NewRpcBridge implements RpcBridge {
                         }
                     }
                 } catch (Throwable t) {
+                    if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
+                    if (RunGeneration.isStale()) throw new TaskCancelledException();
                     if (t instanceof InterruptedException) {
                         Thread.currentThread().interrupt();
                         return null;
@@ -242,6 +246,7 @@ public class NewRpcBridge implements RpcBridge {
 
     public RpcEntity newAsyncRequest(RpcEntity rpcEntity, int tryCount, int retryInterval) {
         rpcEntity.resetResponse();
+        if (RunGeneration.isStale()) throw new TaskCancelledException();
         if (ApplicationHook.isOffline()) {
             return null;
         }
@@ -253,10 +258,12 @@ public class NewRpcBridge implements RpcBridge {
         try {
             int count = 0;
             do {
+                if (RunGeneration.isStale()) throw new TaskCancelledException();
                 if (guard.shouldSkip()) return rpcEntity;
                 count++;
                 try {
                     RpcIntervalLimit.enterIntervalLimit(method);
+                    if (RunGeneration.isStale()) throw new TaskCancelledException();
                     if (guard.shouldSkip()) return rpcEntity;
                     synchronized (rpcEntity) {
                         newRpcCallMethod.invoke(
@@ -346,6 +353,8 @@ public class NewRpcBridge implements RpcBridge {
                         }
                     }
                 } catch (Throwable t) {
+                    if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
+                    if (RunGeneration.isStale()) throw new TaskCancelledException();
                     if (t instanceof InterruptedException) {
                         Thread.currentThread().interrupt();
                         return null;

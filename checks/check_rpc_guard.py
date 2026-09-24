@@ -193,7 +193,12 @@ public class BaseModel {
 """)
     write("rpc/intervallimit/RpcIntervalLimit.java", """
 package io.github.aw1y2z.sesame.rpc.intervallimit;
-public class RpcIntervalLimit { public static void enterIntervalLimit(String method) { } }
+public class RpcIntervalLimit {
+    public static Runnable onEnter;
+    public static void enterIntervalLimit(String method) {
+        if (onEnter != null) onEnter.run();
+    }
+}
 """)
     write("util/XHelpers.java", """
 package io.github.aw1y2z.sesame.util;
@@ -245,10 +250,13 @@ public class GuardCheck {
     static String payload;
     static int calls;
     static boolean throwDenied;
+    static boolean expireOnCall;
+    static final java.util.concurrent.atomic.AtomicLong generation = new java.util.concurrent.atomic.AtomicLong();
     public static Object parse(String s) { return json(s); }
     public static void rpc(Object a,Object b,Object c,Object d,Object e,Object f,Object g,Object h,
                            Object i,Object j,Object k,Object l,Object m,Object n,Object o,Object p) {
         calls++;
+        if (expireOnCall) { generation.incrementAndGet(); throw new IllegalStateException("generation expired"); }
         if (throwDenied) throw new IllegalStateException("[1009]访问被拒绝");
         ((Callback)p).sendJSONResponse(new Reply());
     }
@@ -266,6 +274,31 @@ public class GuardCheck {
         field(bridge, "parseObjectMethod", GuardCheck.class.getMethod("parse", String.class));
         field(bridge, "newRpcCallMethod", GuardCheck.class.getMethod("rpc", types));
         for (boolean async : new boolean[]{false, true}) {
+            var previous = io.github.aw1y2z.sesame.util.RunGeneration.bind(0, generation::get);
+            generation.set(1);
+            calls = 0;
+            try {
+                if (async) bridge.newAsyncRequest(new RpcEntity("generation.entry", "[{}]"), 3, 0);
+                else bridge.requestObject(new RpcEntity("generation.entry", "[{}]"), 3, 0);
+                assert false : "stale task must cancel before RPC";
+            } catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 0; }
+            generation.set(0);
+            io.github.aw1y2z.sesame.rpc.intervallimit.RpcIntervalLimit.onEnter = generation::incrementAndGet;
+            try {
+                if (async) bridge.newAsyncRequest(new RpcEntity("generation.interval", "[{}]"), 3, 0);
+                else bridge.requestObject(new RpcEntity("generation.interval", "[{}]"), 3, 0);
+                assert false : "task cancelled during interval wait must not send RPC";
+            } catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 0; }
+            io.github.aw1y2z.sesame.rpc.intervallimit.RpcIntervalLimit.onEnter = null;
+            generation.set(0);
+            expireOnCall = true;
+            try {
+                if (async) bridge.newAsyncRequest(new RpcEntity("generation.retry", "[{}]"), 3, 0);
+                else bridge.requestObject(new RpcEntity("generation.retry", "[{}]"), 3, 0);
+                assert false : "task cancelled during retry must stop";
+            } catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 1; }
+            expireOnCall = false;
+            io.github.aw1y2z.sesame.util.RunGeneration.restore(previous);
             reset(); calls = 0;
             RpcEntity e = new RpcEntity("com.alipay.antfarm.feedAnimal", "[{}]");
             payload = "{\"error\":48}";
@@ -317,6 +350,17 @@ public class GuardCheck {
         OldRpcBridge old = new OldRpcBridge();
         field(old, "rpcCallMethod", GuardCheck.class.getMethod("oldRpc", java.util.Arrays.copyOf(types, 12)));
         field(old, "getResponseMethod", GuardCheck.class.getMethod("getResponse"));
+        var previous = io.github.aw1y2z.sesame.util.RunGeneration.bind(0, generation::get);
+        generation.set(1);
+        calls = 0;
+        try { old.requestObject(new RpcEntity("generation.old.entry", "[{}]"), 3, 0); assert false; }
+        catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 0; }
+        generation.set(0);
+        io.github.aw1y2z.sesame.rpc.intervallimit.RpcIntervalLimit.onEnter = generation::incrementAndGet;
+        try { old.requestObject(new RpcEntity("generation.old.interval", "[{}]"), 3, 0); assert false; }
+        catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 0; }
+        io.github.aw1y2z.sesame.rpc.intervallimit.RpcIntervalLimit.onEnter = null;
+        io.github.aw1y2z.sesame.util.RunGeneration.restore(previous);
         RpcEntity e = new RpcEntity("other.request", "[{}]");
         payload = "{\"error\":48}";
         old.requestObject(e, 3, 0);

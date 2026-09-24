@@ -815,7 +815,10 @@ public class Status {
     
     public static synchronized Boolean updateDay(Calendar nowCalendar) {
         if (TimeUtil.isLessThanSecondOfDays(INSTANCE.saveTime, nowCalendar.getTimeInMillis())) {
+            // S2 为周活动；跨天清理当日状态时保留本轮已捐标记。
+            String donatedRound = INSTANCE.competitionDonatedRound;
             Status.unload();
+            INSTANCE.competitionDonatedRound = donatedRound;
             // 跨天：解禁超期的"自动拉黑"任务，给它们一次重试机会
             MessageUtil.sweepExpiredBlackList();
             // 跨天：释放原先预置拉黑的技术性不可自动化项，交给自动拉黑机制判定
