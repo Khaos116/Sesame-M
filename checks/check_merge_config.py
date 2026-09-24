@@ -25,6 +25,8 @@ code = (Path(__file__).parent / "audit_regressions/MergeConfig.java.in").read_te
 for key, path, signature in (
     ("@@CONFIG@@", "data/ConfigV2.java", "    public void setModelFieldsMap("),
     ("@@BATTERY@@", "data/AppConfig.java", "    public static boolean shouldRequestBatteryPermission("),
+    ("@@AUTO@@", "data/AppConfig.java", "    public static synchronized boolean shouldAutoPuzzleSlider("),
+    ("@@LEGACY_BOOL@@", "data/AppConfig.java", "    private static boolean legacyModelBoolean("),
     ("@@RANK@@", "model/task/antFarm/AntFarm.java", "    private boolean isStealRankTime("),
     ("@@RELOAD@@", "hook/ApplicationHook.java", "    private void scheduleAccountReload("),
     ("@@LIFECYCLE@@", "data/task/TaskLifecycle.java", "public final class TaskLifecycle"),

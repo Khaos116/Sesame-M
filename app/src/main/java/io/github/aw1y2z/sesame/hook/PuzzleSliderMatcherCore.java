@@ -77,6 +77,33 @@ final class PuzzleSliderMatcherCore {
                 result.targetLeft, result.targetTop, result.templateWidth, result.templateHeight);
     }
 
+    static Result estimateSingleFrame(int width, int height, float sliderY, int screenTop,
+            PixelReader reader, long timeoutMs, int sourceLeft) {
+        long started = System.nanoTime();
+        if (timeoutMs <= 0) return Result.failure("matching timed out", 0L);
+        if (sourceLeft < 0) {
+            return estimate(width, height, sliderY, screenTop, reader, timeoutMs);
+        }
+        Result baseline = estimateOptimized(width, height, sliderY, screenTop,
+                reader, timeoutMs, sourceLeft);
+        if (baseline.success && baseline.method.contains("texture")) return baseline;
+        long remaining = timeoutMs - elapsedMs(started);
+        if (remaining <= 0 || Thread.currentThread().isInterrupted()) {
+            return baseline;
+        }
+        Result rawEdge = estimate(width, height, sliderY, screenTop,
+                reader, remaining, sourceLeft);
+        remaining = timeoutMs - elapsedMs(started);
+        if (remaining <= 0 || Thread.currentThread().isInterrupted()) return baseline;
+        Result contour = PuzzleSingleFrameMatcherCore.estimate(width, height, sliderY, screenTop,
+                reader, remaining, sourceLeft);
+        if (contour.success) {
+            if (!baseline.success || contour.displacement > baseline.displacement) return contour;
+            if (rawEdge.success && rawEdge.displacement > baseline.displacement) return rawEdge;
+        }
+        return baseline.success ? baseline : rawEdge;
+    }
+
     static Result estimate(
             int bitmapWidth,
             int bitmapHeight,
@@ -630,7 +657,7 @@ final class PuzzleSliderMatcherCore {
                     sourceLeft, sourceTop, targetLeft, targetTop, templateWidth, templateHeight);
         }
 
-        private static Result failure(String error, long elapsedMs) {
+        static Result failure(String error, long elapsedMs) {
             return new Result(
                     false, 0, 0, 0f, "", 0, elapsedMs, error,
                     -1, -1, -1, -1, 0, 0);

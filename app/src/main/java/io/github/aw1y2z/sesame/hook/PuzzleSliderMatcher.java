@@ -60,6 +60,23 @@ final class PuzzleSliderMatcher {
                 coreResult.templateHeight);
     }
 
+    static Result estimateSingleFrame(
+            Bitmap bitmap,
+            float sliderScreenY,
+            int bitmapScreenTop,
+            long timeoutMs,
+            int sourceLeft) {
+        if (bitmap == null || bitmap.isRecycled() || bitmap.getWidth() <= 0 || bitmap.getHeight() <= 0) {
+            return Result.failure("invalid bitmap", 0L);
+        }
+        PuzzleSliderMatcherCore.Result result = PuzzleSliderMatcherCore.estimateSingleFrame(
+                bitmap.getWidth(), bitmap.getHeight(), sliderScreenY, bitmapScreenTop,
+                (left, top, width, height, pixels) ->
+                        bitmap.getPixels(pixels, 0, width, left, top, width, height),
+                timeoutMs, sourceLeft);
+        return fromCore(result);
+    }
+
     static final class Result {
         final boolean success;
         final int displacement;

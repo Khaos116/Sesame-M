@@ -50,6 +50,9 @@ public class AppConfig {
     private Boolean showToast = true;
     private Integer toastOffsetY = 0;
     private Boolean enableOnGoing = false;
+    // null 只用于从旧版账号配置做一次迁移；迁移后写入 appConfig.json，后续不再随账号变化。
+    private Boolean autoPuzzleSlider;
+    private Boolean newPuzzleSlider = true;
     // d1ad4438 由 closeCaptchaDialogVPN 更名而来：旧配置文件仍是老字段名，用别名接住，避免老用户设置被静默重置
     @JsonAlias("closeCaptchaDialogVPN")
     private Boolean closeCaptchaDialog = true;
@@ -92,6 +95,22 @@ public class AppConfig {
 
     public void setCloseCaptchaDialog(Boolean value) {
         closeCaptchaDialog = value;
+    }
+
+    public Boolean getAutoPuzzleSlider() {
+        return autoPuzzleSlider;
+    }
+
+    public void setAutoPuzzleSlider(Boolean value) {
+        autoPuzzleSlider = value;
+    }
+
+    public Boolean getNewPuzzleSlider() {
+        return newPuzzleSlider;
+    }
+
+    public void setNewPuzzleSlider(Boolean value) {
+        newPuzzleSlider = value;
     }
 
     public Boolean getLanguageSimplifiedChinese() {
@@ -153,6 +172,13 @@ public class AppConfig {
     public Boolean getBatteryPerm() { return batteryPerm; }
     public void setBatteryPerm(Boolean value) { batteryPerm = value; }
 
+    public static synchronized boolean shouldAutoPuzzleSlider() {
+        if (INSTANCE.autoPuzzleSlider != null) return INSTANCE.autoPuzzleSlider;
+        INSTANCE.autoPuzzleSlider = legacyModelBoolean("autoPuzzleSlider", true);
+        save();
+        return INSTANCE.autoPuzzleSlider;
+    }
+
     public static boolean shouldRequestBatteryPermission() {
         if (INSTANCE.batteryPerm != null) return INSTANCE.batteryPerm;
         try {
@@ -166,6 +192,20 @@ public class AppConfig {
             Log.printStackTrace(e);
         }
         return true;
+    }
+
+    private static boolean legacyModelBoolean(String field, boolean defaultValue) {
+        try {
+            String userId = FileUtil.getRuntimeLogFile().getParentFile().getName();
+            File config = "default".equals(userId) ? FileUtil.getDefaultConfigV2File() : FileUtil.getConfigV2File(userId);
+            if (config.isFile()) {
+                return JsonUtil.copyMapper().readTree(FileUtil.readFromFile(config))
+                        .path("modelFieldsMap").path("BaseModel").path(field).path("value").asBoolean(defaultValue);
+            }
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+        }
+        return defaultValue;
     }
 
     public static Boolean save() {

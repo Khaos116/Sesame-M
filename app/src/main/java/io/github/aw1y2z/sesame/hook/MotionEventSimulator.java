@@ -82,6 +82,18 @@ public class MotionEventSimulator {
     public static void simulateSwipe(View view, float startX, float startY, float endX, float endY) {
         simulateSwipe(view, startX, startY, endX, endY, 800L);
     }
+
+    public static void simulateTap(View view, float x, float y) {
+        MAIN_HANDLER.post(() -> {
+            if (!view.isShown() || !view.isEnabled()) {
+                Log.e(TAG, "点击失败: 目标视图不可见或未启用.");
+                return;
+            }
+            long downTime = SystemClock.uptimeMillis();
+            dispatchTouchEvent(view, MotionEvent.ACTION_DOWN, x, y, downTime, downTime);
+            dispatchTouchEvent(view, MotionEvent.ACTION_UP, x, y, downTime, SystemClock.uptimeMillis());
+        });
+    }
     
     /**
      * 辅助函数，用于创建和派发 MotionEvent.

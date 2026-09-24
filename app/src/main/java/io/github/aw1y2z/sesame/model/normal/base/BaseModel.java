@@ -53,8 +53,6 @@ public class BaseModel extends Model {
     @Getter
     private static final SelectModelField rpcRequestTaskList= new SelectModelField("rpcRequestTaskList", "RPC可选任务列表(长按列表中的项仅移除用，内容需打开rpcResquest.json文件配置)", new LinkedHashSet<>(), AlipayrpcRequest::getList,"长按删除RPC列表项用");
     @Getter
-    private static final BooleanModelField autoPuzzleSlider = new BooleanModelField("autoPuzzleSlider", "自动处理图片拼图滑块验证（拖错后按下面的次数重试）", true);
-    @Getter
     private static final IntegerModelField puzzleMaxAttempts = new IntegerModelField("puzzleMaxAttempts", "拼图验证每个窗口最多自动尝试次数(1-5，计算错了会重试)", 4, 1, 5);
     
     @Override
@@ -95,7 +93,6 @@ public class BaseModel extends Model {
         modelFields.addField(backupConfigDays);
         modelFields.addField(rpcRequestList);
         modelFields.addField(rpcRequestTaskList);
-        modelFields.addField(autoPuzzleSlider);
         modelFields.addField(puzzleMaxAttempts);
         return modelFields;
     }

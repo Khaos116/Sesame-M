@@ -142,7 +142,12 @@ public abstract class BaseCaptchaHandler {
             io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard.clearVerifyPause(); // 自动滑过了，不必再等暂停到期
             return true;
         } else {
-            //Log.record("滑动验证🆘验证码文本仍然存在，滑动可能失败。");
+            // 宿主失败状态要先点一下滑槽复位，否则下一次即使拖动正确也仍会被判失败。
+            MotionEventSimulator.simulateTap(
+                    sliderView,
+                    (coordinates.getStartX() + coordinates.getEndX()) / 2f,
+                    coordinates.getStartY()
+            );
             return false;
         }
     }

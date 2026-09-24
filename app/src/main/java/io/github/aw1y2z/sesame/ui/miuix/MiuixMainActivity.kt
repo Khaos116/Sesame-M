@@ -829,6 +829,20 @@ fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
             closeCaptchaDialog = it
             activity.broadcastReloadConfig()
         }
+        var autoPuzzleSlider by remember { mutableStateOf(AppConfig.INSTANCE.autoPuzzleSlider ?: true) }
+        BooleanSwitch("自动处理拼图滑块验证", autoPuzzleSlider, summary = "关闭后不自动拖动图片拼图滑块") {
+            AppConfig.INSTANCE.autoPuzzleSlider = it
+            AppConfig.save()
+            autoPuzzleSlider = it
+            activity.broadcastReloadConfig()
+        }
+        var newPuzzleSlider by remember { mutableStateOf(AppConfig.INSTANCE.newPuzzleSlider ?: true) }
+        BooleanSwitch("使用新版拼图识别", newPuzzleSlider, summary = "关闭后使用原有 M 版识别和滑动逻辑") {
+            AppConfig.INSTANCE.newPuzzleSlider = it
+            AppConfig.save()
+            newPuzzleSlider = it
+            activity.broadcastReloadConfig()
+        }
     }
     Spacer(Modifier.height(16.dp))
 }

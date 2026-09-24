@@ -26,6 +26,7 @@ import java.util.WeakHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import io.github.aw1y2z.sesame.data.AppConfig;
 import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
 import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 import io.github.aw1y2z.sesame.util.FileUtil;
@@ -97,6 +98,12 @@ public final class PuzzleCaptchaSolver {
     private PuzzleCaptchaSolver() {
     }
 
+    private static void captcha(String message) {
+        String version = !Boolean.FALSE.equals(AppConfig.INSTANCE.getNewPuzzleSlider())
+                ? "[新版]" : "[旧版]";
+        Log.captcha("拼图验证🧩" + version + message);
+    }
+
     /**
      * 验证被要求时调用（任意线程）：接口返回“请验证”、或验证码弹窗出现。重复调用只会把 60 秒窗口期重新计时。
      */
@@ -111,7 +118,7 @@ public final class PuzzleCaptchaSolver {
             if (!isEnabled()) {
                 if (!disabledLogged) {
                     disabledLogged = true;
-                    Log.captcha("拼图验证⏸️自动图片滑块开关已关闭，不处理（来源[" + source + "]）");
+                    captcha("⏸️自动图片滑块开关已关闭，不处理（来源[" + source + "]）");
                 }
                 return;
             }
@@ -126,7 +133,7 @@ public final class PuzzleCaptchaSolver {
                 return;
             }
             cleanupNoSlider(); // 上次残留的没拖动过的截图
-            Log.captcha("拼图验证🧩开始监视验证窗口，最长 " + MAX_POLLS + " 秒（来源[" + source + "]）");
+            captcha("开始监视验证窗口，最长 " + MAX_POLLS + " 秒（来源[" + source + "]）");
             startPolling();
         });
     }
@@ -162,7 +169,7 @@ public final class PuzzleCaptchaSolver {
 
     private static boolean isEnabled() {
         try {
-            return Boolean.TRUE.equals(BaseModel.getAutoPuzzleSlider().getValue());
+            return AppConfig.shouldAutoPuzzleSlider();
         } catch (Throwable t) {
             // 配置还没加载好就按开启处理会误动手，宁可不动
             return false;
@@ -186,7 +193,7 @@ public final class PuzzleCaptchaSolver {
             if (polls >= maxPolls) {
                 polling = false;
                 if (!busy && !quiet) {
-                    Log.captcha("拼图验证🧩监视窗口期结束，没有可处理的拼图窗口");
+                    captcha("监视窗口期结束，没有可处理的拼图窗口");
                 }
                 if (!quiet) {
                     // 最后一次扫描刚发起截图时分析还在进行，稍后才会存图：等它做完再清理，否则会漏掉最后一张
@@ -393,7 +400,7 @@ public final class PuzzleCaptchaSolver {
         Slider slider = detectSlider(bitmap, scale);
         if (slider != null && quiet && slider.hasTrackEnd()) {
             quiet = false; // 按钮和轨道都识别到才像验证码；只有按钮多半是普通页面上的蓝/红按钮
-            Log.captcha("拼图验证🧩被动扫描发现拼图滑块（未经接口/弹窗触发）：" + slider.describe());
+            captcha("被动扫描发现拼图滑块（未经接口/弹窗触发）：" + slider.describe());
         }
         if (slider == null) {
             diag(root, "未识别到拼图滑块按钮（图片可能还在加载，或布局与参考设备不同）");
@@ -423,8 +430,21 @@ public final class PuzzleCaptchaSolver {
         float startY = location[1] + slider.centerY;
         float trackEndX = location[0] + slider.trackEndX;
         int sourceLeft = Math.round(slider.centerX - slider.buttonWidth / 2f);
-        PuzzleSliderMatcher.Result match = PuzzleSliderMatcher.estimate(
-                bitmap, startY, location[1], MATCH_BUDGET_MS, sourceLeft);
+        boolean useNewMatcher = !Boolean.FALSE.equals(AppConfig.INSTANCE.getNewPuzzleSlider());
+        PuzzleSliderMatcher.Result recognized = useNewMatcher
+                ? PuzzleSliderMatcher.estimateSingleFrame(
+                        bitmap, startY, location[1], MATCH_BUDGET_MS, sourceLeft)
+                : PuzzleSliderMatcher.estimate(
+                        bitmap, startY, location[1], MATCH_BUDGET_MS, sourceLeft);
+        if (useNewMatcher && !recognized.success) {
+            captcha("新版识别失败，尝试旧版兜底：" + recognized.error);
+            recognized = PuzzleSliderMatcher.estimate(
+                    bitmap, startY, location[1], MATCH_BUDGET_MS, sourceLeft);
+            if (recognized.success) {
+                captcha("旧版兜底识别成功：缺口位移=" + recognized.displacement + "px 方法=" + recognized.method);
+            }
+        }
+        final PuzzleSliderMatcher.Result match = recognized;
         if (!match.success) {
             diag(root, "缺口位移识别失败（不拖动）：" + match.error);
             saveSample(bitmap, "match-failed", false);
@@ -434,12 +454,14 @@ public final class PuzzleCaptchaSolver {
         }
         String sampleName = saveSample(bitmap, "matched-d" + match.displacement, false);
         bitmap.recycle();
-        MAIN.post(() -> swipe(target, web, slider, match, startX, startY, trackEndX, sampleName, release));
+        MAIN.post(() -> swipe(target, web, slider, match, startX, startY, trackEndX,
+                sampleName, release));
     }
 
     /** 主线程：窗口仍然有效才拖动，并只拖一次。 */
     private static void swipe(Target target, View web, Slider slider, PuzzleSliderMatcher.Result match,
-                              float startX, float startY, float trackEndX, String sampleName, Runnable release) {
+                              float startX, float startY, float trackEndX,
+                              String sampleName, Runnable release) {
         View root = target.root;
         if (!web.isShown() || !web.isAttachedToWindow() || attemptsOf(web) >= maxAttempts()) {
             release.run();
@@ -453,16 +475,19 @@ public final class PuzzleCaptchaSolver {
         }
         final int attempt = attemptsOf(web) + 1;
         ATTEMPTS.put(web, attempt);
+        final long swipeGeneration = generation;
         long duration = SLIDE_MIN_MS + RandomUtil.nextInt(0, (int) (SLIDE_MAX_MS - SLIDE_MIN_MS + 1));
-        Log.captcha(String.format(java.util.Locale.ROOT,
-                "拼图验证🧩第%d/" + maxAttempts() + "次识别成功，开始拖动：缺口位移=%dpx 触摸距离=%.0fpx 终点=%.0f 轨道截断=%s 方法=%s 分数=%.3f 耗时=%dms 滑块=%s 截图=%s",
-                attempt, match.displacement, mapping.touchDistance, mapping.endX, mapping.clamped, match.method,
+        captcha(String.format(java.util.Locale.ROOT,
+                "第%d/" + maxAttempts() + "次识别成功，开始拖动：缺口位移=%dpx 触摸距离=%.0fpx 终点=%.0f 轨道截断=%s 方法=%s 分数=%.3f 耗时=%dms 滑块=%s 截图=%s",
+                attempt, match.displacement, mapping.touchDistance,
+                mapping.endX, mapping.clamped, match.method,
                 match.bestScore, match.elapsedMs, slider.describe(), sampleName));
         PuzzleSwipe.start(web, startX, startY, mapping.endX, startY, duration, 12f,
-                () -> web.isShown() && web.isAttachedToWindow(),
+                () -> web.isShown() && web.isAttachedToWindow()
+                        && TaskLifecycle.generation() == swipeGeneration,
                 proceed -> saveBeforeReleaseShot(target, web, match.displacement, attempt, proceed),
                 (sent, reason) -> {
-                    Log.captcha("拼图验证🧩拖动" + (sent ? "已完成" : "未完成") + "（" + reason + "）");
+                    captcha("拖动" + (sent ? "已完成" : "未完成") + "（" + reason + "）");
                     polling = false; // 拖完先停止扫描，1.5 秒后按页面结果决定是结束还是重试
                     MAIN.postDelayed(() -> {
                         boolean closed = !web.isAttachedToWindow() || !web.isShown();
@@ -471,14 +496,18 @@ public final class PuzzleCaptchaSolver {
                             // 若其实没通过，接口下次还会返回“请验证”，会重新暂停并重新监视
                             io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard.clearVerifyPause();
                             ATTEMPTS.remove(web); // 验证成功：尝试次数归零
-                            Log.captcha("拼图验证🧩拖动 1.5 秒后：验证窗口已关闭，多半通过（尝试次数已归零）");
+                            captcha("拖动 1.5 秒后：验证窗口已关闭，多半通过（尝试次数已归零）");
                             cleanupNoSlider(); // 验证结束：只留包含验证码的截图
                         } else if (attempt < maxAttempts()) {
-                            Log.captcha("拼图验证🧩拖动 1.5 秒后：验证窗口仍在，第 " + attempt + " 次没通过，等页面刷新出新图后重试");
+                            captcha("拖动 1.5 秒后：验证窗口仍在，第 " + attempt + " 次没通过，点击滑槽复位后重试");
                             saveAfterShot(target, web, match.displacement, attempt);
-                            retry(root);
+                            int[] origin = new int[2];
+                            web.getLocationOnScreen(origin);
+                            MotionEventSimulator.simulateTap(web,
+                                    (startX + trackEndX) / 2f - origin[0], startY - origin[1]);
+                            MAIN.postDelayed(() -> retry(root), 300L);
                         } else {
-                            Log.captcha("拼图验证🧩拖动 1.5 秒后：验证窗口仍在，已自动尝试 " + attempt + " 次不再重试，可手动完成");
+                            captcha("拖动 1.5 秒后：验证窗口仍在，已自动尝试 " + attempt + " 次不再重试，可手动完成");
                             saveAfterShot(target, web, match.displacement, attempt);
                             cleanupNoSlider();
                         }
@@ -508,7 +537,7 @@ public final class PuzzleCaptchaSolver {
         try {
             capture(target, web, (bitmap, error) -> {
                 if (bitmap == null) {
-                    Log.captcha("拼图验证🧩matched-after 截图失败：" + error);
+                    captcha("matched-after 截图失败：" + error);
                     return;
                 }
                 try {
@@ -537,7 +566,7 @@ public final class PuzzleCaptchaSolver {
             capture(target, web, (bitmap, error) -> {
                 proceed.run(); // 图已经拷出来了，不必等落盘
                 if (bitmap == null) {
-                    Log.captcha("拼图验证🧩matched_submit 截图失败（不影响本次已完成的拖动）：" + error);
+                    captcha("matched_submit 截图失败（不影响本次已完成的拖动）：" + error);
                     return;
                 }
                 try {
@@ -592,7 +621,7 @@ public final class PuzzleCaptchaSolver {
             return;
         }
         LAST_DIAG.put(root, message);
-        Log.captcha("拼图验证🧩" + message);
+        captcha(message);
     }
 
     /**
@@ -627,7 +656,7 @@ public final class PuzzleCaptchaSolver {
                 try {
                     int deleted = PuzzleSampleFiles.deleteNonMatched(FileUtil.getCurrentUserPuzzleDirectory());
                     if (deleted > 0) {
-                        Log.captcha("拼图验证🧩已清理 " + deleted + " 张没有拖动过的截图，只保留 matched");
+                        captcha("已清理 " + deleted + " 张没有拖动过的截图，只保留 matched");
                     }
                 } catch (Throwable t) {
                     Log.printStackTrace(TAG, t);

@@ -91,6 +91,23 @@ def main():
         assert "replaceAll" not in response and "return answer.trim();" in response
         boot = method("model/normal/base/BaseModel.java", "    public void boot(")
         assert boot.index("CaptchaHook.setupHook(classLoader)") < boot.index("CaptchaHook.updateHooks(")
+        app_config = (SOURCE / "data/AppConfig.java").read_text(encoding="utf-8")
+        assert "private Boolean autoPuzzleSlider" in app_config
+        assert "private Boolean newPuzzleSlider = true;" in app_config
+        base_model = (SOURCE / "model/normal/base/BaseModel.java").read_text(encoding="utf-8")
+        assert 'new BooleanModelField("autoPuzzleSlider"' not in base_model
+        puzzle_solver = (SOURCE / "hook/PuzzleCaptchaSolver.java").read_text(encoding="utf-8")
+        assert "AppConfig.shouldAutoPuzzleSlider()" in puzzle_solver
+        assert "AppConfig.INSTANCE.getNewPuzzleSlider()" in puzzle_solver
+        main_ui = (SOURCE / "ui/miuix/MiuixMainActivity.kt").read_text(encoding="utf-8")
+        assert 'BooleanSwitch("自动处理拼图滑块验证"' in main_ui
+        assert 'BooleanSwitch("使用新版拼图识别"' in main_ui
+        slide = method("hook/BaseCaptchaHandler.java", "    private boolean performSlideAndVerify(")
+        failed_slide = slide[slide.index("} else {"):]
+        assert failed_slide.index("MotionEventSimulator.simulateTap(") < failed_slide.index("return false;")
+        assert "(coordinates.getStartX() + coordinates.getEndX()) / 2f" in failed_slide
+        tap = method("hook/MotionEventSimulator.java", "    public static void simulateTap(")
+        assert tap.index("MotionEvent.ACTION_DOWN") < tap.index("MotionEvent.ACTION_UP")
         fish = (SOURCE / "model/task/fish/FishTask.java").read_text(encoding="utf-8")
         assert 'format.setTimeZone(TimeZone.getTimeZone("GMT+8"))' in fish
         coins = method("model/task/antSports/AntSports.java", "    private void receiveCoinAsset()")

@@ -12,6 +12,8 @@ public class MergeConfigCheck {
     final Map<String, ModelFields> modelFieldsMap = new HashMap<>();
     static final MergeConfigCheck INSTANCE = new MergeConfigCheck();
     Boolean batteryPerm;
+    Boolean autoPuzzleSlider;
+    static Boolean save() { return true; }
     record ModelConfig(String code, ModelFields fields) {
         String getCode() { return code; }
         ModelFields getFields() { return fields; }
@@ -53,6 +55,8 @@ public class MergeConfigCheck {
     @@LIFECYCLE@@
     @@CONFIG@@
     @@BATTERY@@
+    @@AUTO@@
+    @@LEGACY_BOOL@@
     @@RANK@@
     @@RELOAD@@
 
@@ -107,8 +111,11 @@ public class MergeConfigCheck {
         FileUtil.root = Files.createTempDirectory("sesame-battery-check");
         try {
             Files.writeString(FileUtil.getConfigV2File("active").toPath(),
-                    "{\"modelFieldsMap\":{\"BaseModel\":{\"batteryPerm\":{\"value\":false}}}}");
+                    "{\"modelFieldsMap\":{\"BaseModel\":{\"batteryPerm\":{\"value\":false},\"autoPuzzleSlider\":{\"value\":false}}}}");
             assert !shouldRequestBatteryPermission();
+            assert !shouldAutoPuzzleSlider() && Boolean.FALSE.equals(INSTANCE.autoPuzzleSlider);
+            FileUtil.uid = "new-account";
+            assert !shouldAutoPuzzleSlider() : "migrated global switch must not follow account changes";
             INSTANCE.batteryPerm = true; assert shouldRequestBatteryPermission();
             INSTANCE.batteryPerm = false; assert !shouldRequestBatteryPermission();
             INSTANCE.batteryPerm = null; FileUtil.uid = "new-account";
@@ -116,6 +123,8 @@ public class MergeConfigCheck {
             FileUtil.uid = "default";
             Files.writeString(FileUtil.getDefaultConfigV2File().toPath(), "{}");
             assert shouldRequestBatteryPermission();
+            INSTANCE.autoPuzzleSlider = null;
+            assert shouldAutoPuzzleSlider() : "missing legacy value defaults to enabled";
         } finally {
             try (var paths = Files.list(FileUtil.root)) {
                 for (Path path : paths.toList()) Files.delete(path);
