@@ -481,6 +481,14 @@ public class AntFarm extends ModelTask {
                 }
             });
 
+            // 道具奖励补领：本轮动作（做任务/喂鸡等）可能让新的道具任务变为可领，结尾再查一遍领掉，不必等下次运行
+            step("道具奖励补领", () -> {
+                if (receiveFarmToolReward.getValue()) {
+                    listFarmTool();
+                    receiveToolTaskReward();
+                }
+            });
+
             // 小鸡睡觉&起床
             step("小鸡睡觉&起床", () -> {
                 animalSleepAndWake();
@@ -943,18 +951,32 @@ public class AntFarm extends ModelTask {
                 }
                 JSONObject bizInfo = MyUtils.newJSONObject(joItem.optString("bizInfo", null));
                 String awardType = bizInfo.optString("awardType");
-                ToolType toolType = ToolType.valueOf(awardType);
+                if (awardType.isEmpty()) {
+                    // 数据缺失（不是合法的新类型）：rewardType 空的领取请求服务端必失败，直接跳过不发请求
+                    Log.record("领取道具⏭️跳过奖励类型缺失[" + bizInfo.optString("taskTitle", "") + "]");
+                    continue;
+                }
+                // 未知奖励类型只跳过“满了”判断，照样直接领：valueOf 抛异常会 abort 整个循环，
+                // 后面所有待领道具都领不了（对照 listFarmTask 对未知 taskStatus 的逐项跳过）
+                ToolType toolType = null;
+                try {
+                    toolType = ToolType.valueOf(awardType);
+                } catch (IllegalArgumentException e) {
+                    Log.record("领取道具🎖️未知类型[" + awardType + "]#直接领取");
+                }
                 boolean isFull = false;
-                for (FarmTool farmTool : farmTools) {
-                    if (farmTool.toolType == toolType) {
-                        if (farmTool.toolCount == farmTool.toolHoldLimit) {
-                            isFull = true;
+                if (toolType != null && farmTools != null) {
+                    for (FarmTool farmTool : farmTools) {
+                        if (farmTool.toolType == toolType) {
+                            if (farmTool.toolCount == farmTool.toolHoldLimit) {
+                                isFull = true;
+                            }
+                            break;
                         }
-                        break;
                     }
                 }
                 if (isFull) {
-                    if (toolType.equals(ToolType.NEWEGGTOOL)) {
+                    if (ToolType.NEWEGGTOOL.equals(toolType)) {
                         useFarmTool(ownerFarmId, ToolType.NEWEGGTOOL);
                     } else {
                         Log.record("领取道具[" + toolType.nickName() + "]#已满，暂不领取");
@@ -967,9 +989,17 @@ public class AntFarm extends ModelTask {
                 int awardCount = bizInfo.optInt("awardCount", 0);
                 String taskType = joItem.optString("taskType", "");
                 String taskTitle = bizInfo.optString("taskTitle", "");
+                if (awardCount <= 0 || taskType.isEmpty()) {
+                    // 数量/任务类型缺失：这种领取请求发出去也必失败，直接跳过
+                    Log.record("领取道具⏭️跳过[" + taskTitle + "]#数量或任务类型缺失[" + awardCount + "/" + taskType + "]");
+                    continue;
+                }
                 jo = MyUtils.newJSONObject(AntFarmRpcCall.receiveToolTaskReward(awardType, awardCount, taskType));
                 if (MessageUtil.checkMemo(TAG, jo)) {
-                    Log.farm("领取道具🎖️[" + taskTitle + "-" + toolType.nickName() + "]#" + awardCount + "张");
+                    CharSequence toolName = toolType != null ? toolType.nickName() : awardType;
+                    Log.farm("领取道具🎖️[" + taskTitle + "-" + toolName + "]#" + awardCount + "张");
+                } else {
+                    Log.record("领取道具⚠️失败[" + taskTitle + "]#类型[" + awardType + "]数量[" + awardCount + "]#memo[" + jo.optString("memo") + "]");
                 }
             }
         } catch (Throwable t) {
@@ -1920,6 +1950,10 @@ public class AntFarm extends ModelTask {
                     Log.record("服务端繁忙🌧️本轮跳过剩余饲料任务领取");
                     return false;
                 }
+                // 留痕：非饲料奖励（美食/道具等）领失败时，把任务定位信息打出来，
+                // 否则只能看到 checkMemo 的通用报错，不知道是哪类奖励调不通
+                Log.record("饲料任务⚠️领取失败[" + task.optString("title", "") + "]#类型[" + awardType
+                        + "]数量[" + awardCount + "]#memo[" + jo.optString("memo") + "]#resultCode[" + jo.optString("resultCode") + "]");
                 //检查并标记黑名单任务
                 MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDoFarmTaskList", task.optString("title", ""), jo);
                 return false;
