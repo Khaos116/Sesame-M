@@ -15,8 +15,12 @@ out/
 
 # Gradle files
 .gradle/
+.kotlin/
 build/
 release/
+
+# Windows cache created under an unexpanded environment-variable path
+/%SystemDrive%/
 
 # AGP output-metadata (flavor build info)
 **/output-metadata.json
