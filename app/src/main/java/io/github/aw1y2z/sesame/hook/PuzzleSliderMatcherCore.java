@@ -38,10 +38,14 @@ final class PuzzleSliderMatcherCore {
         long started = System.nanoTime();
         if (timeoutMs <= 0) return Result.failure("matching timed out", 0);
         if (sourceLeft >= 0) sourceLeft += Math.round(SOURCE_INSET_REFERENCE * width / (float) REFERENCE_WIDTH);
+        long textureBudget = Math.min(1200L, timeoutMs / 2);
         Result texture = PuzzleTextureMatcherCore.estimate(width, height, sliderY, screenTop,
-                reader, Math.min(1200L, timeoutMs / 2), sourceLeft);
+                reader, textureBudget, sourceLeft);
         long used = elapsedMs(started);
-        if (used >= timeoutMs || Thread.currentThread().isInterrupted()) {
+        // A timed-out texture scan is incomplete, not evidence that edge matching is safe.
+        // The shield sample otherwise changes from 623px to a wrong 653px on slower devices.
+        if (used >= timeoutMs || (texture == null && used >= textureBudget)
+                || Thread.currentThread().isInterrupted()) {
             return Result.failure("matching timed out", used);
         }
         Result result = texture != null ? texture : estimate(width, height, sliderY, screenTop,
@@ -86,6 +90,7 @@ final class PuzzleSliderMatcherCore {
         }
         Result baseline = estimateOptimized(width, height, sliderY, screenTop,
                 reader, timeoutMs, sourceLeft);
+        if (!baseline.success && baseline.error.equals("matching timed out")) return baseline;
         if (baseline.success && baseline.method.contains("texture")) return baseline;
         long remaining = timeoutMs - elapsedMs(started);
         if (remaining <= 0 || Thread.currentThread().isInterrupted()) {

@@ -23,6 +23,7 @@ import java.util.zip.GZIPInputStream;
 
 public class PuzzleMatcherCheck {
     static Path dir;
+    static Path roiDir;
     static final int W = 1264;
 
     static final class Roi implements PuzzleSliderMatcherCore.PixelReader {
@@ -39,7 +40,7 @@ public class PuzzleMatcherCheck {
     }
 
     static Roi load(String name, int l, int t, int w, int h) throws IOException {
-        try (InputStream in = new GZIPInputStream(Files.newInputStream(dir.resolve(name)));
+        try (InputStream in = new GZIPInputStream(Files.newInputStream(roiDir.resolve(name)));
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             byte[] buf = new byte[8192]; int n;
             while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
@@ -67,6 +68,7 @@ public class PuzzleMatcherCheck {
         corrected.put("1790192429152", 686);
         corrected.put("1790192435203", 748);
         corrected.put("1790224098925", 768);
+        corrected.put("1790530912240", 623); // Shield: actual 653px submission overshot by 30px.
         int cases = 0;
         int failures = 0;
         java.util.List<Path> files;
@@ -75,15 +77,18 @@ public class PuzzleMatcherCheck {
                     .filter(p -> p.getFileName().toString().endsWith(".png"))
                     .sorted().collect(java.util.stream.Collectors.toList());
         }
-        assert files.size() == 56 : "expected 56 external PNG records, got " + files.size();
+        assert !files.isEmpty() : "no PNG records in " + root;
         for (Path path : files) {
             java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(path.toFile());
             assert image != null && image.getWidth() > 0 && image.getHeight() > 0
                     : "unreadable PNG " + path;
-            if (path.getFileName().toString().matches("puzzle-\\d+-matched-d\\d+\\.png")) {
-                String name = path.getFileName().toString();
-                String timestamp = name.substring("puzzle-".length(), name.indexOf("-matched-d"));
-                int recorded = Integer.parseInt(name.substring(name.lastIndexOf("-d") + 2, name.length() - 4));
+            String name = path.getFileName().toString();
+            java.util.regex.Matcher labeled = java.util.regex.Pattern.compile(".+_约(\\d+)px(?:_\\d+)?\\.png").matcher(name);
+            boolean curated = labeled.matches();
+            if (curated || name.matches("puzzle-\\d+-matched-d\\d+\\.png")) {
+                String timestamp = curated ? name : name.substring("puzzle-".length(), name.indexOf("-matched-d"));
+                int recorded = curated ? Integer.parseInt(labeled.group(1))
+                        : Integer.parseInt(name.substring(name.lastIndexOf("-d") + 2, name.length() - 4));
                 int expected = corrected.getOrDefault(timestamp, recorded);
                 int width = image.getWidth(), height = image.getHeight();
                 int[] pixels = image.getRGB(0, 0, width, height, null, 0, width);
@@ -91,8 +96,24 @@ public class PuzzleMatcherCheck {
                     for (int y = 0; y < h; y++)
                         System.arraycopy(pixels, (top + y) * width + left, dst, y * w, w);
                 };
+                float sliderY = java.util.Set.of("1790535850643", "1790559937420",
+                        "1790559986901", "1790561174319").contains(timestamp) ? 1832f : 1846f;
+                if (curated) {
+                    assert width == 1280 && height == 2720 : "unsupported curated screenshot size: " + name;
+                    // Locate the initial blue button, not blue scenery inside the puzzle photo.
+                    int first = -1, last = -1;
+                    for (int y = 1760; y < 1950; y++) {
+                        int rgb = image.getRGB(239, y);
+                        int r = (rgb >>> 16) & 255, g = (rgb >>> 8) & 255, b = rgb & 255;
+                        if (b > 180 && b > r + 80 && g > r + 40) {
+                            if (first < 0) first = y;
+                            last = y;
+                        }
+                    }
+                    if (first >= 0) sliderY = (first + last) / 2f;
+                }
                 PuzzleSliderMatcherCore.Result result = PuzzleSliderMatcherCore.estimateSingleFrame(
-                        width, height, 1846f, 0, reader, 3500L, 171);
+                        width, height, sliderY, 0, reader, 3500L, 171);
                 boolean pass = result.success && Math.abs(result.displacement - expected) <= 8;
                 System.out.println((pass ? "PASS " : "FAIL ") + "single-frame/"
                         + path.getParent().getFileName() + "/" + timestamp
@@ -104,12 +125,19 @@ public class PuzzleMatcherCheck {
                     failures++;
                 }
                 cases++;
+            } else if (path.getFileName().toString().equals("real-flame-d751.png")) {
+                replayPhoto(path, "external-flame", 1846f, 171, 672, 6);
+                cases++;
+            } else if (path.getFileName().toString().equals("real-sprout-d610.png")) {
+                replayPhoto(path, "external-sprout", 1846f, 171, 610, 6);
+                cases++;
             }
         }
-        assert cases == 15 : "expected 15 single-frame samples, got " + cases;
+        assert cases > 0 : "no initial puzzle frames in " + root;
         assert failures == 0 : failures + " single-frame samples failed";
         System.out.println("PASS single-frame replay: " + cases
-                + " labeled cases, " + files.size() + " PNG records readable");
+                + " labeled cases, " + files.size() + " PNG records readable; "
+                + (files.size() - cases) + " submit/after/non-puzzle records not scored as initial frames");
     }
 
     static PuzzleSliderMatcherCore.Result singleFrame(int width, int height, float sliderY,
@@ -132,7 +160,19 @@ public class PuzzleMatcherCheck {
 
     public static void main(String[] args) throws Exception {
         dir = Paths.get(args[0]);
-        if (args.length > 1) replaySingleFrameFolder(Paths.get(args[1]));
+        roiDir = dir;
+        boolean corpus = args.length > 2 && args[1].equals("--corpus-root");
+        if (args.length > 1 && !corpus
+                && Files.isDirectory(Paths.get(args[1]).resolve("puzzle-slider"))) {
+            roiDir = Paths.get(args[1]).resolve("puzzle-slider");
+            System.out.println("RGBA fixtures: " + roiDir);
+        }
+        if (corpus) {
+            for (String folder : new String[]{"nodrag_puzzle", "puzzle", "puzzle2", "puzzle3"}) {
+                System.out.println("CORPUS " + folder);
+                replaySingleFrameFolder(Paths.get(args[2]).resolve(folder));
+            }
+        } else if (args.length > 1) replaySingleFrameFolder(Paths.get(args[1]));
         // 整屏 1264x2780 的 ROI (164,1046,984,668)
         Roi success = load("sample-success.rgba.gz", 164, 1046, 984, 668);
         within("success", singleFrame(W, 2780, 1787, success, -1), 668, 12);
@@ -179,7 +219,7 @@ public class PuzzleMatcherCheck {
 
         // 真机未压缩截图（WebView 整屏 1280x2720，滑块中心 (239,1846)，按钮左缘 171）。
         // 火焰：旧版给 751/0.39（模板左缘压在照片边界上），真缺口 672（把滑块图叠上去验证过）；芽形：610
-        for (String[] real : new String[][]{{"real-flame-d751.png", "672"}, {"real-sprout-d610.png", "610"}}) {
+        for (String[] real : new String[][]{{"real-flame-d751.png", "672"}, {"real-sprout-d610.png", "610"}, {"real-shield-d623.png", "623"}}) {
             java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(dir.resolve(real[0]).toFile());
             int rw = img.getWidth(), rh = img.getHeight();
             int[] all = img.getRGB(0, 0, rw, rh, null, 0, rw);
@@ -189,6 +229,26 @@ public class PuzzleMatcherCheck {
             PuzzleSliderMatcherCore.Result r = PuzzleSliderMatcherCore.estimateSingleFrame(rw, rh, 1846f, 0,
                     realReader, 3500L, 171);
             within(real[0], r, Integer.parseInt(real[1]), 6);
+            if (real[0].equals("real-shield-d623.png")) {
+                // Slow-device replay: abandoning the texture pass used to return the wrong 653px edge.
+                for (boolean singleFrame : new boolean[]{true, false}) {
+                    int[] reads = {0};
+                    PuzzleSliderMatcherCore.PixelReader slow = (left, top, width, height, dst) -> {
+                        if (reads[0]++ == 0) {
+                            try { Thread.sleep(1250L); }
+                            catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                        }
+                        realReader.read(left, top, width, height, dst);
+                    };
+                    PuzzleSliderMatcherCore.Result timed = singleFrame
+                            ? PuzzleSliderMatcherCore.estimateSingleFrame(rw, rh, 1846f, 0, slow, 3500L, 171)
+                            : PuzzleSliderMatcherCore.estimateOptimized(rw, rh, 1846f, 0, slow, 3500L, 171);
+                    assert !timed.success : "texture timeout must not submit " + timed.displacement + "px";
+                    assert timed.error.contains("timed out") : timed.error;
+                    assert reads[0] == 1 : "timeout must not fall through to weaker matching";
+                }
+                System.out.println("PASS shield texture timeout rejected in new and fallback matchers");
+            }
         }
 
         // 纯色照片只有一条水平边框：不能匹配
@@ -214,10 +274,10 @@ public class PuzzleMatcherCheck {
         assert !PuzzleSliderGeometry.map(-1, 0f, 100f).success && !PuzzleSliderGeometry.map(10, 100f, 100f).success;
         System.out.println("PASS geometry");
 
-        if (args.length > 2) {
+        if (!corpus && args.length > 2) {
             replayPhoto(Paths.get(args[2]), "extra-mountain-photo", 869f, 80, 252, 12);
         }
-        if (args.length > 3) {
+        if (!corpus && args.length > 3) {
             replayPhoto(Paths.get(args[3]), "latest-initial-photo", 869f, 80, 343, 8);
         }
         System.out.println("PASS: puzzle matcher replays recorded fixtures");

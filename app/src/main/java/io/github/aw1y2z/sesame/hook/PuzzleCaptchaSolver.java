@@ -499,7 +499,7 @@ public final class PuzzleCaptchaSolver {
                             captcha("拖动 1.5 秒后：验证窗口已关闭，多半通过（尝试次数已归零）");
                             cleanupNoSlider(); // 验证结束：只留包含验证码的截图
                         } else if (attempt < maxAttempts()) {
-                            captcha("拖动 1.5 秒后：验证窗口仍在，第 " + attempt + " 次没通过，点击滑槽复位后重试");
+                            captcha("拖动 1.5 秒后：验证窗口仍在，第 " + attempt + " 次结果未确认（也可能正在显示验证通过），点击滑槽复位后检查新拼图");
                             saveAfterShot(target, web, match.displacement, attempt);
                             int[] origin = new int[2];
                             web.getLocationOnScreen(origin);
@@ -507,7 +507,7 @@ public final class PuzzleCaptchaSolver {
                                     (startX + trackEndX) / 2f - origin[0], startY - origin[1]);
                             MAIN.postDelayed(() -> retry(root), 300L);
                         } else {
-                            captcha("拖动 1.5 秒后：验证窗口仍在，已自动尝试 " + attempt + " 次不再重试，可手动完成");
+                            captcha("拖动 1.5 秒后：验证窗口仍在，结果未确认，已自动尝试 " + attempt + " 次不再重试，可查看页面确认");
                             saveAfterShot(target, web, match.displacement, attempt);
                             cleanupNoSlider();
                         }
