@@ -3,9 +3,11 @@
 Scope: receiveToolTaskReward (tool-list items -> receiveToolTaskReward claims),
 receiveFarmTaskAward (farm-task items -> claim, feed vs non-feed branching) and
 the run() wiring that re-queries tool rewards at end of round. Item shapes are
-the real structures production parses; the 美食 awardType server string is the
-only placeholder (MEISHI_AWARD_PROBE) until one device claim log confirms it —
-every covered branch keys off the type string, never the count.
+the real structures production parses; the 美食 awardType server string is a
+placeholder (MEISHI_AWARD_PROBE). Claim gating: counts 1-3 bypass the
+feed-stock gate regardless of awardType (feed comes in multiples of 30);
+all other counts keep the type-based gate (only ALLPURPOSE is gated).
+Small-amount claims also skip the post-claim stock update (pieces, not grams).
 """
 from pathlib import Path
 import os
@@ -27,8 +29,9 @@ import java.util.*;
 import org.json.*;
 public class ToolRewardCheck {
     // Placeholder for the real 美食 awardType server string: swap in once one device
-    // claim log confirms it. All covered branches key off "is ALLPURPOSE / known ToolType",
-    // so any non-empty unlisted string exercises the identical path.
+    // claim log confirms it. Non-feed branches key off "is ALLPURPOSE / known ToolType",
+    // so any non-empty unlisted string exercises the identical path; counts 1-3
+    // bypass the feed gate regardless of type (feed comes in multiples of 30).
     static final String MEISHI_AWARD_PROBE = "UNLISTED_SERVER_AWARD";
     static class MyUtils {
         static JSONObject newJSONObject(String s) {
@@ -175,7 +178,7 @@ public class ToolRewardCheck {
         assert Log.errors == 0;
         System.out.println("PASS re-query claims rewards finished during the round");
         // Non-feed awards (美食 probe, counts 1/2/3) claim even with a full trough:
-        // the stock gate keys off awardType, never the count.
+        // non-ALLPURPOSE types bypass the stock gate at any count.
         reset();
         farm.foodStock = 1000;
         farm.foodStockLimit = 1000;
@@ -188,6 +191,39 @@ public class ToolRewardCheck {
         assert farm.foodStock == 1000;
         assert Log.errors == 0;
         System.out.println("PASS non-feed awards with counts 1/2/3 claim with a full trough and leave feed stock untouched");
+        // Small-amount ALLPURPOSE (counts 1/2/3, e.g. 美食 counted in pieces) bypasses
+        // the full-trough gate too: feed rewards come in multiples of 30, so 1-3
+        // can never be feed. Stock stays capped at the limit.
+        reset();
+        farm.foodStock = 1000;
+        farm.foodStockLimit = 1000;
+        farm.unReceiveTaskAward = 0;
+        for (int n = 1; n <= 3; n++) {
+            assert farm.receiveFarmTaskAward(farmTask("SMALL_" + n, "小额任务" + n, "ALLPURPOSE", n));
+        }
+        assert AntFarmRpcCall.farmAwards.equals(List.of("SMALL_1", "SMALL_2", "SMALL_3"));
+        assert farm.unReceiveTaskAward == 0;
+        assert farm.foodStock == 1000;
+        assert logged("直接领取");
+        assert Log.errors == 0;
+        System.out.println("PASS ALLPURPOSE counts 1/2/3 bypass the full-trough gate and leave stock capped");
+        // Stock-accounting half of the small-amount rule: at 970g (nothing to clamp)
+        // a 1-piece ALLPURPOSE claim must leave the stock at 970g and log pieces,
+        // and a following 30g feed claim must still succeed.
+        reset();
+        farm.foodStock = 970;
+        farm.foodStockLimit = 1000;
+        farm.unReceiveTaskAward = 0;
+        assert farm.receiveFarmTaskAward(farmTask("SMALL_970", "小额任务970", "ALLPURPOSE", 1));
+        assert farm.foodStock == 970;
+        assert farm.unReceiveTaskAward == 0;
+        assert Log.farms.size() == 1 && Log.farms.get(0).contains("1个");
+        assert farm.receiveFarmTaskAward(farmTask("FEED_AFTER", "后续饲料", "ALLPURPOSE", 30));
+        assert AntFarmRpcCall.farmAwards.equals(List.of("SMALL_970", "FEED_AFTER"));
+        assert farm.foodStock == 1000;
+        assert farm.unReceiveTaskAward == 0;
+        assert Log.errors == 0;
+        System.out.println("PASS small-amount claim leaves 970g stock untouched so a following 30g feed still claims");
         // Feed behavior unchanged: over-limit still deferred, fitting claims still counted.
         reset();
         JSONObject feed = farmTask("FEED_1", "饲料任务", "ALLPURPOSE", 30);
@@ -202,6 +238,16 @@ public class ToolRewardCheck {
         assert farm.unReceiveTaskAward == 0;
         assert Log.errors == 0;
         System.out.println("PASS feed over-limit deferred and fitting feed claimed with stock accounting");
+        // Multiples of 30 above one unit (60g) keep the old gate: still deferred when full.
+        reset();
+        farm.foodStock = 1000;
+        farm.foodStockLimit = 1000;
+        farm.unReceiveTaskAward = 0;
+        assert !farm.receiveFarmTaskAward(farmTask("FEED_60", "饲料任务60", "ALLPURPOSE", 60));
+        assert AntFarmRpcCall.farmAwards.isEmpty();
+        assert farm.unReceiveTaskAward == 1;
+        assert Log.errors == 0;
+        System.out.println("PASS feed 60g over-limit still deferred");
     }
 }
 '''

@@ -1935,11 +1935,18 @@ public class AntFarm extends ModelTask {
             String taskId = task.optString("taskId");
             String awardType = task.optString("awardType", "");
             int awardCount = pendingAward(task);
+            // 小额奖励（1-3 个，如美食按个数计）：饲料奖励都是 30 的倍数，1-3 不可能是饲料；
+            // 该判断同时用于领取前容量检查和领取后库存更新
+            boolean isSmallPieceReward = awardCount >= 1 && awardCount <= 3;
             if (Objects.equals(awardType, "ALLPURPOSE")) {
                 if (awardCount + foodStock > foodStockLimit) {
-                    unReceiveTaskAward++;
-                    // Log.record("领取" + awardCount + "克饲料后将超过[" + foodStockLimit + "克]上限，终止领取");
-                    return false;
+                    if (isSmallPieceReward) {
+                        Log.record("饲料领取🎖️任务[" + task.optString("title", "") + "]小额[" + awardCount + "个]直接领取");
+                    } else {
+                        unReceiveTaskAward++;
+                        // Log.record("领取" + awardCount + "克饲料后将超过[" + foodStockLimit + "克]上限，终止领取");
+                        return false;
+                    }
                 }
             }
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.receiveFarmTaskAward(taskId));
@@ -1959,9 +1966,12 @@ public class AntFarm extends ModelTask {
                 return false;
             }
             String title = task.optString("title", "");
-            if (awardType.equals("ALLPURPOSE")) {
+            if (awardType.equals("ALLPURPOSE") && !isSmallPieceReward) {
                 add2FoodStock(awardCount);
                 Log.farm("饲料领取🎖️任务[" + title + "]奖励#获得[" + awardCount + "g]");
+            } else if (awardType.equals("ALLPURPOSE")) {
+                // 小额按个数计的非饲料奖励（如美食）：不计入饲料库存
+                Log.farm("饲料领取🎖️任务[" + title + "]奖励#获得[" + awardCount + "个]");
             } else {
                 // 非饲料奖励（工具等）：RPC 已成功，原先返回 false 会让按轮执行把它一直当成“没做完”
                 Log.farm("饲料领取🎖️任务[" + title + "]奖励#类型[" + awardType + "]");
