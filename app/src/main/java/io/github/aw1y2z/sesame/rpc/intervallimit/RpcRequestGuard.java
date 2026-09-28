@@ -158,7 +158,7 @@ public final class RpcRequestGuard {
     }
 
     public static String errorMessage(JSONObject result) {
-        for (String field : new String[]{"errorMessage", "errorMsg", "resultDesc", "resultMsg", "memo", "resultView"}) {
+        for (String field : new String[]{"errorMessage", "errorMsg", "resultDesc", "resultMsg", "memo", "resultView", "desc"}) {
             String message = result.optString(field);
             if (!message.isEmpty()) return RpcFailurePolicy.boundedMessage(message);
         }

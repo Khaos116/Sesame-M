@@ -52,7 +52,7 @@ public final class RpcFailureJournal {
             String text = value(args, field);
             if (!text.isEmpty()) identity.put(field, text);
         }
-        for (String field : new String[]{"error", "resultCode", "retCode"}) {
+        for (String field : new String[]{"error", "resultCode", "retCode", "code", "errorCode"}) {
             String text = value(result, field);
             if (!text.isEmpty()) identity.put(field, text);
         }

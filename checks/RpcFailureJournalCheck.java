@@ -41,6 +41,17 @@ public class RpcFailureJournalCheck {
     }
     public static void main(String[] args) throws Exception {
         signInScenes();
+        File codes = new File(FileUtil.root, "journal-codes");
+        long timestamp = GuardCheck.now;
+        RpcFailureJournal.record(codes, "com.alipay.antiep.finishTask", "[{\"sceneCode\":\"ANTFOREST_NORMAL_DRAW_TASK\",\"taskType\":\"SQCS_QDRW_NORMAL\"}]",
+                MyUtils.newJSONObject("{\"success\":false,\"code\":\"400000040\",\"desc\":\"不支持rpc调用\"}"), timestamp);
+        JSONObject unsupported = read(codes, timestamp).optJSONArray("entries").optJSONObject(0);
+        assert "400000040".equals(unsupported.optString("code"));
+        assert "不支持rpc调用".equals(unsupported.optString("message"));
+        RpcFailureJournal.record(codes, "com.alipay.sportsplay.biz.rpc.walk.go", "[]",
+                MyUtils.newJSONObject("{\"success\":false,\"errorCode\":\"GO_STEP_NOT_ENOUGH\",\"errorMsg\":\"走慢一点，沿途风景更好。\"}"), timestamp);
+        assert "GO_STEP_NOT_ENOUGH".equals(read(codes, timestamp).optJSONArray("entries")
+                .optJSONObject(1).optString("errorCode"));
         TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));
         long now = java.time.Instant.parse("2026-09-16T15:59:59Z").toEpochMilli();
         File a = new File(FileUtil.root, "journal-A"), b = new File(FileUtil.root, "journal-B");
