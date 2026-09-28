@@ -12,7 +12,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOK = ROOT / "app/src/main/java/io/github/aw1y2z/sesame/hook"
-FIXTURES = ROOT / "checks/fixtures/puzzle-slider"
+FIXTURES = ROOT / "checks/nodrag_puzzle/puzzle-slider"
 
 HARNESS = r'''
 package io.github.aw1y2z.sesame.hook;
