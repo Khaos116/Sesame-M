@@ -165,8 +165,9 @@ public class AntFarmRpcCall {
         return ApplicationHook.requestString("com.alipay.antiep.finishTask", args1);
     }
 
-    public static String receiveFarmTaskAward(String taskId) {
-        String args1 = "[{\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"taskId\":\"" + taskId + "\",\"version\":\"" + VERSION + "\"}]";
+    public static String receiveFarmTaskAward(String taskId, String awardType) {
+        String awardTypeArg = awardType.isEmpty() ? "" : "\"awardType\":" + JSONObject.quote(awardType) + ",";
+        String args1 = "[{" + awardTypeArg + "\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"taskId\":" + JSONObject.quote(taskId) + ",\"version\":\"" + VERSION + "\"}]";
         return ApplicationHook.requestString("com.alipay.antfarm.receiveFarmTaskAward", args1);
     }
 

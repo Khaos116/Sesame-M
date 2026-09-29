@@ -2,9 +2,9 @@
 
 Scope: receiveToolTaskReward (tool-list items -> receiveToolTaskReward claims),
 receiveFarmTaskAward (farm-task items -> claim, feed vs non-feed branching) and
-the run() wiring that re-queries tool rewards at end of round. Item shapes are
-the real structures production parses; the 美食 awardType server string is a
-placeholder (MEISHI_AWARD_PROBE). Claim gating: counts 1-3 bypass the
+the run() wiring that re-queries tool and farm rewards at end of round. Item shapes are
+the real structures production parses; farm cuisine rewards use CUISINE.
+Claim gating: counts 1-3 bypass the
 feed-stock gate regardless of awardType (feed comes in multiples of 30);
 all other counts keep the type-based gate (only ALLPURPOSE is gated).
 Small-amount claims also skip the post-claim stock update (pieces, not grams).
@@ -27,12 +27,28 @@ json_jar = sorted(jars)[-1]
 code = r'''
 import java.util.*;
 import org.json.*;
+class ApplicationHook {
+    static String args;
+    static String requestString(String method, String requestArgs) {
+        assert method.equals("com.alipay.antfarm.receiveFarmTaskAward");
+        args = requestArgs;
+        return "{}";
+    }
+}
+class ProductionFarmRpc {
+    static final String VERSION = "test";
+    @@FARMRPC@@
+}
+class Status {
+    static boolean allDone;
+    static boolean hasFlagToday(String flag) { return allDone; }
+    static void flagToday(String flag) { allDone = true; }
+}
+class TimeUtil {
+    static void sleep(int ms) {}
+}
 public class ToolRewardCheck {
-    // Placeholder for the real 美食 awardType server string: swap in once one device
-    // claim log confirms it. Non-feed branches key off "is ALLPURPOSE / known ToolType",
-    // so any non-empty unlisted string exercises the identical path; counts 1-3
-    // bypass the feed gate regardless of type (feed comes in multiples of 30).
-    static final String MEISHI_AWARD_PROBE = "UNLISTED_SERVER_AWARD";
+    static final String CUISINE_AWARD_TYPE = "CUISINE";
     static class MyUtils {
         static JSONObject newJSONObject(String s) {
             try {
@@ -70,16 +86,20 @@ public class ToolRewardCheck {
             if (rewardType.equals(failType)) return "{\"memo\":\"FAIL\",\"resultCode\":\"400\"}";
             return "{\"memo\":\"SUCCESS\"}";
         }
-        static String receiveFarmTaskAward(String taskId) {
-            farmAwards.add(taskId);
+        static String receiveFarmTaskAward(String taskId, String awardType) {
+            farmAwards.add(taskId + ":" + awardType);
             return "{\"memo\":\"SUCCESS\"}";
         }
     }
     static class Farm {
+        static final String FLAG_FARM_TASK_ALL_DONE = "antFarm::farmTaskAllDone";
+        static final int MAX_FARM_TASK_ROUNDS = 20;
         String TAG = "Farm";
         String ownerFarmId = "owner";
         int foodStock, foodStockLimit, unReceiveTaskAward;
+        int farmTaskListCalls;
         boolean farmTaskAwardBusy;
+        Set<String> farmTaskAttempted;
         @@TOOLTYPE@@
         @@TASKSTATUS@@
         @@FARMTOOL@@
@@ -89,6 +109,8 @@ public class ToolRewardCheck {
         @@ADD2FOOD@@
         @@TOOLMETHOD@@
         @@FARMMETHOD@@
+        int[] listFarmTask(TaskStatus mode) { farmTaskListCalls++; return new int[]{0, 0}; }
+        @@FARMROUNDS@@
     }
     static String item(String status, String taskType, String bizInfo) {
         return "{\"taskStatus\":\"" + status + "\",\"taskType\":\"" + taskType + "\",\"bizInfo\":" + JSONObject.quote(bizInfo) + "}";
@@ -120,10 +142,25 @@ public class ToolRewardCheck {
         return false;
     }
     public static void main(String[] args) {
+        ProductionFarmRpc.receiveFarmTaskAward("CUISINE_TASK", "CUISINE");
+        JSONObject request = new JSONArray(ApplicationHook.args).optJSONObject(0);
+        assert request != null && request.optString("taskId").equals("CUISINE_TASK")
+            && request.optString("awardType").equals("CUISINE");
+        ProductionFarmRpc.receiveFarmTaskAward("FEED_TASK", "ALLPURPOSE");
+        request = new JSONArray(ApplicationHook.args).optJSONObject(0);
+        assert request != null && request.optString("awardType").equals("ALLPURPOSE");
+        ProductionFarmRpc.receiveFarmTaskAward("TASK\"1", "CUISINE");
+        request = new JSONArray(ApplicationHook.args).optJSONObject(0);
+        assert request != null && request.optString("taskId").equals("TASK\"1");
+        System.out.println("PASS farm award RPC sends the server awardType");
         Farm farm = new Farm();
+        Status.allDone = true;
+        farm.runFarmTaskRounds();
+        assert farm.farmTaskListCalls == 1 : "late rewards must be rechecked after an earlier empty list";
+        System.out.println("PASS earlier all-done flag does not hide later farm rewards");
         // farmTools stays null: listFarmTool RPC outage must not NPE the claim loop.
         AntFarmRpcCall.listResponse = "{\"memo\":\"SUCCESS\",\"list\":["
-            + item("FINISHED", "DAILY_TOOL", biz(MEISHI_AWARD_PROBE, 3, "新类型道具")) + ","
+            + item("FINISHED", "DAILY_TOOL", biz(CUISINE_AWARD_TYPE, 3, "新类型道具")) + ","
             + item("FINISHED", "DAILY_TOOL", biz("STEALTOOL", 1, "每日道具")) + ","
             + item("FINISHED", "DAILY_TOOL", biz("", 1, "类型缺失")) + ","
             + item("FINISHED", "DAILY_TOOL", biz("STEALTOOL", 0, "数量为零")) + ","
@@ -131,9 +168,9 @@ public class ToolRewardCheck {
             + item("FINISHED", "DAILY_TOOL", biz("STEALTOOL", null, "数量字段缺失")) + ","
             + item("TODO", "DAILY_TOOL", biz("STEALTOOL", 1, "未完成")) + "]}";
         farm.receiveToolTaskReward();
-        assert AntFarmRpcCall.received.equals(List.of(MEISHI_AWARD_PROBE + ":3:DAILY_TOOL", "STEALTOOL:1:DAILY_TOOL"))
+        assert AntFarmRpcCall.received.equals(List.of(CUISINE_AWARD_TYPE + ":3:DAILY_TOOL", "STEALTOOL:1:DAILY_TOOL"))
             : AntFarmRpcCall.received;
-        assert logged("未知类型[" + MEISHI_AWARD_PROBE + "]");
+        assert logged("未知类型[" + CUISINE_AWARD_TYPE + "]");
         assert logged("跳过奖励类型缺失");
         assert logged("数量或任务类型缺失");
         assert Log.errors == 0;
@@ -184,9 +221,9 @@ public class ToolRewardCheck {
         farm.foodStockLimit = 1000;
         farm.unReceiveTaskAward = 0;
         for (int n = 1; n <= 3; n++) {
-            assert farm.receiveFarmTaskAward(farmTask("MEISHI_" + n, "美食任务" + n, MEISHI_AWARD_PROBE, n));
+            assert farm.receiveFarmTaskAward(farmTask("MEISHI_" + n, "美食任务" + n, CUISINE_AWARD_TYPE, n));
         }
-        assert AntFarmRpcCall.farmAwards.equals(List.of("MEISHI_1", "MEISHI_2", "MEISHI_3"));
+        assert AntFarmRpcCall.farmAwards.equals(List.of("MEISHI_1:CUISINE", "MEISHI_2:CUISINE", "MEISHI_3:CUISINE"));
         assert farm.unReceiveTaskAward == 0;
         assert farm.foodStock == 1000;
         assert Log.errors == 0;
@@ -201,7 +238,7 @@ public class ToolRewardCheck {
         for (int n = 1; n <= 3; n++) {
             assert farm.receiveFarmTaskAward(farmTask("SMALL_" + n, "小额任务" + n, "ALLPURPOSE", n));
         }
-        assert AntFarmRpcCall.farmAwards.equals(List.of("SMALL_1", "SMALL_2", "SMALL_3"));
+        assert AntFarmRpcCall.farmAwards.equals(List.of("SMALL_1:ALLPURPOSE", "SMALL_2:ALLPURPOSE", "SMALL_3:ALLPURPOSE"));
         assert farm.unReceiveTaskAward == 0;
         assert farm.foodStock == 1000;
         assert logged("直接领取");
@@ -219,7 +256,7 @@ public class ToolRewardCheck {
         assert farm.unReceiveTaskAward == 0;
         assert Log.farms.size() == 1 && Log.farms.get(0).contains("1个");
         assert farm.receiveFarmTaskAward(farmTask("FEED_AFTER", "后续饲料", "ALLPURPOSE", 30));
-        assert AntFarmRpcCall.farmAwards.equals(List.of("SMALL_970", "FEED_AFTER"));
+        assert AntFarmRpcCall.farmAwards.equals(List.of("SMALL_970:ALLPURPOSE", "FEED_AFTER:ALLPURPOSE"));
         assert farm.foodStock == 1000;
         assert farm.unReceiveTaskAward == 0;
         assert Log.errors == 0;
@@ -233,7 +270,7 @@ public class ToolRewardCheck {
         farm.foodStock = 100;
         farm.unReceiveTaskAward = 0;
         assert farm.receiveFarmTaskAward(feed);
-        assert AntFarmRpcCall.farmAwards.equals(List.of("FEED_1"));
+        assert AntFarmRpcCall.farmAwards.equals(List.of("FEED_1:ALLPURPOSE"));
         assert farm.foodStock == 130;
         assert farm.unReceiveTaskAward == 0;
         assert Log.errors == 0;
@@ -252,8 +289,10 @@ public class ToolRewardCheck {
 }
 '''
 for token, path, signature in (
+    ("@@FARMRPC@@", "model/task/antFarm/AntFarmRpcCall.java", "    public static String receiveFarmTaskAward(String taskId, String awardType)"),
     ("@@TOOLMETHOD@@", "model/task/antFarm/AntFarm.java", "    private void receiveToolTaskReward()"),
     ("@@FARMMETHOD@@", "model/task/antFarm/AntFarm.java", "    private Boolean receiveFarmTaskAward(JSONObject task)"),
+    ("@@FARMROUNDS@@", "model/task/antFarm/AntFarm.java", "    private void runFarmTaskRounds()"),
     ("@@PENDING@@", "model/task/antFarm/AntFarm.java", "    private static int pendingAward(JSONObject task)"),
     ("@@ADD2FOOD@@", "model/task/antFarm/AntFarm.java", "    private void add2FoodStock(int i)"),
     ("@@TOOLTYPE@@", "model/task/antFarm/AntFarm.java", "    public enum ToolType {"),
@@ -269,4 +308,5 @@ with tempfile.TemporaryDirectory(prefix="sesame-tool-reward-") as tmp:
 
 farm = (SOURCE / "model/task/antFarm/AntFarm.java").read_text(encoding="utf-8")
 assert farm.index('step("饲料任务"') < farm.index('step("道具奖励补领"')
-print("PASS end-of-round tool recheck runs after the feed tasks")
+assert farm.index('step("道具奖励补领"') < farm.index('step("庄园奖励补领"')
+print("PASS end-of-round tool and farm award rechecks run after the feed tasks")

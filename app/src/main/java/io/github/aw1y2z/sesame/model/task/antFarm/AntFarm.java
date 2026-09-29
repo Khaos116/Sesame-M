@@ -42,8 +42,6 @@ public class AntFarm extends ModelTask {
     private static final String TAG = AntFarm.class.getSimpleName();
     /** 家庭分享：当日累计"邀请全部失败"次数 */
     private static final String FLAG_FAMILY_SHARE_FAIL_COUNT = "antFarm::familyShareToFriends::failCount";
-    /** 饲料任务：服务端列表里已没有需要去做/领奖的任务，当天不再查询（按账号，次日清） */
-    private static final String FLAG_FARM_TASK_ALL_DONE = "antFarm::farmTaskAllDone";
     /** 饲料任务一次执行最多循环几轮（多阶段任务每阶段一轮，如“试玩庄园火爆小游戏”8 阶段×30g，再加领奖轮） */
     private static final int MAX_FARM_TASK_ROUNDS = 20;
     /** 家庭分享：当日最多尝试几次，超过后当天不再重试（避免每轮任务都重发邀请请求） */
@@ -486,6 +484,12 @@ public class AntFarm extends ModelTask {
                 if (receiveFarmToolReward.getValue()) {
                     listFarmTool();
                     receiveToolTaskReward();
+                }
+            });
+
+            step("庄园奖励补领", () -> {
+                if (receiveFarmTaskAward.getValue()) {
+                    listFarmTask(TaskStatus.FINISHED);
                 }
             });
 
@@ -1578,15 +1582,11 @@ public class AntFarm extends ModelTask {
     /**
      * 饲料任务按轮执行（对照 AG：多次任务不能只做一次，也不能没做完就当天已完成）。
      * 每轮 listFarmTask 一次，TODO 去做、FINISHED 领奖：
-     * ① 没有需要处理的任务 → 服务端确认当天已完成，记当日标记，之后不再查询；
-     * ② 有任务但本轮一个都没推进（失败/冷却/饲料满领不了）→ 停，标记不记，下次执行再试；
+     * ① 没有需要处理的任务 → 本轮停止，下次执行仍会查询后来出现的奖励；
+     * ② 有任务但本轮一个都没推进（失败/冷却/饲料满领不了）→ 停，下次执行再试；
      * ③ 有推进 → 再来一轮（多次任务每轮推进一次），最多 MAX_FARM_TASK_ROUNDS 轮。
-     * 注意：当天新出现的任务（如限时任务）要等次日才会再查，这是“当天已完成不再执行”的代价。
      */
     private void runFarmTaskRounds() {
-        if (Status.hasFlagToday(FLAG_FARM_TASK_ALL_DONE)) {
-            return;
-        }
         farmTaskAttempted = new HashSet<>();
         try {
             for (int round = 0; round < MAX_FARM_TASK_ROUNDS; round++) {
@@ -1595,8 +1595,6 @@ public class AntFarm extends ModelTask {
                     return;
                 }
                 if (result[0] == 0) {
-                    Status.flagToday(FLAG_FARM_TASK_ALL_DONE);
-                    Log.farm("饲料任务🧾今日任务已全部完成，之后不再查询");
                     return;
                 }
                 if (result[1] == 0) {
@@ -1949,7 +1947,7 @@ public class AntFarm extends ModelTask {
                     }
                 }
             }
-            JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.receiveFarmTaskAward(taskId));
+            JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.receiveFarmTaskAward(taskId, awardType));
             if (!MessageUtil.checkMemo(TAG, jo)) {
                 // 服务端繁忙(102)：本轮不再继续领其余任务，避免整轮反复白刷（请求本身已经发出过）
                 if (MessageUtil.isServerBusy(jo) && !farmTaskAwardBusy) {
