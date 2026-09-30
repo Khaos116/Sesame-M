@@ -1968,8 +1968,11 @@ public class AntFarm extends ModelTask {
                 add2FoodStock(awardCount);
                 Log.farm("饲料领取🎖️任务[" + title + "]奖励#获得[" + awardCount + "g]");
             } else if (awardType.equals("ALLPURPOSE")) {
-                // 小额按个数计的非饲料奖励（如美食）：不计入饲料库存
+                // 兼容小额按个数计的奖励，不计入饲料库存
                 Log.farm("饲料领取🎖️任务[" + title + "]奖励#获得[" + awardCount + "个]");
+            } else if (awardType.equals("CUISINE")) {
+                String amount = awardCount > 0 ? "×" + awardCount + "个" : "（数量未返回）";
+                Log.farm("美食领取🍱任务[" + title + "]奖励#获得[爱心美食" + amount + "]");
             } else {
                 // 非饲料奖励（工具等）：RPC 已成功，原先返回 false 会让按轮执行把它一直当成“没做完”
                 Log.farm("饲料领取🎖️任务[" + title + "]奖励#类型[" + awardType + "]");

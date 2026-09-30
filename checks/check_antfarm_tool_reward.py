@@ -226,9 +226,16 @@ public class ToolRewardCheck {
         assert AntFarmRpcCall.farmAwards.equals(List.of("MEISHI_1:CUISINE", "MEISHI_2:CUISINE", "MEISHI_3:CUISINE"));
         assert farm.unReceiveTaskAward == 0;
         assert farm.foodStock == 1000;
+        assert Log.farms.size() == 3;
+        for (int n = 1; n <= 3; n++) {
+            assert Log.farms.get(n - 1).contains("爱心美食×" + n + "个");
+        }
         assert Log.errors == 0;
         System.out.println("PASS non-feed awards with counts 1/2/3 claim with a full trough and leave feed stock untouched");
-        // Small-amount ALLPURPOSE (counts 1/2/3, e.g. 美食 counted in pieces) bypasses
+        reset();
+        assert farm.receiveFarmTaskAward(farmTask("CUISINE_UNKNOWN", "美食数量缺失", "CUISINE", 0));
+        assert Log.farms.size() == 1 && Log.farms.get(0).contains("爱心美食（数量未返回）");
+        // Small-amount ALLPURPOSE (counts 1/2/3, legacy piece rewards) bypasses
         // the full-trough gate too: feed rewards come in multiples of 30, so 1-3
         // can never be feed. Stock stays capped at the limit.
         reset();
