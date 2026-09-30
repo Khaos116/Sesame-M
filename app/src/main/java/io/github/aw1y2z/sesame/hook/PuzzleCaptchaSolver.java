@@ -42,7 +42,7 @@ import io.github.aw1y2z.sesame.util.RandomUtil;
  * 等页面刷新出新图再重试，GR 只拖一次，这里按用户要求放宽）；识别置信度不够就不动手；
  * 只在验证被要求后的窗口期内扫描，不会在任意 H5 页面上乱点。
  * <p>坐标常量按 GR 记录的设备布局（参考宽度 1264）缩放，其它布局可能识别不到滑块——这时只会记日志并保存截图，
- * 不会拖动；截图在 sesame-M/puzzle/<账号名>/ 里，发给我用来校准。
+ * 不会拖动；截图在 sesame-M/.nomedia/puzzle/<账号名>/ 里，发给我用来校准。
  */
 public final class PuzzleCaptchaSolver {
     private static final String TAG = "PuzzleCaptchaSolver";
@@ -626,7 +626,7 @@ public final class PuzzleCaptchaSolver {
 
     /**
      * 保存截图，返回相对文件名（保存失败返回 "未保存"）。放哪里、留几张见 {@link PuzzleSampleFiles}：
-     * 只有拖动过的 matched 放账号 puzzle 目录，其余放 tmp/ 验证结束时删。
+     * 只有拖动过的 matched 放账号 .nomedia/puzzle 目录，其余放 tmp/ 验证结束时删。
      */
     private static String saveSample(Bitmap bitmap, String tag, boolean ignored) {
         try {

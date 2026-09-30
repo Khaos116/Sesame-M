@@ -5,7 +5,7 @@ import java.util.Arrays;
 
 /**
  * 拼图验证码截图的文件管理（纯 java.io，方便在 JVM 里直接测）。
- * <p>只有真正拖动过的截图（名字含 {@value #MATCHED_MARK}）放在账号的 puzzle 目录里，每个账号 matched 最多保留最新
+ * <p>只有真正拖动过的截图（名字含 {@value #MATCHED_MARK}）放在账号的 .nomedia/puzzle 目录里，每个账号 matched 最多保留最新
  * {@link #KEEP_MATCHED} 张、matched_submit（松手前）最多保留 {@link #KEEP_SUBMIT} 张，合计最多 20 张；没识别到滑块/没轨道/匹配失败的放在 tmp/ 子目录，验证结束时整个删掉，
  * 所以平时看的目录里只有 matched。
  */

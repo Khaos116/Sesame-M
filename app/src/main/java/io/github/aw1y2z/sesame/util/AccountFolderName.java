@@ -5,7 +5,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 账号目录/导出文件名里用的账号名，按顺序取第一个能用的：① 配置页账号列表括号前面的名字（备注，没有就用昵称，
- * 如 C176）；② 括号里面的账号；③ uid。日志目录 {@code log/<名字>/}、拼图截图目录 {@code puzzle/<名字>/}、导出文件名都用它。
+ * 如 C176）；② 括号里面的账号；③ uid。日志目录 {@code log/<名字>/}、拼图截图目录 {@code .nomedia/puzzle/<名字>/}、导出文件名都用它。
  * <p>纯逻辑，文件读写通过 {@link Source}/{@link Store} 注入，方便在 JVM 里直接测（checks/check_account_folder.py）。
  * <ul>
  *   <li>名字/账号只做文件名安全处理（非字母数字/连字符 → 下划线，最长 {@value #MAX_LABEL} 个字符；邮箱、手机号也照此处理）。</li>

@@ -35,6 +35,7 @@ python checks/check_log_follow.py
 python checks/check_manifest_permissions.py
 python checks/check_merge_config.py
 python checks/check_puzzle_matcher.py
+python checks/check_puzzle_directory.py
 python checks/check_puzzle_samples.py
 python checks/check_reward_cooldown.py
 python checks/check_rpc_guard.py
@@ -45,7 +46,7 @@ java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapp
 
 改了哪块就重点看对应的检查（`check_rpc_guard` 管退避暂停、`check_merge_config` 管字段合并迁移、
 `check_manifest_permissions` 管权限声明、`check_standalone_no_xposed_class` 管独立进程引用、
-`check_account_folder` 管账号名目录、`check_antfarm_tool_reward` 管庄园道具领取、`check_puzzle_matcher`/`check_puzzle_samples` 管拼图匹配与截图；
+`check_account_folder` 管账号名目录、`check_antfarm_tool_reward` 管庄园道具领取、`check_puzzle_matcher`/`check_puzzle_directory`/`check_puzzle_samples` 管拼图匹配与截图；
 各脚本头几行注释写了精确范围），提交前全量跑一遍最稳。
 
 涉及打包/签名相关改动（`build.gradle`、`proguard-rules.pro`、签名配置）额外跑一遍 `:app:assembleNormalRelease` 确认 R8 混淆和签名没问题。
@@ -84,10 +85,10 @@ Sesame-M：支付宝自动化脚本的 Xposed 模块（`libxposed` API 102），
 - 总入口：`hook/ApplicationHook.java`（被注入支付宝进程后）；验证码链路 `hook/CaptchaHook`、
   `H5RiskTrigger`、`PuzzleCaptchaSolver`；账号切换 `hook/AccountSwitchController.java`。
 - 数据文件都在手机 `sesame-M/`（全览见使用说明 §三）：`config/<uid>/` 仍用 uid；`log/<账号名>/`、
-  `puzzle/<账号名>/`、导出文件名用账号名（规则在 `util/AccountFolderName.java`）；独立 App 进程靠
+  `.nomedia/puzzle/<账号名>/`、导出文件名用账号名（规则在 `util/AccountFolderName.java`）；独立 App 进程靠
   `current_log_user.txt` 知道当前账号。当日状态 `Status` 按账号存、次日清；风控暂停 `RuntimeInfo`；题库 `TokenConfig`。
 - 日志入口：运行 `runtime.日期.账号名.log`、各分类、`error`、`captcha.日期.log`（验证记录）；
-  异常统计 `rpc-failures.日期.账号.json`（分析流程见 `docs/每日异常反馈.txt`）；拼图截图 `puzzle/<账号名>/`。
+  异常统计 `rpc-failures.日期.账号.json`（分析流程见 `docs/每日异常反馈.txt`）；拼图截图 `.nomedia/puzzle/<账号名>/`。
 - UI 是 Compose+Miuix（`ui/miuix/`），只做展示，不要在这里放业务状态。
 
 常见坑（都踩过，动手前先对一下）：

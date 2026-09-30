@@ -58,7 +58,7 @@ public class FileUtil {
             @Override
             public void migrate(String uid, String folder) {
                 // 旧的 uid 目录改名成名字目录，保留历史日志/截图；名字目录已存在就不动
-                for (File root : new File[]{LOG_DIRECTORY_FILE, new File(MAIN_DIRECTORY_FILE, "puzzle")}) {
+                for (File root : new File[]{LOG_DIRECTORY_FILE, new File(new File(MAIN_DIRECTORY_FILE, ".nomedia"), "puzzle")}) {
                     File old = new File(root, uid);
                     File target = new File(root, folder);
                     if (old.isDirectory() && !target.exists() && !old.renameTo(target)) {
@@ -330,6 +330,12 @@ public class FileUtil {
                     }
                 }
             }*/
+        }
+        // 模块或 App 首次打开文件目录就迁移旧截图，不必等下次遇到验证码。
+        try {
+            PuzzleDirectory.prepare(mainDir);
+        } catch (IOException | SecurityException e) {
+            android.util.Log.e(TAG, "迁移拼图截图目录失败", e);
         }
         return mainDir;
     }
@@ -799,9 +805,15 @@ public class FileUtil {
         }
     }
 
-    /** 拼图验证码截图目录：主目录/puzzle/<账号名>/（账号名规则同日志目录；不放在 log 下，清理日志时不会被一起删掉）。 */
-    public static File getCurrentUserPuzzleDirectory() {
-        File dir = new File(new File(MAIN_DIRECTORY_FILE, "puzzle"), logDirectoryName(UserIdMap.getCurrentUid()));
+    /** 拼图截图目录：主目录/.nomedia/puzzle/<账号名>/，首次访问数据目录时剪切旧 puzzle 目录。 */
+    public static synchronized File getCurrentUserPuzzleDirectory() {
+        File root = new File(new File(MAIN_DIRECTORY_FILE, ".nomedia"), "puzzle");
+        try {
+            root = PuzzleDirectory.prepare(MAIN_DIRECTORY_FILE);
+        } catch (IOException | SecurityException e) {
+            Log.printStackTrace(TAG, e);
+        }
+        File dir = new File(root, logDirectoryName(UserIdMap.getCurrentUid()));
         if (dir.exists() && dir.isFile()) {
             dir.delete();
         }
