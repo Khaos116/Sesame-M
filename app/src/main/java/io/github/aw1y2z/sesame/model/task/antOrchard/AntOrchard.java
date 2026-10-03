@@ -123,13 +123,13 @@ public class AntOrchard extends ModelTask {
         modelFields.addField(orchardSpreadManure = new BooleanModelField("orchardSpreadManure", "农场施肥 | 开启", false));
         modelFields.addField(useBatchSpread = new BooleanModelField("useBatchSpread", "一键施肥5次(边界突破)", false)
                 .setDependsOn("orchardSpreadManure")
-                .setDescription("仅当每日次数设为200时启用：前4次按单次、之后持续一键5次，计数序列4,9,…,199,204命中199+5漏洞到204；其他数值精确施肥不批量（肥料不足5倍时退回单次）"));
+                .setDescription("开启后全程一键5次：先单次补足到5的整数倍，之后批量推进，总次数精确等于每日次数；每日次数设为200时额外命中199+5漏洞突破到204（肥料不足5倍时退回单次）"));
         modelFields.addField(orchardSpreadManureSceneList = new SelectModelField("orchardSpreadManureSceneList", "农场施肥 | 场景列表", new LinkedHashSet<>(), AlipayPlantScene::getList)
                 .setDependsOn("orchardSpreadManure")
                 .setDescription("只对勾选且服务端已下发的场景施肥"));
         modelFields.addField(orchardSpreadManureCount = new IntegerModelField("orchardSpreadManureCount", "农场施肥 | 每日次数", 3, 1, 200)
                 .setDependsOn("orchardSpreadManure")
-                .setDescription("按轮计：设为200并开一键施肥5次时突破到204；设为其他数值则设置多少施肥多少（不批量）"));
+                .setDescription("按轮计：开一键施肥5次时精确施肥到该值，设为200则突破到204；未开启时全程单次施肥到该值"));
         modelFields.addField(drawGameCenterAward = new BooleanModelField("drawGameCenterAward", "农场乐园 | 游戏宝箱", true));
         //modelFields.addField(driveAnimalType = new ChoiceModelField("driveAnimalType", "驱赶小鸡 | 动作", DriveAnimalType.NONE, DriveAnimalType.nickNames));
         //modelFields.addField(driveAnimalList = new SelectModelField("driveAnimalList", "驱赶小鸡 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
@@ -792,13 +792,29 @@ public class AntOrchard extends ModelTask {
 
     /**
      * 「每日次数」折算成服务端的单次施肥次数目标，封顶漏洞可达上限 204。
-     * <p>前 (N-1) 次按单次推进，临近上限（已施肥达 199）时若开启一键5次则末次批量 +5 突破到 204；
-     * 未开启则停在名义上限 200。
+     * <p>开启一键5次时由 {@link #shouldBatchSpread} 决定批量时机，恰好推进到该目标；
+     * 未开启则全程单次推进。
      */
     private int targetSpreadTimes() {
         Integer limit = orchardSpreadManureCount.getValue();
         int times = limit == null ? 0 : Math.max(limit, 0);
         return Math.min(times, MAIN_SPREAD_BURST_LIMIT);
+    }
+
+    /**
+     * 批量对齐目标：配到名义上限 200 时取漏洞上限 204，其余取配置值本身。
+     */
+    private static int batchAlignTarget(int limit) {
+        return limit >= MAIN_SPREAD_DAILY_LIMIT ? MAIN_SPREAD_BURST_LIMIT : limit;
+    }
+
+    /**
+     * 本次是否走一键5次：对齐目标的剩余次数恰为 5 的整数倍时才发批量，
+     * 余数先由单次补足，因此总数精确落在对齐目标上且不会越过（服务端已有非整倍数计数也能自适应）。
+     */
+    private static boolean shouldBatchSpread(int limit, int usedTimes) {
+        int remain = batchAlignTarget(limit) - usedTimes;
+        return remain > 0 && remain % BATCH_SPREAD_SIZE == 0;
     }
 
     /**
@@ -829,11 +845,10 @@ public class AntOrchard extends ModelTask {
                     int leftTimes = accountInfo.getInt("wateringLeftTimes");
                     int usedTimes = MAIN_SPREAD_DAILY_LIMIT - leftTimes;
 
-                    // 仅在每日次数配到 200（命中 199+5 漏洞）时才启用批量突破；其余数值精确施肥不批量
-                    boolean batchEnabled = Boolean.TRUE.equals(useBatchSpread.getValue()) && limit >= MAIN_SPREAD_DAILY_LIMIT;
-                    // 开启一键5次：前 (BATCH_SPREAD_SIZE-1)=4 次用单次把计数补到 ≡4(mod5)，之后持续批量。
-                    // 计数序列 4,9,…,194,199,204 恰好命中漏洞（199 处批量 +5 = 204），且不会落在 200~203。
-                    boolean batch = batchEnabled && usedTimes >= BATCH_SPREAD_SIZE - 1;
+                    // 剩余次数为 5 的整数倍时才批量，余数先单次补足，总数精确且不会越过；
+                    // 配到 200 时对齐目标取漏洞上限 204，计数序列 4,9,…,199,204 恰在 199 处 +5 突破
+                    boolean batch = Boolean.TRUE.equals(useBatchSpread.getValue())
+                            && shouldBatchSpread(limit, usedTimes);
                     // 一键5次时服务端一次要消耗 5 倍肥料，余额判据必须按批量算，否则会发出注定失败的请求
                     int needCost = batch ? wateringCost * BATCH_SPREAD_SIZE : wateringCost;
                     if (happyPoint < needCost) {
@@ -866,10 +881,9 @@ public class AntOrchard extends ModelTask {
                     JSONObject progressInfo = yebProgress.getJSONObject("yebScenePlantInfo").getJSONObject("plantProgressInfo");
                     int currentProgress = progressInfo.getInt("spreadProgress");
 
-                    // 仅在每日次数配到 200（命中 199+5 漏洞）时才启用批量突破；其余数值精确施肥不批量
-                    boolean batchEnabledY = Boolean.TRUE.equals(useBatchSpread.getValue()) && limit >= MAIN_SPREAD_DAILY_LIMIT;
-                    // 余额宝场景同样适用 199+5 漏洞：前 (BATCH_SPREAD_SIZE-1) 次单次补到 ≡4(mod5)，之后持续批量
-                    boolean batchY = batchEnabledY && currentProgress >= BATCH_SPREAD_SIZE - 1;
+                    // 与主场景同一套对齐规则；余额宝同样适用 199+5 漏洞
+                    boolean batchY = Boolean.TRUE.equals(useBatchSpread.getValue())
+                            && shouldBatchSpread(limit, currentProgress);
                     // yeb 肥料与主账号同池，仅在批量（需 5 倍）时取主账号余额做判据
                     if (batchY) {
                         JSONObject yebMain = new JSONObject(AntOrchardRpcCall.orchardSyncIndex());
