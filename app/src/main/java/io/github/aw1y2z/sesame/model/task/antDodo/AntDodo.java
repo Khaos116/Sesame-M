@@ -187,7 +187,7 @@ public class AntDodo extends ModelTask {
                     }
 
                     // 2~4. 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("神奇物种任务", blackList, whiteList, AntDodoTaskList);
+                    MessageUtil.syncTaskBlackList("神奇物种任务", "AntDodoTaskList", blackList, whiteList, AntDodoTaskList);
                 }
             }
         } catch (Throwable t) {

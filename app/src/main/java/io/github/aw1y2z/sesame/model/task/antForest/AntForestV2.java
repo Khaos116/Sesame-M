@@ -1822,7 +1822,7 @@ public class AntForestV2 extends ModelTask {
                     }
 
                     // 2~4. 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("森林活力值任务", blackList, whiteList, AntForestVitalityTaskList);
+                    MessageUtil.syncTaskBlackList("森林活力值任务", "AntForestVitalityTaskList", blackList, whiteList, AntForestVitalityTaskList);
                 }
             }
 
@@ -1874,7 +1874,7 @@ public class AntForestV2 extends ModelTask {
                     }
 
                     // 2~4. 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("森林抽抽乐任务", blackList, whiteList, AntForestHuntTaskList);
+                    MessageUtil.syncTaskBlackList("森林抽抽乐任务", "AntForestHuntTaskList", blackList, whiteList, AntForestHuntTaskList);
                 }
             }
         } catch (Throwable t) {

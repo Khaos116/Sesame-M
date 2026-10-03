@@ -3,6 +3,8 @@ package io.github.aw1y2z.sesame.util;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -298,6 +300,14 @@ public class MessageUtil {
         BLACKLIST_LIST_TARGETS.put("MemberCreditSesameTaskList", new String[]{"AntMember", "会员芝麻信用任务芝麻粒"});
     }
 
+    /**
+     * 各任务列表的白名单：键为 listTitle（字段名，与 {@link #BLACKLIST_LIST_TARGETS} 一致），
+     * 值为不应被「自动拉黑」机制添加的任务标题集合。
+     * <p>只用于拦截自动拉黑入口（{@link #MarkTaskBlackList}），<b>绝不删除用户手动加入黑名单的条目</b>。
+     * 由各模块的 {@link #syncTaskBlackList} 在初始化时登记。
+     */
+    private static final Map<String, Set<String>> TASK_WHITE_LIST = new HashMap<>();
+
     /** 400000040「不支持rpc调用」；它不等于任务做不了，见另一种实现方案。 */
     public static final String CODE_UNSUPPORTED_RPC = "400000040";
 
@@ -429,6 +439,12 @@ public class MessageUtil {
         SelectModelField TaskSelectModelField = (SelectModelField) TaskModelFields.get(listTitle);
         if (TaskSelectModelField == null) {
             Log.record("添加" + TaskListName + "黑名单失败：" + taskTitle);
+            return;
+        }
+        // 白名单拦截：白名单任务只由"用户手动"决定是否拉黑，自动拉黑机制不插手
+        Set<String> white = TASK_WHITE_LIST.get(listTitle);
+        if (white != null && white.contains(taskTitle)) {
+            Log.record("[" + TaskListName + "]任务[" + taskTitle + "]在白名单中，跳过自动拉黑");
             return;
         }
         if (!TaskSelectModelField.contains(taskTitle)) {
@@ -633,34 +649,43 @@ public class MessageUtil {
     }
 
     /**
-     * 各模块"黑白名单初始化"的收尾：把预置黑名单补进列表、把预置白名单从列表移除，并保存配置。
+     * 各模块"黑白名单初始化"的收尾：把预置黑名单补进列表、登记预置白名单，并保存配置。
      * <p>原先 9 个模块 × 13 个任务列表块各自抄了一遍「遍历 blackList → add(已存在则跳过) ／
      * 遍历 whiteList → remove ／ ConfigV2.save ＋ 成功/失败日志」，逻辑完全相同、只有中文名不同。
      * <p>日志文案由 displayName 拼出，与原先逐字一致：成功 `黑白名单🈲<名>自动设置: <列表>`，
      * 失败 `<名>黑白名单设置失败`。
      *
+     * <p><b>白名单语义变更</b>：白名单只用于「阻止自动拉黑机制去添加该任务」，
+     * 不再从列表中移除任何条目——用户手动加入黑名单的任务会被保留，不会被白名单悄悄删掉。
+     *
      * @param displayName 列表中文名（如 "森林活力值任务"），仅用于日志
+     * @param listTitle   列表字段名（如 "AntForestHuntTaskList"），用于登记白名单、与自动拉黑入口对应
      * @param blackList   预置拉黑项（键＝任务标题）
-     * @param whiteList   预置释放项
+     * @param whiteList   预置白名单项（仅阻止自动拉黑添加，不删除用户条目）
      * @param field       目标 SelectModelField（可用性由调用方先判空；为 null 时直接返回）
      */
-    public static void syncTaskBlackList(String displayName, Set<String> blackList, Set<String> whiteList,
-                                         SelectModelField field) {
+    public static void syncTaskBlackList(String displayName, String listTitle, Set<String> blackList,
+                                         Set<String> whiteList, SelectModelField field) {
         if (field == null) {
             return;
+        }
+        // 登记白名单：仅用于阻止自动拉黑添加，绝不删除用户手动加入黑名单的条目
+        if (listTitle != null && whiteList != null && !whiteList.isEmpty()) {
+            TASK_WHITE_LIST.put(listTitle, new HashSet<>(whiteList));
         }
         Set<String> currentValues = field.getValue();
         if (currentValues != null) {
             for (String task : blackList) {
+                // 白名单优先：若预置黑名单与白名单冲突，以白名单为准，不自动添加
+                if (whiteList != null && whiteList.contains(task)) {
+                    continue;
+                }
                 if (!currentValues.contains(task)) {
                     field.add(task, 0);
                 }
             }
-            for (String task : whiteList) {
-                if (currentValues.contains(task)) {
-                    currentValues.remove(task);
-                }
-            }
+            // 注意：不再遍历 whiteList 调用 remove。白名单只挡"自动拉黑去加它"，
+            // 用户手动加入黑名单的条目（无论是否为白名单任务）一律保留。
         }
         if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
             Log.record("黑白名单🈲" + displayName + "自动设置: " + field.getValue());

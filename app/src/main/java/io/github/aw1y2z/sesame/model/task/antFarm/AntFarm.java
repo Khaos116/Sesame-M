@@ -476,7 +476,7 @@ public class AntFarm extends ModelTask {
                     return;
                 }
                 // 2~4. 批量写回黑/白名单并保存
-                MessageUtil.syncTaskBlackList("庄园饲料任务", blackList, whiteList, AntFarmDoFarmTaskList);
+                MessageUtil.syncTaskBlackList("庄园饲料任务", "AntFarmDoFarmTaskList", blackList, whiteList, AntFarmDoFarmTaskList);
             }
 
             //初始化AntFarmDrawMachineTaskListMap
@@ -536,7 +536,7 @@ public class AntFarm extends ModelTask {
                         return;
                     }
                     // 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("庄园装扮抽抽乐任务", blackList, whiteList, AntFarmDrawMachineTaskList);
+                    MessageUtil.syncTaskBlackList("庄园装扮抽抽乐任务", "AntFarmDrawMachineTaskList", blackList, whiteList, AntFarmDrawMachineTaskList);
                 }
             }
         } catch (Throwable t) {

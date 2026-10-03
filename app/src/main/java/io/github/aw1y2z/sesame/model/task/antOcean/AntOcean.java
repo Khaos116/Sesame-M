@@ -212,7 +212,7 @@ public class AntOcean extends ModelTask {
                     }
 
                     // 2~4. 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("海洋普通任务", blackList, whiteList, AntOceanAntiepTaskList);
+                    MessageUtil.syncTaskBlackList("海洋普通任务", "AntOceanAntiepTaskList", blackList, whiteList, AntOceanAntiepTaskList);
                 }
             }
 
@@ -262,7 +262,7 @@ public class AntOcean extends ModelTask {
                     }
 
                     // 2~4. 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("海洋去摸鱼任务", blackList, whiteList, AntOceanFishBlackList);
+                    MessageUtil.syncTaskBlackList("海洋去摸鱼任务", "AntOceanFishBlackList", blackList, whiteList, AntOceanFishBlackList);
                 }
             }
         } catch (Throwable t) {

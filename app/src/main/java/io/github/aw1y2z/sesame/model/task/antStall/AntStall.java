@@ -279,7 +279,7 @@ public class AntStall extends ModelTask {
                     }
                     // 2. 批量添加黑名单任务（确保存在）
                     // 2~4. 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("新村任务", blackList, whiteList, AntStallTaskList);
+                    MessageUtil.syncTaskBlackList("新村任务", "AntStallTaskList", blackList, whiteList, AntStallTaskList);
                 }
             }
         }

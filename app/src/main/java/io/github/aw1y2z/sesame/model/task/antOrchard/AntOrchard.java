@@ -339,7 +339,7 @@ public class AntOrchard extends ModelTask {
                     }
 
                     // 2~4. 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("芭芭农场肥料任务", blackList, whiteList, AntOrchardTaskList);
+                    MessageUtil.syncTaskBlackList("芭芭农场肥料任务", "AntOrchardTaskList", blackList, whiteList, AntOrchardTaskList);
                 }
             }
         } catch (Throwable t) {

@@ -247,7 +247,7 @@ public class AntMember extends ModelTask {
                     }
                     
                     // 2~4. 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("会员任务", blackList, whiteList, AntMemberTaskList);
+                    MessageUtil.syncTaskBlackList("会员任务", "AntMemberTaskList", blackList, whiteList, AntMemberTaskList);
                 }
             }
             //初始化MemberCreditSesameTaskListMap
@@ -337,7 +337,7 @@ public class AntMember extends ModelTask {
                     }
                     
                     // 2~4. 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("会员芝麻信用任务芝麻粒", blackList, whiteList, MemberCreditSesameTaskList);
+                    MessageUtil.syncTaskBlackList("会员芝麻信用任务芝麻粒", "MemberCreditSesameTaskList", blackList, whiteList, MemberCreditSesameTaskList);
                 }
             }
         }

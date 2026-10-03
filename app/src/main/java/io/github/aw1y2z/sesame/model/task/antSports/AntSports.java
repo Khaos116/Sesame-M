@@ -334,7 +334,7 @@ public class AntSports extends ModelTask {
                     }
                     // 2. 批量添加黑名单任务（确保存在）
                     // 2~4. 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("运动任务", blackList, whiteList, AntSportsTaskList);
+                    MessageUtil.syncTaskBlackList("运动任务", "AntSportsTaskList", blackList, whiteList, AntSportsTaskList);
                 }
             }
         } catch (Throwable t) {
