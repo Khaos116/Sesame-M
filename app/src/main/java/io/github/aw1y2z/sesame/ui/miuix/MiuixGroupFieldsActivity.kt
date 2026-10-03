@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -219,50 +220,109 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
         },
         containerColor = MiuixTheme.colorScheme.surface
     ) { padding ->
+        // 搜索框：与四级页一致，按字段名/编码/描述过滤，并隐藏无匹配的分区
+        var searchQuery by remember { mutableStateOf("") }
         // 按分区（Header）归组：一个分组 = 一张 CardColumn（四角 16dp 圆角、行无缝），
         // 与一级页「一张卡里排多行」完全一致；行作为 Card 的子项，背景/裁剪/按压观感都由它负责。
         // 注意：必须在这里算（@Composable 上下文），不能放进 LazyColumn 的 content lambda
-        val sections = remember(rows) {
+        val sections = remember(rows, searchQuery) {
+                val query = searchQuery.trim()
                 val list = ArrayList<Pair<String?, MutableList<GroupFieldsRow.Field>>>()
                 var title: String? = null
                 var fields = ArrayList<GroupFieldsRow.Field>()
                 rows.forEach { row ->
                     when (row) {
                         is GroupFieldsRow.Header -> {
-                            if (title != null || fields.isNotEmpty()) list.add(title to fields)
+                            if (fields.isNotEmpty()) list.add(title to fields)
                             title = row.title
                             fields = ArrayList()
                         }
-                        is GroupFieldsRow.Field -> fields.add(row)
+                        is GroupFieldsRow.Field -> {
+                            if (query.isBlank() || fieldMatchesSearch(query, row.field)) {
+                                fields.add(row)
+                            }
+                        }
                     }
                 }
-                if (title != null || fields.isNotEmpty()) list.add(title to fields)
+                if (fields.isNotEmpty()) list.add(title to fields)
             list
         }
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            contentPadding = PaddingValues(vertical = 8.dp)
         ) {
-            items(sections.size) { index ->
-                val (title, fields) = sections[index]
-                title?.let { SmallTitle(text = it) }
-                CardColumn {
-                    fields.forEach { fieldRow ->
-                        GroupFieldRow(
-                            activity = activity,
-                            userId = userId,
-                            groupCode = groupCode,
-                            row = fieldRow,
-                            onDependencyChanged = { depVersion++ }
+            // 搜索框（与四级页 MiuixSelectionEditActivity 一致）
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = "",
+                    modifier = Modifier.weight(1f),
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Filled.Search,
+                            contentDescription = "搜索",
+                            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(start = 12.dp)
                         )
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            Text(
+                                "×",
+                                fontSize = 16.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.padding(end = 12.dp).clickable { searchQuery = "" }
+                            )
+                        }
+                    }
+                )
+            }
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                if (searchQuery.isNotBlank() && sections.isEmpty()) {
+                    item {
+                        SmallTitle(text = "无匹配字段")
+                    }
+                }
+                items(sections.size) { index ->
+                    val (title, fields) = sections[index]
+                    title?.let { SmallTitle(text = it) }
+                    CardColumn {
+                        fields.forEach { fieldRow ->
+                            GroupFieldRow(
+                                activity = activity,
+                                userId = userId,
+                                groupCode = groupCode,
+                                row = fieldRow,
+                                onDependencyChanged = { depVersion++ }
+                            )
+                        }
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * 三级页搜索匹配：字段名、编码或描述包含关键字（忽略大小写）。
+ * 与四级页按 name/id 过滤的语义保持一致，这里用字段的 name/code/description。
+ */
+private fun fieldMatchesSearch(query: String, field: ModelField<*>): Boolean {
+    return field.name?.contains(query, ignoreCase = true) == true
+        || field.code.contains(query, ignoreCase = true)
+        || field.description?.contains(query, ignoreCase = true) == true
 }
 
 /**
