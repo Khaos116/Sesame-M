@@ -342,12 +342,11 @@ public class AntFarm extends ModelTask {
                 harvestProduce(ownerFarmId);
             }
 
+            // 排位日(有活跃S2轮次)只捐S2、不捐公益；非排位日回退公益捐蛋。
+            // competition() 在排位日返回 true 抑制公益，非排位日返回 false 放行公益。
             if (competition.getValue()) {
                 if (!competition()) {
-                    // 仅「确认当天没有排位活动」才回退公益捐蛋；接口异常/数据缺失/20:01 后跳过都返回 true，
-                    // 不会走到这里（否则当天已为排位捐过蛋，晚上还会再捐一次公益）
                     if (donationType.getValue() != DonationType.ZERO) {
-                        Log.record("捐蛋排位🥚当天无排位活动，回退公益捐蛋");
                         donation();
                     }
                 }
@@ -1102,10 +1101,15 @@ public class AntFarm extends ModelTask {
      * 爱心鸡结号(S2赛季)自动化。
      * <p>
      * S2 为<b>周活动</b>：每周一 00:00:00 ~ 周日 20:00:00 为一轮（旧排位赛为按天）。
-     * 返回语义与旧排位赛一致：{@code false} 表示当天确实无活动（调用方据此回退公益捐蛋），
-     * {@code true} 表示已处理（含接口异常/无数据等不该回退的情况）。
+     * 返回值用于控制公益捐蛋是否执行：{@code true} 表示处于活跃排位轮次（抑制公益捐蛋，
+     * 仅捐 S2）；{@code false} 表示非活跃轮次/无活动（放行公益捐蛋）。
+     * <p>
+     * 注意：仅当「时间窗口内 且 存在活跃轮次(rankRoundId 非空)」才视为排位日，
+     * 否则非赛季/轮次外公益捐蛋照常执行（避免公益捐蛋被几乎每天抑制）。
+     * 接口异常按 {@code true} 处理（抑制公益，避免与已发生的 S2 捐蛋重复）。
      */
     private boolean competition() {
+        boolean inRound = false;
         try {
             JSONObject jo = new JSONObject(AntFarmRpcCall.enterDonationCompetitionRank());
             if (!MessageUtil.checkMemo(TAG, jo)) {
@@ -1120,14 +1124,16 @@ public class AntFarm extends ModelTask {
             int benevolenceScore = jo.optInt("benevolenceScore");
             Log.farm("爱心鸡结号❤️当前爱心值" + benevolenceScore);
 
-            // 轮次外（周日20:00 ~ 周一00:00）跳过捐蛋/偷榜，但仍可领取已产生奖励
-            boolean inRound = isCompetitionRoundActive();
+            // 排位日 = 活动轮次内(周一00:00-周日20:00) 且 存在活跃轮次(rankRoundId 非空)。
+            // 仅真正存在活跃 S2 轮次时才抑制公益捐蛋；非排位日/非赛季放行公益捐蛋。
+            String rankRoundId = jo.optString("rankRoundId");
+            inRound = isCompetitionRoundActive() && !rankRoundId.isEmpty();
             if (!inRound) {
-                Log.record("爱心鸡结号❤️当前不在活动轮次内(周一00:00-周日20:00)，跳过捐蛋/偷榜");
+                Log.record("爱心鸡结号❤️当前非活跃排位轮次，放行公益捐蛋");
             } else {
                 // 自动捐蛋（每轮一次，定向捐到 S2 项目）
                 if (competitionDonate.getValue()) {
-                    String roundId = jo.optString("rankRoundId");
+                    String roundId = rankRoundId;
                     if (!roundId.isEmpty() && !Status.isCompetitionDonated(roundId)) {
                         donateToCompetition(competitionDonateAmount.getValue());
                         Status.markCompetitionDonated(roundId);
@@ -1147,7 +1153,8 @@ public class AntFarm extends ModelTask {
         } catch (Throwable t) {
             Log.err(TAG, "competition err:", t);
         }
-        return true;
+        // 排位日(活跃S2轮次)返回 true 抑制公益捐蛋；非排位日返回 false 放行公益捐蛋
+        return inRound;
     }
 
     /**
