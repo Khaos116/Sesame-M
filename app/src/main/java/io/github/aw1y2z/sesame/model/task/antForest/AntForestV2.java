@@ -1163,12 +1163,9 @@ public class AntForestV2 extends ModelTask {
                             break;
                     }
                 }
-                //兼容组队模式
-                JSONObject selfHomeObject = new JSONObject(AntForestRpcCall.queryHomePage());
-                //不是自己或者是自己不在组队模式全收的情况
-                //if (batchRobEnergy.getValue() && (!isSelf || (CollectSelfEnergyType.getValue() == CollectSelfType.ALL && !isTeam(selfHomeObject)))) {
-                //不在组队模式全收的情况
-                if (batchRobEnergy.getValue() && (CollectSelfEnergyType.getValue() == CollectSelfType.ALL) && teamState(selfHomeObject) == 0) {
+                // 组队模式下走逐个收取，避免批量收取在合种场景下异常；
+                // 直接复用已查询的 userHomeObject 判定组队状态，不再额外请求首页。
+                if (batchRobEnergy.getValue() && (CollectSelfEnergyType.getValue() == CollectSelfType.ALL) && !isTeam(userHomeObject)) {
                     Iterator<Long> iterator = bubbleIdList.iterator();
                     List<Long> batchBubbleIdList = new ArrayList<>();
                     while (iterator.hasNext()) {
@@ -4561,6 +4558,17 @@ public class AntForestV2 extends ModelTask {
     }
 
     private static boolean isTeam(JSONObject homeObj) {
+        if (homeObj == null) {
+            return false;
+        }
+        // 优先依据 teamHomeResult.mainMember 是否存在判定组队模式：
+        // 该字段只有组队主页才下发，且个人能量就在 mainMember 里，比 nextAction 字面量更可靠
+        // （线上 nextAction 取值不稳定时容易漏判，导致 mainMember 并入被跳过、个人能量收不到）。
+        JSONObject teamHomeResult = homeObj.optJSONObject("teamHomeResult");
+        JSONObject mainMember = teamHomeResult != null ? teamHomeResult.optJSONObject("mainMember") : null;
+        if (mainMember != null) {
+            return true;
+        }
         return teamState(homeObj) == 1;
     }
 
