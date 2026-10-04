@@ -63,6 +63,57 @@ public class AntMemberRpcCall {
     }
 
     /**
+     * 黄金票收取（兼容）
+     */
+    public static String goldBillCollect() {
+        return ApplicationHook.requestString("com.alipay.wealthgoldtwa.goldbill.v2.index.collect", "[{}]");
+    }
+
+    /**
+     * 黄金票首页数据
+     */
+    public static String queryGoldTicketHome() {
+        try {
+            JSONObject args = new JSONObject();
+            args.put("bizScene", "goldpage");
+            args.put("chInfo", "goldpage");
+            args.put("taskId", "");
+            return ApplicationHook.requestString("com.alipay.wealthgoldtwa.needle.v2.index",
+                    new JSONArray().put(args).toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 黄金票首页场景收取（新版）
+     */
+    public static String goldTicketIndexCollect() {
+        try {
+            JSONObject args = new JSONObject();
+            args.put("trigger", "Y");
+            return ApplicationHook.requestString("com.alipay.wealthgoldtwa.needle.index.collect",
+                    new JSONArray().put(args).toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 福利中心刷新
+     */
+    public static String welfareCenterUpdate(int modeBitMask) {
+        try {
+            JSONObject args = new JSONObject();
+            args.put("modeBitMask", modeBitMask);
+            return ApplicationHook.requestString("com.alipay.finaggexpbff.needle.welfareCenter.update",
+                    new JSONArray().put(args).toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
      * [新增] 查询黄金票提取页信息
      * 用于获取最新的可用数量、基金ID (productId) 和 赠送份数 (bonusAmount)
      */
