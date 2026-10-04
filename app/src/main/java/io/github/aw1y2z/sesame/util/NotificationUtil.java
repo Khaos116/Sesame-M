@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import lombok.Getter;
@@ -25,16 +27,42 @@ public class NotificationUtil {
     private static String contentText = "";
     /** 活跃任务计数，>0 表示有异步任务仍在执行。由 ModelTask 拿到执行槽后 / finally 里增减 */
     private static final AtomicInteger runningCount = new AtomicInteger(0);
+    /** 正在执行中的模块任务名（如「森林」「庄园」），用于状态栏展示当前在跑什么 */
+    private static final Set<String> runningTasks = ConcurrentHashMap.newKeySet();
 
-    public static void trackTaskStart() {
+    public static void trackTaskStart(String name) {
+        if (!StringUtil.isEmpty(name)) {
+            runningTasks.add(name);
+        }
         runningCount.incrementAndGet();
+        updateRunningText();
     }
 
-    public static void trackTaskEnd() {
+    public static void trackTaskEnd(String name) {
         // 不再有实例锁串行化，增减来自不同线程 ⇒ 原子操作
         if (runningCount.decrementAndGet() < 0) {
             runningCount.set(0);
         }
+        if (!StringUtil.isEmpty(name)) {
+            runningTasks.remove(name);
+        }
+        updateRunningText();
+    }
+
+    /**
+     * 执行中刷新通知正文：列出当前正在跑的模块任务；全部结束时交由「上次执行」文案。
+     */
+    private static void updateRunningText() {
+        long now = System.currentTimeMillis();
+        if (runningTasks.isEmpty()) {
+            if (runningCount.get() == 0) {
+                updateLastExecText();
+            }
+            return;
+        }
+        contentText = "执行中：" + String.join(" / ", runningTasks);
+        lastNoticeTime = now;
+        sendText();
     }
 
     public static int getRunningCount() {
@@ -149,16 +177,6 @@ public class NotificationUtil {
             }
             contentText = lastPart;
             lastNoticeTime = now;
-            sendText();
-        } catch (Exception e) {
-            Log.printStackTrace(e);
-        }
-    }
-
-    public static void setStatusTextExec() {
-        try {
-            contentText = "自动执行中";
-            lastNoticeTime = System.currentTimeMillis();
             sendText();
         } catch (Exception e) {
             Log.printStackTrace(e);

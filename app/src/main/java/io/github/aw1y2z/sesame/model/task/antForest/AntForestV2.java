@@ -426,7 +426,6 @@ public class AntForestV2 extends ModelTask {
     @Override
     public void run() {
         try {
-            NotificationUtil.setStatusTextExec();
             taskCount.set(0);
             selfId = UserIdMap.getCurrentUid();
             hasErrorWait = false;

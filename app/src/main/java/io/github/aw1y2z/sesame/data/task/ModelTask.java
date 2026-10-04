@@ -61,12 +61,8 @@ public abstract class ModelTask extends Model {
             RunGeneration prevGen = RunGeneration.bind(myGen, () -> task.generation);
             // 静音计数分层：记下上层残留，本轮只统计自己这段
             int droppedPrev = Log.takeDroppedStaleLogCount();
-            // 与执行槽配对：只有真正拿到槽的线程才计入 runningCount
-            boolean isFirst = NotificationUtil.getRunningCount() == 0;
-            NotificationUtil.trackTaskStart();
-            if (isFirst) {
-                NotificationUtil.setStatusTextExec();
-            }
+            // 与执行槽配对：只有真正拿到槽的线程才计入 runningCount；同时驱动状态栏显示当前在跑的模块
+            NotificationUtil.trackTaskStart(task.getName());
             Log.record("执行开始-" + task.getName());
             Log.startModuleLogCount();
             try {
@@ -92,10 +88,7 @@ public abstract class ModelTask extends Model {
                 // 身份化移除：只删本线程登记的那条，避免旧代收尾误删新一代条目
                 MAIN_TASK_MAP.remove(task, Thread.currentThread());
                 task.running.set(false);
-                NotificationUtil.trackTaskEnd();
-                if (NotificationUtil.getRunningCount() == 0) {
-                    NotificationUtil.updateLastExecText();
-                }
+                NotificationUtil.trackTaskEnd(task.getName());
             }
         }
 
