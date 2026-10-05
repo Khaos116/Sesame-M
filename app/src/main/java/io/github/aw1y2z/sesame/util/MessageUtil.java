@@ -88,10 +88,37 @@ public class MessageUtil {
                 Log.i(tag, jo.toString());
                 return;
             }
-            Log.record(tag + " error:" + memo);
+            recordFailure(tag, memo);
             Log.i(memo, jo.toString());
         } catch (Throwable t) {
             Log.err(TAG, "printErrorMessage err:", t);
+        }
+    }
+
+    /**
+     * 失败应答属「结果」，按模块 tag 落到对应分类文件（与 {@code Log.forest/farm/...} 一样会同时写一份运行日志）。
+     * <p>未登记的 tag 落到「其他记录」：宁可走兜底分类，也不要让结果停在没有模块归属的运行日志里。
+     */
+    private static void recordFailure(String tag, String memo) {
+        String s = tag + " error:" + memo;
+        switch (StringUtil.isEmpty(tag) ? UNKNOWN_TAG : tag) {
+            case "AntForestV2":
+            case "AntDodo":
+            case "ProtectEcology":
+            case "WhackMole":
+            case "Privilege":
+                Log.forest(s);
+                break;
+            case "AntFarm":
+            case "AntStall":
+            case "AntOrchard":
+                Log.farm(s);
+                break;
+            case "金豆夺宝":
+                Log.goldenBeans(s);
+                break;
+            default:
+                Log.other(s);
         }
     }
 

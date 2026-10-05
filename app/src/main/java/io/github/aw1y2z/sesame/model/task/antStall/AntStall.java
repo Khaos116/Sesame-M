@@ -853,7 +853,7 @@ public class AntStall extends ModelTask {
             JSONObject jo = new JSONObject(s);
             if (jo.optBoolean("success")) {
                 String shareId = jo.getString("shareId");
-                Log.record("蚂蚁新村⛪[分享助力]");
+                Log.farm("蚂蚁新村⛪[分享助力]");
                 return shareId;
             }
             else {
@@ -1156,7 +1156,7 @@ public class AntStall extends ModelTask {
                     return;
                 }
                 if (jo.getInt("canPasteTicketCount") == 0) {
-                    Log.record("蚂蚁新村👍今日罚单已贴完");
+                    Log.farm("蚂蚁新村👍今日罚单已贴完");
                     Status.flagToday("stall::pasteTicketLimit");
                     return;
                 }

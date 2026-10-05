@@ -526,7 +526,7 @@ public class AntForestV2 extends ModelTask {
                                                 totalCollected += collected;
                                                 Statistics.addData(Statistics.DataType.COLLECTED, collected);
                                             } else {
-                                                Log.record("收取[我]的浇水金球失败");
+                                                Log.forest("收取[我]的浇水金球失败");
                                             }
                                         }
                                         break;
@@ -557,7 +557,7 @@ public class AntForestV2 extends ModelTask {
                                                 totalCollected += collected;
                                                 Statistics.addData(Statistics.DataType.COLLECTED, collected);
                                             } else {
-                                                Log.record("收取[" + friendShowName + "]的复活回赠金球失败");
+                                                Log.forest("收取[" + friendShowName + "]的复活回赠金球失败");
                                             }
                                         }
                                         break;
@@ -924,7 +924,7 @@ public class AntForestV2 extends ModelTask {
                 if (!pkIdList.isEmpty()) {
                     collectFriendsEnergy(pkIdList, "PK");
                 }
-                Log.record("收取PK能量完成！");
+                Log.forest("收取PK能量完成！");
             }
         } catch (Exception e) {
             Log.printStackTrace(TAG, e);
@@ -999,9 +999,9 @@ public class AntForestV2 extends ModelTask {
                     if (propertiesObject != null) {
                         if (Objects.equals("Y", propertiesObject.optString("whackMole"))) {
                             if (io.github.aw1y2z.sesame.model.task.antForest.WhackMole.closeWhackMole()) {
-                                Log.record("6秒拼手速关闭成功");
+                                Log.forest("6秒拼手速关闭成功");
                             } else {
-                                Log.record("6秒拼手速关闭失败");
+                                Log.forest("6秒拼手速关闭失败");
                             }
                         }
                     }
@@ -1428,10 +1428,10 @@ public class AntForestV2 extends ModelTask {
                 String resultCode = jo.getString("resultCode");
                 if (!"SUCCESS".equalsIgnoreCase(resultCode)) {
                     if ("PARAM_ILLEGAL2".equals(resultCode)) {
-                        Log.record("[" + username + "]" + "能量已被收取,取消重试 错误:" + jo.getString("resultDesc"));
+                        Log.forest("[" + username + "]" + "能量已被收取,取消重试 错误:" + jo.getString("resultDesc"));
                         return;
                     }
-                    Log.record("[" + username + "]" + jo.getString("resultDesc"));
+                    Log.forest("[" + username + "]" + jo.getString("resultDesc"));
                     if (tryCount < tryCountInt) {
                         collectEnergyEntity.setNeedRetry();
                         collectEnergy(collectEnergyEntity, username);
@@ -1462,16 +1462,18 @@ public class AntForestV2 extends ModelTask {
                             str = "一键收取🪂[" + username + "]#" + collected + "g";
                         }
                         if (needDouble) {
-                            Log.i(str + "耗时[" + spendTime + "]ms[双击]");
+                            Log.forest(str + "[双击]");
+                            Log.i("收取耗时[" + spendTime + "]ms[双击]");
                             Toast.show(str + "[双击]");
                         } else {
-                            Log.i(str + "耗时[" + spendTime + "]ms");
+                            Log.forest(str);
+                            Log.i("收取耗时[" + spendTime + "]ms");
                             Toast.show(str);
                         }
                         totalCollected += collected;
                         Statistics.addData(Statistics.DataType.COLLECTED, collected);
                     } else {
-                        Log.record("一键收取[" + username + "]的能量失败" + " " + "，UserID：" + userId + "，BubbleId：" + newBubbleIdList);
+                        Log.forest("一键收取[" + username + "]的能量失败" + " " + "，UserID：" + userId + "，BubbleId：" + newBubbleIdList);
                     }
                     if (!newBubbleIdList.isEmpty()) {
                         collectEnergyEntity.setRpcEntity(AntForestRpcCall.getCollectBatchEnergyRpcEntity(userId, newBubbleIdList));
@@ -1494,16 +1496,18 @@ public class AntForestV2 extends ModelTask {
                         }
 
                         if (needDouble) {
-                            Log.i(str + "耗时[" + spendTime + "]ms[双击]");
+                            Log.forest(str + "[双击]");
+                            Log.i("收取耗时[" + spendTime + "]ms[双击]");
                             Toast.show(str + "[双击]");
                         } else {
-                            Log.i(str + "耗时[" + spendTime + "]ms");
+                            Log.forest(str);
+                            Log.i("收取耗时[" + spendTime + "]ms");
                             Toast.show(str);
                         }
                         totalCollected += collected;
                         Statistics.addData(Statistics.DataType.COLLECTED, collected);
                     } else {
-                        Log.record("收取[" + username + "]的能量失败");
+                        Log.forest("收取[" + username + "]的能量失败");
                         Log.i("，UserID：" + userId + "，BubbleId：" + bubble.getLong("id"));
                     }
                     if (bubble.getBoolean("canBeRobbedAgain")) {
@@ -2115,16 +2119,16 @@ public class AntForestV2 extends ModelTask {
                         Statistics.addData(Statistics.DataType.WATERED, waterEnergy);
                         break;
                     case "WATERING_TIMES_LIMIT":
-                        Log.record("好友浇水🚿今日给[" + UserIdMap.getMaskName(userId) + "]浇水已达上限");
+                        Log.forest("好友浇水🚿今日给[" + UserIdMap.getMaskName(userId) + "]浇水已达上限");
                         wateredTimes = 3;
                         break label;
                     case "WATERING_USER_LIMIT":
-                        Log.record("好友浇水🚿给[" + UserIdMap.getMaskName(userId) + "]浇水，" + jo.getString("resultDesc"));
+                        Log.forest("好友浇水🚿给[" + UserIdMap.getMaskName(userId) + "]浇水，" + jo.getString("resultDesc"));
                         wateredTimes = 3;
                         break label;
                     default:
                         // 未知失败不再重发：响应丢失但已生效时，用同一 bizNo 重发会重复扣能量
-                        Log.record("好友浇水🚿" + jo.getString("resultDesc"));
+                        Log.forest("好友浇水🚿" + jo.getString("resultDesc"));
                         Log.i(jo.toString());
                         break label;
                 }
@@ -2525,7 +2529,7 @@ public class AntForestV2 extends ModelTask {
                 TaskAlternative.trigger(null, taskType, taskTitle, taskType, sceneCode, "森林任务", msg -> Log.forest(msg));
                 return false;
             }
-            Log.record("完成任务[" + taskTitle + "]失败");
+            Log.forest("完成任务[" + taskTitle + "]失败");
         } catch (Throwable t) {
             Log.err(TAG, "finishTask err:", t);
         }
@@ -3989,7 +3993,7 @@ public class AntForestV2 extends ModelTask {
             }
             int collected = collect.optInt("collectedEnergy", -1);
             if (collected < 0) {
-                Log.record("新版动物伙伴🦩领取成功但缺少实际到账量，不计入统计");
+                Log.forest("新版动物伙伴🦩领取成功但缺少实际到账量，不计入统计");
                 return;
             }
             if (collected > 0) {
@@ -4139,11 +4143,11 @@ public class AntForestV2 extends ModelTask {
                     totalHelpCollected += helped;
                     Statistics.addData(Statistics.DataType.HELPED, helped);
                 } else {
-                    Log.record("帮[" + UserIdMap.getMaskName(targetUserId) + "]收取失败");
+                    Log.forest("帮[" + UserIdMap.getMaskName(targetUserId) + "]收取失败");
                     Log.i("，UserID：" + targetUserId + "，BubbleId" + bubbleId);
                 }
             } else {
-                Log.record("[" + UserIdMap.getMaskName(targetUserId) + "]" + jo.getString("resultDesc"));
+                Log.forest("[" + UserIdMap.getMaskName(targetUserId) + "]" + jo.getString("resultDesc"));
                 Log.i(s);
             }
         } catch (Throwable t) {

@@ -299,7 +299,7 @@ public final class GoldenBeansTasks {
                         handled++;
                         changed = true;
                     } else {
-                        Log.record("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]完成失败["
+                        Log.goldenBeans("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]完成失败["
                                 + (actionType.isEmpty() ? "UNKNOWN" : actionType) + "]");
                         unresolved = true;
                     }
@@ -315,7 +315,7 @@ public final class GoldenBeansTasks {
                 changed = true;
             }
 
-            Log.record("金豆[" + entry.alias + "]任务🗂️共[" + total + "]个#完成[" + handled + "]个");
+            Log.goldenBeans("金豆[" + entry.alias + "]任务🗂️共[" + total + "]个#完成[" + handled + "]个");
             if (changed) {
                 GoldenBeansSupport.pause(interval);
                 goldenbeansRpcCall.pullOf(entry.bizType, entry.source, "FARM_TASK", "TASK_LIST");

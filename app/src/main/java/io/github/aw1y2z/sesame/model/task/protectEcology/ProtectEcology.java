@@ -442,7 +442,7 @@ public class ProtectEcology extends ModelTask {
                 return;
             }
             jo = jo.getJSONObject("goldAnimalCertVO");
-            Log.record("生态保护🏕️点亮[" + jo.getString("name") + "]");
+            Log.forest("生态保护🏕️点亮[" + jo.getString("name") + "]");
         }
         catch (Throwable t) {
             Log.err(TAG, "applyGoldAnimalCert err:", t);

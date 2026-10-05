@@ -46,13 +46,13 @@ public class ReadingDada {
                 s = ReadingDadaRpcCall.submitAnswer(activityId, outBizId, jo.getString("questionId"), answer);
                 jo = new JSONObject(s);
                 if ("200".equals(jo.getString("resultCode"))) {
-                    Log.record("答题完成");
+                    Log.other("答题完成");
                     return true;
                 } else {
-                    Log.record("答题失败");
+                    Log.other("答题失败");
                 }
             } else {
-                Log.record("获取问题失败");
+                Log.other("获取问题失败");
             }
         } catch (Throwable e) {
             Log.err(TAG, "answerQuestion err:", e);

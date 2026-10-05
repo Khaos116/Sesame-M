@@ -1169,7 +1169,7 @@ public class AntFarm extends ModelTask {
         try {
             JSONArray levelAwardInfoList = jo.optJSONArray("levelAwardInfoList");
             if (levelAwardInfoList == null || levelAwardInfoList.length() == 0) {
-                Log.record("爱心鸡结号❤️领取：无等级奖励列表");
+                Log.farm("爱心鸡结号❤️领取：无等级奖励列表");
                 return;
             }
             int claimed = 0;
@@ -1192,9 +1192,9 @@ public class AntFarm extends ModelTask {
                 TimeUtil.sleep(1000L);
             }
             if (claimed > 0) {
-                Log.record("爱心鸡结号❤️本次领取" + claimed + "个等级爱心值奖励");
+                Log.farm("爱心鸡结号❤️本次领取" + claimed + "个等级爱心值奖励");
             } else {
-                Log.record("爱心鸡结号❤️无待领取的等级爱心值奖励");
+                Log.farm("爱心鸡结号❤️无待领取的等级爱心值奖励");
             }
         } catch (Throwable t) {
             Log.err(TAG, "receiveCompetitionAward err:", t);
@@ -1238,9 +1238,9 @@ public class AntFarm extends ModelTask {
                 TimeUtil.sleep(1000L);
             }
             if (claimed > 0) {
-                Log.record("爱心鸡结号❤️本次领取" + claimed + "个任务奖励");
+                Log.farm("爱心鸡结号❤️本次领取" + claimed + "个任务奖励");
             } else {
-                Log.record("爱心鸡结号❤️无待领取的任务奖励");
+                Log.farm("爱心鸡结号❤️无待领取的任务奖励");
             }
         } catch (Throwable t) {
             Log.err(TAG, "receiveCompetitionTaskAwards err:", t);
@@ -1635,7 +1635,7 @@ public class AntFarm extends ModelTask {
             JSONObject extInfo = jo.getJSONObject("extInfo");
             boolean correct = jo.getBoolean("correct");
             String award = extInfo.getString("award");
-            Log.record("庄园答题📝回答" + (correct ? "正确" : "错误") + "#获得[" + award + "g饲料]");
+            Log.farm("庄园答题📝回答" + (correct ? "正确" : "错误") + "#获得[" + award + "g饲料]");
             if (jo.has("operationConfigList")) {
                 JSONArray operationConfigList = jo.getJSONArray("operationConfigList");
                 savePreviewQuestion(operationConfigList);
@@ -1747,7 +1747,7 @@ public class AntFarm extends ModelTask {
 
     private void checkUnReceiveTaskAward() {
         if (unReceiveTaskAward > 0) {
-            Log.record("还有待领取的饲料");
+            Log.farm("还有待领取的饲料");
             unReceiveTaskAward = 0;
             listFarmTask(TaskStatus.FINISHED);
         }
@@ -2990,7 +2990,7 @@ public class AntFarm extends ModelTask {
                     String skuName = sku.optString("skuName");
 
                     if (isNoEnoughPoint(sku) || (cent > 0 && totalCent < cent)) {
-                        Log.record("兑换[" + labelType + "]类最高价值[" + skuName + "]碎片不足(持有" + (totalCent / 100) + "需" + (cent / 100) + ")");
+                        Log.farm("兑换[" + labelType + "]类最高价值[" + skuName + "]碎片不足(持有" + (totalCent / 100) + "需" + (cent / 100) + ")");
                         return false;
                     }
                     break;
@@ -3009,7 +3009,7 @@ public class AntFarm extends ModelTask {
 
                     // 【核心逻辑】：如果当前项买不起，直接 return 停止，不再尝试后续更便宜的项目
                     if (isNoEnoughPoint(sku) || (cent > 0 && totalCent < cent)) {
-                        Log.record("剩余碎片不足以兑换[" + labelType + "]类优先级项 [" + skuName + "] (需 " + (cent / 100) + ")，停止后续兑换任务");
+                        Log.farm("剩余碎片不足以兑换[" + labelType + "]类优先级项 [" + skuName + "] (需 " + (cent / 100) + ")，停止后续兑换任务");
                         return false;
                     }
 
@@ -3230,7 +3230,7 @@ public class AntFarm extends ModelTask {
                                 Log.farm("小鸡乐园🎁开宝箱得[" + awardLog + "]");
                                 TimeUtil.sleep(3000);
                             } else {
-                                Log.record("小鸡乐园开启宝箱失败: " + drawRes.optString("desc"));
+                                Log.farm("小鸡乐园开启宝箱失败: " + drawRes.optString("desc"));
                                 break; // 开启失败则退出循环
                             }
                         }
@@ -3407,7 +3407,7 @@ public class AntFarm extends ModelTask {
                                 //invitesToSend--; // 每成功发送一次邀请，减少一次邀请次数
                             //}
                             //else {
-                                //Log.record("邀请失败：" + jo);
+                                //Log.farm("邀请失败：" + jo);
                                 //break;
                             //}
                         //}
@@ -3428,7 +3428,7 @@ public class AntFarm extends ModelTask {
                             Log.record("一起拿小鸡饲料🥡 [送饲料：" + UserIdMap.getMaskName(userId) + "]");
                         }
                         else {
-                            Log.record("邀请失败：" + jo);
+                            Log.farm("邀请失败：" + jo);
                             break;
                         }
                         userIdList.remove(randomIndex);
@@ -3822,10 +3822,10 @@ public class AntFarm extends ModelTask {
                 int failCount = Status.getIntFlagToday(FLAG_FAMILY_SHARE_FAIL_COUNT) + 1;
                 if (failCount >= MAX_FAMILY_SHARE_ATTEMPT) {
                     Status.flagToday("antFarm::familyShareToFriends");
-                    Log.record("家庭分享🏠邀请已连续失败" + failCount + "次，今日不再尝试");
+                    Log.farm("家庭分享🏠邀请已连续失败" + failCount + "次，今日不再尝试");
                 } else {
                     Status.setIntFlagToday(FLAG_FAMILY_SHARE_FAIL_COUNT, failCount);
-                    Log.record("家庭分享🏠邀请全部失败(第" + failCount + "/" + MAX_FAMILY_SHARE_ATTEMPT + "次)，稍后重试");
+                    Log.farm("家庭分享🏠邀请全部失败(第" + failCount + "/" + MAX_FAMILY_SHARE_ATTEMPT + "次)，稍后重试");
                 }
             }
         } catch (Throwable t) {
@@ -3907,7 +3907,7 @@ public class AntFarm extends ModelTask {
                 syncFamilyStatus(groupId);
                 return true;
             }
-            Log.record("亲密家庭🏠小鸡睡觉失败:" + jo.optString("memo"));
+            Log.farm("亲密家庭🏠小鸡睡觉失败:" + jo.optString("memo"));
         } catch (Throwable t) {
             Log.err(TAG, "familySleep err:", t);
         }

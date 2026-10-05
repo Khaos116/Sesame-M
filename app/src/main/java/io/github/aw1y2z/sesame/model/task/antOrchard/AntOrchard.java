@@ -1230,7 +1230,7 @@ public class AntOrchard extends ModelTask {
                     if (MessageUtil.checkResultCode(TAG, triggerJo)) {
                         Log.farm("肥料领取🎖️任务[" + title + "]奖励#获得[" + awardCount + "g]");
                     } else {
-                        //Log.record("领取奖励失败: " + triggerJo.toString());
+                        //Log.farm("领取奖励失败: " + triggerJo.toString());
                     }
                 }
             } else {
@@ -1524,7 +1524,7 @@ public class AntOrchard extends ModelTask {
                     }
 
                 } else {
-                    Log.record("砸金蛋失败: " + jo.optString("resultDesc", "未知错误"));
+                    Log.farm("砸金蛋失败: " + jo.optString("resultDesc", "未知错误"));
                 }
 
                 // 每次砸蛋后等待一下
@@ -1547,7 +1547,7 @@ public class AntOrchard extends ModelTask {
             String response = AntOrchardRpcCall.receiveOrchardVisitAward();
             JSONObject jo = new JSONObject(response);
             if (!MessageUtil.checkSuccess(TAG, jo)) {
-                Log.record("领取回访奖励失败: " + response);
+                Log.farm("领取回访奖励失败: " + response);
                 return;
             }
             int manureCount = jo.optInt("manureCount", 0);
@@ -1674,7 +1674,7 @@ public class AntOrchard extends ModelTask {
                                     return;
                                 }
                             }
-                            Log.record("施肥任务成功完成 " + need + " 次");
+                            Log.farm("施肥任务成功完成 " + need + " 次");
                         }
                         break;
 
@@ -1682,9 +1682,9 @@ public class AntOrchard extends ModelTask {
                         String r = AntOrchardRpcCall.noticeGame("2021004165643274");
                         JSONObject jr = new JSONObject(r);
                         if (MessageUtil.checkResultCode(TAG, jr)) {
-                            Log.record("游戏任务触发成功 → 子任务应当自动完成");
+                            Log.farm("游戏任务触发成功 → 子任务应当自动完成");
                         } else {
-                            Log.record("游戏任务触发失败，返回: " + r);
+                            Log.farm("游戏任务触发失败，返回: " + r);
                         }
                         break;
 
@@ -1701,9 +1701,9 @@ public class AntOrchard extends ModelTask {
                         String finishResult = AntOrchardRpcCall.finishTask(sceneCode, childTaskId);
                         JSONObject finishJo = new JSONObject(finishResult);
                         if (MessageUtil.checkResultCode(TAG, finishJo)) {
-                            Log.record("广告任务触发成功");
+                            Log.farm("广告任务触发成功");
                         } else {
-                            Log.record("广告任务触发失败: " + finishResult);
+                            Log.farm("广告任务触发失败: " + finishResult);
                         }
                         break;
 

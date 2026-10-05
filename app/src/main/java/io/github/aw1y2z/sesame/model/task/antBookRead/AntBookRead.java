@@ -108,7 +108,7 @@ public class AntBookRead extends ModelTask {
                     }
                 }
             } else {
-                Log.record(jo.getString("resultDesc"));
+                Log.other(jo.getString("resultDesc"));
                 Log.i(s);
             }
         } catch (Throwable t) {
@@ -168,7 +168,7 @@ public class AntBookRead extends ModelTask {
                 if (doubleCheck)
                     queryTask();
             } else {
-                Log.record(jo.getString("resultDesc"));
+                Log.other(jo.getString("resultDesc"));
                 Log.i(s);
             }
         } catch (Throwable t) {

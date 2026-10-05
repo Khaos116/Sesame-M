@@ -141,7 +141,7 @@ public class goldenbeans extends ModelTask {
                 resync(interval);
             }
 
-            Log.record("金豆夺宝" + (taskResolved && gameResolved ? "✅本轮任务已全部处理" : "⏳仍有待完成或待领取任务"));
+            Log.goldenBeans("金豆夺宝" + (taskResolved && gameResolved ? "✅本轮任务已全部处理" : "⏳仍有待完成或待领取任务"));
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "run err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);

@@ -1235,12 +1235,12 @@ public class AntSports extends ModelTask {
                         }
                         Log.other("领取奖励🎖️[" + taskName + "]#" + award);
                     } else {
-                        Log.record("文体中心领取奖励");
+                        Log.other("文体中心领取奖励失败");
                         Log.i(jo.toString());
                     }
                 }
             } else {
-                Log.record("文体中心领取奖励");
+                Log.other("文体中心领取奖励失败");
                 Log.i(s);
             }
         } catch (Throwable t) {
@@ -1312,12 +1312,12 @@ public class AntSports extends ModelTask {
                         }
                         Log.other("文体宝箱🎁[" + award + "]");
                     } else {
-                        Log.record("文体中心开宝箱");
+                        Log.other("文体中心开宝箱失败");
                         Log.i(jo.toString());
                     }
                 }
             } else {
-                Log.record("文体中心开宝箱");
+                Log.other("文体中心开宝箱失败");
                 Log.i(s);
             }
         } catch (Throwable t) {

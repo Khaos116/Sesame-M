@@ -228,7 +228,7 @@ public class AntDodo extends ModelTask {
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 JSONObject data = jo.getJSONObject("data");
                 if (data.getBoolean("collect")) {
-                    Log.record("神奇物种卡片今日收集完成！");
+                    Log.forest("神奇物种卡片今日收集完成！");
                 } else {
                     collectAnimalCard();
                 }

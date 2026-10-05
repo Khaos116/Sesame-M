@@ -787,7 +787,7 @@ public class AntOcean extends ModelTask {
             jo = new JSONObject(AntOceanRpcCall.cleanFriendOcean(userId));
             if (jo.has("resultDesc")) {
                 if (jo.getString("resultDesc").contains("上限")) {
-                    Log.record("神奇海洋🐳" + jo.getString("resultDesc"));
+                    Log.other("神奇海洋🐳" + jo.getString("resultDesc"));
                     Status.flagToday("Ocean::HELP_CLEAN_ALL_FRIEND_LIMIT");
                 }
                 return false;
@@ -1011,7 +1011,7 @@ public class AntOcean extends ModelTask {
             TimeUtil.sleep(500);
             jo = new JSONObject(AntOceanRpcCall.submitAnswer(answer, questionId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                Log.record("海洋答题成功");
+                Log.other("海洋答题成功");
                 Status.flagToday("Ocean::ANSWER_QUESTION");
                 return true;
             }
@@ -1529,7 +1529,7 @@ public class AntOcean extends ModelTask {
                 JSONObject touchJo = new JSONObject(touchResult);
 
                 if (!MessageUtil.checkResultCode(TAG, touchJo)) {
-                    Log.record("海洋摸鱼🐟摸鱼失败");
+                    Log.other("海洋摸鱼🐟摸鱼失败");
                     break;
                 }
 

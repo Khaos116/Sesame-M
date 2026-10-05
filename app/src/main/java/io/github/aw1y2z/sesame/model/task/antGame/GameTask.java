@@ -141,7 +141,7 @@ public enum GameTask {
                 JSONObject data = resJson.optJSONObject("data");
                 if (data != null) {
                     this.cachedToken = data.optString("token");
-                    Log.record("登录成功✅Token已获取");
+                    Log.other("登录成功✅Token已获取");
                     return this.cachedToken;
                 }
             } else {

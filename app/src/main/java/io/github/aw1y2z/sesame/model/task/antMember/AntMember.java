@@ -1704,7 +1704,7 @@ public class AntMember extends ModelTask {
                     Log.i(TAG + ".signIn.continueSignIn", jsonObject.optString("resultDesc"));
                     return;
                 }
-                Log.record("游戏中心🎮签到成功");
+                Log.other("游戏中心🎮签到成功");
             }
             catch (Throwable th) {
                 Log.err(TAG, "signIn err:", th);
@@ -1992,10 +1992,10 @@ public class AntMember extends ModelTask {
                     MessageUtil.checkResultCodeAndMarkTaskBlackList("MemberCreditSesameTaskList", taskTitle, responseObj);
                     
                     if (MessageUtil.checkResultCode(TAG, responseObj)) {
-                        Log.record("芝麻信用💳完成任务[" + taskTitle + "]#(" + (j + 1) + "/" + needCompleteNum + "天)");
+                        Log.other("芝麻信用💳完成任务[" + taskTitle + "]#(" + (j + 1) + "/" + needCompleteNum + "天)");
                     }
                     else {
-                        Log.error("芝麻信用💳完成任务[" + taskTitle + "]失败#" + s);
+                        Log.other("芝麻信用💳完成任务[" + taskTitle + "]失败#" + s);
                     }
                 }
                 
