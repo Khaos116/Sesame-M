@@ -361,7 +361,7 @@ public class AntForestV2 extends ModelTask {
         modelFields.addField(receiveForestTaskAward = new BooleanModelField("receiveForestTaskAward", "森林任务", false));
         modelFields.addField(energySceneTask = new BooleanModelField("energySceneTask", "种树攻略 | 场景任务", false)
                 .setDependsOn("receiveForestTaskAward")
-                .setDescription("逐个尝试完成场景卡下的行为子任务（无纸化阅读、电子小票、电子发票等）；失败的由「活力值 | 自动黑名单」兜底，已拉黑的不再重试"));
+                .setDescription("逐个尝试完成场景卡下的行为子任务"));
         modelFields.addField(AutoAntForestVitalityTaskList = new BooleanModelField("AutoAntForestVitalityTaskList", "活力值 | 自动黑名单", true));
         modelFields.addField(AntForestVitalityTaskList = new SelectModelField("AntForestVitalityTaskList", "活力值 | 黑名单列表", new LinkedHashSet<>(), AlipayAntForestVitalityTaskList::getList).setDependsOn("AutoAntForestVitalityTaskList"));
         modelFields.addField(collectGiftBox = new BooleanModelField("collectGiftBox", "领取礼盒", false));
@@ -2409,11 +2409,11 @@ public class AntForestV2 extends ModelTask {
 
                     // 种树攻略场景卡：行为子任务挂在 childTaskTypeList 下，父任务只是容器、没有完成接口
                     if ("ENERGY_XUANJIAO".equals(taskType)) {
-                        if (energySceneTask.getValue()) {
-                            JSONArray childTaskTypeList = taskInfo.optJSONArray("childTaskTypeList");
-                            if (childTaskTypeList != null && childTaskTypeList.length() > 0) {
-                                doEnergySceneTask(childTaskTypeList);
-                            }
+                        JSONArray childTaskTypeList = taskInfo.optJSONArray("childTaskTypeList");
+                        int childCount = childTaskTypeList != null ? childTaskTypeList.length() : 0;
+                        Log.other("场景卡[ENERGY_XUANJIAO]命中#开关=" + energySceneTask.getValue() + "#子任务数=" + childCount);
+                        if (energySceneTask.getValue() && childCount > 0) {
+                            doEnergySceneTask(childTaskTypeList);
                         }
                         continue;
                     }
@@ -2422,7 +2422,8 @@ public class AntForestV2 extends ModelTask {
                 }
             }
             //可能是触发限时挑战奖励的
-            AntForestRpcCall.batchQueryAndTouchopengreen();
+            String touchResp = AntForestRpcCall.batchQueryAndTouchopengreen();
+            Log.other("批量领取活力值能量响应#" + (touchResp.length() > 800 ? touchResp.substring(0, 800) : touchResp));
         } catch (Throwable t) {
             Log.err(TAG, "doForsetTaskList err:", t);
         }
@@ -2553,7 +2554,9 @@ public class AntForestV2 extends ModelTask {
     }
 
     /**
-     * 场景卡子任务：已拉黑的跳过，其余 TODO 一律尝试完成，失败由 {@link #finishTask} 交给自动拉黑。
+     * 场景卡子任务：这类任务（如选教卡下的无纸化阅读）属于真实低碳行为，需用户真实操作后服务端才发能量。
+     * FINISHED 的直接调用 receiveTaskAward 领取能量；TODO 的尝试完成接口。
+     * finishTask 失败仅代表本次未完成，不代表永远无法完成，故不拉黑，避免污染黑名单后连 FINISHED 的奖励都无法领取。
      */
     private void doEnergySceneTask(JSONArray childTaskTypeList) {
         try {
@@ -2563,13 +2566,30 @@ public class AntForestV2 extends ModelTask {
                 JSONObject bizInfo = new JSONObject(taskBaseInfo.getString("bizInfo"));
                 String taskType = taskBaseInfo.getString("taskType");
                 String taskTitle = bizInfo.optString("taskTitle", taskType);
-                if (!TaskStatus.TODO.name().equals(taskBaseInfo.getString("taskStatus"))) {
+                String taskStatus = taskBaseInfo.getString("taskStatus");
+                String sceneCode = taskBaseInfo.getString("sceneCode");
+                if (TaskStatus.FINISHED.name().equals(taskStatus)) {
+                    if (receiveTaskAward(sceneCode, taskType, taskTitle)) {
+                        Log.other("场景子任务[" + taskTitle + "]已领取奖励");
+                    }
                     continue;
                 }
-                if (AntForestVitalityTaskList.getValue().contains(blackTaskKey(taskTitle))) {
+                if (!TaskStatus.TODO.name().equals(taskStatus)) {
                     continue;
                 }
-                finishTask(taskBaseInfo.getString("sceneCode"), taskType, taskTitle);
+                Log.other("场景子任务尝试[" + taskTitle + "]#sceneCode=" + sceneCode + "#taskType=" + taskType);
+                String resp = AntForestRpcCall.finishTask(sceneCode, taskType);
+                Log.other("场景子任务响应[" + taskTitle + "]#" + (resp.length() > 800 ? resp.substring(0, 800) : resp));
+                JSONObject jo = new JSONObject(resp);
+                TimeUtil.sleep(500);
+                if (MessageUtil.checkSuccess(TAG, jo)) {
+                    Log.forest("森林任务🧾️完成[" + taskTitle + "]");
+                } else if (TaskAlternative.hit(jo, sceneCode)) {
+                    TaskAlternative.trigger(null, taskType, taskTitle, taskType, sceneCode, "森林任务", msg -> Log.forest(msg));
+                    Log.other("场景子任务[" + taskTitle + "]失败#" + taskInfo);
+                } else {
+                    Log.other("场景子任务[" + taskTitle + "]失败#" + taskInfo);
+                }
             }
         } catch (Throwable t) {
             Log.err(TAG, "doEnergySceneTask err:", t);
