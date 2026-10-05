@@ -4262,34 +4262,68 @@ public class AntForestV2 extends ModelTask {
         return false;
     }
 
-    // 获取活力值商店列表
-    private JSONArray getVitalityItemList(String labelType) {
-        JSONArray itemInfoVOList = null;
-        try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.itemList(labelType));
-            if (MessageUtil.checkSuccess(TAG, jo)) {
-                itemInfoVOList = jo.optJSONArray("itemInfoVOList");
-            }
-        } catch (Throwable th) {
-            Log.err(TAG, "getVitalityItemList err:", th);
-        }
-        return itemInfoVOList;
-    }
+    /** 活力值商店的分类：官方按这 5 个 labelType 分别拉取，少查一个列表就不全 */
+    private static final String[] VITALITY_LABEL_TYPES = {"", "SC_ASSETS", "SKIN", "JEWELRY", "OTHER"};
 
-    // 获取活力值商店所有商品信息
+    /** 单分类翻页上限：hasMore 异常一直为真时兜底 */
+    private static final int VITALITY_ITEM_MAX_PAGES = 10;
+
+    /**
+     * 获取活力值商店所有商品信息。
+     * <p>原先只查 SC_ASSETS 的第一页 ⇒ 权益列表只有一小部分；改为按官方实测的 5 个 labelType
+     * 分别拉取，并用响应里的 hasMore 翻页。
+     */
     private void getAllSkuInfo() {
         try {
-            JSONArray itemInfoVOList = getVitalityItemList("SC_ASSETS");
-            if (itemInfoVOList == null) {
-                return;
+            int got = 0;
+            for (String labelType : VITALITY_LABEL_TYPES) {
+                int cnt = 0;
+                for (int page = 0; page < VITALITY_ITEM_MAX_PAGES; page++) {
+                    JSONObject jo = new JSONObject(AntForestRpcCall.itemList(labelType, page * AntForestRpcCall.VITALITY_ITEM_PAGE_SIZE));
+                    if (!MessageUtil.checkSuccess(TAG, jo)) {
+                        break;
+                    }
+                    JSONArray itemInfoVOList = optItemInfoVOList(jo);
+                    if (itemInfoVOList == null || itemInfoVOList.length() == 0) {
+                        break;
+                    }
+                    for (int i = 0; i < itemInfoVOList.length(); i++) {
+                        getSkuInfoByItemInfoVO(itemInfoVOList.getJSONObject(i));
+                        cnt++;
+                    }
+                    if (!hasMore(jo)) {
+                        break;
+                    }
+                }
+                got += cnt;
+                Log.i("活力值商店列表：[" + (labelType.isEmpty() ? "全部" : labelType) + "]取到" + cnt + "条");
             }
-            for (int i = 0; i < itemInfoVOList.length(); i++) {
-                JSONObject itemInfoVO = itemInfoVOList.getJSONObject(i);
-                getSkuInfoByItemInfoVO(itemInfoVO);
-            }
+            VitalityBenefitIdMap.save(UserIdMap.getCurrentUid());
+            Log.i("活力值商店列表：共取" + got + "条，清单共" + VitalityBenefitIdMap.getMap().size() + "条");
         } catch (Throwable th) {
             Log.err(TAG, "getAllSkuInfo err:", th);
         }
+    }
+
+    /** 商品列表可能在顶层、也可能在 resData 下（抓包两层都出现过），两层都取 */
+    private static JSONArray optItemInfoVOList(JSONObject jo) {
+        JSONArray list = jo.optJSONArray("itemInfoVOList");
+        if (list == null) {
+            JSONObject resData = jo.optJSONObject("resData");
+            if (resData != null) {
+                list = resData.optJSONArray("itemInfoVOList");
+            }
+        }
+        return list;
+    }
+
+    /** hasMore 表示还有下一页，同样两层都取 */
+    private static boolean hasMore(JSONObject jo) {
+        if (jo.has("hasMore")) {
+            return jo.optBoolean("hasMore", false);
+        }
+        JSONObject resData = jo.optJSONObject("resData");
+        return resData != null && resData.optBoolean("hasMore", false);
     }
 
     private void getSkuInfoBySpuId(String spuId) {
@@ -4300,11 +4334,13 @@ public class AntForestV2 extends ModelTask {
             }
             JSONObject spuItemInfoVo = jo.getJSONObject("spuItemInfoVO");
             getSkuInfoByItemInfoVO(spuItemInfoVo);
+            VitalityBenefitIdMap.save(UserIdMap.getCurrentUid());
         } catch (Throwable th) {
             Log.err(TAG, "getSkuInfoBySpuId err:", th);
         }
     }
 
+    /** 单个 SPU 的 SKU 入表；落盘由调用方整批结束后统一 save（原先每个 SPU 都写一次文件） */
     private void getSkuInfoByItemInfoVO(JSONObject spuItem) {
         try {
             String spuId = spuItem.getString("spuId");
@@ -4319,7 +4355,6 @@ public class AntForestV2 extends ModelTask {
                 skuInfo.put(skuId, skuModel);
                 VitalityBenefitIdMap.add(skuId, skuName);
             }
-            VitalityBenefitIdMap.save(UserIdMap.getCurrentUid());
         } catch (Throwable th) {
             Log.err(TAG, "getSkuInfoByItemInfoVO err:", th);
         }

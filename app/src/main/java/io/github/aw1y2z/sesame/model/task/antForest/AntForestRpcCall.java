@@ -313,8 +313,11 @@ public class AntForestRpcCall {
         return ApplicationHook.requestString("alipay.antforest.forest.h5.queryMiscInfo", "[{\"queryBizType\":\"usingProp\",\"source\":\"SELF_HOME\",\"version\":\"20240201\"}]");
     }
     
-    public static String itemList(String labelType) {
-        return ApplicationHook.requestString("com.alipay.antiep.itemList", "[{\"extendInfo\":\"{}\",\"labelType\":\"" + labelType + "\",\"pageSize\":20,\"requestType\":\"rpc\"," + "\"sceneCode\":\"ANTFOREST_VITALITY\",\"source\":\"afEntry\",\"startIndex\":0}]");
+    /** 活力值商店每页条数：服务端按此分页，翻页时用同一个值推进 startIndex */
+    public static final int VITALITY_ITEM_PAGE_SIZE = 20;
+
+    public static String itemList(String labelType, int startIndex) {
+        return ApplicationHook.requestString("com.alipay.antiep.itemList", "[{\"extendInfo\":\"{}\",\"fromSpuId\":\"\",\"labelType\":\"" + labelType + "\",\"pageSize\":" + VITALITY_ITEM_PAGE_SIZE + ",\"requestType\":\"rpc\"," + "\"sceneCode\":\"ANTFOREST_VITALITY\",\"source\":\"afEntry\",\"startIndex\":" + startIndex + "}]");
     }
     
     public static String itemDetail(String spuId) {
