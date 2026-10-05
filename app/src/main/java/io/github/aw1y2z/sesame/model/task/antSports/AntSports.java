@@ -371,6 +371,15 @@ public class AntSports extends ModelTask {
 
     }
 
+    /** 运动任务之间的间隔（毫秒，随机抖动）：原先 1~2 秒连刷曾被风控（1009），放慢到 5~9 秒 */
+    private static final int TASK_INTERVAL_MIN_MS = 5000;
+    private static final int TASK_INTERVAL_MAX_MS = 9000;
+
+    /** 任务之间随机间隔，避免机器式的固定频率 */
+    private void sleepTaskInterval() {
+        TimeUtil.sleep(RandomUtil.nextInt(TASK_INTERVAL_MIN_MS, TASK_INTERVAL_MAX_MS));
+    }
+
     // 运动
     private void sportsTasks() {
         try {
@@ -396,7 +405,7 @@ public class AntSports extends ModelTask {
                     String assetId = jo.getString("assetId");
                     int prizeAmount = jo.getInt("prizeAmount");
                     if (receiveCoinAsset(assetId, prizeAmount, taskName)) {
-                        TimeUtil.sleep(1000);
+                        sleepTaskInterval();
                     }
                     continue;
                 }
@@ -419,7 +428,7 @@ public class AntSports extends ModelTask {
                         continue;
                     }
                     if (completeTask(taskAction, taskId, taskName, jo.optString("sceneCode", ""))) {
-                        TimeUtil.sleep(2000);
+                        sleepTaskInterval();
                     }
                     continue;
                 }
@@ -427,7 +436,9 @@ public class AntSports extends ModelTask {
                 //兜底操作
                 String taskAction = jo.getString("taskAction");
                 String taskId = jo.getString("taskId");
-                completeTask(taskAction, taskId, taskName, jo.optString("sceneCode", ""));
+                if (completeTask(taskAction, taskId, taskName, jo.optString("sceneCode", ""))) {
+                    sleepTaskInterval();
+                }
             }
         } catch (Throwable t) {
             Log.err(TAG, "sportsTasks err:", t);
