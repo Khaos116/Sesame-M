@@ -65,6 +65,8 @@ public abstract class ModelTask extends Model {
             int droppedPrev = Log.takeDroppedStaleLogCount();
             // 与执行槽配对：只有真正拿到槽的线程才计入 runningCount；同时驱动状态栏显示当前在跑的模块
             NotificationUtil.trackTaskStart(task.getName());
+            ModelGroup group = task.getGroup();
+            String prevModule = Log.beginModule(group == null ? null : group.getCode());
             Log.record("执行开始-" + task.getName());
             Log.startModuleLogCount();
             try {
@@ -87,6 +89,7 @@ public abstract class ModelTask extends Model {
                     Log.record(task.getName() + "✅本轮无操作");
                 }
                 Log.record("执行结束-" + task.getName());
+                Log.endModule(prevModule);
                 // 身份化移除：只删本线程登记的那条，避免旧代收尾误删新一代条目
                 MAIN_TASK_MAP.remove(task, Thread.currentThread());
                 task.running.set(false);
@@ -393,7 +396,15 @@ public abstract class ModelTask extends Model {
         }
 
         public final void run() {
-            runnable.run();
+            // 子任务线程继承所属模块：这些流程日志也带模块 tag（嵌套时恢复上层）
+            ModelTask owner = modelTask;
+            ModelGroup group = owner == null ? null : owner.getGroup();
+            String prevModule = Log.beginModule(group == null ? null : group.getCode());
+            try {
+                runnable.run();
+            } finally {
+                Log.endModule(prevModule);
+            }
         }
 
         protected void setCancelTask(CancelTask cancelTask) {
