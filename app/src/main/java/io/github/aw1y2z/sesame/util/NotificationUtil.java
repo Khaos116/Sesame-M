@@ -30,6 +30,14 @@ public class NotificationUtil {
     /** 正在执行中的模块任务名（如「森林」「庄园」），用于状态栏展示当前在跑什么 */
     private static final Set<String> runningTasks = ConcurrentHashMap.newKeySet();
 
+    /**
+     * 新一轮开始：清零本轮收取能量。由 {@code ApplicationHook.startMainTask} 在起跳成功时调用。
+     * <p>不能用 runningCount==0 判定：模块各自拿执行槽、依次跑，模块之间该值会短暂回到 0。
+     */
+    public static void startRound() {
+        Statistics.resetRoundCollected();
+    }
+
     public static void trackTaskStart(String name) {
         if (!StringUtil.isEmpty(name)) {
             runningTasks.add(name);
@@ -196,12 +204,29 @@ public class NotificationUtil {
         }
     }
 
+    /**
+     * 展开区里的完整能量行：本轮 / 本日收取能量。
+     */
+    private static String energyText() {
+        return "本轮收取能量 " + Statistics.getRoundCollected() + "g"
+                + "  本日收取能量 " + Statistics.getData(Statistics.TimeType.DAY, Statistics.DataType.COLLECTED) + "g";
+    }
+
+    /** 标题行上的精简能量：折叠态免长按可见，只放本轮（本日在展开区）；正文留给执行状态/告警 */
+    private static String titleWithEnergy() {
+        return titleText + "｜本轮" + Statistics.getRoundCollected() + "g";
+    }
+
     private static void sendText() {
         try {
-            builder.setContentTitle(titleText);
+            builder.setContentTitle(titleWithEnergy());
             if (!StringUtil.isEmpty(contentText)) {
                 builder.setContentText(contentText);
             }
+            String bigText = StringUtil.isEmpty(contentText)
+                    ? energyText()
+                    : contentText + "\n" + energyText();
+            builder.setStyle(new Notification.BigTextStyle().bigText(bigText));
             mNotifyManager.notify(NOTIFICATION_ID, builder.build());
         } catch (Exception e) {
             Log.printStackTrace(e);

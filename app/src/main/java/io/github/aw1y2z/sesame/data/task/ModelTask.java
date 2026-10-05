@@ -18,6 +18,8 @@ import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.SynchronousQueue;
@@ -227,6 +229,8 @@ public abstract class ModelTask extends Model {
     }
 
     public static void startAllTask(Boolean force) {
+        // 整轮开始：清零本轮收取能量。单分组执行（startGroupTask）不算整轮，故不在此清零
+        NotificationUtil.startRound();
         //自动触发备份配置文件
         if (!Status.hasFlagToday("Config::backup")) {
             FileUtil.backupConfigV2WithRolling(UserIdMap.getCurrentUid());
@@ -264,7 +268,7 @@ public abstract class ModelTask extends Model {
      * @return 实际触发的任务数
      */
     public static int startGroupTask(String groupCode) {
-        int count = 0;
+        List<Model> targets = new ArrayList<>();
         for (Model model : getModelArray()) {
             if (model == null || ModelType.TASK != model.getType()) {
                 continue;
@@ -273,6 +277,15 @@ public abstract class ModelTask extends Model {
             if (group == null || !groupCode.equals(group.getCode())) {
                 continue;
             }
+            targets.add(model);
+        }
+        if (targets.isEmpty()) {
+            return 0;
+        }
+        // 手动执行分组也算新一轮：先清零本轮收取能量，再起跑
+        NotificationUtil.startRound();
+        int count = 0;
+        for (Model model : targets) {
             if (((ModelTask) model).startTask(false)) {
                 count++;
             }

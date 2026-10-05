@@ -21,6 +21,19 @@ public class Statistics {
     private TimeStatistics year = new TimeStatistics();
     private TimeStatistics month = new TimeStatistics();
     private TimeStatistics day = new TimeStatistics();
+
+    /** 本轮（一次执行周期）收取的能量。仅内存计数、不落盘（静态字段不进 Jackson） */
+    private static volatile int roundCollected = 0;
+
+    /** 本轮收取能量 */
+    public static int getRoundCollected() {
+        return roundCollected;
+    }
+
+    /** 新一轮开始时清零本轮收取计数 */
+    public static void resetRoundCollected() {
+        roundCollected = 0;
+    }
     
     /**
      * synchronized：与 save/load/unload 共用 Statistics.class 监视器。
@@ -34,6 +47,7 @@ public class Statistics {
                 stat.day.collected += i;
                 stat.month.collected += i;
                 stat.year.collected += i;
+                roundCollected += i;
                 break;
             case HELPED:
                 stat.day.helped += i;
