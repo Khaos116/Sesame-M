@@ -8,6 +8,7 @@
 
 ## 2026-10-05
 
+- release `v1.2.8`：版本 1.2.1 → 1.2.8，整理累计更新与升级说明；17 项回归、Debug 编译及 Release/R8 构建通过，APK 签名与旧版一致。
 - merge `5b26bca5`：合并主线新增 7 个提交，更新芝麻粒任务闭环、权益分类分页、合种记账、施肥限额和捐蛋上限；补异常响应保护，17 项回归与 Debug 编译通过。
 - merge `54fdca8a`：合并主线 25 个提交，保留 GeminiAI、账号隔离与按场景施肥；修正时区、JSON 安全解析及缺字段误判完成，17 项回归与 Debug 编译通过。
 
@@ -1215,3 +1216,10 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 - JSON 读取：最终修改文件去除注释后无 org.json 裸 get*；Map/List/Calendar/RuntimeInfo 的 get 不作替换。补嵌套对象、数组元素及必要字段校验：权益缺 SPU/SKU 标识不入表，任务回读列表缺失/元素无效不报完成、不记停试和自动黑名单，最近记录必须匹配任务且明确未完成并有字符串 recordId，偷榜排行无有效第一名时不捐蛋。
 - 保留与文档：GeminiAI/AnswerAIInterface、GEMINI 选项和原配置 id/令牌保持；M 的账号隔离、TaskLifecycle、按场景施肥配置保持。新增 competitionStealLimit 后重生成配置表并保留全局配置节（26 个模型、332 个 ModelField）；README/手册数量同步，分类日志说明按 M 实際输出保留 tag，验证码双写说明保留。
 - 验证：17 项本地回归全部通过；check_upstream_merge 新增真实生产方法隔离检查，覆盖任务上报/回读/旧记录复用、5 分类分页与翻页上限、浇水成功/永久失败/可重试/畸形应答、批量施肥限额与缺进度、偷榜蛋不足/捐献上限。最后的响应类型补校验已重跑该检查及 Debug Java/Kotlin 编译通过。打包/签名文件无改动，未跑 Release；未真机验证服务端链路，未推送远端。
+
+
+### 2026-10-05：准备 v1.2.8 正式版
+
+- gradle.properties 的版本号由 1.2.1 改为 1.2.8；沿用基于 Git 提交数的 versionCode 和现有 arm64-v8a 签名打包流程。相对 v1.2.1 标签核对提交和最终源码，新增 docs/发布说明-v1.2.8.md，包含功能变更、旧混合统计保留/分账号从零统计、竞赛配置调整、日志分类与 HTTP 令牌要求；INDEX 登记。修正使用说明中此前数量替换误改的可重试错误码，按 MessageUtil 恢复为 3000。
+- GMT+8、JSON 创建与 JSON 读取：本次只修改版本属性和文档，无业务日期处理及 JSON 生产代码变更，无新增例外。
+- 验证：全量 17 项本地回归、Debug Java/Kotlin 编译及 assembleNormalRelease 通过，R8 混淆完成；apksigner 验证 APK v2 签名通过，证书 SHA-256 与旧 1.2.1 APK 一致；aapt2 确认 versionName=1.2.8、ABI=arm64-v8a。最终发布包从本次版本提交重新构建，以更新内嵌 Git 提交信息和 versionCode；未逐项真机验证新业务链路。
