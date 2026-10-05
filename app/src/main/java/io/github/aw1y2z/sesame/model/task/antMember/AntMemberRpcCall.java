@@ -7,6 +7,7 @@ import io.github.aw1y2z.sesame.entity.RpcEntity;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.RandomUtil;
+import io.github.aw1y2z.sesame.util.MyUtils;
 
 public class AntMemberRpcCall {
 
@@ -70,6 +71,160 @@ public class AntMemberRpcCall {
      * @param str signInfo
      * @return 结果
      */
+    public static String goldBillCollect(String str) {
+        return ApplicationHook.requestString("com.alipay.wealthgoldtwa.goldbill.v2.index.collect", "[{" + str + "\"trigger\":\"Y\"}]");
+    }
+
+    /**
+     * 黄金票收取（兼容）
+     */
+    public static String goldBillCollect() {
+        return ApplicationHook.requestString("com.alipay.wealthgoldtwa.goldbill.v2.index.collect", "[{}]");
+    }
+
+    /**
+     * 黄金票首页数据
+     */
+    public static String queryGoldTicketHome() {
+        try {
+            JSONObject args = MyUtils.newJSONObject();
+            args.put("bizScene", "ch_alipaysearch__chsub_normal");
+            args.put("chInfo", "ch_alipaysearch__chsub_normal");
+            args.put("taskId", "");
+            return ApplicationHook.requestString("com.alipay.wealthgoldtwa.needle.v2.index",
+                    new JSONArray().put(args).toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 黄金票首页场景收取（新版）
+     */
+    public static String goldTicketIndexCollect() {
+        try {
+            JSONObject args = MyUtils.newJSONObject();
+            args.put("directModeDisableCollect", 1);
+            args.put("from", "antfarm");
+            args.put("trigger", "Y");
+            return ApplicationHook.requestString("com.alipay.wealthgoldtwa.needle.index.collect",
+                    new JSONArray().put(args).toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 福利中心刷新
+     */
+    public static String welfareCenterUpdate(int modeBitMask) {
+        try {
+            JSONObject args = MyUtils.newJSONObject();
+            args.put("modeBitMask", modeBitMask);
+            return ApplicationHook.requestString("com.alipay.finaggexpbff.needle.welfareCenter.update",
+                    new JSONArray().put(args).toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * [新增] 查询黄金票提取页信息
+     * 用于获取最新的可用数量、基金ID (productId) 和 赠送份数 (bonusAmount)
+     */
+    public static String queryConsumeHome() {
+        try {
+            JSONObject args = MyUtils.newJSONObject();
+            args.put("tabBubbleDeliverParam", MyUtils.newJSONObject());
+            args.put("tabTypeDeliverParam", MyUtils.newJSONObject());
+            return ApplicationHook.requestString("com.alipay.wealthgoldtwa.needle.consume.query",
+                    new JSONArray().put(args).toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * [新增] 提交提取黄金
+     * @param amount 提取数量 (如 100, 200, 2900)
+     * @param productId 基金ID
+     * @param bonusAmount 额外赠送数量
+     */
+    public static String submitConsume(int amount, String productId, int bonusAmount) {
+        try {
+            JSONObject args = MyUtils.newJSONObject();
+            args.put("exchangeAmount", amount);
+            args.put("exchangeMoney", String.format(java.util.Locale.ROOT, "%.2f", amount / 1000.0));
+            args.put("prizeType", "GOLD");
+            args.put("productId", productId);
+            args.put("bonusAmount", bonusAmount);
+            return ApplicationHook.requestString("com.alipay.wealthgoldtwa.needle.consume.submit",
+                    new JSONArray().put(args).toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * [新增] 任务查询推送
+     * @param taskId 任务ID
+     */
+    public static String taskQueryPush(String taskId) {
+        try {
+            JSONObject args = MyUtils.newJSONObject();
+            args.put("mode", 1);
+            args.put("taskId", taskId);
+            return ApplicationHook.requestString("com.alipay.wealthgoldtwa.needle.taskQueryPush",
+                    new JSONArray().put(args).toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * [新增] 任务触发/报名
+     * @param taskId 任务ID
+     */
+    public static String goldBillTaskTrigger(String taskId) {
+        try {
+            JSONObject args = MyUtils.newJSONObject();
+            args.put("taskId", taskId);
+            return ApplicationHook.requestString("com.alipay.wealthgoldtwa.goldbill.v4.task.trigger",
+                    new JSONArray().put(args).toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * [新增] 福利中心首页
+     */
+    public static String queryWelfareHome() {
+        try {
+            JSONObject args = MyUtils.newJSONObject();
+            args.put("isResume", true);
+            return ApplicationHook.requestString("com.alipay.finaggexpbff.needle.welfareCenter.index",
+                    new JSONArray().put(args).toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * [新增] 签到 / 领取奖励
+     * @param type "SIGN"
+     */
+    public static String welfareCenterTrigger(String type) {
+        try {
+            JSONObject args = MyUtils.newJSONObject();
+            args.put("type", type);
+            return ApplicationHook.requestString("com.alipay.finaggexpbff.needle.welfareCenter.trigger",
+                    new JSONArray().put(args).toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /**
      * 游戏中心签到查询
      */
@@ -676,14 +831,14 @@ public class AntMemberRpcCall {
      */
     public static String annualReviewQueryTasks() {
         try {
-            JSONObject body = new JSONObject();
+            JSONObject body = MyUtils.newJSONObject();
             body.put("channel", "share");
             body.put("cityCode", "110000");
             body.put("operationParamIdentify", ANNUAL_REVIEW_OPERATION_IDENTIFY);
             body.put("source", ANNUAL_REVIEW_QUERY_COMPONENT);
 
-            JSONObject components = new JSONObject();
-            components.put(ANNUAL_REVIEW_QUERY_COMPONENT, new JSONObject());
+            JSONObject components = MyUtils.newJSONObject();
+            components.put(ANNUAL_REVIEW_QUERY_COMPONENT, MyUtils.newJSONObject());
             body.put("components", components);
 
             return ApplicationHook.requestString(
@@ -700,18 +855,18 @@ public class AntMemberRpcCall {
      */
     public static String annualReviewApplyTask(String code) {
         try {
-            JSONObject body = new JSONObject();
+            JSONObject body = MyUtils.newJSONObject();
             body.put("channel", "share");
             body.put("cityCode", "110000");
             body.put("operationParamIdentify", ANNUAL_REVIEW_OPERATION_IDENTIFY);
             body.put("source", ANNUAL_REVIEW_APPLY_COMPONENT);
 
-            JSONObject compBody = new JSONObject();
+            JSONObject compBody = MyUtils.newJSONObject();
             compBody.put("code", code);
             compBody.put("consultAfterLuckDraw", "false");
             compBody.put("skipLuckDrawConsult", "true");
 
-            JSONObject components = new JSONObject();
+            JSONObject components = MyUtils.newJSONObject();
             components.put(ANNUAL_REVIEW_APPLY_COMPONENT, compBody);
 
             body.put("components", components);
@@ -730,17 +885,17 @@ public class AntMemberRpcCall {
      */
     public static String annualReviewProcessTask(String code, String recordNo) {
         try {
-            JSONObject body = new JSONObject();
+            JSONObject body = MyUtils.newJSONObject();
             body.put("channel", "share");
             body.put("cityCode", "110000");
             body.put("operationParamIdentify", ANNUAL_REVIEW_OPERATION_IDENTIFY);
             body.put("source", ANNUAL_REVIEW_PROCESS_COMPONENT);
 
-            JSONObject compBody = new JSONObject();
+            JSONObject compBody = MyUtils.newJSONObject();
             compBody.put("code", code);
             compBody.put("recordNo", recordNo);
 
-            JSONObject components = new JSONObject();
+            JSONObject components = MyUtils.newJSONObject();
             components.put(ANNUAL_REVIEW_PROCESS_COMPONENT, compBody);
 
             body.put("components", components);
@@ -759,19 +914,19 @@ public class AntMemberRpcCall {
      */
     public static String annualReviewGetReward(String code, String recordNo) {
         try {
-            JSONObject body = new JSONObject();
+            JSONObject body = MyUtils.newJSONObject();
             body.put("channel", "share");
             body.put("cityCode", "110000");
             body.put("operationParamIdentify", ANNUAL_REVIEW_OPERATION_IDENTIFY);
             body.put("source", ANNUAL_REVIEW_GET_REWARD_COMPONENT);
 
-            JSONObject compBody = new JSONObject();
+            JSONObject compBody = MyUtils.newJSONObject();
             compBody.put("code", code);
             compBody.put("consultAfterLuckDraw", "false");
             compBody.put("recordNo", recordNo);
             compBody.put("skipLuckDrawConsult", "true");
 
-            JSONObject components = new JSONObject();
+            JSONObject components = MyUtils.newJSONObject();
             components.put(ANNUAL_REVIEW_GET_REWARD_COMPONENT, compBody);
 
             body.put("components", components);

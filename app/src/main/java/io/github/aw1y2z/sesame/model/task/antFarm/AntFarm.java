@@ -155,7 +155,7 @@ public class AntFarm extends ModelTask {
         modelFields.addField(recallAnimalType = new ChoiceModelField("recallAnimalType", "召回小鸡", RecallAnimalType.ALWAYS, RecallAnimalType.nickNames));
         modelFields.addField(feedAnimal = new BooleanModelField("feedAnimal", "投喂小鸡", false));
         modelFields.addField(feedFriendAnimal = new BooleanModelField("feedFriendAnimal", "帮喂小鸡 | 开启", true));
-        modelFields.addField(feedFriendAnimalList = new SelectAndCountModelField("feedFriendAnimalList", "帮喂小鸡 | " + "好友列表", new LinkedHashMap<>(), AlipayUser::getList, "请填写帮喂次数(每日)").setDependsOn("feedFriendAnimal"));
+        modelFields.addField(feedFriendAnimalList = new SelectAndCountModelField("feedFriendAnimalList", "帮喂小鸡 | " + "好友列表", new LinkedHashMap<>(), AlipayUser::getList, "请填写帮喂次数(每日)", 1, 100).setDependsOn("feedFriendAnimal"));
         modelFields.addField(hireAnimalType = new ChoiceModelField("hireAnimalType", "雇佣小鸡 | 动作", HireAnimalType.NONE, HireAnimalType.nickNames));
         modelFields.addField(hireAnimalList = new SelectModelField("hireAnimalList", "雇佣小鸡 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("hireAnimalType"));
         modelFields.addField(sendBackAnimalWay = new ChoiceModelField("sendBackAnimalWay", "遣返小鸡 | 方式", SendBackAnimalWay.NORMAL, SendBackAnimalWay.nickNames));
@@ -190,7 +190,8 @@ public class AntFarm extends ModelTask {
         modelFields.addField(farmGameTime = new ListModelField.ListJoinCommaToStringModelField("farmGameTime", "小鸡乐园 " + "| 游戏时间(范围)", farmGameTimeList).setDependsOn("recordFarmGame"));
         modelFields.addField(drawGameCenterAward = new BooleanModelField("drawGameCenterAward", "小鸡乐园 | 游戏宝箱", false));
         modelFields.addField(gameCenterBuyMallItem = new BooleanModelField("gameCenterBuyMallItem", "小鸡乐园 | 乐园集市", false));
-        modelFields.addField(gameCenterBuyMallItemList = new SelectAndCountModelField("gameCenterBuyMallItemList", "小鸡乐园 | 兑奖", new LinkedHashMap<>(), GameCenterMallItem::getList, "请填写兑奖次数(每日)").setDependsOn("gameCenterBuyMallItem"));
+        // 兑奖次数下限设为 1：勾选即至少兑奖 1 次，避免默认 0 导致勾选不生效
+        modelFields.addField(gameCenterBuyMallItemList = new SelectAndCountModelField("gameCenterBuyMallItemList", "小鸡乐园 | 兑奖", new LinkedHashMap<>(), GameCenterMallItem::getList, "请填写兑奖次数(每日)", 1, 100).setDependsOn("gameCenterBuyMallItem"));
         modelFields.addField(kitchen = new BooleanModelField("kitchen", "小鸡厨房", false));
         modelFields.addField(chickenDiary = new BooleanModelField("chickenDiary", "小鸡日记", false));
         modelFields.addField(harvestProduce = new BooleanModelField("harvestProduce", "收取爱心鸡蛋", false));
@@ -198,7 +199,7 @@ public class AntFarm extends ModelTask {
         //modelFields.addField(getFeedType = new ChoiceModelField("getFeedType", "一起拿饲料 | 动作", GetFeedType.NONE, GetFeedType.nickNames));
         //modelFields.addField(getFeedList = new SelectModelField("getFeedList", "一起拿饲料 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
         modelFields.addField(acceptGift = new BooleanModelField("acceptGift", "收麦子", false));
-        modelFields.addField(visitFriendList = new SelectAndCountModelField("visitFriendList", "送麦子 | 好友列表", new LinkedHashMap<>(), AlipayUser::getList, "请填写赠送次数(每日)"));
+        modelFields.addField(visitFriendList = new SelectAndCountModelField("visitFriendList", "送麦子 | 好友列表", new LinkedHashMap<>(), AlipayUser::getList, "请填写赠送次数(每日)", 1, 100));
         return modelFields;
     }
 
@@ -211,7 +212,7 @@ public class AntFarm extends ModelTask {
     @Override
     public Boolean check() {
         if (TaskCommon.IS_ENERGY_TIME) {
-            Log.farm("任务暂停⏸️蚂蚁庄园:当前为仅收能量时间");
+            Log.i("任务暂停⏸️蚂蚁庄园:当前为仅收能量时间");
             return false;
         }
         return true;
@@ -552,7 +553,7 @@ public class AntFarm extends ModelTask {
                     return;
                 }
                 // 2~4. 批量写回黑/白名单并保存
-                MessageUtil.syncTaskBlackList("庄园饲料任务", blackList, whiteList, AntFarmDoFarmTaskList);
+                MessageUtil.syncTaskBlackList("庄园饲料任务", "AntFarmDoFarmTaskList", blackList, whiteList, AntFarmDoFarmTaskList);
             }
 
             //初始化AntFarmDrawMachineTaskListMap
@@ -615,7 +616,7 @@ public class AntFarm extends ModelTask {
                         return;
                     }
                     // 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("庄园装扮抽抽乐任务", blackList, whiteList, AntFarmDrawMachineTaskList);
+                    MessageUtil.syncTaskBlackList("庄园装扮抽抽乐任务", "AntFarmDrawMachineTaskList", blackList, whiteList, AntFarmDrawMachineTaskList);
                 }
             }
         } catch (Throwable t) {
@@ -1172,10 +1173,15 @@ public class AntFarm extends ModelTask {
      * 爱心鸡结号(S2赛季)自动化。
      * <p>
      * S2 为<b>周活动</b>：每周一 00:00:00 ~ 周日 20:00:00 为一轮（旧排位赛为按天）。
-     * 返回语义与旧排位赛一致：{@code false} 表示当天确实无活动（调用方据此回退公益捐蛋），
-     * {@code true} 表示已处理（含接口异常/无数据等不该回退的情况）。
+     * 返回值用于控制公益捐蛋是否执行：{@code true} 表示处于活跃排位轮次（抑制公益捐蛋，
+     * 仅捐 S2）；{@code false} 表示非活跃轮次/无活动（放行公益捐蛋）。
+     * <p>
+     * 注意：仅当「时间窗口内 且 存在活跃轮次(rankRoundId 非空)」才视为排位日，
+     * 否则非赛季/轮次外公益捐蛋照常执行（避免公益捐蛋被几乎每天抑制）。
+     * 接口异常按 {@code true} 处理（抑制公益，避免与已发生的 S2 捐蛋重复）。
      */
     private boolean competition() {
+        boolean inRound = false;
         try {
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.enterDonationCompetitionRank());
             if (!MessageUtil.checkMemo(TAG, jo)) {
@@ -1188,16 +1194,18 @@ public class AntFarm extends ModelTask {
                 return false;
             }
             int benevolenceScore = jo.optInt("benevolenceScore");
-            Log.farm("爱心鸡结号❤️当前爱心值" + benevolenceScore);
+            Log.i("爱心鸡结号❤️当前爱心值" + benevolenceScore);
 
-            // 轮次外（周日20:00 ~ 周一00:00）跳过捐蛋/偷榜，但仍可领取已产生奖励
-            boolean inRound = isCompetitionRoundActive();
+            // 排位日 = 活动轮次内(周一00:00-周日20:00) 且 存在活跃轮次(rankRoundId 非空)。
+            // 仅真正存在活跃 S2 轮次时才抑制公益捐蛋；非排位日/非赛季放行公益捐蛋。
+            String rankRoundId = jo.optString("rankRoundId");
+            inRound = isCompetitionRoundActive() && !rankRoundId.isEmpty();
             if (!inRound) {
-                Log.record("爱心鸡结号❤️当前不在活动轮次内(周一00:00-周日20:00)，跳过捐蛋/偷榜");
+                Log.record("爱心鸡结号❤️当前非活跃排位轮次，放行公益捐蛋");
             } else {
                 // 自动捐蛋（每轮一次，定向捐到 S2 项目）
                 if (competitionDonate.getValue()) {
-                    String roundId = jo.optString("rankRoundId");
+                    String roundId = rankRoundId;
                     if (!roundId.isEmpty() && !Status.isCompetitionDonated(roundId)) {
                         if (donateToCompetition(competitionDonateAmount.getValue())) {
                             Status.markCompetitionDonated(roundId);
@@ -1217,8 +1225,10 @@ public class AntFarm extends ModelTask {
             }
         } catch (Throwable t) {
             Log.err(TAG, "competition err:", t);
+            return true;
         }
-        return true;
+        // 排位日(活跃S2轮次)返回 true 抑制公益捐蛋；非排位日返回 false 放行公益捐蛋
+        return inRound;
     }
 
     /**
@@ -1232,7 +1242,7 @@ public class AntFarm extends ModelTask {
         try {
             JSONArray levelAwardInfoList = jo.optJSONArray("levelAwardInfoList");
             if (levelAwardInfoList == null || levelAwardInfoList.length() == 0) {
-                Log.record("爱心鸡结号❤️领取：无等级奖励列表");
+                Log.farm("爱心鸡结号❤️领取：无等级奖励列表");
                 return;
             }
             int claimed = 0;
@@ -1256,9 +1266,9 @@ public class AntFarm extends ModelTask {
                 TimeUtil.sleep(1000L);
             }
             if (claimed > 0) {
-                Log.record("爱心鸡结号❤️本次领取" + claimed + "个等级爱心值奖励");
+                Log.farm("爱心鸡结号❤️本次领取" + claimed + "个等级爱心值奖励");
             } else {
-                Log.record("爱心鸡结号❤️无待领取的等级爱心值奖励");
+                Log.farm("爱心鸡结号❤️无待领取的等级爱心值奖励");
             }
         } catch (Throwable t) {
             Log.err(TAG, "receiveCompetitionAward err:", t);
@@ -1303,9 +1313,9 @@ public class AntFarm extends ModelTask {
                 TimeUtil.sleep(1000L);
             }
             if (claimed > 0) {
-                Log.record("爱心鸡结号❤️本次领取" + claimed + "个任务奖励");
+                Log.farm("爱心鸡结号❤️本次领取" + claimed + "个任务奖励");
             } else {
-                Log.record("爱心鸡结号❤️无待领取的任务奖励");
+                Log.farm("爱心鸡结号❤️无待领取的任务奖励");
             }
         } catch (Throwable t) {
             Log.err(TAG, "receiveCompetitionTaskAwards err:", t);
@@ -1453,7 +1463,7 @@ public class AntFarm extends ModelTask {
                 Log.record("爱心鸡结号❤️偷榜：未获取到捐蛋项目，跳过（无法定向到 S2）");
                 return;
             }
-            Log.farm("爱心鸡结号❤️偷榜：当前第" + myRank + "名捐" + myDonation + "，第1名捐" + rank1Donation + "，尝试再捐" + n);
+            Log.i("爱心鸡结号❤️偷榜：当前第" + myRank + "名捐" + myDonation + "，第1名捐" + rank1Donation + "，尝试再捐" + n);
             donationCompetition(projectId, projectName, n);
         } catch (Throwable t) {
             Log.err(TAG, "stealRankS2 err:", t);
@@ -1841,7 +1851,7 @@ public class AntFarm extends ModelTask {
             JSONObject extInfo = jo.optJSONObject("extInfo");
             boolean correct = jo.optBoolean("correct");
             String award = extInfo != null ? extInfo.optString("award") : "";
-            Log.record("庄园答题📝回答" + (correct ? "正确" : "错误") + "#获得[" + award + "g饲料]");
+            Log.farm("庄园答题📝回答" + (correct ? "正确" : "错误") + "#获得[" + award + "g饲料]");
             if (jo.has("operationConfigList")) {
                 JSONArray operationConfigList = jo.optJSONArray("operationConfigList");
                 if (operationConfigList != null) {
@@ -1913,7 +1923,7 @@ public class AntFarm extends ModelTask {
                 } else {
                     // 留痕：标题被服务端改得完全不像时会落到这里（并可能被自动拉黑），
                     // 日志里的 bizKey/taskId 用于后续把分派改成稳定字段
-                    Log.other("饲料任务⚠️未完成[" + title + "]#bizKey=" + bizKey + "#taskId=" + task.optString("taskId"));
+                    Log.farm("饲料任务⚠️未完成[" + title + "]#bizKey=" + bizKey + "#taskId=" + task.optString("taskId"));
                 }
             }
 
@@ -1986,7 +1996,7 @@ public class AntFarm extends ModelTask {
 
     private void checkUnReceiveTaskAward() {
         if (unReceiveTaskAward > 0) {
-            Log.record("还有待领取的饲料");
+            Log.farm("还有待领取的饲料");
             unReceiveTaskAward = 0;
             listFarmTask(TaskStatus.FINISHED);
         }
@@ -3164,7 +3174,7 @@ public class AntFarm extends ModelTask {
                 //黑名单任务跳过
                 if (AntFarmDrawMachineTaskList.getValue().contains(title)) {
                     todoSkipped++;
-                    Log.farm("抽抽乐⏭️跳过[" + title + "]#黑名单");
+                    Log.i("抽抽乐⏭️跳过[" + title + "]#黑名单");
                     continue;
                 }
 
@@ -3350,7 +3360,7 @@ public class AntFarm extends ModelTask {
                     String skuName = sku.optString("skuName");
 
                     if (isNoEnoughPoint(sku) || (cent > 0 && totalCent < cent)) {
-                        Log.record("兑换[" + labelType + "]类最高价值[" + skuName + "]碎片不足(持有" + (totalCent / 100) + "需" + (cent / 100) + ")");
+                        Log.farm("兑换[" + labelType + "]类最高价值[" + skuName + "]碎片不足(持有" + (totalCent / 100) + "需" + (cent / 100) + ")");
                         return false;
                     }
                     break;
@@ -3369,7 +3379,7 @@ public class AntFarm extends ModelTask {
 
                     // 【核心逻辑】：如果当前项买不起，直接 return 停止，不再尝试后续更便宜的项目
                     if (isNoEnoughPoint(sku) || (cent > 0 && totalCent < cent)) {
-                        Log.record("剩余碎片不足以兑换[" + labelType + "]类优先级项 [" + skuName + "] (需 " + (cent / 100) + ")，停止后续兑换任务");
+                        Log.farm("剩余碎片不足以兑换[" + labelType + "]类优先级项 [" + skuName + "] (需 " + (cent / 100) + ")，停止后续兑换任务");
                         return false;
                     }
 
@@ -3611,7 +3621,7 @@ public class AntFarm extends ModelTask {
                                 Log.farm("小鸡乐园🎁开宝箱得[" + awardLog + "]");
                                 TimeUtil.sleep(3000);
                             } else {
-                                Log.record("小鸡乐园开启宝箱失败: " + drawRes.optString("desc"));
+                                Log.farm("小鸡乐园开启宝箱失败: " + drawRes.optString("desc"));
                                 break; // 开启失败则退出循环
                             }
                         }
@@ -3795,7 +3805,7 @@ public class AntFarm extends ModelTask {
                                 //invitesToSend--; // 每成功发送一次邀请，减少一次邀请次数
                             //}
                             //else {
-                                //Log.record("邀请失败：" + jo);
+                                //Log.farm("邀请失败：" + jo);
                                 //break;
                             //}
                         //}
@@ -3816,7 +3826,7 @@ public class AntFarm extends ModelTask {
                             Log.record("一起拿小鸡饲料🥡 [送饲料：" + UserIdMap.getMaskName(userId) + "]");
                         }
                         else {
-                            Log.record("邀请失败：" + jo);
+                            Log.farm("邀请失败：" + jo);
                             break;
                         }
                         userIdList.remove(randomIndex);
@@ -4364,10 +4374,10 @@ public class AntFarm extends ModelTask {
                 int failCount = Status.getIntFlagToday(FLAG_FAMILY_SHARE_FAIL_COUNT) + 1;
                 if (failCount >= MAX_FAMILY_SHARE_ATTEMPT) {
                     Status.flagToday("antFarm::familyShareToFriends");
-                    Log.record("家庭分享🏠邀请已连续失败" + failCount + "次，今日不再尝试");
+                    Log.farm("家庭分享🏠邀请已连续失败" + failCount + "次，今日不再尝试");
                 } else {
                     Status.setIntFlagToday(FLAG_FAMILY_SHARE_FAIL_COUNT, failCount);
-                    Log.record("家庭分享🏠邀请全部失败(第" + failCount + "/" + MAX_FAMILY_SHARE_ATTEMPT + "次)，稍后重试");
+                    Log.farm("家庭分享🏠邀请全部失败(第" + failCount + "/" + MAX_FAMILY_SHARE_ATTEMPT + "次)，稍后重试");
                 }
             }
         } catch (Throwable t) {

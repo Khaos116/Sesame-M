@@ -145,7 +145,7 @@ public enum GameTask {
                 JSONObject data = resJson.optJSONObject("data");
                 if (data != null) {
                     this.cachedToken = data.optString("token");
-                    Log.record("登录成功✅Token已获取");
+                    Log.other("登录成功✅Token已获取");
                     return this.cachedToken;
                 }
             } else {
@@ -327,7 +327,7 @@ public enum GameTask {
             JSONObject resJson = MyUtils.newJSONObject(responseText.toString());
             if (resJson.optInt("code") == 1) {
                 if (current % this.requestsPerEgg == 0) {
-                    Log.other("游戏进度📈"+ gameType +"[" + current + "/" + total + "](达成" + (current/this.requestsPerEgg) + "个)");
+                    Log.i("游戏进度📈"+ gameType +"[" + current + "/" + total + "](达成" + (current/this.requestsPerEgg) + "个)");
                 }
                 return true;
             } else {

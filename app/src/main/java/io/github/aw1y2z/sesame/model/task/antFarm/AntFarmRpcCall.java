@@ -148,6 +148,10 @@ public class AntFarmRpcCall {
 
     //{"bizKey":"SHH_liyunrui","requestType":"NORMAL","sceneCode":"ANTFARM","source":"H5","version":"1.8.2302070202.46"}]}
     public static String doFarmTask(String bizKey) {
+        if (TaskAlternative.isTransactionTask(bizKey)) {
+            Log.i("doFarmTask⏭️跳过交易/履约类任务#bizKey=" + bizKey + "，不自动申报");
+            return "{}";
+        }
         String args1 = "[{\"bizKey\":\""+bizKey+"\",\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\"}]";
         return ApplicationHook.requestString("com.alipay.antfarm.doFarmTask", args1);
     }

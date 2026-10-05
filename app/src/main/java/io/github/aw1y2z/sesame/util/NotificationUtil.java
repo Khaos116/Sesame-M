@@ -6,12 +6,13 @@ import android.content.Intent;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import lombok.Getter;
 import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class NotificationUtil {
     private static Context context;
@@ -24,15 +25,52 @@ public class NotificationUtil {
     private static volatile long lastNoticeTime = 0;
     private static String titleText = "Sesame-M";
     private static String contentText = "";
-    /** 活跃任务计数，>0 表示有异步任务仍在执行。由 ModelTask 在 startTask/finally 里增减 */
-    private static final AtomicInteger runningCount = new AtomicInteger();
+    /** 活跃任务计数，>0 表示有异步任务仍在执行。由 ModelTask 拿到执行槽后 / finally 里增减 */
+    private static final AtomicInteger runningCount = new AtomicInteger(0);
+    /** 正在执行中的模块任务名（如「森林」「庄园」），用于状态栏展示当前在跑什么 */
+    private static final Set<String> runningTasks = ConcurrentHashMap.newKeySet();
 
-    public static void trackTaskStart() {
-        runningCount.incrementAndGet();
+    /**
+     * 新一轮开始：清零本轮收取能量。由 {@code ModelTask} 在分发整轮或分组任务前调用。
+     * <p>不能用 runningCount==0 判定：模块各自拿执行槽、依次跑，模块之间该值会短暂回到 0。
+     */
+    public static void startRound() {
+        Statistics.resetRoundCollected();
     }
 
-    public static void trackTaskEnd() {
-        if (runningCount.decrementAndGet() < 0) runningCount.set(0);
+    public static void trackTaskStart(String name) {
+        if (!StringUtil.isEmpty(name)) {
+            runningTasks.add(name);
+        }
+        runningCount.incrementAndGet();
+        updateRunningText();
+    }
+
+    public static void trackTaskEnd(String name) {
+        // 不再有实例锁串行化，增减来自不同线程 ⇒ 原子操作
+        if (runningCount.decrementAndGet() < 0) {
+            runningCount.set(0);
+        }
+        if (!StringUtil.isEmpty(name)) {
+            runningTasks.remove(name);
+        }
+        updateRunningText();
+    }
+
+    /**
+     * 执行中刷新通知正文：列出当前正在跑的模块任务；全部结束时交由「上次执行」文案。
+     */
+    private static void updateRunningText() {
+        long now = System.currentTimeMillis();
+        if (runningTasks.isEmpty()) {
+            if (runningCount.get() == 0) {
+                updateLastExecText();
+            }
+            return;
+        }
+        contentText = "执行中：" + String.join(" / ", runningTasks);
+        lastNoticeTime = now;
+        sendText();
     }
 
     public static int getRunningCount() {
@@ -170,16 +208,6 @@ public class NotificationUtil {
         }
     }
 
-    public static void setStatusTextExec() {
-        try {
-            contentText = "自动执行中";
-            lastNoticeTime = System.currentTimeMillis();
-            sendText();
-        } catch (Exception e) {
-            Log.printStackTrace(e);
-        }
-    }
-
     /**
      * 任务运行中持续刷新通知，防止系统因「长时间无更新」将通知折叠/隐藏。
      * 每次调用只更新 lastNoticeTime，不改变文本内容。
@@ -193,12 +221,29 @@ public class NotificationUtil {
         }
     }
 
+    /**
+     * 展开区里的完整能量行：本轮 / 本日收取能量。
+     */
+    private static String energyText() {
+        return "本轮收取能量 " + Statistics.getRoundCollected() + "g"
+                + "  本日收取能量 " + Statistics.getData(Statistics.TimeType.DAY, Statistics.DataType.COLLECTED) + "g";
+    }
+
+    /** 标题行上的精简能量：折叠态免长按可见，只放本轮（本日在展开区）；正文留给执行状态/告警 */
+    private static String titleWithEnergy() {
+        return titleText + "｜本轮" + Statistics.getRoundCollected() + "g";
+    }
+
     private static void sendText() {
         try {
-            builder.setContentTitle(titleText);
+            builder.setContentTitle(titleWithEnergy());
             if (!StringUtil.isEmpty(contentText)) {
                 builder.setContentText(contentText);
             }
+            String bigText = StringUtil.isEmpty(contentText)
+                    ? energyText()
+                    : contentText + "\n" + energyText();
+            builder.setStyle(new Notification.BigTextStyle().bigText(bigText));
             mNotifyManager.notify(NOTIFICATION_ID, builder.build());
         } catch (Exception e) {
             Log.printStackTrace(e);

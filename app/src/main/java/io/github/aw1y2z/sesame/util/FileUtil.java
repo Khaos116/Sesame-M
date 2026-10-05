@@ -173,6 +173,7 @@ public class FileUtil {
         SimpleDateFormat dateFormat = Log.DATE_FORMAT_THREAD_LOCAL.get();
         if (dateFormat == null) {
             dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+            dateFormat.setTimeZone(java.util.TimeZone.getTimeZone("GMT+8"));
         }
         // 格式化文件修改日期和当前日期
         String fileDate = dateFormat.format(new Date(fileLastModified));
@@ -618,6 +619,10 @@ public class FileUtil {
     
     public static File getAntOrchardTaskListMapFile() {
         return getFile(MAIN_DIRECTORY_FILE, "AntOrchardTask.json");
+    }
+
+    public static File getOrchardChouChouLeTaskListMapFile() {
+        return getFile(MAIN_DIRECTORY_FILE, "OrchardChouChouLeTask.json");
     }
 
     public static File getGoldenBeansTaskListMapFile() {

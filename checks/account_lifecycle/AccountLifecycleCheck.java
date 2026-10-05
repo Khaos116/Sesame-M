@@ -100,6 +100,7 @@ public class AccountLifecycleCheck {
             require(TaskLifecycle.enterInitialization(null) == null, "external initialization entered freeze");
             require(!dispatcher.startTask(), "MAIN_TASK entered freeze");
             require(!worker.startTask(), "model entered freeze");
+            require(ModelTask.startGroupTask("") == 0, "group dispatch entered freeze");
             pending.run();
             try (TaskLifecycle.Work init = TaskLifecycle.enterInitialization(freeze)) {
                 require(init != null, "controller initialization rejected");

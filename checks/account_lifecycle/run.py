@@ -23,6 +23,7 @@ class ModelGroup { String getCode() { return ""; } }
 class BaseModel { static void taskRpcRequest() {} static Value getTimedTaskModel() { return new Value(); }
  static class Value { int getValue() { return 1; } } static class TimedTaskModel { static int SYSTEM=0, PROGRAM=1; } }
 class Log { static final java.util.concurrent.atomic.AtomicInteger completions = new java.util.concurrent.atomic.AtomicInteger();
+ static String beginModule(String name) { return null; } static void endModule(String previous) {}
  static void record(String s) { if (s.equals("🏁全部任务已执行完成")) completions.incrementAndGet(); }
  static void startModuleLogCount() {} static int stopModuleLogCount() { return 1; }
  static int takeDroppedStaleLogCount() { return 0; } static void restoreDroppedStaleLogCount(int n) {}
@@ -39,7 +40,7 @@ class UserIdMap { static String getCurrentUid() { return "account"; } }
 class FileUtil { static void backupConfigV2WithRolling(String s) {} }
 class TimeUtil { static void sleep(long millis) { try { Thread.sleep(millis); }
  catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new TaskCancelledException(); } } }
-class NotificationUtil { static void trackTaskStart() {} static void trackTaskEnd() {}
+class NotificationUtil { static void trackTaskStart(String name) {} static void trackTaskEnd(String name) {} static void startRound() {}
  static int getRunningCount() { return 0; } static void setStatusTextExec() {}
  static void updateLastExecText() {} }
 class ProgramChildTaskExecutor implements ChildTaskExecutor {

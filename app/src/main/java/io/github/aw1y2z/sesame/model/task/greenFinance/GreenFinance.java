@@ -64,7 +64,7 @@ public class GreenFinance extends ModelTask {
     @Override
     public Boolean check() {
         if (TaskCommon.IS_ENERGY_TIME) {
-            Log.other("任务暂停⏸️绿色经营:当前为仅收能量时间");
+            Log.i("任务暂停⏸️绿色经营:当前为仅收能量时间");
             return false;
         }
         return true;
@@ -81,7 +81,7 @@ public class GreenFinance extends ModelTask {
             }
             JSONObject result = jo.optJSONObject("result");
             if (result == null || !result.optBoolean("greenFinanceSigned")) {
-                Log.other("绿色经营📊未开通");
+                Log.i("绿色经营📊未开通");
                 return;
             }
             JSONObject mcaGreenLeafResult = result.optJSONObject("mcaGreenLeafResult");
@@ -273,7 +273,7 @@ public class GreenFinance extends ModelTask {
                 return;
             }
             //不管是否可以捐小于非100的倍数了，，第一次捐200，最后按amount-200*n
-            Log.other("绿色经营📊1天内过期的金币[" + amount + "]");
+            Log.i("绿色经营📊1天内过期的金币[" + amount + "]");
             str = GreenFinanceRpcCall.queryAllDonationProjectNew();
             TimeUtil.sleep(300);
             jsonObject = MyUtils.newJSONObject(str);
@@ -346,6 +346,7 @@ public class GreenFinance extends ModelTask {
                     String bizTime = jsonObject.optString("bizTime");
                     // 使用 SimpleDateFormat 解析字符串
                     SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ENGLISH);
+                    formatter.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
                     Date dateTime = formatter.parse(bizTime);
                     if (TimeUtil.getWeekNumber(dateTime) == TimeUtil.getWeekNumber(new Date())) {
                         //本周已完成

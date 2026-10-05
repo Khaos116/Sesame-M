@@ -24,6 +24,29 @@ public final class TaskAlternative {
     /** 庄园路径验证过的 version；服务端不校验 version，各模块可沿用自己那份。 */
     public static final String DEFAULT_VERSION = "1.8.2302070202.46";
 
+    /**
+     * 交易/履约类任务的 bizKey 关键词。这类任务只能靠真实交易完成，
+     * 用 doFarmTask 伪申报会被判风险操作（服务端回 1009 风控），一律不发。
+     */
+    private static final String[] TRANSACTION_BIZ_KEYWORDS = {
+            "xiadan", "zhifu", "pay", "goumai", "jiaofei", "huankuan", "chongzhi",
+            "taobao", "babafarm_tb", "70000"
+    };
+
+    /** bizKey 是否属于交易/履约类（下单、支付、购买、缴费、还款、充值、淘宝）。 */
+    public static boolean isTransactionTask(String bizKey) {
+        if (bizKey == null || bizKey.isEmpty()) {
+            return false;
+        }
+        String key = bizKey.toLowerCase(java.util.Locale.ROOT);
+        for (String keyword : TRANSACTION_BIZ_KEYWORDS) {
+            if (key.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** 日志出口（{@code Log.farm/forest/other/goldenBeans}）。 */
     public interface LogSink {
         void log(String message);
@@ -34,6 +57,10 @@ public final class TaskAlternative {
 
     /** 唯一的 doFarmTask payload，返回原始响应。 */
     public static String request(String bizKey, String taskSceneCode, String version) {
+        if (isTransactionTask(bizKey)) {
+            Log.i("doFarmTask⏭️跳过交易/履约类任务#bizKey=" + bizKey + "，不自动申报");
+            return "{}";
+        }
         String args = "[{\"bizKey\":\"" + bizKey + "\",\"requestType\":\"RPC\",\"sceneCode\":\"ANTFARM\","
                 + "\"source\":\"H5\",\"taskSceneCode\":\"" + taskSceneCode + "\",\"version\":\"" + version + "\"}]";
         return ApplicationHook.requestString("com.alipay.antfarm.doFarmTask", args);
@@ -81,6 +108,10 @@ public final class TaskAlternative {
                                      String bizKey, String taskSceneCode, String version,
                                      String logPrefix, LogSink sink) {
         try {
+            if (isTransactionTask(bizKey)) {
+                Log.i(logPrefix + "⏭️跳过[" + taskTitle + "]#bizKey=" + bizKey + "，交易/履约类不自动申报");
+                return null;
+            }
             JSONObject doFarmJo = doFarmTask(bizKey, taskSceneCode, version);
             if (pending != null && taskId != null && !taskId.isEmpty()) {
                 pending.put(taskId, taskTitle);

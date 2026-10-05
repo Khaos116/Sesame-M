@@ -432,6 +432,7 @@ fun LogTopBar(
     onExportSummary: (() -> Unit)? = null,
     onShare: (() -> Unit)? = null,
     onExecute: (() -> Unit)? = null,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
 ) {
     Column(
         Modifier
@@ -463,6 +464,7 @@ fun LogTopBar(
                 color = MiuixTheme.colorScheme.onBackground,
                 maxLines = 1
             )
+            actions()
             if (onImport != null) {
                 IconButton(onClick = onImport) {
                     // 导入图标:把 Upload 旋转 180°(朝下)与导出(朝上)区分

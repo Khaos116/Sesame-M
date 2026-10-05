@@ -78,9 +78,12 @@ public class StatisticsAccountCheck {
         Files.writeString(Path.of(args[0], "statistics.json"), "{\\"day\\":{\\"collected\\":99}}");
         UserIdMap.uid = "A";
         Statistics.load("A"); Statistics.updateDay(TimeUtil.getNow()); eq(0); Statistics.addData(Statistics.DataType.COLLECTED, 7); Statistics.save();
+        assert Statistics.getRoundCollected() == 7;
         UserIdMap.uid = "B";
         Statistics.load("B"); Statistics.updateDay(TimeUtil.getNow()); eq(0); Statistics.addData(Statistics.DataType.COLLECTED, 3); Statistics.save();
+        assert Statistics.getRoundCollected() == 3;
         UserIdMap.uid = "A"; Statistics.load("A"); eq(7);
+        assert Statistics.getRoundCollected() == 0;
         UserIdMap.uid = "B"; Statistics.load("B"); eq(3);
         assert Files.readString(Path.of(args[0], "statistics.json")).contains("99");
         assert Files.isRegularFile(FileUtil.getStatisticsFile("A").toPath());
@@ -88,8 +91,8 @@ public class StatisticsAccountCheck {
         UserIdMap.uid = "A"; FriendWatch.load(); FriendWatch.friendWatch("friend", 5); FriendWatch.save();
         UserIdMap.uid = "B"; FriendWatch.load(); assert FriendWatch.getList("B").isEmpty();
         FriendWatch.friendWatch("friend", 3); FriendWatch.save();
-        assert FriendWatch.getList("A").get(0).name.contains("总收:5");
-        assert FriendWatch.getList("B").get(0).name.contains("总收:3");
+        assert FriendWatch.getList("A").get(0).getAllGet() == 5;
+        assert FriendWatch.getList("B").get(0).getAllGet() == 3;
         UserIdMap.uid = "A"; io.github.aw1y2z.sesame.util.idMap.AutoBlackListMap.ensureLoaded();
         io.github.aw1y2z.sesame.util.idMap.AutoBlackListMap.put("task", "A");
         io.github.aw1y2z.sesame.util.idMap.AutoBlackListMap.save();

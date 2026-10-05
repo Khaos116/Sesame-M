@@ -82,33 +82,51 @@ public class Log {
                         .build())).build());
     }
 
-    private static Logger runtimeLogger() {
-        return getUserLogger("runtime", "RUNTIME", "{d HH:mm:ss.SSS} {t}: {m}");
+    /**
+     * 当前线程所属模块（{@code ModelGroup.getCode()}，如 FOREST/FARM/…）。
+     * <p>只决定流程日志在运行日志里的 tag：查看器的 tag 过滤条据此按模块切分流程。
+     * 模块结果不经过这里，它们只写各自的分类文件。
+     */
+    private static final ThreadLocal<String> MODULE_TAG = new ThreadLocal<>();
+
+    private static Logger runtimeLoggerOf(String tag) {
+        return getUserLogger("runtime", StringUtil.isEmpty(tag) ? "RUNTIME" : tag, "{d HH:mm:ss.SSS} {t}: {m}");
     }
 
-    /** 各模块向 runtime.log 写入时使用的专用 logger（不同 tag，同文件），供日志页按 tag 过滤 */
-    private static Logger runtimeForestLogger() {
-        return getUserLogger("runtime", "FOREST", "{d HH:mm:ss.SSS} {t}: {m}");
+    /**
+     * 进入模块上下文：本线程后续的流程日志带上该模块 tag。
+     *
+     * @return 上一个 tag（可能为 null），收尾时原样传回 {@link #endModule} 以支持嵌套
+     */
+    public static String beginModule(String moduleTag) {
+        String prev = MODULE_TAG.get();
+        if (StringUtil.isEmpty(moduleTag)) {
+            MODULE_TAG.remove();
+        } else {
+            MODULE_TAG.set(moduleTag);
+        }
+        return prev;
     }
 
-    private static Logger runtimeGoldenBeansLogger() {
-        return getUserLogger("runtime", "GOLDENBEANS", "{d HH:mm:ss.SSS} {t}: {m}");
+    /** 恢复模块上下文；{@code prev} 为 null 表示退出最外层（回落到 RUNTIME tag） */
+    public static void endModule(String prev) {
+        if (StringUtil.isEmpty(prev)) {
+            MODULE_TAG.remove();
+        } else {
+            MODULE_TAG.set(prev);
+        }
+    }
+
+    /** 写运行日志：受「查看运行日志」开关控制，tag 取当前模块（无则 RUNTIME） */
+    private static void runtimeWrite(String s) {
+        if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
+            return;
+        }
+        runtimeLoggerOf(MODULE_TAG.get()).i(withUser(s));
     }
 
     private static Logger runtimeCaptchaLogger() {
         return getUserLogger("runtime", "CAPTCHA", "{d HH:mm:ss.SSS} {t}: {m}");
-    }
-
-    private static Logger runtimeFarmLogger() {
-        return getUserLogger("runtime", "FARM", "{d HH:mm:ss.SSS} {t}: {m}");
-    }
-
-    private static Logger runtimeOtherLogger() {
-        return getUserLogger("runtime", "OTHER", "{d HH:mm:ss.SSS} {t}: {m}");
-    }
-
-    private static Logger recordLogger() {
-        return getUserLogger("record", "RECORD", "{d HH:mm:ss.SSS} {m}");
     }
 
     private static Logger debugLogger() {
@@ -164,20 +182,15 @@ public class Log {
     }
 
     /**
-     * 模块日志双写（运行日志 + 分类文件）：只写开关打开的一侧，消息统一带 uid 前缀。
+     * 模块结果日志：只写各自的分类文件。
+     * <p>运行日志不再双写一份——它只承载流程（模块线程的流程日志由 {@link #beginModule} 决定 tag），
+     * 模块结果统一到分类页查看。
      */
-    private static void writeModuleLog(String s, boolean toRuntime, Supplier<Logger> runtimeTarget,
-                                       boolean toFile, Supplier<Logger> fileTarget) {
-        if (!toRuntime && !toFile) {
+    private static void writeModuleLog(String s, boolean toFile, Supplier<Logger> fileTarget) {
+        if (!toFile) {
             return;
         }
-        String msg = withUser(s);
-        if (toRuntime) {
-            runtimeTarget.get().i(msg);
-        }
-        if (toFile) {
-            fileTarget.get().i(msg);
-        }
+        fileTarget.get().i(withUser(s));
     }
 
     /** 本线程在「代际作废」期间被静音的错误日志条数 */
@@ -219,15 +232,12 @@ public class Log {
             errorLogger().i(msg);
         }
         if (toRuntime) {
-            runtimeLogger().i(msg);
+            runtimeLoggerOf(MODULE_TAG.get()).i(msg);
         }
     }
 
     public static void i(String s) {
-        if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
-            return;
-        }
-        runtimeLogger().i(withUser(s));
+        runtimeWrite(s);
     }
 
     public static void i(String tag, String s) {
@@ -266,9 +276,7 @@ public class Log {
     public static void record(String str) {
         countModuleLog();
         // 记录日志(record)已停用,只按「查看运行日志」开关写入运行日志
-        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
-            runtimeLogger().i(withUser(str));
-        }
+        runtimeWrite(str);
     }
 
     public static void record(String TAG, String msg) {
@@ -281,22 +289,17 @@ public class Log {
      * 而且查看器里也没有对应的日志类目。仍受「查看运行日志」开关控制。
      */
     public static void system(String tag, String s) {
-        if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
-            return;
-        }
-        runtimeLogger().i(withUser(tag + ", " + s));
+        runtimeWrite(tag + ", " + s);
     }
 
     public static void forest(String s) {
         countModuleLog();
-        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog(), Log::runtimeForestLogger,
-                io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableForestLog(), Log::forestLogger);
+        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableForestLog(), Log::forestLogger);
     }
 
     public static void goldenBeans(String s) {
         countModuleLog();
-        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog(), Log::runtimeGoldenBeansLogger,
-                io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableGoldenBeansLog(), Log::goldenBeansLogger);
+        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableGoldenBeansLog(), Log::goldenBeansLogger);
     }
 
     /**
@@ -304,20 +307,20 @@ public class Log {
      * 不调用 countModuleLog：验证弹窗不是模块动作，不能让“本轮无操作”提示失效。
      */
     public static void captcha(String s) {
-        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog(), Log::runtimeCaptchaLogger,
-                io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableCaptchaLog(), Log::captchaLogger);
+        if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog()) {
+            runtimeCaptchaLogger().i(withUser(s));
+        }
+        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableCaptchaLog(), Log::captchaLogger);
     }
 
     public static void farm(String s) {
         countModuleLog();
-        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog(), Log::runtimeFarmLogger,
-                io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableFarmLog(), Log::farmLogger);
+        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableFarmLog(), Log::farmLogger);
     }
 
     public static void other(String s) {
         countModuleLog();
-        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableViewRuntimeLog(), Log::runtimeOtherLogger,
-                io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableOtherLog(), Log::otherLogger);
+        writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableOtherLog(), Log::otherLogger);
     }
 
     public static void debug(String s) {

@@ -75,7 +75,7 @@ public class ProtectEcology extends ModelTask {
         modelFields.addField(protectTree = new BooleanModelField("protectTree", "保护森林 | 植树", false));
         modelFields.addField(protectTreeList = new SelectAndCountModelField("protectTreeList", "保护森林 | 植树列表", new LinkedHashMap<>(), AlipayTree::getList, "请填写保护次数(上限总量)").setDependsOn("protectTree"));
         modelFields.addField(protectReserve = new BooleanModelField("protectReserve", "保护动物 | 保护地", false));
-        modelFields.addField(protectReserveList = new SelectAndCountModelField("reserveList", "保护动物 | 保护地列表", new LinkedHashMap<>(), AlipayReserve::getList, "请填写保护次数(每日)").setDependsOn("protectReserve"));
+        modelFields.addField(protectReserveList = new SelectAndCountModelField("reserveList", "保护动物 | 保护地列表", new LinkedHashMap<>(), AlipayReserve::getList, "请填写保护次数(每日)", 1, 100).setDependsOn("protectReserve"));
         modelFields.addField(protectReserveMinNum = new BooleanModelField("protectReserveMinNum", "保护地 | 最少保护", false));
         modelFields.addField(protectReserveNum = new IntegerModelField("protectReserveNum", "保护地 |最少保护下限", 1).setDependsOn("protectReserveMinNum"));
         modelFields.addField(protectAnimal = new BooleanModelField("protectAnimal", "保护动物 | 护林员", false));
@@ -90,7 +90,7 @@ public class ProtectEcology extends ModelTask {
     @Override
     public Boolean check() {
         if (TaskCommon.IS_ENERGY_TIME) {
-            Log.forest("任务暂停⏸️生态保护:当前为仅收能量时间");
+            Log.i("任务暂停⏸️生态保护:当前为仅收能量时间");
             return false;
         }
         return true;
@@ -458,7 +458,7 @@ public class ProtectEcology extends ModelTask {
             }
             jo = jo.optJSONObject("goldAnimalCertVO");
             if (jo != null) {
-                Log.record("生态保护🏕️点亮[" + jo.optString("name") + "]");
+                Log.forest("生态保护🏕️点亮[" + jo.optString("name") + "]");
             }
         }
         catch (Throwable t) {

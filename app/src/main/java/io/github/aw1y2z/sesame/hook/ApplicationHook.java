@@ -27,7 +27,6 @@ import io.github.aw1y2z.sesame.util.compat.XC_LoadPackage;
 
 import java.util.Objects;
 
-import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Locale;
@@ -1085,7 +1084,7 @@ public class ApplicationHook extends XposedModule {
             } else {
                 alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAtMillis, operation);
             }
-            Log.i("setAlarmTask triggerAtMillis:" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(triggerAtMillis) + " operation:" + (operation == null ? "" : operation.toString()));
+        Log.i("setAlarmTask triggerAtMillis:" + Log.DATE_TIME_FORMAT_THREAD_LOCAL.get().format(new java.util.Date(triggerAtMillis)) + " operation:" + (operation == null ? "" : operation.toString()));
             return true;
         } catch (Throwable th) {
             Log.err(TAG, "setAlarmTask err:", th);
@@ -1549,8 +1548,7 @@ public class ApplicationHook extends XposedModule {
             return;
         }
         honestAnswerLogged = true;
-        // 用 other 日志：该事件是"宿主在后台要展示风控/滑块界面"的直接证据，而 other 日志默认开启、便于核对；
-        // 运行日志（Log.record）受「查看运行日志」开关控制，很多用户是关着的，写在那里等于看不见
-        Log.other("风控/滑块链路在后台询问前后台状态：已如实回答，避免在后台创建滑块界面（界面出不来、切回支付宝卡死）");
+        // 运行事件（非成功记录），写入运行日志便于核对；运行日志受「查看运行日志」开关控制
+        Log.i("风控/滑块链路在后台询问前后台状态：已如实回答，避免在后台创建滑块界面（界面出不来、切回支付宝卡死）");
     }
 }

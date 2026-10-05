@@ -130,7 +130,7 @@ public class AntStall extends ModelTask {
     @Override
     public Boolean check() {
         if (TaskCommon.IS_ENERGY_TIME) {
-            Log.farm("任务暂停⏸️蚂蚁新村:当前为仅收能量时间");
+            Log.i("任务暂停⏸️蚂蚁新村:当前为仅收能量时间");
             return false;
         }
         return true;
@@ -190,7 +190,7 @@ public class AntStall extends ModelTask {
                 return null;
             }
             if (!jo.optBoolean("hasRegister") || jo.optBoolean("hasQuit")) {
-                Log.farm("蚂蚁新村⛪请先开启蚂蚁新村");
+                Log.i("蚂蚁新村⛪请先开启蚂蚁新村");
                 return null;
             }
             JSONObject userInfo = jo.optJSONObject("userInfo");
@@ -293,7 +293,7 @@ public class AntStall extends ModelTask {
                     }
                     // 2. 批量添加黑名单任务（确保存在）
                     // 2~4. 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("新村任务", blackList, whiteList, AntStallTaskList);
+                    MessageUtil.syncTaskBlackList("新村任务", "AntStallTaskList", blackList, whiteList, AntStallTaskList);
                 }
             }
         }
@@ -782,7 +782,7 @@ public class AntStall extends ModelTask {
                 default:
                     // 未识别的 taskType 不再静默跳过（原先 switch 无 default，落到方法末尾 return false，
                     // 调用点直接 continue 且无日志，表现为"列表拿到了却没动作"）：先留痕，再兜底走通用完成接口
-                    Log.other("新村任务⚠️未识别类型[" + title + "]#taskType=" + taskType + "，尝试兜底完成");
+                    Log.i("新村任务⚠️未识别类型[" + title + "]#taskType=" + taskType + "，尝试兜底完成");
                     return finishTask(taskType, title);
             }
         }
@@ -899,7 +899,7 @@ public class AntStall extends ModelTask {
             JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
                 String shareId = jo.optString("shareId");
-                Log.record("蚂蚁新村⛪[分享助力]");
+                Log.farm("蚂蚁新村⛪[分享助力]");
                 return shareId;
             }
             else {
@@ -1220,7 +1220,7 @@ public class AntStall extends ModelTask {
                     return;
                 }
                 if (jo.optInt("canPasteTicketCount") == 0) {
-                    Log.record("蚂蚁新村👍今日罚单已贴完");
+                    Log.farm("蚂蚁新村👍今日罚单已贴完");
                     Status.flagToday("stall::pasteTicketLimit");
                     return;
                 }
