@@ -611,6 +611,16 @@ public class AntMemberRpcCall {
     public static final String DO_FARM_TASK_VERSION = "20250812.01";
 
     /**
+     * 查询「最近一次操作任务」：join 被 {@code PROMISE_HAS_PROCESSING_TEMPLATE}（存在进行中的生活记录）拒绝时，
+     * 用它取回那条记录的 {@code recordId} 继续推完。
+     * <p>抓包实测请求体为 {@code [{version:"new"}]}；响应 {@code data.lastOperateTaskVO} 含
+     * {@code templateId / recordId / finishFlag / completedNum / needCompleteNum}。
+     */
+    public static String queryLastOperateTask() {
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.creditaccumulate.CreditAccumulateStrategyRpcManager.queryLastOperateTask", "[{\"version\":\"new\"}]");
+    }
+
+    /**
      * 另一种实现方案：按 bizKey 完成任务（{@code com.alipay.antfarm.doFarmTask}）。
      * <p>游戏中心任务与庄园抽抽乐、芭芭农场、金豆乐园同源：`doTaskSend` 常被服务端以
      * 400000040「不支持rpc调用」拒绝，而这条接口能把它们做成（2026-09-22 在三处实测通过）。

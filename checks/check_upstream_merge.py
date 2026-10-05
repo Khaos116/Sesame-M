@@ -1,4 +1,4 @@
-"""Compile merged production methods: malformed gold-ticket data, locale, team state and transaction guard."""
+"""Compile merged production flows with isolated RPCs; check malformed data, quotas, task progress and locale."""
 from pathlib import Path
 import os
 import subprocess
@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent / "audit_regressions"))
 from run import method, SOURCE
 
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches/modules-2/files-2.1"
-json_jar = next((cache / "org.json/json").glob("*/*/json-*.jar"))
+json_jar = next(p for p in (cache / "org.json/json").glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar", "-javadoc.jar")))
 member = "model/task/antMember/AntMember.java"
 code = "import org.json.*; import java.util.*;\npublic class MergeCheck {\n"
 code += 'static final String TAG = "test";\n'
@@ -107,8 +107,216 @@ public static void main(String[] args) throws Exception {
 }
 '''.replace("@@SUBMIT@@", method("model/task/antMember/AntMemberRpcCall.java", "public static String submitConsume("))
 
+flows = r'''
+import org.json.*; import java.util.*;
+public class FlowCheck {
+    static final String TAG = "test";
+    static class Field<T> { T value; Field(T v) { value = v; } T getValue() { return value; } }
+    static class MyUtils {
+        static JSONObject newJSONObject(String raw) {
+            try { return raw == null ? new JSONObject() : new JSONObject(raw); }
+            catch (JSONException e) { return new JSONObject(); }
+        }
+    }
+    static class Log {
+        static List<String> results = new ArrayList<>();
+        static void other(String s) { results.add(s); }
+        static void forest(String s) {} static void farm(String s) {}
+        static void record(String s) {} static void i(String s) {}
+        static void err(String tag, String msg, Throwable t) { throw new AssertionError(t); }
+        static void printStackTrace(String tag, Throwable t) { throw new AssertionError(t); }
+    }
+    static class TimeUtil { static void sleep(long ms) {} }
+    static class StringUtil { static boolean isEmpty(String s) { return s == null || s.isEmpty(); } }
+    static class Toast { static void show(String s) {} }
+    static class UserIdMap { static String getCurrentUid() { return "self"; } }
+    static JSONObject ok() { return new JSONObject().put("resultCode", "SUCCESS"); }
+    static class MessageUtil {
+        static int blackHits;
+        static boolean checkResultCode(String tag, JSONObject jo) { return "SUCCESS".equals(jo.optString("resultCode")); }
+        static boolean checkSuccess(String tag, JSONObject jo) { return jo.optBoolean("success") || jo.optBoolean("isSuccess"); }
+        static boolean checkMemo(String tag, JSONObject jo) { return "SUCCESS".equals(jo.optString("memo")); }
+        static void checkResultCodeAndMarkTaskBlackList(String list, String title, JSONObject jo) {}
+        static void MarkTaskBlackListConfirm(String model, String list, String kind, String title) { blackHits++; }
+        @@RETRY@@
+    }
+    static class Status {
+        static Set<String> flags = new HashSet<>(); static int used;
+        static boolean hasFlagToday(String key) { return flags.contains(key); }
+        static void flagToday(String key) { flags.add(key); }
+        static void flagToday(String key, String uid) { flags.add(uid + ":" + key); }
+        static void clearFlag(String key) { flags.remove(key); }
+        static int getforestHuntHelpToday(String key) { return used; }
+        static void forestHuntHelpToday(String key, int n, String uid) { used = n; }
+    }
+    static class AntMemberRpcCall {
+        static String fresh, last, join; static int reads; static List<String> calls = new ArrayList<>();
+        static String queryHome() { return ok().put("entrance", new JSONObject().put("openApp", true)).toString(); }
+        static String CreditAccumulateStrategyRpcManager() { return reads++ == 0 ? tasks(new JSONArray().put(task(0, 2))) : fresh; }
+        static String queryCreditFeedback() { return ok().put("creditFeedbackVOS", new JSONArray()).toString(); }
+        static String collectCreditFeedback(String id) { throw new AssertionError("unexpected reward"); }
+        static String collectAllCreditFeedback() { throw new AssertionError("unexpected reward"); }
+        static String joinSesameTaskNew(String id) { calls.add("join"); return join; }
+        static String feedBackSesameTaskNew(String id) { calls.add("feedback"); return ok().toString(); }
+        static String finishSesameTask(String id) { calls.add("push:" + id); return ok().toString(); }
+        static String queryLastOperateTask() { calls.add("last"); return last; }
+    }
+    static JSONObject task(int done, int need) {
+        return new JSONObject().put("templateId", "T").put("title", "task").put("completedNum", done).put("needCompleteNum", need);
+    }
+    static String tasks(JSONArray list) { return ok().put("data", new JSONObject().put("toCompleteVOS", list)).toString(); }
+    static class Member {
+        Field<Set<String>> MemberCreditSesameTaskList = new Field<>(new HashSet<>());
+        Field<Boolean> AutoMemberCreditSesameTaskList = new Field<>(true);
+        @@MEMBER@@
+    }
+    static class VitalityBenefitIdMap {
+        static int saves; static Map<String,String> items = new HashMap<>();
+        static Map<String,String> getMap() { return items; }
+        static void add(String id, String name) { items.put(id, name); }
+        static void save(String uid) { saves++; }
+    }
+    static class AntForestRpcCall {
+        static final int VITALITY_ITEM_PAGE_SIZE = 20;
+        static String water; static int waters; static boolean forever, brokenItems;
+        static List<String> pages = new ArrayList<>(); static List<Boolean> switches = new ArrayList<>();
+        static String itemList(String label, int offset) {
+            pages.add(label + ":" + offset);
+            JSONObject item = new JSONObject().put("spuId", "P").put("skuModelList", new JSONArray()
+                .put(new JSONObject().put("skuId", label + offset).put("skuName", "name")).put(1).put(new JSONObject()));
+            JSONObject data = new JSONObject().put("itemInfoVOList", new JSONArray().put(1).put(brokenItems ? new JSONObject() : item))
+                .put("hasMore", forever || offset == 0);
+            return new JSONObject().put("success", true).put("resData", data).toString();
+        }
+        static String queryHomePage() { return ok().put("nextAction", "Cultivate")
+            .put("teamHomeResult", new JSONObject().put("teamBaseInfo", new JSONObject().put("teamId", "team")))
+            .put("userBaseInfo", new JSONObject().put("currentEnergy", 100)).toString(); }
+        static String queryMiscInfo(String type, String id) { return ok().put("combineHandlerVOMap",
+            new JSONObject().put("teamCanWaterCount", new JSONObject().put("waterCount", 100))).toString(); }
+        static String teamWater(String id, int amount) { waters++; return water; }
+        static String loveteamWater(String id, int amount) { waters++; return water; }
+        static String loveteamHome() { return ok().put("userInfo", new JSONObject().put("teamId", "team")).toString(); }
+        static String updateUserConfiginTeam(boolean inTeam) { switches.add(inTeam); return ok().toString(); }
+    }
+    static class Forest {
+        static final String[] VITALITY_LABEL_TYPES = {"", "SC_ASSETS", "SKIN", "JEWELRY", "OTHER"};
+        static final int VITALITY_ITEM_MAX_PAGES = 10;
+        static final String FLAG_LOVETEAM_WATER = "Forest::loveteamWater", FLAG_TEAM_MODE_SWITCHED = "Forest::teamWaterSwitchedToTeam";
+        static final String FLAG_TEAM_WATER_DAILY_COUNT = "FLAG_TEAM_WATER_DAILY_COUNT";
+        Field<Integer> partnerteamWaterNum = new Field<>(20); Map<String,JSONObject> skuInfo = new HashMap<>();
+        @@FOREST@@
+    }
+    enum PlantScene { MAIN; String nickname() { return name(); } }
+    static class AntOrchardRpcCall { static String response; static String orchardSpreadManure(boolean batch, String wua) { return response; } }
+    static class Orchard {
+        static final int BATCH_SPREAD_SIZE = 5;
+        boolean spreadUseBatchThisTime; int fertilizerProgress = 100; String userId = "self";
+        Map<String,Integer> orchardSpreadManureSceneList = Map.of("MAIN", 10);
+        String getWua() { return ""; } static int targetSpreadTimes(Integer n) { return n; }
+        @@ORCHARD@@
+    }
+    static class AntFarmRpcCall {
+        static String ranks;
+        static String enterDonationCompetitionRank() { return ranks; }
+        static String queryCompetitionEntranceInfo() { return new JSONObject().put("memo", "SUCCESS").put("animationInfo",
+            new JSONObject().put("competitionProjectInfo", new JSONObject().put("projectId", "S2").put("projectName", "project"))).toString(); }
+    }
+    static class Farm {
+        double harvestBenevolenceScore; Field<Integer> competitionStealLimit = new Field<>(0); int donated;
+        boolean donationCompetition(String id, String name, int n) { donated += n; return true; }
+        @@FARM@@
+    }
+    static void reset() {
+        Status.flags.clear(); Status.used = 0; Log.results.clear(); MessageUtil.blackHits = 0;
+        AntMemberRpcCall.reads = 0; AntMemberRpcCall.calls.clear(); AntForestRpcCall.waters = 0;
+        AntMemberRpcCall.join = ok().put("data", new JSONObject().put("recordId", "R")).toString();
+    }
+    static void sesame(String response, int flags, int black, boolean completed) {
+        reset(); AntMemberRpcCall.fresh = response; new Member().collectSesame();
+        assert AntMemberRpcCall.calls.equals(List.of("join", "feedback", "push:R"));
+        assert Status.flags.size() == flags && MessageUtil.blackHits == black;
+        assert Log.results.stream().anyMatch(s -> s.contains("完成任务[")) == completed : Log.results;
+    }
+    static void fertilize(boolean batch, Object progress, boolean accepted, boolean capped) {
+        reset(); Orchard o = new Orchard(); o.spreadUseBatchThisTime = batch;
+        JSONObject stage = new JSONObject(); if (progress != null) stage.put("totalValue", progress);
+        AntOrchardRpcCall.response = ok().put("taobaoData", new JSONObject().put("currentStage", stage).toString()).toString();
+        assert o.doSpreadManure(PlantScene.MAIN) == accepted;
+        assert Status.hasFlagToday("self:spreadManureLimit:MAIN") == capped;
+    }
+    public static void main(String[] args) {
+        for (String bad : new String[]{"broken", ok().toString(), ok().put("data", new JSONObject()).toString(),
+                tasks(new JSONArray().put(1)), tasks(new JSONArray().put(new JSONObject())),
+                tasks(new JSONArray().put(task(-1,2))), tasks(new JSONArray().put(task(0,0))),
+                tasks(new JSONArray().put(task(0,2).put("finishFlag","true")))}) sesame(bad,0,0,false);
+        sesame(tasks(new JSONArray().put(task(0,2))),1,1,false);
+        sesame(tasks(new JSONArray().put(task(1,2))),1,0,true);
+        sesame(tasks(new JSONArray().put(task(2,2))),0,0,true);
+        sesame(tasks(new JSONArray()),0,0,true);
+        reset(); Member m = new Member(); JSONObject vo = task(0,2).put("recordId", "old");
+        for (Object flag : new Object[]{JSONObject.NULL, "false", true, false}) {
+            vo.put("finishFlag",flag);
+            AntMemberRpcCall.last = ok().put("data", new JSONObject().put("lastOperateTaskVO", vo)).toString();
+            assert Objects.equals(m.lastOperateRecordId("T"), Boolean.FALSE.equals(flag) ? "old" : null);
+            assert m.lastOperateRecordId("different") == null;
+        }
+        AntMemberRpcCall.calls.clear(); AntMemberRpcCall.join = new JSONObject().put("resultCode", "PROMISE_HAS_PROCESSING_TEMPLATE").toString();
+        m.reportSesameTask("task", "T");
+        assert AntMemberRpcCall.calls.equals(List.of("join","last","feedback","push:old"));
+        vo.put("recordId", new JSONObject());
+        AntMemberRpcCall.last = ok().put("data", new JSONObject().put("lastOperateTaskVO", vo)).toString();
+        assert m.lastOperateRecordId("T") == null;
+        AntMemberRpcCall.calls.clear();
+        AntMemberRpcCall.join = ok().put("data", new JSONObject().put("recordId", new JSONObject())).toString();
+        m.reportSesameTask("task", "T"); assert AntMemberRpcCall.calls.equals(List.of("join"));
+        Forest f = new Forest(); f.getAllSkuInfo();
+        assert AntForestRpcCall.pages.size() == 10 && f.skuInfo.size() == 10 && VitalityBenefitIdMap.saves == 1;
+        assert AntForestRpcCall.pages.contains("SKIN:20") && AntForestRpcCall.pages.contains("OTHER:20");
+        AntForestRpcCall.pages.clear(); AntForestRpcCall.forever = true; f.getAllSkuInfo();
+        assert AntForestRpcCall.pages.size() == 50;
+        AntForestRpcCall.brokenItems = true; f = new Forest(); f.getAllSkuInfo(); assert f.skuInfo.isEmpty();
+        for (String response : new String[]{"broken", "{}", "{\"data\":true}", "{\"success\":\"false\"}", "{\"resultCode\":{}}",
+                "{\"resultCode\":\"REMOTE_INVOKE_EXCEPTION\"}", "{\"resultCode\":\"3000\"}"}) {
+            reset(); AntForestRpcCall.water = response; f.teamCooperateWater(); assert Status.used == 0;
+            Forest.loveteam(20); assert !Status.hasFlagToday(Forest.FLAG_LOVETEAM_WATER);
+        }
+        for (String response : new String[]{"{\"success\":true}", "{\"resultCode\":\"SUCCESS\"}", "{\"resultCode\":\"LIMIT\"}"}) {
+            reset(); AntForestRpcCall.water = response; f.teamCooperateWater(); f.teamCooperateWater();
+            assert Status.used == 20 && AntForestRpcCall.waters == 1;
+            Forest.loveteam(20); Forest.loveteam(20);
+            assert Status.hasFlagToday(Forest.FLAG_LOVETEAM_WATER) && AntForestRpcCall.waters == 2;
+        }
+        fertilize(false,101,true,true); fertilize(true,105,true,true); fertilize(true,106,true,false);
+        fertilize(false,99,true,false); fertilize(true,null,false,false); fertilize(true,"bad",false,false);
+        reset(); AntFarmRpcCall.ranks = new JSONObject().put("memo","SUCCESS").put("donationRankHomeInfo", new JSONObject()
+            .put("userDonationRankList",new JSONArray().put(new JSONObject().put("userId","friend").put("rankOrder",1).put("donationNum",10))
+                .put(new JSONObject().put("userId","self").put("rankOrder",2).put("donationNum",5)))).toString();
+        Farm farm = new Farm(); farm.harvestBenevolenceScore = 5; farm.stealRankS2(); assert farm.donated == 0;
+        farm.harvestBenevolenceScore = 20; farm.competitionStealLimit.value = 5; farm.stealRankS2(); assert farm.donated == 0;
+        farm.competitionStealLimit.value = 6; farm.stealRankS2(); assert farm.donated == 6;
+        AntFarmRpcCall.ranks = new JSONObject().put("memo","SUCCESS").put("donationRankHomeInfo",new JSONObject()
+            .put("userDonationRankList",new JSONArray().put(new JSONObject().put("userId","self").put("rankOrder",2)))).toString();
+        farm.stealRankS2(); assert farm.donated == 6;
+        System.out.println("PASS: sesame report/readback, record reuse, five-category pagination, watering quotas, fertilizer caps and donation limits");
+    }
+}
+'''
+for placeholder, path, signatures in (
+    ("@@RETRY@@", "util/MessageUtil.java", ("public static boolean isRetryable(",)),
+    ("@@MEMBER@@", member, ("private void collectSesame(", "private void reportSesameTask(", "private String lastOperateRecordId(")),
+    ("@@FOREST@@", "model/task/antForest/AntForestV2.java", ("private void getAllSkuInfo(", "private static JSONArray optItemInfoVOList(",
+        "private static boolean hasMore(", "private void getSkuInfoByItemInfoVO(", "private void teamCooperateWater(",
+        "private static JSONObject queryTeamHomePage(", "private static String getTeamId(", "private static int getTeamCanWaterCount(",
+        "private static boolean updateUserConfiginTeam(", "private static int teamState(", "private static void loveteam(",
+        "private static String getLoveteamName(", "private static boolean hasWaterResult(", "private static void loveteamWater(")),
+    ("@@ORCHARD@@", "model/task/antOrchard/AntOrchard.java", ("private boolean doSpreadManure(",)),
+    ("@@FARM@@", "model/task/antFarm/AntFarm.java", ("private void stealRankS2(",)),
+):
+    flows = flows.replace(placeholder, "\n".join(method(path, signature) for signature in signatures))
+
 with tempfile.TemporaryDirectory(prefix="sesame-merge-") as tmp:
-    java = Path(tmp) / "MergeCheck.java"
-    java.write_text(code, encoding="utf-8")
-    subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(json_jar), "-d", tmp, str(java)], check=True)
-    subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + str(json_jar), "MergeCheck"], check=True)
+    for name, source in (("MergeCheck", code), ("FlowCheck", flows)):
+        java = Path(tmp) / (name + ".java")
+        java.write_text(source, encoding="utf-8")
+        subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(json_jar), "-d", tmp, str(java)], check=True)
+        subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + str(json_jar), name], check=True)
