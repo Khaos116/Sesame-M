@@ -164,10 +164,6 @@ class MiuixMainActivity : MiuixBaseActivity() {
                             isClick = false
                         }
                     }
-
-                    "io.github.aw1y2z.sesame.update" -> {
-                        refreshStatistics()
-                    }
                 }
             }
         }
@@ -186,7 +182,6 @@ class MiuixMainActivity : MiuixBaseActivity() {
         updateSubTitle(ViewAppInfo.getRunType())
         val intentFilter = IntentFilter()
         intentFilter.addAction("io.github.aw1y2z.sesame.status")
-        intentFilter.addAction("io.github.aw1y2z.sesame.update")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(broadcastReceiver, intentFilter, Context.RECEIVER_EXPORTED)
         } else {
@@ -209,16 +204,13 @@ class MiuixMainActivity : MiuixBaseActivity() {
         checkPermissionAndRefresh()
     }
 
-    /** 检查文件权限，若已授权则刷新统计；同时处理首次请求权限的场景 */
+    /**
+     * 检查文件权限：已授权则每次都重读统计。
+     * <p>权限早已授予时也要刷新——否则从配置页或后台返回首页，统计仍是旧值（只有退出重进才更新）。
+     */
     private fun checkPermissionAndRefresh() {
-        if (hasRequestedPermission) {
-            hasRequestedPermission = false
-            if (PermissionUtil.checkFilePermissions(this)) {
-                hasPermission = true
-                refreshStatistics()
-            }
-        } else if (!hasPermission && PermissionUtil.checkFilePermissions(this)) {
-            // 首次进入或权限刚被授予
+        hasRequestedPermission = false
+        if (PermissionUtil.checkFilePermissions(this)) {
             hasPermission = true
             refreshStatistics()
         }
@@ -378,7 +370,11 @@ fun MainScreen(activity: MiuixMainActivity) {
             NavigationBar {
                 NavigationBarItem(
                     selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
+                    // 切回首页时刷新数据统计，避免停留在旧值
+                    onClick = {
+                        selectedTab = 0
+                        activity.refreshStatistics()
+                    },
                     icon = Icons.Filled.Home,
                     label = "首页"
                 )
