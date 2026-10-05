@@ -18,6 +18,8 @@ import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.SynchronousQueue;
@@ -61,12 +63,10 @@ public abstract class ModelTask extends Model {
             RunGeneration prevGen = RunGeneration.bind(myGen, () -> task.generation);
             // 静音计数分层：记下上层残留，本轮只统计自己这段
             int droppedPrev = Log.takeDroppedStaleLogCount();
-            // 与执行槽配对：只有真正拿到槽的线程才计入 runningCount
-            boolean isFirst = NotificationUtil.getRunningCount() == 0;
-            NotificationUtil.trackTaskStart();
-            if (isFirst) {
-                NotificationUtil.setStatusTextExec();
-            }
+            // 与执行槽配对：只有真正拿到槽的线程才计入 runningCount；同时驱动状态栏显示当前在跑的模块
+            NotificationUtil.trackTaskStart(task.getName());
+            ModelGroup group = task.getGroup();
+            String prevModule = Log.beginModule(group == null ? null : group.getCode());
             Log.record("执行开始-" + task.getName());
             Log.startModuleLogCount();
             try {
@@ -89,13 +89,11 @@ public abstract class ModelTask extends Model {
                     Log.record(task.getName() + "✅本轮无操作");
                 }
                 Log.record("执行结束-" + task.getName());
+                Log.endModule(prevModule);
                 // 身份化移除：只删本线程登记的那条，避免旧代收尾误删新一代条目
                 MAIN_TASK_MAP.remove(task, Thread.currentThread());
                 task.running.set(false);
-                NotificationUtil.trackTaskEnd();
-                if (NotificationUtil.getRunningCount() == 0) {
-                    NotificationUtil.updateLastExecText();
-                }
+                NotificationUtil.trackTaskEnd(task.getName());
             }
         }
 
@@ -234,6 +232,8 @@ public abstract class ModelTask extends Model {
     }
 
     public static void startAllTask(Boolean force) {
+        // 整轮开始：清零本轮收取能量。单分组执行（startGroupTask）不算整轮，故不在此清零
+        NotificationUtil.startRound();
         //自动触发备份配置文件
         if (!Status.hasFlagToday("Config::backup")) {
             FileUtil.backupConfigV2WithRolling(UserIdMap.getCurrentUid());
@@ -271,7 +271,7 @@ public abstract class ModelTask extends Model {
      * @return 实际触发的任务数
      */
     public static int startGroupTask(String groupCode) {
-        int count = 0;
+        List<Model> targets = new ArrayList<>();
         for (Model model : getModelArray()) {
             if (model == null || ModelType.TASK != model.getType()) {
                 continue;
@@ -280,6 +280,15 @@ public abstract class ModelTask extends Model {
             if (group == null || !groupCode.equals(group.getCode())) {
                 continue;
             }
+            targets.add(model);
+        }
+        if (targets.isEmpty()) {
+            return 0;
+        }
+        // 手动执行分组也算新一轮：先清零本轮收取能量，再起跑
+        NotificationUtil.startRound();
+        int count = 0;
+        for (Model model : targets) {
             if (((ModelTask) model).startTask(false)) {
                 count++;
             }
@@ -387,7 +396,15 @@ public abstract class ModelTask extends Model {
         }
 
         public final void run() {
-            runnable.run();
+            // 子任务线程继承所属模块：这些流程日志也带模块 tag（嵌套时恢复上层）
+            ModelTask owner = modelTask;
+            ModelGroup group = owner == null ? null : owner.getGroup();
+            String prevModule = Log.beginModule(group == null ? null : group.getCode());
+            try {
+                runnable.run();
+            } finally {
+                Log.endModule(prevModule);
+            }
         }
 
         protected void setCancelTask(CancelTask cancelTask) {

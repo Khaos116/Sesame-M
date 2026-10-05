@@ -149,7 +149,7 @@ public class WhackMole {
             String startRespStr = AntForestRpcCall.oldstartWhackMole(SOURCE);
             JSONObject response = new JSONObject(startRespStr);
             if (!response.optBoolean("success")) {
-                Log.record(response.optString("resultDesc", "开始失败"));
+                Log.forest(response.optString("resultDesc", "开始失败"));
                 return;
             }
             JSONArray moleInfoArray = response.optJSONArray("moleInfo");

@@ -2,6 +2,7 @@ package io.github.aw1y2z.sesame.model.task.antOrchard;
 
 import io.github.aw1y2z.sesame.data.ConfigV2;
 import io.github.aw1y2z.sesame.entity.AlipayAntOrchardTaskList;
+import io.github.aw1y2z.sesame.entity.AlipayOrchardChouChouLeTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayMemberCreditSesameTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayPlantScene;
 import io.github.aw1y2z.sesame.entity.AlipayUser;
@@ -36,6 +37,7 @@ import java.util.Set;
 import io.github.aw1y2z.sesame.util.*;
 import io.github.aw1y2z.sesame.util.idMap.AntFarmDoFarmTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.AntOrchardTaskListMap;
+import io.github.aw1y2z.sesame.util.idMap.OrchardChouChouLeTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.MemberCreditSesameTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.PlantSceneIdMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -92,6 +94,9 @@ public class AntOrchard extends ModelTask {
     private SelectModelField doNotWeedingList;
     private BooleanModelField assistFriend;
     private SelectModelField assistFriendList;
+    private BooleanModelField orchardChouChouLe;
+    private BooleanModelField AutoOrchardChouChouLeTaskList;
+    private SelectModelField OrchardChouChouLeTaskList;
     private static int fertilizerProgress = 0;
 
     /** 本次施肥是否用一键5次批量（由 canSpreadManure 判定，doSpreadManure 消费） */
@@ -118,13 +123,13 @@ public class AntOrchard extends ModelTask {
         modelFields.addField(orchardSpreadManure = new BooleanModelField("orchardSpreadManure", "农场施肥 | 开启", false));
         modelFields.addField(useBatchSpread = new BooleanModelField("useBatchSpread", "一键施肥5次(边界突破)", false)
                 .setDependsOn("orchardSpreadManure")
-                .setDescription("仅当每日次数设为200时启用：前4次按单次、之后持续一键5次，计数序列4,9,…,199,204命中199+5漏洞到204；其他数值精确施肥不批量（肥料不足5倍时退回单次）"));
+                .setDescription("开启后全程一键5次：先单次补足到5的整数倍，之后批量推进，总次数精确等于每日次数；每日次数设为200时额外命中199+5漏洞突破到204（肥料不足5倍时退回单次）"));
         modelFields.addField(orchardSpreadManureSceneList = new SelectModelField("orchardSpreadManureSceneList", "农场施肥 | 场景列表", new LinkedHashSet<>(), AlipayPlantScene::getList)
                 .setDependsOn("orchardSpreadManure")
                 .setDescription("只对勾选且服务端已下发的场景施肥"));
         modelFields.addField(orchardSpreadManureCount = new IntegerModelField("orchardSpreadManureCount", "农场施肥 | 每日次数", 3, 1, 200)
                 .setDependsOn("orchardSpreadManure")
-                .setDescription("按轮计：设为200并开一键施肥5次时突破到204；设为其他数值则设置多少施肥多少（不批量）"));
+                .setDescription("按轮计：开一键施肥5次时精确施肥到该值，设为200则突破到204；未开启时全程单次施肥到该值"));
         modelFields.addField(drawGameCenterAward = new BooleanModelField("drawGameCenterAward", "农场乐园 | 游戏宝箱", true));
         //modelFields.addField(driveAnimalType = new ChoiceModelField("driveAnimalType", "驱赶小鸡 | 动作", DriveAnimalType.NONE, DriveAnimalType.nickNames));
         //modelFields.addField(driveAnimalList = new SelectModelField("driveAnimalList", "驱赶小鸡 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
@@ -133,6 +138,9 @@ public class AntOrchard extends ModelTask {
         //modelFields.addField(doNotWeedingList = new SelectModelField("doNotWeedingList", "捉鸡除草 | 不除草列表", new LinkedHashSet<>(), AlipayUser::getList));
         modelFields.addField(assistFriend = new BooleanModelField("assistFriend", "分享助力 | 开启", false));
         modelFields.addField(assistFriendList = new SelectModelField("assistFriendList", "分享助力 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("assistFriend"));
+        modelFields.addField(orchardChouChouLe = new BooleanModelField("orchardChouChouLe", "抽抽乐(阿肥寻宝记)", false));
+        modelFields.addField(AutoOrchardChouChouLeTaskList = new BooleanModelField("AutoOrchardChouChouLeTaskList", "抽抽乐任务 | 自动黑名单", true).setDependsOn("orchardChouChouLe"));
+        modelFields.addField(OrchardChouChouLeTaskList = new SelectModelField("OrchardChouChouLeTaskList", "抽抽乐任务 | 黑名单列表", new LinkedHashSet<>(), AlipayOrchardChouChouLeTaskList::getList).setDependsOn("AutoOrchardChouChouLeTaskList"));
         return modelFields;
     }
 
@@ -141,7 +149,7 @@ public class AntOrchard extends ModelTask {
         // 假设TaskCommon.IS_ENERGY_TIME存在
         // 如果没有这个字段，可以注释掉或创建
         if (TaskCommon.IS_ENERGY_TIME) {
-            Log.farm("任务暂停⏸️芭芭农场:当前为只收能量时间");
+            Log.i("任务暂停⏸️芭芭农场:当前为只收能量时间");
             return false;
         }
         return true;
@@ -158,7 +166,7 @@ public class AntOrchard extends ModelTask {
 
             //初始任务列表
             if (!Status.hasFlagToday("BlackList::initAntOrchard")) {
-                initAntOrchardTaskListMap(AutoAntOrchardTaskList.getValue(), orchardListTask.getValue());
+                initAntOrchardTaskListMap(AutoAntOrchardTaskList.getValue(), orchardListTask.getValue(), orchardChouChouLe.getValue(), AutoOrchardChouChouLeTaskList.getValue());
                 Status.flagToday("BlackList::initAntOrchard");
             }
             // 额外信息获取（每日肥料包）
@@ -180,8 +188,164 @@ public class AntOrchard extends ModelTask {
                 orchardAssistFriend();
             }
 
+            // 农场抽抽乐
+            if (orchardChouChouLe.getValue()) {
+                orchardChouChouLe();
+            }
+
         } catch (Throwable t) {
             Log.err(TAG, "start.run err:", t);
+        }
+    }
+
+    /**
+     * 农场抽抽乐（阿肥寻宝记 / 农场抽抽乐普通版）
+     * 流程：进入活动 → 遍历场景领取已完成任务奖励 → 同步次数 → 循环抽奖至次数为 0
+     */
+    private void orchardChouChouLe() {
+        try {
+            String res = AntOrchardRpcCall.enterDrawActivityantorchard("", "ANTORCHARD_DRAW_TIMES", "antorchard");
+            JSONObject resData = new JSONObject(res);
+            if (!MessageUtil.checkSuccess(TAG, resData)) {
+                return;
+            }
+            JSONArray drawSceneGroups = resData.optJSONArray("drawSceneGroups");
+            if (drawSceneGroups == null) {
+                JSONObject drawScene = resData.optJSONObject("drawScene");
+                if (drawScene != null) {
+                    drawSceneGroups = new JSONArray();
+                    drawSceneGroups.put(drawScene);
+                }
+            }
+            if (drawSceneGroups == null) {
+                return;
+            }
+            for (int i = 0; i < drawSceneGroups.length(); i++) {
+                JSONObject drawScene = drawSceneGroups.optJSONObject(i);
+                if (drawScene == null) {
+                    continue;
+                }
+                JSONObject drawActivity = drawScene.optJSONObject("drawActivity");
+                if (drawActivity == null) {
+                    continue;
+                }
+                String activityId = drawActivity.optString("activityId");
+                String drawScenename = drawActivity.optString("name");
+                String sceneCode = drawActivity.optString("sceneCode");
+                orchardChouChouLeScene(activityId, drawScenename, sceneCode);
+            }
+        } catch (Throwable t) {
+            Log.err(TAG, "orchardChouChouLe err:", t);
+        }
+    }
+
+    private void orchardChouChouLeScene(String activityId, String drawScenename, String sceneCode) {
+        try {
+            boolean doublecheck;
+            int loopCount = 0;
+            final int MAX_LOOP = 7;
+            do {
+                doublecheck = false;
+                String listRes = AntOrchardRpcCall.listTaskantorchard(sceneCode + "_TASK", "antorchard");
+                JSONObject listTask = new JSONObject(listRes);
+                if (!MessageUtil.checkSuccess(TAG, listTask)) {
+                    break;
+                }
+                JSONArray taskList = listTask.optJSONArray("taskInfoList");
+                if (taskList == null) {
+                    break;
+                }
+                for (int i = 0; i < taskList.length(); i++) {
+                    JSONObject taskInfo = taskList.optJSONObject(i);
+                    if (taskInfo == null) {
+                        continue;
+                    }
+                    JSONObject taskBaseInfo = taskInfo.optJSONObject("taskBaseInfo");
+                    if (taskBaseInfo == null) {
+                        continue;
+                    }
+                    JSONObject bizInfo = new JSONObject(taskBaseInfo.optString("bizInfo", "{}"));
+                    String taskName = bizInfo.optString("title");
+                    // 黑名单任务跳过（含预置小游戏种子与自动拉黑项）
+                    if (OrchardChouChouLeTaskList.getValue().contains(taskName)) {
+                        continue;
+                    }
+                    String taskStatus = taskBaseInfo.optString("taskStatus");
+                    String taskType = taskBaseInfo.optString("taskType");
+                    String taskSceneCode = taskBaseInfo.optString("sceneCode");
+                    JSONObject taskRights = taskInfo.optJSONObject("taskRights");
+                    int rightsTimes = taskRights != null ? taskRights.optInt("rightsTimes") : 0;
+                    int rightsTimesLimit = taskRights != null ? taskRights.optInt("rightsTimesLimit") : 0;
+
+                    // 已完成任务领取奖励（如每日签到）
+                    if ("FINISHED".equals(taskStatus)) {
+                        TimeUtil.sleep(2000);
+                        String awardRes = AntOrchardRpcCall.receiveDrawTaskAwardantorchard(taskSceneCode, taskType);
+                        JSONObject sginRes = new JSONObject(awardRes);
+                        if (MessageUtil.checkSuccess(TAG, sginRes)) {
+                            int incAwardCount = sginRes.optInt("incAwardCount", 0);
+                            Log.farm("农场抽抽乐🎖️[" + taskName + "]获得抽奖*" + incAwardCount);
+                            if (rightsTimesLimit - rightsTimes > 0) {
+                                doublecheck = true;
+                            }
+                        } else {
+                            MessageUtil.checkResultCodeAndMarkTaskBlackList("OrchardChouChouLeTaskList", taskName, sginRes);
+                        }
+                    } else if ("TODO".equals(taskStatus)) {
+                        // 第二种方式：尝试自动完成（小游戏/任务），两条腿互备，失败由 checkResultCodeAndMarkTaskBlackList 自动拉黑
+                        TimeUtil.sleep(1000);
+                        String userId = UserIdMap.getCurrentUid();
+                        String finishRes = AntOrchardRpcCall.finishTaskantorchard(taskType, taskSceneCode);
+                        JSONObject finishJo = new JSONObject(finishRes);
+                        MessageUtil.checkResultCodeAndMarkTaskBlackList("OrchardChouChouLeTaskList", taskName, finishJo);
+                        if (!MessageUtil.checkSuccess(TAG, finishJo)) {
+                            finishRes = AntOrchardRpcCall.finishTaskantorchardV2(taskType, taskSceneCode, userId);
+                            finishJo = new JSONObject(finishRes);
+                            MessageUtil.checkResultCodeAndMarkTaskBlackList("OrchardChouChouLeTaskList", taskName, finishJo);
+                        }
+                        if (MessageUtil.checkSuccess(TAG, finishJo)) {
+                            Log.farm("农场抽抽乐🧾完成[" + taskName + "]");
+                            doublecheck = true;
+                        } else {
+                            Log.farm("农场抽抽乐⚠️未完成[" + taskName + "]#taskType=" + taskType);
+                        }
+                    }
+                }
+            } while (doublecheck && ++loopCount < MAX_LOOP);
+
+            // 同步抽奖次数
+            AntOrchardRpcCall.drawSyncantorchard(activityId, "taskaward");
+
+            // 抽奖
+            final int MAX_DRAW_LOOP = 30;
+            JSONObject jo = new JSONObject(AntOrchardRpcCall.enterDrawActivityantorchard(activityId, sceneCode, "antorchard"));
+            if (!MessageUtil.checkSuccess(TAG, jo)) {
+                return;
+            }
+            JSONObject drawAsset = jo.optJSONObject("drawAsset");
+            if (drawAsset == null) {
+                return;
+            }
+            int blance = drawAsset.optInt("blance", 0);
+            int drawLoop = 0;
+            while (blance > 0 && ++drawLoop <= MAX_DRAW_LOOP) {
+                jo = new JSONObject(AntOrchardRpcCall.drawantorchard(activityId, sceneCode, "antorchard", userId));
+                if (MessageUtil.checkSuccess(TAG, jo)) {
+                    drawAsset = jo.optJSONObject("drawAsset");
+                    if (drawAsset == null) {
+                        break;
+                    }
+                    blance = drawAsset.optInt("blance", 0);
+                    JSONObject prizeVO = jo.optJSONObject("prizeVO");
+                    String prizeName = prizeVO != null ? prizeVO.optString("prizeName", "未知") : "未知";
+                    Log.farm("农场抽抽乐🎰️[" + drawScenename + "]抽奖:" + prizeName);
+                    TimeUtil.sleep(2000);
+                } else {
+                    break;
+                }
+            }
+        } catch (Throwable t) {
+            Log.err(TAG, "orchardChouChouLeScene err:", t);
         }
     }
 
@@ -288,7 +452,7 @@ public class AntOrchard extends ModelTask {
         }
     }
 
-    public static void initAntOrchardTaskListMap(boolean AutoAntOrchardTaskList, boolean orchardListTask) {
+    public static void initAntOrchardTaskListMap(boolean AutoAntOrchardTaskList, boolean orchardListTask, boolean orchardChouChouLe, boolean AutoOrchardChouChouLeTaskList) {
         try {
             //初始化AntOrchardTaskListMap
             AntOrchardTaskListMap.load();
@@ -339,7 +503,72 @@ public class AntOrchard extends ModelTask {
                     }
 
                     // 2~4. 批量写回黑/白名单并保存
-                    MessageUtil.syncTaskBlackList("芭芭农场肥料任务", blackList, whiteList, AntOrchardTaskList);
+                    MessageUtil.syncTaskBlackList("芭芭农场肥料任务", "AntOrchardTaskList", blackList, whiteList, AntOrchardTaskList);
+                }
+            }
+
+            // ============ 农场抽抽乐任务黑名单初始化 ============
+            OrchardChouChouLeTaskListMap.load();
+            Set<String> chouChouLeBlackList = new HashSet<>();
+            Set<String> chouChouLeWhiteList = new HashSet<>();
+            if (orchardChouChouLe) {
+                String res = AntOrchardRpcCall.enterDrawActivityantorchard("", "ANTORCHARD_DRAW_TIMES", "antorchard");
+                JSONObject resData = new JSONObject(res);
+                if (MessageUtil.checkSuccess(TAG, resData)) {
+                    JSONArray drawSceneGroups = resData.optJSONArray("drawSceneGroups");
+                    if (drawSceneGroups == null) {
+                        JSONObject drawScene = resData.optJSONObject("drawScene");
+                        if (drawScene != null) {
+                            drawSceneGroups = new JSONArray();
+                            drawSceneGroups.put(drawScene);
+                        }
+                    }
+                    if (drawSceneGroups != null) {
+                        for (int i = 0; i < drawSceneGroups.length(); i++) {
+                            JSONObject drawScene = drawSceneGroups.optJSONObject(i);
+                            if (drawScene == null) {
+                                continue;
+                            }
+                            JSONObject drawActivity = drawScene.optJSONObject("drawActivity");
+                            if (drawActivity == null) {
+                                continue;
+                            }
+                            String sceneCode = drawActivity.optString("sceneCode");
+                            String listRes = AntOrchardRpcCall.listTaskantorchard(sceneCode + "_TASK", "antorchard");
+                            JSONObject listTask = new JSONObject(listRes);
+                            if (MessageUtil.checkSuccess(TAG, listTask)) {
+                                JSONArray taskList = listTask.optJSONArray("taskInfoList");
+                                if (taskList != null) {
+                                    for (int j = 0; j < taskList.length(); j++) {
+                                        JSONObject taskInfo = taskList.optJSONObject(j);
+                                        if (taskInfo == null) {
+                                            continue;
+                                        }
+                                        JSONObject taskBaseInfo = taskInfo.optJSONObject("taskBaseInfo");
+                                        if (taskBaseInfo == null) {
+                                            continue;
+                                        }
+                                        JSONObject bizInfo = new JSONObject(taskBaseInfo.optString("bizInfo", "{}"));
+                                        String taskName = bizInfo.optString("title");
+                                        if (!taskName.isEmpty()) {
+                                            OrchardChouChouLeTaskListMap.add(taskName, taskName);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                OrchardChouChouLeTaskListMap.save();
+                Log.record("同步任务🉑农场抽抽乐任务列表");
+                if (AutoOrchardChouChouLeTaskList) {
+                    ConfigV2 config = ConfigV2.INSTANCE;
+                    ModelFields AntOrchardFields = config.getModelFieldsMap().get("AntOrchard");
+                    SelectModelField OrchardChouChouLeTaskListField = (SelectModelField) AntOrchardFields.get("OrchardChouChouLeTaskList");
+                    if (OrchardChouChouLeTaskListField == null) {
+                        return;
+                    }
+                    MessageUtil.syncTaskBlackList("农场抽抽乐任务", "OrchardChouChouLeTaskList", chouChouLeBlackList, chouChouLeWhiteList, OrchardChouChouLeTaskListField);
                 }
             }
         } catch (Throwable t) {
@@ -421,7 +650,7 @@ public class AntOrchard extends ModelTask {
 
             // 检查是否可兑换
             if (plantInfo.getBoolean("canExchange")) {
-                Log.farm("农场果树似乎可以兑换了！");
+                Log.i("农场果树似乎可以兑换了！");
                 Toast.show("芭芭农场果树似乎可以兑换了！");
             }
             // 更新施肥进度
@@ -563,13 +792,29 @@ public class AntOrchard extends ModelTask {
 
     /**
      * 「每日次数」折算成服务端的单次施肥次数目标，封顶漏洞可达上限 204。
-     * <p>前 (N-1) 次按单次推进，临近上限（已施肥达 199）时若开启一键5次则末次批量 +5 突破到 204；
-     * 未开启则停在名义上限 200。
+     * <p>开启一键5次时由 {@link #shouldBatchSpread} 决定批量时机，恰好推进到该目标；
+     * 未开启则全程单次推进。
      */
     private int targetSpreadTimes() {
         Integer limit = orchardSpreadManureCount.getValue();
         int times = limit == null ? 0 : Math.max(limit, 0);
         return Math.min(times, MAIN_SPREAD_BURST_LIMIT);
+    }
+
+    /**
+     * 批量对齐目标：配到名义上限 200 时取漏洞上限 204，其余取配置值本身。
+     */
+    private static int batchAlignTarget(int limit) {
+        return limit >= MAIN_SPREAD_DAILY_LIMIT ? MAIN_SPREAD_BURST_LIMIT : limit;
+    }
+
+    /**
+     * 本次是否走一键5次：对齐目标的剩余次数恰为 5 的整数倍时才发批量，
+     * 余数先由单次补足，因此总数精确落在对齐目标上且不会越过（服务端已有非整倍数计数也能自适应）。
+     */
+    private static boolean shouldBatchSpread(int limit, int usedTimes) {
+        int remain = batchAlignTarget(limit) - usedTimes;
+        return remain > 0 && remain % BATCH_SPREAD_SIZE == 0;
     }
 
     /**
@@ -600,11 +845,10 @@ public class AntOrchard extends ModelTask {
                     int leftTimes = accountInfo.getInt("wateringLeftTimes");
                     int usedTimes = MAIN_SPREAD_DAILY_LIMIT - leftTimes;
 
-                    // 仅在每日次数配到 200（命中 199+5 漏洞）时才启用批量突破；其余数值精确施肥不批量
-                    boolean batchEnabled = Boolean.TRUE.equals(useBatchSpread.getValue()) && limit >= MAIN_SPREAD_DAILY_LIMIT;
-                    // 开启一键5次：前 (BATCH_SPREAD_SIZE-1)=4 次用单次把计数补到 ≡4(mod5)，之后持续批量。
-                    // 计数序列 4,9,…,194,199,204 恰好命中漏洞（199 处批量 +5 = 204），且不会落在 200~203。
-                    boolean batch = batchEnabled && usedTimes >= BATCH_SPREAD_SIZE - 1;
+                    // 剩余次数为 5 的整数倍时才批量，余数先单次补足，总数精确且不会越过；
+                    // 配到 200 时对齐目标取漏洞上限 204，计数序列 4,9,…,199,204 恰在 199 处 +5 突破
+                    boolean batch = Boolean.TRUE.equals(useBatchSpread.getValue())
+                            && shouldBatchSpread(limit, usedTimes);
                     // 一键5次时服务端一次要消耗 5 倍肥料，余额判据必须按批量算，否则会发出注定失败的请求
                     int needCost = batch ? wateringCost * BATCH_SPREAD_SIZE : wateringCost;
                     if (happyPoint < needCost) {
@@ -637,10 +881,9 @@ public class AntOrchard extends ModelTask {
                     JSONObject progressInfo = yebProgress.getJSONObject("yebScenePlantInfo").getJSONObject("plantProgressInfo");
                     int currentProgress = progressInfo.getInt("spreadProgress");
 
-                    // 仅在每日次数配到 200（命中 199+5 漏洞）时才启用批量突破；其余数值精确施肥不批量
-                    boolean batchEnabledY = Boolean.TRUE.equals(useBatchSpread.getValue()) && limit >= MAIN_SPREAD_DAILY_LIMIT;
-                    // 余额宝场景同样适用 199+5 漏洞：前 (BATCH_SPREAD_SIZE-1) 次单次补到 ≡4(mod5)，之后持续批量
-                    boolean batchY = batchEnabledY && currentProgress >= BATCH_SPREAD_SIZE - 1;
+                    // 与主场景同一套对齐规则；余额宝同样适用 199+5 漏洞
+                    boolean batchY = Boolean.TRUE.equals(useBatchSpread.getValue())
+                            && shouldBatchSpread(limit, currentProgress);
                     // yeb 肥料与主账号同池，仅在批量（需 5 倍）时取主账号余额做判据
                     if (batchY) {
                         JSONObject yebMain = new JSONObject(AntOrchardRpcCall.orchardSyncIndex());
@@ -916,7 +1159,7 @@ public class AntOrchard extends ModelTask {
                 // 记下来，由 handleTaskList 在列表处理完后**按任务列表状态核对**
                 pendingVerifyTasks.put(taskId, taskTitle);
             }
-            Log.farm("肥料任务🕓已触发[" + taskTitle + "]#finishTask=" + finishResponse.optString("code")
+            Log.i("肥料任务🕓已触发[" + taskTitle + "]#finishTask=" + finishResponse.optString("code")
                     + "#doFarmTask=" + TaskAlternative.describe(doFarmResponse) + "，结果以任务列表为准");
         } catch (Throwable t) {
             Log.err(TAG, "finishTaskTwice err:", t);
@@ -987,7 +1230,7 @@ public class AntOrchard extends ModelTask {
                     if (MessageUtil.checkResultCode(TAG, triggerJo)) {
                         Log.farm("肥料领取🎖️任务[" + title + "]奖励#获得[" + awardCount + "g]");
                     } else {
-                        //Log.record("领取奖励失败: " + triggerJo.toString());
+                        //Log.farm("领取奖励失败: " + triggerJo.toString());
                     }
                 }
             } else {
@@ -1281,7 +1524,7 @@ public class AntOrchard extends ModelTask {
                     }
 
                 } else {
-                    Log.record("砸金蛋失败: " + jo.optString("resultDesc", "未知错误"));
+                    Log.farm("砸金蛋失败: " + jo.optString("resultDesc", "未知错误"));
                 }
 
                 // 每次砸蛋后等待一下
@@ -1304,7 +1547,7 @@ public class AntOrchard extends ModelTask {
             String response = AntOrchardRpcCall.receiveOrchardVisitAward();
             JSONObject jo = new JSONObject(response);
             if (!MessageUtil.checkSuccess(TAG, jo)) {
-                Log.record("领取回访奖励失败: " + response);
+                Log.farm("领取回访奖励失败: " + response);
                 return;
             }
             int manureCount = jo.optInt("manureCount", 0);
@@ -1313,7 +1556,7 @@ public class AntOrchard extends ModelTask {
             if (manureCount > 0) {
                 Log.farm("回访奖励🎖️领取肥料*" + manureCount);
             } else if (canCollect || needManualReceive) {
-                Log.farm("回访奖励🎖️有待领奖励[canCollect=" + canCollect + "#需手动领取=" + needManualReceive + "]");
+                Log.i("回访奖励🎖️有待领奖励[canCollect=" + canCollect + "#需手动领取=" + needManualReceive + "]");
             }
             // 无奖励时不打日志：官方每次进农场都会调一次，属正常空返回
         } catch (Throwable t) {
@@ -1431,7 +1674,7 @@ public class AntOrchard extends ModelTask {
                                     return;
                                 }
                             }
-                            Log.record("施肥任务成功完成 " + need + " 次");
+                            Log.farm("施肥任务成功完成 " + need + " 次");
                         }
                         break;
 
@@ -1439,9 +1682,9 @@ public class AntOrchard extends ModelTask {
                         String r = AntOrchardRpcCall.noticeGame("2021004165643274");
                         JSONObject jr = new JSONObject(r);
                         if (MessageUtil.checkResultCode(TAG, jr)) {
-                            Log.record("游戏任务触发成功 → 子任务应当自动完成");
+                            Log.farm("游戏任务触发成功 → 子任务应当自动完成");
                         } else {
-                            Log.record("游戏任务触发失败，返回: " + r);
+                            Log.farm("游戏任务触发失败，返回: " + r);
                         }
                         break;
 
@@ -1458,9 +1701,9 @@ public class AntOrchard extends ModelTask {
                         String finishResult = AntOrchardRpcCall.finishTask(sceneCode, childTaskId);
                         JSONObject finishJo = new JSONObject(finishResult);
                         if (MessageUtil.checkResultCode(TAG, finishJo)) {
-                            Log.record("广告任务触发成功");
+                            Log.farm("广告任务触发成功");
                         } else {
-                            Log.record("广告任务触发失败: " + finishResult);
+                            Log.farm("广告任务触发失败: " + finishResult);
                         }
                         break;
 

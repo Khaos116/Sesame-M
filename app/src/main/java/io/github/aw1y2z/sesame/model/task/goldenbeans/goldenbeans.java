@@ -76,7 +76,7 @@ public class goldenbeans extends ModelTask {
     @Override
     public Boolean check() {
         if (TaskCommon.IS_ENERGY_TIME) {
-            Log.goldenBeans("任务暂停⏸️金豆夺宝:当前为仅收能量时间");
+            Log.i("任务暂停⏸️金豆夺宝:当前为仅收能量时间");
             return false;
         }
         return true;
@@ -141,7 +141,7 @@ public class goldenbeans extends ModelTask {
                 resync(interval);
             }
 
-            Log.record("金豆夺宝" + (taskResolved && gameResolved ? "✅本轮任务已全部处理" : "⏳仍有待完成或待领取任务"));
+            Log.goldenBeans("金豆夺宝" + (taskResolved && gameResolved ? "✅本轮任务已全部处理" : "⏳仍有待完成或待领取任务"));
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "run err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
@@ -159,7 +159,7 @@ public class goldenbeans extends ModelTask {
             GoldenBeansSupport.pause(interval);
             JSONObject jo = GoldenBeansSupport.parse(goldenbeansRpcCall.pull("JAR_INFO", "TASK_LIST"));
             if (!GoldenBeansSupport.ok(jo)) {
-                Log.goldenBeans("金豆同步⚠️数据同步失败[" + GoldenBeansSupport.describe(jo) + "]");
+                Log.i("金豆同步⚠️数据同步失败[" + GoldenBeansSupport.describe(jo) + "]");
             }
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "resync err:");

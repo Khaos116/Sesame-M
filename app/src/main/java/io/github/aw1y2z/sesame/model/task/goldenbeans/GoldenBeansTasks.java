@@ -160,7 +160,7 @@ public final class GoldenBeansTasks {
                 }
                 return syncResponse;
             }
-            Log.goldenBeans("金豆[" + entry.alias + "]签到📅今日已签到");
+            Log.i("金豆[" + entry.alias + "]签到📅今日已签到");
         } catch (Throwable th) {
             signFailed = true;
             Log.i(GoldenBeansSupport.TAG, "doSign err:");
@@ -299,7 +299,7 @@ public final class GoldenBeansTasks {
                         handled++;
                         changed = true;
                     } else {
-                        Log.record("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]完成失败["
+                        Log.goldenBeans("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]完成失败["
                                 + (actionType.isEmpty() ? "UNKNOWN" : actionType) + "]");
                         unresolved = true;
                     }
@@ -315,7 +315,7 @@ public final class GoldenBeansTasks {
                 changed = true;
             }
 
-            Log.record("金豆[" + entry.alias + "]任务🗂️共[" + total + "]个#完成[" + handled + "]个");
+            Log.goldenBeans("金豆[" + entry.alias + "]任务🗂️共[" + total + "]个#完成[" + handled + "]个");
             if (changed) {
                 GoldenBeansSupport.pause(interval);
                 goldenbeansRpcCall.pullOf(entry.bizType, entry.source, "FARM_TASK", "TASK_LIST");
@@ -377,7 +377,7 @@ public final class GoldenBeansTasks {
 
     private boolean finishTask(GoldenBeansEntry entry, String taskId, String taskName) {
         if (taskId == null || taskId.isEmpty()) {
-            Log.goldenBeans("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]缺少taskId#跳过");
+            Log.i("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]缺少taskId#跳过");
             return false;
         }
         try {
@@ -444,7 +444,7 @@ public final class GoldenBeansTasks {
 
     private boolean claimAward(GoldenBeansEntry entry, String taskId, String taskName) {
         if (taskId == null || taskId.isEmpty()) {
-            Log.goldenBeans("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]缺少taskId#跳过领奖");
+            Log.i("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]缺少taskId#跳过领奖");
             return false;
         }
         try {
@@ -531,7 +531,7 @@ public final class GoldenBeansTasks {
 
             // 2~4. 批量写回黑/白名单并保存（与其它模块统一走同一执行器；本模块没有预置白名单）
             Set<String> whiteList = new LinkedHashSet<>();
-            MessageUtil.syncTaskBlackList("金豆夺宝任务", defaultKeys, whiteList, taskListField);
+            MessageUtil.syncTaskBlackList("金豆夺宝任务", "GoldenBeansTaskList", defaultKeys, whiteList, taskListField);
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "initTaskListMap err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);

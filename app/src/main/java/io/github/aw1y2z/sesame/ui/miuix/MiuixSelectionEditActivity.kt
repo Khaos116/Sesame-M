@@ -23,7 +23,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FlipToBack
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -137,7 +140,9 @@ fun SelectionEditContent(
     // 避免传入引用与单例不一致时读不到已保存的勾选。
     val liveField = ConfigV2.INSTANCE.getModelFields(modelCode)?.get(field.code) ?: field
     val single = liveField.type == "SELECT_ONE" || liveField.type == "SELECT_AND_COUNT_ONE"
-    val withCount = liveField.type == "SELECT_AND_COUNT" && (liveField.code == "waterFriendList" || liveField.code == "wateredFriendList" || liveField.code == "cooperateWaterList" || liveField.code == "cooperateWaterTotalLimitList")
+    // 所有 SELECT_AND_COUNT 类型字段都带"数量/次数"语义，统一显示次数编辑（滑块），
+    // 例如小鸡乐园兑奖、帮喂小鸡、送麦子等"请填写X次数(每日)"字段。
+    val withCount = liveField.type == "SELECT_AND_COUNT"
     // withCount 字段的新勾选项默认值取字段数值下限（合种浇水=0、浇水好友=1）；非 withCount 维持 1 不变，避免影响其它列表
     val defaultCount = if (withCount) ((liveField as? SelectAndCountModelField)?.valueRangeMin?.toInt() ?: 1) else 1
     // 合种浇水两列表用数值输入框而非滑块
@@ -264,7 +269,59 @@ fun SelectionEditContent(
             LogTopBar(
                 title = field.name ?: "",
                 // 无改动时静默退出，不再提示"没有未保存的更改"
-                onBack = { activity.saveAndFinish() }
+                onBack = { activity.saveAndFinish() },
+                actions = {
+                    if (!single) {
+                        top.yukonga.miuix.kmp.basic.IconButton(onClick = {
+                            val added = filteredOptions.map { it.id }.filter { it !in sel }
+                            sel = sel + added
+                            var nc = counts
+                            added.forEach { id -> if (id !in nc) nc = nc + (id to (initialCounts[id] ?: defaultCount)) }
+                            counts = nc
+                            dirty = true
+                        }) {
+                            top.yukonga.miuix.kmp.basic.Icon(
+                                imageVector = Icons.Filled.SelectAll,
+                                contentDescription = "全选",
+                                tint = MiuixTheme.colorScheme.onBackground
+                            )
+                        }
+                        top.yukonga.miuix.kmp.basic.IconButton(onClick = {
+                            var ns = sel
+                            var nc = counts
+                            filteredOptions.forEach { opt ->
+                                if (opt.id in ns) {
+                                    ns = ns - opt.id
+                                } else {
+                                    ns = ns + opt.id
+                                    if (opt.id !in nc) nc = nc + (opt.id to (initialCounts[opt.id] ?: defaultCount))
+                                }
+                            }
+                            sel = ns
+                            counts = nc
+                            dirty = true
+                        }) {
+                            top.yukonga.miuix.kmp.basic.Icon(
+                                imageVector = Icons.Filled.FlipToBack,
+                                contentDescription = "反选",
+                                tint = MiuixTheme.colorScheme.onBackground
+                            )
+                        }
+                        top.yukonga.miuix.kmp.basic.IconButton(onClick = {
+                            // 取消本次操作：恢复进入时的勾选快照，不写盘并退出
+                            sel = selectedIds
+                            counts = selectedIds.associateWith { initialCounts[it] ?: defaultCount }
+                            dirty = false
+                            activity.saveAndFinish()
+                        }) {
+                            top.yukonga.miuix.kmp.basic.Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "取消",
+                                tint = MiuixTheme.colorScheme.onBackground
+                            )
+                        }
+                    }
+                }
             )
         },
         containerColor = MiuixTheme.colorScheme.surface

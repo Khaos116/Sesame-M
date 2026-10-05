@@ -170,6 +170,67 @@ public class AntOrchardRpcCall {
         return ApplicationHook.requestString("com.alipay.antieptask.receiveTaskAwardantorchard", args1);
     }
 
+    /* ============ 农场抽抽乐（阿肥寻宝记 / 农场抽抽乐普通版） ============ */
+
+    /**
+     * 农场抽抽乐-进入/查询活动
+     */
+    public static String enterDrawActivityantorchard(String activityId, String sceneCode, String source) {
+        String args = "[{\"activityId\":\"" + activityId + "\",\"context\":{\"appMode\":\"INT\"},\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"" + source + "\"}]";
+        return ApplicationHook.requestString("com.alipay.antiepdrawprod.enterDrawActivityantorchard", args);
+    }
+
+    /**
+     * 农场抽抽乐-请求任务列表
+     */
+    public static String listTaskantorchard(String sceneCode, String source) {
+        String args = "[{\"extend\":{\"appMode\":\"INT\"},\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"" + source + "\"}]";
+        return ApplicationHook.requestString("com.alipay.antieptask.listTaskantorchard", args);
+    }
+
+    /**
+     * 农场抽抽乐-领取任务奖励（与 {@link #receiveTaskAwardantorchard} 区分：抽抽乐场景无 awardCountForReceive 字段）
+     */
+    public static String receiveDrawTaskAwardantorchard(String sceneCode, String taskType) {
+        String args = "[{\"ignoreLimit\":true,\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"antorchard\",\"taskType\":\"" + taskType + "\"}]";
+        return ApplicationHook.requestString("com.alipay.antieptask.receiveTaskAwardantorchard", args);
+    }
+
+    /**
+     * 农场抽抽乐-抽奖
+     */
+    public static String drawantorchard(String activityId, String sceneCode, String source, String userId) {
+        String args = "[{\"activityId\":\"" + activityId + "\",\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"" + source + "\",\"userId\":\"" + userId + "\"}]";
+        return ApplicationHook.requestString("com.alipay.antiepdrawprod.drawantorchard", args);
+    }
+
+    /**
+     * 农场抽抽乐-同步抽奖次数
+     */
+    public static String drawSyncantorchard(String activityId, String source) {
+        String args = "[{\"activityId\":\"" + activityId + "\",\"context\":{\"appMode\":\"INT\"},\"requestType\":\"RPC\",\"sceneCode\":\"ANTORCHARD_DRAW_TIMES\",\"source\":\"" + source + "\"}]";
+        return ApplicationHook.requestString("com.alipay.antiepdrawprod.drawSyncantorchard", args);
+    }
+
+    /**
+     * 农场抽抽乐-完成任务（小游戏/广告等 TODO 任务，尝试自动完成，失败由调用方拉黑）
+     * 与 listTaskantorchard 同 facade(antieptask)，参数格式参照庄园 finishTaskopengreen
+     */
+    public static String finishTaskantorchard(String taskType, String sceneCode) {
+        String taskTypeRandom = taskType + "_" + System.currentTimeMillis() + "_" + RandomUtil.getRandomString(8);
+        String requestData = "[{\"outBizNo\":\"" + taskTypeRandom + "\",\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"antorchard\",\"taskType\":\"" + taskType + "\"}]";
+        return ApplicationHook.requestString("com.alipay.antieptask.finishTaskantorchard", requestData);
+    }
+
+    /**
+     * 农场抽抽乐-完成任务（互备腿：基于抓包证据，果园任务完成走 com.alipay.antiep.finishTask，NORMAL+userId+version 格式）
+     */
+    public static String finishTaskantorchardV2(String taskType, String sceneCode, String userId) {
+        String outBizNo = userId + System.currentTimeMillis();
+        String requestData = "[{\"outBizNo\":\"" + outBizNo + "\",\"requestType\":\"NORMAL\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"antorchard\",\"taskType\":\"" + taskType + "\",\"userId\":\"" + userId + "\",\"version\":\"20250812.01\"}]";
+        return ApplicationHook.requestString("com.alipay.antiep.finishTask", requestData);
+    }
+
 
     /**
      * 带参数的 orchardSyncIndex（适配第二个文件中的调用）

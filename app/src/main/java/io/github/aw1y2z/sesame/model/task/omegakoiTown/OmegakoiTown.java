@@ -114,7 +114,7 @@ public class OmegakoiTown extends ModelTask {
                     }
                 }
             } else {
-                Log.record(jo.getString("resultDesc"));
+                Log.other(jo.getString("resultDesc"));
                 Log.i(s);
             }
         } catch (Throwable t) {
@@ -173,7 +173,7 @@ public class OmegakoiTown extends ModelTask {
                     }
                 }
             } else {
-                Log.record(jo.getString("resultDesc"));
+                Log.other(jo.getString("resultDesc"));
                 Log.i(s);
             }
         } catch (Throwable t) {
