@@ -127,6 +127,7 @@ public class AntFarm extends ModelTask {
     private BooleanModelField competitionDonate;               // 爱心鸡结号 | 自动捐蛋
     private BooleanModelField competitionStealRank;            // 爱心鸡结号 | 偷榜
     private IntegerModelField competitionStealMinutes;         // 爱心鸡结号 | 偷榜提前分钟数
+    private IntegerModelField competitionStealLimit;           // 爱心鸡结号 | 偷榜捐献上限
     private IntegerModelField competitionDonateAmount;         // 爱心鸡结号 | 自动捐蛋数量
     private BooleanModelField useBigEaterTool;
     //private ChoiceModelField getFeedType;
@@ -174,6 +175,7 @@ public class AntFarm extends ModelTask {
         modelFields.addField(competitionDonateAmount = new IntegerModelField("competitionDonateAmount", "爱心鸡结号 | 自动捐蛋数量", 5, 0, 1000).setDependsOn("competitionDonate"));
         modelFields.addField(competitionStealRank = new BooleanModelField("competitionStealRank", "爱心鸡结号 | 偷榜", false).setDependsOn("competition"));
         modelFields.addField(competitionStealMinutes = new IntegerModelField("competitionStealMinutes", "爱心鸡结号 | 偷榜提前分钟数", 30, 0, 240).setDependsOn("competitionStealRank"));
+        modelFields.addField(competitionStealLimit = new IntegerModelField("competitionStealLimit", "爱心鸡结号 | 偷榜捐献上限(0不限)", 0, 0, 1000).setDependsOn("competitionStealRank"));
         modelFields.addField(family = new BooleanModelField("family", "亲密家庭 | 开启", false));
         modelFields.addField(familyOptions = new SelectModelField("familyOptions", "亲密家庭 | 选项", new LinkedHashSet<>(), CustomOption::getAntFarmFamilyOptions).setDependsOn("family"));
         modelFields.addField(notInviteList = new SelectModelField("notInviteList", "亲密家庭 | 不邀请列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("family"));
@@ -1368,7 +1370,20 @@ public class AntFarm extends ModelTask {
                 Log.record("爱心鸡结号❤️偷榜：当前无蛋可捐");
                 return;
             }
-            int n = Math.min(need, have);
+            // 蛋不够就不捐：捐了也超不过第1名
+            if (have < need) {
+                Log.record("爱心鸡结号❤️偷榜⏭️跳过：手上的蛋不够超过第1名(有" + have + "需" + need
+                        + "，当前第" + myRank + "名捐" + myDonation + "，第1名捐" + rank1Donation + ")");
+                return;
+            }
+            int n = need;
+            // 上限按最终捐献量判定
+            int stealLimit = competitionStealLimit.getValue();
+            if (stealLimit > 0 && n > stealLimit) {
+                Log.record("爱心鸡结号❤️偷榜⏭️跳过：需捐" + n + "超过上限" + stealLimit
+                        + "(当前第" + myRank + "名捐" + myDonation + "，第1名捐" + rank1Donation + ")");
+                return;
+            }
             // 定向捐到 S2 项目
             JSONObject info = new JSONObject(AntFarmRpcCall.queryCompetitionEntranceInfo());
             String projectId = null, projectName = null;
