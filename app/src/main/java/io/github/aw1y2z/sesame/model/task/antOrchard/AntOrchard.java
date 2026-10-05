@@ -738,12 +738,15 @@ public class AntOrchard extends ModelTask {
             Log.farm("芭芭农场🌳" + scene.nickname() + "施肥#消耗[" + cost + "g肥料]"
                     + (batch ? "#一键5次" : "") + "#目标[" + targetSpreadTimes() + "次]");
 
-            // 检查施肥进度
+            // 检查施肥进度：单次只加 0.01%(1) 或 一键5次只加 0.05%(5) 即被限制施肥，当天不再施肥
             if (taobaoData.has("currentStage")) {
                 JSONObject stage = taobaoData.getJSONObject("currentStage");
                 int newProgress = stage.optInt("totalValue", fertilizerProgress);
-                if (newProgress - fertilizerProgress <= 1) {
-                    Log.record("施肥只加0.01%进度今日停止施肥！");
+                int delta = newProgress - fertilizerProgress;
+                int spreadTimes = batch ? BATCH_SPREAD_SIZE : 1;
+                // delta 为负＝跨场景或基线过期，不作判据（判了会把没被限制的场景也停掉）
+                if (delta >= 0 && delta <= spreadTimes) {
+                    Log.record("施肥" + (batch ? "一键5次只加0.05%" : "1次只加0.01%") + "进度今日停止施肥！");
                     Status.flagToday("spreadManureLimit:" + sceneName, userId);
                 }
                 fertilizerProgress = newProgress;
