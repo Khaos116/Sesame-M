@@ -688,6 +688,20 @@ public class AntMember extends ModelTask {
         }
     }
 
+    /**
+     * 黄金票系接口只返回 success:true（无 desc / resultCode），而 checkResultCode 要求 desc="处理成功"，
+     * 会把这些响应全部误判为失败；故这里以 success/isSuccess 为准，再回退通用判定。
+     */
+    private static boolean goldTicketOk(String tag, JSONObject jo) {
+        if (jo == null) {
+            return false;
+        }
+        if (jo.optBoolean("success") || jo.optBoolean("isSuccess")) {
+            return true;
+        }
+        return MessageUtil.checkResultCode(tag, jo);
+    }
+
     private JSONObject queryGoldTicketHome() {
         try {
             String res = AntMemberRpcCall.queryGoldTicketHome();
@@ -695,7 +709,7 @@ public class AntMember extends ModelTask {
                 return null;
             }
             JSONObject jo = new JSONObject(res);
-            if (!MessageUtil.checkResultCode(TAG, jo)) {
+            if (!goldTicketOk(TAG, jo)) {
                 return null;
             }
             return jo;
@@ -709,11 +723,18 @@ public class AntMember extends ModelTask {
         if (home == null) {
             return null;
         }
+        // 首页响应在 result.upsertData.assetInfo 下，旧的 result.assetInfo 作兜底
         JSONObject asset = home.optJSONObject("assetInfo");
         if (asset == null) {
             JSONObject result = home.optJSONObject("result");
             if (result != null) {
-                asset = result.optJSONObject("assetInfo");
+                JSONObject upsertData = result.optJSONObject("upsertData");
+                if (upsertData != null) {
+                    asset = upsertData.optJSONObject("assetInfo");
+                }
+                if (asset == null) {
+                    asset = result.optJSONObject("assetInfo");
+                }
             }
         }
         return asset;
@@ -744,7 +765,7 @@ public class AntMember extends ModelTask {
                 String signRes = AntMemberRpcCall.welfareCenterTrigger("SIGN");
                 if (signRes != null && !signRes.isEmpty()) {
                     JSONObject signJson = new JSONObject(signRes);
-                    if (MessageUtil.checkResultCode(TAG, signJson)) {
+                    if (goldTicketOk(TAG, signJson)) {
                         JSONObject signResult = signJson.optJSONObject("result");
                         String amount = "";
                         if (signResult != null) {
@@ -791,7 +812,7 @@ public class AntMember extends ModelTask {
                 return false;
             }
             JSONObject updateJson = new JSONObject(updateResponse);
-            if (!MessageUtil.checkResultCode(TAG, updateJson)) {
+            if (!goldTicketOk(TAG, updateJson)) {
                 Log.error("黄金票🙈[" + source + "]福利中心刷新失败："
                         + updateJson.optString("resultDesc", updateJson.optString("memo")));
                 return false;
@@ -809,7 +830,7 @@ public class AntMember extends ModelTask {
         }
         try {
             JSONObject collectJson = new JSONObject(response);
-            if (!MessageUtil.checkResultCode(TAG, collectJson)) {
+            if (!goldTicketOk(TAG, collectJson)) {
                 String message = collectJson.optString("resultDesc", collectJson.optString("memo"));
                 if (message != null && !message.isEmpty()) {
                     Log.other("黄金票🙈[" + source + "]" + message);
@@ -881,11 +902,18 @@ public class AntMember extends ModelTask {
     }
 
     private JSONArray extractGoldTicketHomeTodoTasks(JSONObject home) {
+        // 首页响应在 result.upsertData.task 下，旧的 result.task 作兜底
         JSONObject task = home.optJSONObject("task");
         if (task == null) {
             JSONObject result = home.optJSONObject("result");
             if (result != null) {
-                task = result.optJSONObject("task");
+                JSONObject upsertData = result.optJSONObject("upsertData");
+                if (upsertData != null) {
+                    task = upsertData.optJSONObject("task");
+                }
+                if (task == null) {
+                    task = result.optJSONObject("task");
+                }
             }
         }
         if (task == null) {
@@ -906,7 +934,7 @@ public class AntMember extends ModelTask {
                 return null;
             }
             JSONObject welfareJson = new JSONObject(welfareResponse);
-            if (!MessageUtil.checkResultCode(TAG, welfareJson)) {
+            if (!goldTicketOk(TAG, welfareJson)) {
                 return null;
             }
             JSONObject result = welfareJson.optJSONObject("result");
@@ -932,7 +960,7 @@ public class AntMember extends ModelTask {
                 return false;
             }
             JSONObject result = new JSONObject(response);
-            if (!MessageUtil.checkResultCode(TAG, result)) {
+            if (!goldTicketOk(TAG, result)) {
                 return false;
             }
             JSONObject r = result.optJSONObject("result");
@@ -992,7 +1020,7 @@ public class AntMember extends ModelTask {
                 String triggerRes = AntMemberRpcCall.goldBillTaskTrigger(taskId);
                 if (triggerRes != null && !triggerRes.isEmpty()) {
                     try {
-                        if (MessageUtil.checkResultCode(TAG, new JSONObject(triggerRes))) {
+                        if (goldTicketOk(TAG, new JSONObject(triggerRes))) {
                             Log.other("黄金票🙈[" + source + "任务报名成功]#" + title);
                             if (pushGoldTicketTask(taskId, "send")) {
                                 Log.other("黄金票🙈[" + source + "任务完成]#" + title);
@@ -1079,7 +1107,7 @@ public class AntMember extends ModelTask {
                 return;
             }
             JSONObject queryJson = new JSONObject(queryRes);
-            if (!MessageUtil.checkResultCode(TAG, queryJson)) {
+            if (!goldTicketOk(TAG, queryJson)) {
                 return;
             }
             JSONObject result = queryJson.optJSONObject("result");
@@ -1152,7 +1180,7 @@ public class AntMember extends ModelTask {
                 return;
             }
             JSONObject submitJson = new JSONObject(submitRes);
-            if (!MessageUtil.checkResultCode(TAG, submitJson)) {
+            if (!goldTicketOk(TAG, submitJson)) {
                 String desc = submitJson.optString("resultDesc", submitJson.optString("memo"));
                 if (desc != null && !desc.isEmpty()) {
                     Log.error("黄金票🙈[提取失败]" + desc);

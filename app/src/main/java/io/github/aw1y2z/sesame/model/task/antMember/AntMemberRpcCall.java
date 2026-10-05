@@ -75,8 +75,8 @@ public class AntMemberRpcCall {
     public static String queryGoldTicketHome() {
         try {
             JSONObject args = new JSONObject();
-            args.put("bizScene", "goldpage");
-            args.put("chInfo", "goldpage");
+            args.put("bizScene", "ch_alipaysearch__chsub_normal");
+            args.put("chInfo", "ch_alipaysearch__chsub_normal");
             args.put("taskId", "");
             return ApplicationHook.requestString("com.alipay.wealthgoldtwa.needle.v2.index",
                     new JSONArray().put(args).toString());
@@ -91,6 +91,8 @@ public class AntMemberRpcCall {
     public static String goldTicketIndexCollect() {
         try {
             JSONObject args = new JSONObject();
+            args.put("directModeDisableCollect", 1);
+            args.put("from", "antfarm");
             args.put("trigger", "Y");
             return ApplicationHook.requestString("com.alipay.wealthgoldtwa.needle.index.collect",
                     new JSONArray().put(args).toString());
