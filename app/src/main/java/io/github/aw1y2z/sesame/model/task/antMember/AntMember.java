@@ -102,7 +102,7 @@ public class AntMember extends ModelTask {
     @Override
     public Boolean check() {
         if (TaskCommon.IS_ENERGY_TIME) {
-            Log.other("任务暂停⏸️蚂蚁会员:当前为仅收能量时间");
+            Log.i("任务暂停⏸️蚂蚁会员:当前为仅收能量时间");
             return false;
         }
         return true;
@@ -597,7 +597,7 @@ public class AntMember extends ModelTask {
             String awardParamPoint = taskConfigInfo.getJSONObject("awardParam").getString("awardParamPoint");
             JSONArray targetBusinessArr = taskConfigInfo.optJSONArray("targetBusiness");
             if (targetBusinessArr == null || targetBusinessArr.length() == 0) {
-                Log.other("会员任务⏭️跳过[" + name + "]#无 targetBusiness 配置");
+                Log.i("会员任务⏭️跳过[" + name + "]#无 targetBusiness 配置");
                 return false;
             }
             String targetBusiness = targetBusinessArr.getString(0);
@@ -650,10 +650,10 @@ public class AntMember extends ModelTask {
             boolean needWelfare = doSignIn && !Status.hasFlagToday("goldTicket::welfare");
             boolean needConsume = doConsume && !Status.hasFlagToday("goldTicket::consume");
             if (!needSignIn && !needHomeCheck && !needWelfare && !needConsume) {
-                Log.other("黄金票🙈[今日已处理，跳过]");
+                Log.i("黄金票🙈[今日已处理，跳过]");
                 return;
             }
-            Log.other("黄金票🙈[开始执行]");
+            Log.i("黄金票🙈[开始执行]");
             JSONObject home = null;
             if (needSignIn || needHomeCheck) {
                 home = queryGoldTicketHome();
@@ -724,10 +724,10 @@ public class AntMember extends ModelTask {
             JSONObject assetInfo = getGoldTicketAssetInfo(home);
             boolean canSign = assetInfo != null && assetInfo.optBoolean("canSign", false);
             if (!canSign) {
-                Log.other("黄金票🙈[今日已签到]");
+                Log.i("黄金票🙈[今日已签到]");
                 return true;
             }
-            Log.other("黄金票🙈[准备签到]");
+            Log.i("黄金票🙈[准备签到]");
             boolean signSuccess = false;
             int collectCount = doGoldTicketIndexCollect("签到尝试");
             JSONObject refreshed = queryGoldTicketHome();
@@ -857,7 +857,7 @@ public class AntMember extends ModelTask {
             }
             int collectCount = doGoldTicketIndexCollect("场景收取");
             if (collectCount == 0) {
-                Log.other("黄金票🙈[场景收取]暂无可领取奖励");
+                Log.i("黄金票🙈[场景收取]暂无可领取奖励");
             }
         } catch (Throwable t) {
             Log.printStackTrace(TAG, t);
@@ -1037,7 +1037,7 @@ public class AntMember extends ModelTask {
             }
             int pending = countGoldTicketPendingAutoTasks(extractGoldTicketHomeTodoTasks(refreshed));
             if (pending > 0) {
-                Log.other("黄金票🙈[首页任务]#保留" + pending + "项待重试");
+                Log.i("黄金票🙈[首页任务]#保留" + pending + "项待重试");
             }
             return pending == 0;
         } catch (Throwable t) {
@@ -1061,7 +1061,7 @@ public class AntMember extends ModelTask {
             }
             int pendingRetry = countGoldTicketPendingAutoTasks(refreshed);
             if (pendingRetry > 0) {
-                Log.other("黄金票🙈[福利中心任务]#保留" + pendingRetry + "项待重试");
+                Log.i("黄金票🙈[福利中心任务]#保留" + pendingRetry + "项待重试");
             }
             return pendingRetry == 0;
         } catch (Throwable t) {
@@ -1073,7 +1073,7 @@ public class AntMember extends ModelTask {
     private void doGoldTicketConsume() {
         boolean consumeDone = false;
         try {
-            Log.other("黄金票🙈[准备检查余额及提取]");
+            Log.i("黄金票🙈[准备检查余额及提取]");
             String queryRes = AntMemberRpcCall.queryConsumeHome();
             if (queryRes == null || queryRes.isEmpty()) {
                 return;
@@ -1144,7 +1144,7 @@ public class AntMember extends ModelTask {
             if (exchangeMoney == null || exchangeMoney.isEmpty()) {
                 exchangeMoney = String.format("%.2f", (double) extractAmount / 1000.0);
             }
-            Log.other("黄金票🙈[开始提取]#计划[" + extractAmount + "份]预计[" + exchangeMoney
+            Log.i("黄金票🙈[开始提取]#计划[" + extractAmount + "份]预计[" + exchangeMoney
                     + "元]持有[" + availableAmount + "]");
             String submitRes = AntMemberRpcCall.submitConsume(extractAmount, productId, bonusAmount);
             if (submitRes == null || submitRes.isEmpty()) {
@@ -1223,7 +1223,7 @@ public class AntMember extends ModelTask {
                 // 每日问答
                 if ("meiriwenda".equals(behaviorId) && "wait_doing".equals(status)) {
                     if (subTitle.contains("今日已参与")) {
-                        Log.other("攒芝麻分🧾[每日问答] " + subTitle + "（跳过答题）");
+                        Log.i("攒芝麻分🧾[每日问答] " + subTitle + "（跳过答题）");
                         continue;
                     }
                     

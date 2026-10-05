@@ -97,7 +97,7 @@ public class AntOcean extends ModelTask {
     @Override
     public Boolean check() {
         if (TaskCommon.IS_ENERGY_TIME) {
-            Log.forest("任务暂停⏸️神奇海洋:当前为仅收能量时间");
+            Log.i("任务暂停⏸️神奇海洋:当前为仅收能量时间");
             return false;
         }
         return true;
@@ -318,7 +318,7 @@ public class AntOcean extends ModelTask {
                                 JSONObject retBubble = retBubbles.optJSONObject(j);
                                 if (retBubble != null) {
                                     int collectedEnergy = retBubble.getInt("collectedEnergy");
-                                    Log.forest("神奇海洋🐳收取[" + UserIdMap.getMaskName(userId) + "]的海洋能量#" + collectedEnergy + "g");
+                                    Log.other("神奇海洋🐳收取[" + UserIdMap.getMaskName(userId) + "]的海洋能量#" + collectedEnergy + "g");
                                     Statistics.addData(Statistics.DataType.COLLECTED, collectedEnergy);
                                 }
                             }
@@ -339,7 +339,7 @@ public class AntOcean extends ModelTask {
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     JSONArray cleanRewardVOS = jo.getJSONArray("cleanRewardVOS");
                     checkReward(cleanRewardVOS);
-                    Log.forest("神奇海洋🐳清理[" + UserIdMap.getMaskName(userId) + "]海域");
+                    Log.other("神奇海洋🐳清理[" + UserIdMap.getMaskName(userId) + "]海域");
                 }
             }
         } catch (Throwable t) {
@@ -385,7 +385,7 @@ public class AntOcean extends ModelTask {
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 JSONObject fishDetailVO = jo.getJSONObject("fishDetailVO");
                 String name = fishDetailVO.getString("name");
-                Log.forest("神奇海洋🐳迎回[" + name + "]");
+                Log.other("神奇海洋🐳迎回[" + name + "]");
             }
             //检测是否能开启限时挑战
             createSeaAreaExtraCollect();
@@ -401,7 +401,7 @@ public class AntOcean extends ModelTask {
                 String name = reward.getString("name");
                 JSONArray attachReward = reward.getJSONArray("attachRewardBOList");
                 if (attachReward.length() > 0) {
-                    Log.forest("神奇海洋🐳获得[" + name + "]拼图");
+                    Log.other("神奇海洋🐳获得[" + name + "]拼图");
                     boolean canCombine = true;
                     for (int j = 0; j < attachReward.length(); j++) {
                         JSONObject detail = attachReward.getJSONObject(j);
@@ -454,7 +454,7 @@ public class AntOcean extends ModelTask {
             for (int i = 0; i < canCollectAssetNum; i++) {
                 JSONObject jo = new JSONObject(AntOceanRpcCall.collectReplicaAsset());
                 if (MessageUtil.checkResultCode(TAG, jo)) {
-                    Log.forest("神奇海洋🐳[学习海洋科普知识]#获得[潘多拉能量*1]");
+                    Log.other("神奇海洋🐳[学习海洋科普知识]#获得[潘多拉能量*1]");
                 }
             }
         } catch (Throwable t) {
@@ -467,7 +467,7 @@ public class AntOcean extends ModelTask {
             JSONObject jo = new JSONObject(AntOceanRpcCall.unLockReplicaPhase(replicaCode, replicaPhaseCode));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 String name = jo.getJSONObject("currentPhaseInfo").getJSONObject("extInfo").getString("name");
-                Log.forest("神奇海洋🐳迎回[" + name + "]");
+                Log.other("神奇海洋🐳迎回[" + name + "]");
             }
         } catch (Throwable t) {
             Log.err(TAG, "unLockReplicaPhase err:", t);
@@ -502,7 +502,7 @@ public class AntOcean extends ModelTask {
             JSONObject jo = new JSONObject(AntOceanRpcCall.receiveReplicaTaskAward(taskType));
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 int incAwardCount = jo.getInt("incAwardCount");
-                Log.forest("神奇海洋🐳领取[" + taskTitle + "]奖励#获得[潘多拉能量*" + incAwardCount + "]");
+                Log.other("神奇海洋🐳领取[" + taskTitle + "]奖励#获得[潘多拉能量*" + incAwardCount + "]");
             }
         } catch (Throwable t) {
             Log.err(TAG, "receiveReplicaTaskAward err:", t);
@@ -538,7 +538,7 @@ public class AntOcean extends ModelTask {
                 JSONObject Extrajo = new JSONObject(AntOceanRpcCall.createSeaAreaExtraCollect());
                 if (MessageUtil.checkResultCode(TAG, Extrajo)) {
                     if (Extrajo.has("seaAreaExtraCollectVO")) {
-                        Log.forest("神奇海洋🐳开启了神秘海域");
+                        Log.other("神奇海洋🐳开启了神秘海域");
                     }
                 }
             }
@@ -559,7 +559,7 @@ public class AntOcean extends ModelTask {
                 JSONObject Extrajo = new JSONObject(AntOceanRpcCall.createSeaAreaExtraCollect());
                 if (MessageUtil.checkResultCode(TAG, Extrajo)) {
                     if (Extrajo.has("seaAreaExtraCollectVO")) {
-                        Log.forest("神奇海洋🐳开启了神秘海域");
+                        Log.other("神奇海洋🐳开启了神秘海域");
                     }
                 }
             }
@@ -625,7 +625,7 @@ public class AntOcean extends ModelTask {
                 JSONObject Extrajo = new JSONObject(Extrastr == null ? "{}" : Extrastr);
                 if (MessageUtil.checkResultCode(TAG, Extrajo)) {
                     if (Extrajo.has("seaAreaExtraCollectVO")) {
-                        Log.forest("神奇海洋🐳开启了神秘海域");
+                        Log.other("神奇海洋🐳开启了神秘海域");
                     }
                 }
             }
@@ -679,7 +679,7 @@ public class AntOcean extends ModelTask {
             if (isFinish && !StringUtil.isEmpty(dstChapterCode)) {
                 jo = new JSONObject(AntOceanRpcCall.switchOceanChapter(dstChapterCode));
                 if (MessageUtil.checkResultCode(TAG, jo)) {
-                    Log.forest("神奇海洋🐳切换到[" + dstChapterName + "]系列");
+                    Log.i("神奇海洋🐳切换到[" + dstChapterName + "]系列");
                 }
             }
         } catch (Throwable t) {
@@ -793,7 +793,7 @@ public class AntOcean extends ModelTask {
                 return false;
             }
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                Log.forest("神奇海洋🐳帮助[" + UserIdMap.getMaskName(userId) + "]清理海域");
+                Log.other("神奇海洋🐳帮助[" + UserIdMap.getMaskName(userId) + "]清理海域");
                 JSONArray cleanRewardVOS = jo.getJSONArray("cleanRewardVOS");
                 checkReward(cleanRewardVOS);
                 return true;
@@ -915,7 +915,7 @@ public class AntOcean extends ModelTask {
             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOceanAntiepTaskList", taskTitle, jo);
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 String awardCount = jo.optString("incAwardCount");
-                Log.forest("海洋任务🎖️领取[" + taskTitle + "]奖励#获得[" + awardCount + "块拼图]");
+                Log.other("海洋任务🎖️领取[" + taskTitle + "]奖励#获得[" + awardCount + "块拼图]");
             }
         } catch (Throwable t) {
             Log.err(TAG, "receiveTaskAward err:", t);
@@ -927,7 +927,7 @@ public class AntOcean extends ModelTask {
             if (task.has("taskProgress")) {
                 // 进度类任务（如"连续N天来海洋"）无法用 RPC 直接完成，也不能拉黑（否则会永久跳过真任务）；
                 // 这里显式记录，避免"列表拿到了却没动作、日志也没有"
-                Log.other("海洋任务⏭️跳过[进度任务暂不自动完成]#taskType=" + task.optString("taskType"));
+                Log.i("海洋任务⏭️跳过[进度任务暂不自动完成]#taskType=" + task.optString("taskType"));
                 return false;
             }
             JSONObject bizInfo = new JSONObject(task.getString("bizInfo"));
@@ -941,7 +941,7 @@ public class AntOcean extends ModelTask {
             // 答题任务走独立流程
             if (taskTitle.equals("每日任务：答题学海洋知识")) {
                 if (answerQuestion()) {
-                    Log.forest("海洋任务🧾完成[" + taskTitle + "]");
+                    Log.other("海洋任务🧾完成[" + taskTitle + "]");
                     return true;
                 }
                 return false;
@@ -952,7 +952,7 @@ public class AntOcean extends ModelTask {
             // 全程没有 finishTask，也不需要客户端申报
             if ("FRIENDRUBBISCLEAN_EVERYDAY_NEW".equals(taskType) || taskTitle.contains("帮好友清理垃圾")) {
                 if (helpCleanOneFriend()) {
-                    Log.forest("海洋任务🧾完成[" + taskTitle + "]#帮好友清理垃圾");
+                    Log.other("海洋任务🧾完成[" + taskTitle + "]#帮好友清理垃圾");
                     return true;
                 }
                 Log.other("海洋任务⚠️未完成[" + taskTitle + "]#taskType=" + taskType + "，本次没找到可清理的好友");
@@ -960,7 +960,7 @@ public class AntOcean extends ModelTask {
             }
             // 限时任务不自动完成（自动完成易触发风控），显式记录而不是静默跳过
             if (taskTitle.startsWith("限时任务：")) {
-                Log.other("海洋任务⏭️跳过[" + taskTitle + "]#taskType=" + taskType + "，限时任务不自动完成");
+                Log.i("海洋任务⏭️跳过[" + taskTitle + "]#taskType=" + taskType + "，限时任务不自动完成");
                 return false;
             }
             // 其余 TODO 一律尝试完成：原先按中文文案 + taskType 白名单精确分派，服务端一改文案
@@ -970,12 +970,12 @@ public class AntOcean extends ModelTask {
             //检查并标记黑名单任务
             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOceanAntiepTaskList", taskTitle, jo);
             if (MessageUtil.checkSuccess(TAG, jo)) {
-                Log.forest("海洋任务🧾完成[" + taskTitle + "]");
+                Log.other("海洋任务🧾完成[" + taskTitle + "]");
                 return true;
             }
             // 另一种实现方案（见 TaskAlternative）
             if (TaskAlternative.hit(jo, sceneCode)) {
-                TaskAlternative.trigger(null, taskType, taskTitle, taskType, sceneCode, "海洋任务", msg -> Log.forest(msg));
+                TaskAlternative.trigger(null, taskType, taskTitle, taskType, sceneCode, "海洋任务", msg -> Log.other(msg));
                 return false;
             }
             Log.other("海洋任务⚠️未完成[" + taskTitle + "]#taskType=" + taskType + "，需在支付宝内手动完成");
@@ -1051,7 +1051,7 @@ public class AntOcean extends ModelTask {
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 String duplicatePieceNum = jo.getString("duplicatePieceNum");
                 String exchangeNum = jo.getString("exchangeNum");
-                Log.forest("神奇海洋🐳制作[万能拼图*" + exchangeNum + "]#剩余[重复拼图*" + duplicatePieceNum + "]");
+                Log.other("神奇海洋🐳制作[万能拼图*" + exchangeNum + "]#剩余[重复拼图*" + duplicatePieceNum + "]");
                 return true;
             }
         } catch (Throwable t) {
@@ -1160,7 +1160,7 @@ public class AntOcean extends ModelTask {
             JSONObject jo = new JSONObject(AntOceanRpcCall.useUniversalPiece(assetsDetails));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 int userCount = assetsDetails.length();
-                Log.forest("神奇海洋🐳使用[万能拼图*" + userCount + "]迎回[" + name + "]#剩余[万能拼图*" + holdsNum + "]");
+                Log.other("神奇海洋🐳使用[万能拼图*" + userCount + "]迎回[" + name + "]#剩余[万能拼图*" + holdsNum + "]");
                 return true;
             }
         } catch (Throwable t) {
@@ -1334,7 +1334,7 @@ public class AntOcean extends ModelTask {
             JSONObject jo = new JSONObject(result);
 
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                Log.forest("开通摸鱼🐟提交画鱼成功");
+                Log.other("开通摸鱼🐟提交画鱼成功");
                 Toast.show("开通摸鱼🐟提交画鱼成功");
                 return true;
             }
@@ -1359,13 +1359,13 @@ public class AntOcean extends ModelTask {
                         int remainChance = interactVO.optInt("remainTouchChance", 0);
                         int touchTotal = interactVO.optInt("touchTotal", 0);
                         
-                        Log.forest("摸鱼解救🐟解救成功[" + fishInteractStatus + "]可摸鱼次数" + remainChance + "累计摸鱼" + touchTotal);
+                        Log.other("摸鱼解救🐟解救成功[" + fishInteractStatus + "]可摸鱼次数" + remainChance + "累计摸鱼" + touchTotal);
                         Toast.show("摸鱼解救🐟解救成功[" + fishInteractStatus + "]");
                     } else {
-                        Log.forest("摸鱼任务🐟解救成功");
+                        Log.other("摸鱼任务🐟解救成功");
                     }
                 } else {
-                    Log.forest("摸鱼任务🐟解救成功");
+                    Log.other("摸鱼任务🐟解救成功");
                 }
                 return true;
             }
@@ -1389,11 +1389,11 @@ public class AntOcean extends ModelTask {
 
             JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
             if (taskInfoList == null || taskInfoList.length() == 0) {
-                Log.forest("海洋摸鱼🐟暂无任务");
+                Log.i("海洋摸鱼🐟暂无任务");
                 return;
             }
 
-            //Log.forest("海洋摸鱼🐟发现 " + taskInfoList.length() + " 个任务");
+            //Log.other("海洋摸鱼🐟发现 " + taskInfoList.length() + " 个任务");
 
             for (int i = 0; i < taskInfoList.length(); i++) {
                 JSONObject taskInfo = taskInfoList.optJSONObject(i);
@@ -1418,7 +1418,7 @@ public class AntOcean extends ModelTask {
                 // 已完成任务领取奖励
                 if ("FINISHED".equals(taskStatus)) {
                     if (antfishReceiveTaskAward(taskType)) {
-                        Log.forest("摸鱼任务🎖️领取[" + taskTitle + "]获得摸鱼次数*" + awardCount);
+                        Log.other("摸鱼任务🎖️领取[" + taskTitle + "]获得摸鱼次数*" + awardCount);
                     }
                     continue;
                 }
@@ -1430,7 +1430,7 @@ public class AntOcean extends ModelTask {
                 if ("TODO".equals(taskStatus)) {
                     if (antfishFinishTask(taskTitle, taskType)) {
                         if (antfishReceiveTaskAward(taskType)) {
-                            Log.forest("摸鱼任务🎖️领取[" + taskTitle + "]获得摸鱼次数*" + awardCount);
+                            Log.other("摸鱼任务🎖️领取[" + taskTitle + "]获得摸鱼次数*" + awardCount);
                         }
                     }
                 }
@@ -1449,7 +1449,7 @@ public class AntOcean extends ModelTask {
             JSONObject jo = new JSONObject(result);
             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOceanFishBlackList", taskTitle, jo);
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                Log.forest("摸鱼任务🧾完成[" + taskTitle + "]");
+                Log.other("摸鱼任务🧾完成[" + taskTitle + "]");
                 return true;
             }
         } catch (Throwable t) {
@@ -1504,16 +1504,16 @@ public class AntOcean extends ModelTask {
             // 获取交互状态
             JSONObject interactVO = myFish.optJSONObject("interactVO");
             if (interactVO == null) {
-                Log.forest("海洋摸鱼🐟未获取到交互状态信息");
+                Log.i("海洋摸鱼🐟未获取到交互状态信息");
                 return;
             }
 
             int remainTouchChance = interactVO.optInt("remainTouchChance", 0);
 
-            //Log.forest("海洋摸鱼🐟剩余摸鱼次数" + remainTouchChance);
+            //Log.other("海洋摸鱼🐟剩余摸鱼次数" + remainTouchChance);
 
             if (remainTouchChance <= 0) {
-                //Log.forest("海洋摸鱼🐟今日摸鱼次数已用完");
+                //Log.other("海洋摸鱼🐟今日摸鱼次数已用完");
                 return;
             }
 
@@ -1568,10 +1568,10 @@ public class AntOcean extends ModelTask {
                         String captureNickName = captureInfoVO.optString("nickName", "");
                         String captureUserId = captureInfoVO.optString("userId", "未知ID");
                         String displayName = captureNickName.isEmpty() ? captureUserId : captureNickName;
-                        Log.forest("海洋摸鱼🐟摸到了[" + displayName + "]的鱼获得" + popup.optInt("rightsNums", 0) + "g能量");
+                        Log.other("海洋摸鱼🐟摸到了[" + displayName + "]的鱼获得" + popup.optInt("rightsNums", 0) + "g能量");
                         Toast.show("海洋摸鱼🐟获得" + popup.optInt("rightsNums", 0) + "g能量");
                     } else {
-                        Log.forest("海洋摸鱼🐟[" + popup.optString("name", "") + "]" + popup.optInt("rightsNums", 0) + "g");
+                        Log.other("海洋摸鱼🐟[" + popup.optString("name", "") + "]" + popup.optInt("rightsNums", 0) + "g");
                         Toast.show("海洋摸鱼🐟获得" + popup.optInt("rightsNums", 0) + "g能量");
                     }
 
@@ -1600,7 +1600,7 @@ public class AntOcean extends ModelTask {
             }
 
             if (touchCount > 0) {
-                Log.forest("海洋摸鱼🐟本次共摸鱼" + touchCount + "次获得" + totalEnergy + "g能量");
+                Log.other("海洋摸鱼🐟本次共摸鱼" + touchCount + "次获得" + totalEnergy + "g能量");
                 Toast.show("海洋摸鱼🐟获得" + totalEnergy + "g能量");
             }
 

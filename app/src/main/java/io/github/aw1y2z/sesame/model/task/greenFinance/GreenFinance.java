@@ -62,7 +62,7 @@ public class GreenFinance extends ModelTask {
     @Override
     public Boolean check() {
         if (TaskCommon.IS_ENERGY_TIME) {
-            Log.other("任务暂停⏸️绿色经营:当前为仅收能量时间");
+            Log.i("任务暂停⏸️绿色经营:当前为仅收能量时间");
             return false;
         }
         return true;
@@ -79,7 +79,7 @@ public class GreenFinance extends ModelTask {
             }
             JSONObject result = jo.getJSONObject("result");
             if (!result.getBoolean("greenFinanceSigned")) {
-                Log.other("绿色经营📊未开通");
+                Log.i("绿色经营📊未开通");
                 return;
             }
             JSONObject mcaGreenLeafResult = result.getJSONObject("mcaGreenLeafResult");
@@ -267,7 +267,7 @@ public class GreenFinance extends ModelTask {
                 return;
             }
             //不管是否可以捐小于非100的倍数了，，第一次捐200，最后按amount-200*n
-            Log.other("绿色经营📊1天内过期的金币[" + amount + "]");
+            Log.i("绿色经营📊1天内过期的金币[" + amount + "]");
             str = GreenFinanceRpcCall.queryAllDonationProjectNew();
             TimeUtil.sleep(300);
             jsonObject = new JSONObject(str);

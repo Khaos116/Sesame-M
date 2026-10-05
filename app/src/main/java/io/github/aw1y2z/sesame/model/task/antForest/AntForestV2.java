@@ -1462,10 +1462,10 @@ public class AntForestV2 extends ModelTask {
                             str = "一键收取🪂[" + username + "]#" + collected + "g";
                         }
                         if (needDouble) {
-                            Log.forest(str + "耗时[" + spendTime + "]ms[双击]");
+                            Log.i(str + "耗时[" + spendTime + "]ms[双击]");
                             Toast.show(str + "[双击]");
                         } else {
-                            Log.forest(str + "耗时[" + spendTime + "]ms");
+                            Log.i(str + "耗时[" + spendTime + "]ms");
                             Toast.show(str);
                         }
                         totalCollected += collected;
@@ -1494,10 +1494,10 @@ public class AntForestV2 extends ModelTask {
                         }
 
                         if (needDouble) {
-                            Log.forest(str + "耗时[" + spendTime + "]ms[双击]");
+                            Log.i(str + "耗时[" + spendTime + "]ms[双击]");
                             Toast.show(str + "[双击]");
                         } else {
-                            Log.forest(str + "耗时[" + spendTime + "]ms");
+                            Log.i(str + "耗时[" + spendTime + "]ms");
                             Toast.show(str);
                         }
                         totalCollected += collected;
@@ -2262,7 +2262,7 @@ public class AntForestV2 extends ModelTask {
             if (!jo.has("forestSignVO")) {
                 if (!Status.hasFlagToday("forest::CommonSign")) {
                     Status.flagToday("forest::CommonSign");
-                    Log.forest("森林签到📆尚未检测到[森林7日签到数据]若出现数据立马为大人领取");
+                    Log.i("森林签到📆尚未检测到[森林7日签到数据]若出现数据立马为大人领取");
                 }
                 return;
             }
@@ -3581,7 +3581,7 @@ public class AntForestV2 extends ModelTask {
                                 resData = new JSONObject(AntForestRpcCall.switchUserPatrol(patrolId));
                                 TimeUtil.sleep(500);
                                 if (MessageUtil.checkResultCode(TAG, resData)) {
-                                    Log.forest("巡护⚖️-切换地图至" + patrolId);
+                                    Log.i("巡护⚖️-切换地图至" + patrolId);
                                 }
                                 continue th;
                             }

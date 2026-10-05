@@ -313,7 +313,7 @@ public enum GameTask {
             JSONObject resJson = new JSONObject(responseText.toString());
             if (resJson.optInt("code") == 1) {
                 if (current % this.requestsPerEgg == 0) {
-                    Log.other("游戏进度📈"+ gameType +"[" + current + "/" + total + "](达成" + (current/this.requestsPerEgg) + "个)");
+                    Log.i("游戏进度📈"+ gameType +"[" + current + "/" + total + "](达成" + (current/this.requestsPerEgg) + "个)");
                 }
                 return true;
             } else {

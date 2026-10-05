@@ -149,7 +149,7 @@ public class AntOrchard extends ModelTask {
         // 假设TaskCommon.IS_ENERGY_TIME存在
         // 如果没有这个字段，可以注释掉或创建
         if (TaskCommon.IS_ENERGY_TIME) {
-            Log.farm("任务暂停⏸️芭芭农场:当前为只收能量时间");
+            Log.i("任务暂停⏸️芭芭农场:当前为只收能量时间");
             return false;
         }
         return true;
@@ -650,7 +650,7 @@ public class AntOrchard extends ModelTask {
 
             // 检查是否可兑换
             if (plantInfo.getBoolean("canExchange")) {
-                Log.farm("农场果树似乎可以兑换了！");
+                Log.i("农场果树似乎可以兑换了！");
                 Toast.show("芭芭农场果树似乎可以兑换了！");
             }
             // 更新施肥进度
@@ -1159,7 +1159,7 @@ public class AntOrchard extends ModelTask {
                 // 记下来，由 handleTaskList 在列表处理完后**按任务列表状态核对**
                 pendingVerifyTasks.put(taskId, taskTitle);
             }
-            Log.farm("肥料任务🕓已触发[" + taskTitle + "]#finishTask=" + finishResponse.optString("code")
+            Log.i("肥料任务🕓已触发[" + taskTitle + "]#finishTask=" + finishResponse.optString("code")
                     + "#doFarmTask=" + TaskAlternative.describe(doFarmResponse) + "，结果以任务列表为准");
         } catch (Throwable t) {
             Log.err(TAG, "finishTaskTwice err:", t);
@@ -1556,7 +1556,7 @@ public class AntOrchard extends ModelTask {
             if (manureCount > 0) {
                 Log.farm("回访奖励🎖️领取肥料*" + manureCount);
             } else if (canCollect || needManualReceive) {
-                Log.farm("回访奖励🎖️有待领奖励[canCollect=" + canCollect + "#需手动领取=" + needManualReceive + "]");
+                Log.i("回访奖励🎖️有待领奖励[canCollect=" + canCollect + "#需手动领取=" + needManualReceive + "]");
             }
             // 无奖励时不打日志：官方每次进农场都会调一次，属正常空返回
         } catch (Throwable t) {

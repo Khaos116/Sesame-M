@@ -208,7 +208,7 @@ public class AntFarm extends ModelTask {
     @Override
     public Boolean check() {
         if (TaskCommon.IS_ENERGY_TIME) {
-            Log.farm("任务暂停⏸️蚂蚁庄园:当前为仅收能量时间");
+            Log.i("任务暂停⏸️蚂蚁庄园:当前为仅收能量时间");
             return false;
         }
         return true;
@@ -1123,7 +1123,7 @@ public class AntFarm extends ModelTask {
                 return false;
             }
             int benevolenceScore = jo.optInt("benevolenceScore");
-            Log.farm("爱心鸡结号❤️当前爱心值" + benevolenceScore);
+            Log.i("爱心鸡结号❤️当前爱心值" + benevolenceScore);
 
             // 排位日 = 活动轮次内(周一00:00-周日20:00) 且 存在活跃轮次(rankRoundId 非空)。
             // 仅真正存在活跃 S2 轮次时才抑制公益捐蛋；非排位日/非赛季放行公益捐蛋。
@@ -1384,7 +1384,7 @@ public class AntFarm extends ModelTask {
                 Log.record("爱心鸡结号❤️偷榜：未获取到捐蛋项目，跳过（无法定向到 S2）");
                 return;
             }
-            Log.farm("爱心鸡结号❤️偷榜：当前第" + myRank + "名捐" + myDonation + "，第1名捐" + rank1Donation + "，尝试再捐" + n);
+            Log.i("爱心鸡结号❤️偷榜：当前第" + myRank + "名捐" + myDonation + "，第1名捐" + rank1Donation + "，尝试再捐" + n);
             donationCompetition(projectId, projectName, n);
         } catch (Throwable t) {
             Log.err(TAG, "stealRankS2 err:", t);
@@ -1694,7 +1694,7 @@ public class AntFarm extends ModelTask {
                 } else {
                     // 留痕：标题被服务端改得完全不像时会落到这里（并可能被自动拉黑），
                     // 日志里的 bizKey/taskId 用于后续把分派改成稳定字段
-                    Log.other("饲料任务⚠️未完成[" + title + "]#bizKey=" + bizKey + "#taskId=" + task.optString("taskId"));
+                    Log.farm("饲料任务⚠️未完成[" + title + "]#bizKey=" + bizKey + "#taskId=" + task.optString("taskId"));
                 }
             }
 
@@ -2804,7 +2804,7 @@ public class AntFarm extends ModelTask {
                 //黑名单任务跳过
                 if (AntFarmDrawMachineTaskList.getValue().contains(title)) {
                     todoSkipped++;
-                    Log.farm("抽抽乐⏭️跳过[" + title + "]#黑名单");
+                    Log.i("抽抽乐⏭️跳过[" + title + "]#黑名单");
                     continue;
                 }
 

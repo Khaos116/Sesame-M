@@ -98,7 +98,7 @@ public class AntDodo extends ModelTask {
     @Override
     public Boolean check() {
         if (TaskCommon.IS_ENERGY_TIME) {
-            Log.forest("任务暂停⏸️神奇物种:当前为仅收能量时间");
+            Log.i("任务暂停⏸️神奇物种:当前为仅收能量时间");
             return false;
         }
         return true;

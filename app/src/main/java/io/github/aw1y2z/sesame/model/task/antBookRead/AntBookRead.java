@@ -95,7 +95,7 @@ public class AntBookRead extends ModelTask {
                                         if (tips.contains("已得")) {
                                             energy = parseOrMinusOne(tips, "已得", "g");
                                         }
-                                        Log.forest("阅读书籍📚[" + name + "]#累计能量" + energy + "g");
+                                        Log.other("阅读书籍📚[" + name + "]#累计能量" + energy + "g");
                                     }
                                 }
                                 if (energy >= 150) {

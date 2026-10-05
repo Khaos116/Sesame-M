@@ -47,7 +47,7 @@ public final class GoldenBeansMiner {
                 return;
             }
             if (!taskProgress.optBoolean("canGrab", false)) {
-                Log.goldenBeans("金猫矿工⏸️今日无可抓取次数");
+                Log.i("金猫矿工⏸️今日无可抓取次数");
                 return;
             }
 
@@ -99,7 +99,7 @@ public final class GoldenBeansMiner {
                 }
                 goldenbeansRpcCall.pullBySource(goldenbeansRpcCall.MINER_PAGE_SOURCE, "JAR_INFO");
                 if (grabResponse.optBoolean("needAd", false)) {
-                    Log.goldenBeans("金猫矿工⚠️需观看广告#待人工处理");
+                    Log.i("金猫矿工⚠️需观看广告#待人工处理");
                     return;
                 }
                 if ("BEAN".equals(expectedResult)) {
