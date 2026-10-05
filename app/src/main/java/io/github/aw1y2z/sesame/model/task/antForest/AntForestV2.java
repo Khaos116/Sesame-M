@@ -102,6 +102,16 @@ public class AntForestV2 extends ModelTask {
     private static final String FLAG_TEAM_MODE_SWITCHED = "Forest::teamWaterSwitchedToTeam";
 
     /**
+     * 真爱合种浇水的当日标记。持久化 key，**不能改名**（改名等于让所有人当天再浇一次）。
+     */
+    private static final String FLAG_LOVETEAM_WATER = "Forest::loveteamWater";
+
+    /**
+     * 组队合种当日已浇量（克）的持久化 key，**不能改名**。
+     */
+    private static final String FLAG_TEAM_WATER_DAILY_COUNT = "FLAG_TEAM_WATER_DAILY_COUNT";
+
+    /**
      * 新版保护地任务：只有洪山动物园区域下发了任务场景，其余区域没有任务列表。
      */
     private static final String MONOPOLY_REGION_HSDWY = "hongshandongwuyuan";
@@ -4435,7 +4445,7 @@ public class AntForestV2 extends ModelTask {
         boolean switchedToTeam = false;
         try {
             int userDailyTarget = Math.min(Math.max(partnerteamWaterNum.getValue(), 10), 5000);
-            int todayUsed = Status.getforestHuntHelpToday("FLAG_TEAM_WATER_DAILY_COUNT");
+            int todayUsed = Status.getforestHuntHelpToday(FLAG_TEAM_WATER_DAILY_COUNT);
             int userRemainingQuota = userDailyTarget - todayUsed;
 
             if (userRemainingQuota < 10) {
@@ -4506,10 +4516,20 @@ public class AntForestV2 extends ModelTask {
 
             // 执行浇水
             JSONObject waterJo = new JSONObject(AntForestRpcCall.teamWater(teamId, finalWaterAmount));
-            if (MessageUtil.checkResultCode(TAG, waterJo)) {
+            boolean retryable = MessageUtil.isRetryable(waterJo);
+            if (MessageUtil.checkResultCode(TAG, waterJo) || MessageUtil.checkSuccess(TAG, waterJo)) {
                 Log.forest("组队合种🚿给合种浇水" + finalWaterAmount + "g");
                 Toast.show("组队合种🚿给合种浇水" + finalWaterAmount + "g");
-                Status.forestHuntHelpToday("FLAG_TEAM_WATER_DAILY_COUNT", todayUsed + finalWaterAmount, UserIdMap.getCurrentUid());
+            } else if (retryable) {
+                // 限流/远端异常属临时故障：不计当日额度，下一轮再试
+                Log.record("组队合种浇水失败(可重试)，下次运行再试");
+            } else {
+                // 判定不成但非临时故障（多为今日已浇过/额度用尽）：按已浇记账，保留响应原文便于排查。
+                // 不记账的话每次自动运行都会重发一次浇水请求，和真爱合种是同一类问题。
+                Log.record("组队合种浇水未确认成功，按已浇记账避免重复：" + waterJo);
+            }
+            if (!retryable) {
+                Status.forestHuntHelpToday(FLAG_TEAM_WATER_DAILY_COUNT, todayUsed + finalWaterAmount, UserIdMap.getCurrentUid());
                 Log.record("组队合种今日浇水累计: " + (todayUsed + finalWaterAmount) + "g / " + userDailyTarget + "g");
             }
         } catch (Throwable t) {
@@ -4632,7 +4652,7 @@ public class AntForestV2 extends ModelTask {
     }
 
     private static void loveteam(int waterNum) {
-        if (Status.hasFlagToday("Forest::loveteamWater")) {
+        if (Status.hasFlagToday(FLAG_LOVETEAM_WATER)) {
             return;
         }
         try {
@@ -4670,15 +4690,31 @@ public class AntForestV2 extends ModelTask {
         return name.isEmpty() ? teamId : name;
     }
 
+    /**
+     * 真爱合种浇水（每日一次）。
+     * <p>当日标记**先落再发请求**：这个动作一天只该做一次，不能把标记挂在响应判定上——
+     * 响应一旦不被判定为成功（结构不符、或服务端提示今日已浇/额度用尽），标记就落不下去，
+     * 每次自动运行都会重发一次浇水请求，表现为"反复浇水"。
+     * <p>只有明确的临时故障（网络异常、限流/远端异常）才撤销标记，留到下一轮再试。
+     */
     private static void loveteamWater(String teamId, String teamName, int waterNum) {
+        Status.flagToday(FLAG_LOVETEAM_WATER);
         try {
             JSONObject jo = new JSONObject(AntForestRpcCall.loveteamWater(teamId, waterNum));
-            if (MessageUtil.checkSuccess(TAG, jo)) {
+            if (MessageUtil.checkSuccess(TAG, jo) || MessageUtil.checkResultCode(TAG, jo)) {
                 Log.forest("真爱浇水🚿给[" + teamName + "]合种浇水" + waterNum + "g");
                 Toast.show("真爱浇水🚿给[" + teamName + "]合种浇水" + waterNum + "g");
-                Status.flagToday("Forest::loveteamWater");
+                return;
             }
+            if (MessageUtil.isRetryable(jo)) {
+                Status.clearFlag(FLAG_LOVETEAM_WATER);
+                Log.record("真爱合种浇水失败(可重试)，下次运行再试");
+                return;
+            }
+            // 其余失败（多为今日已浇过 / 额度用尽）当日不再重发，保留响应原文便于排查
+            Log.record("真爱合种浇水未成功，今日不再尝试：" + jo);
         } catch (Throwable th) {
+            Status.clearFlag(FLAG_LOVETEAM_WATER);
             Log.err(TAG, "loveteamWater err:", th);
         }
     }
