@@ -87,6 +87,7 @@ public class AntOrchard extends ModelTask {
 
     private BooleanModelField orchardPlantNew;
     private BooleanModelField drawGameCenterAward;
+    private BooleanModelField receiveOrchardGameStay;
     private ChoiceModelField driveAnimalType;
     private SelectModelField driveAnimalList;
     private BooleanModelField batchHireAnimal;
@@ -128,6 +129,8 @@ public class AntOrchard extends ModelTask {
                 .setDependsOn("orchardSpreadManure")
                 .setDescription("只对勾选且服务端已下发的场景施肥"));
         modelFields.addField(drawGameCenterAward = new BooleanModelField("drawGameCenterAward", "农场乐园 | 游戏宝箱", true));
+        modelFields.addField(receiveOrchardGameStay = new BooleanModelField("receiveOrchardGameStay", "农场乐园 | 完成游戏时长任务", true)
+                .setDescription("尝试完成首页下发的游戏时长任务；按任务要求等待，成功结项后记录当天完成状态"));
         //modelFields.addField(driveAnimalType = new ChoiceModelField("driveAnimalType", "驱赶小鸡 | 动作", DriveAnimalType.NONE, DriveAnimalType.nickNames));
         //modelFields.addField(driveAnimalList = new SelectModelField("driveAnimalList", "驱赶小鸡 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
         //modelFields.addField(batchHireAnimal = new BooleanModelField("batchHireAnimal", "捉鸡除草 | 开启", false));
@@ -168,6 +171,12 @@ public class AntOrchard extends ModelTask {
             }
             // 额外信息获取（每日肥料包）
             extraInfoGet();
+
+            if (receiveOrchardGameStay.getValue()) {
+                AntOrchardGameStayTask.execute();
+            } else {
+                Log.record("农场游戏时长：跳过，配置开关已关闭");
+            }
 
             // 执行农场任务
             if (orchardListTask.getValue()) {

@@ -3,10 +3,13 @@ package io.github.aw1y2z.sesame.model.task.antOrchard;
 import android.util.Base64;
 
 import java.util.List;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.RandomUtil;
+import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 public class AntOrchardRpcCall {
@@ -116,11 +119,71 @@ public class AntOrchardRpcCall {
     }
 
     public static String submitUserAction(String gameId) {
-        return ApplicationHook.requestString("com.alipay.gamecenteruprod.biz.rpc.v3.submitUserAction", "[{\"actionCode\":\"enterGame\",\"gameId\":\"" + gameId + "\",\"paladinxVersion\":\"2.0.13\",\"source\":\"gameFramework\"}]");
+        return ApplicationHook.requestString("com.alipay.gamecenteruprod.biz.rpc.v3.submitUserAction",
+                "[{\"actionCode\":\"enterGame\",\"gameId\":" + JSONObject.quote(gameId)
+                        + ",\"paladinxVersion\":\"2.1.95\",\"source\":\"gameFramework\"}]");
     }
 
     public static String submitUserPlayDurationAction(String gameAppId, String source) {
-        return ApplicationHook.requestString("com.alipay.gamecenteruprod.biz.rpc.v3.submitUserPlayDurationAction", "[{\"gameAppId\":\"" + gameAppId + "\",\"playTime\":32,\"source\":\"" + source + "\",\"statisticTag\":\"\"}]");
+        return submitUserPlayDurationAction(gameAppId, source, 32);
+    }
+
+    public static String submitUserPlayDurationAction(String appId, String source, int seconds) {
+        return ApplicationHook.requestString("com.alipay.gamecenteruprod.biz.rpc.v3.submitUserPlayDurationAction",
+                "[{\"gameAppId\":" + JSONObject.quote(appId) + ",\"playTime\":" + seconds
+                        + ",\"source\":" + JSONObject.quote(source) + ",\"statisticTag\":\"\"}]");
+    }
+
+    // 此版本号来自待核实的导出 smali，仅用于时长任务，避免改变现有农场请求。
+    private static JSONObject gameStayBody() throws org.json.JSONException {
+        return MyUtils.newJSONObject().put("requestType", "NORMAL").put("sceneCode", "ORCHARD")
+                .put("source", "ch_appcenter__chsub_9patch").put("version", "20260721.01");
+    }
+
+    public static String indexFeeds(int page) throws org.json.JSONException {
+        JSONArray filters = new JSONArray();
+        for (String type : new String[]{"qianyi", "game"}) {
+            filters.put(MyUtils.newJSONObject().put("itemType", type).put("itemIdList", new JSONArray()));
+        }
+        JSONObject body = gameStayBody().put("pageNum", page).put("filterItemList", filters)
+                .put("commonDegradeResultVO", MyUtils.newJSONObject().put("deviceLevel", "high")
+                        .put("resultReason", 0).put("resultType", 0));
+        return ApplicationHook.requestString("com.alipay.antorchard.indexFeeds", new JSONArray().put(body).toString());
+    }
+
+    public static String orchardIndexDelivery() throws org.json.JSONException {
+        JSONObject body = gameStayBody().put("enableTeamType", new JSONArray().put("team"))
+                .put("inTeam", true).put("teamPositionSwitch", true).put("teamType", "help")
+                .put("commonDegradeResult", MyUtils.newJSONObject().put("deviceLevel", "high")
+                        .put("resultReason", 0).put("resultType", 0));
+        return ApplicationHook.requestString("com.alipay.antorchard.orchardIndexDelivery", new JSONArray().put(body).toString());
+    }
+
+    public static String noticeGameStay(String appId) throws org.json.JSONException {
+        return ApplicationHook.requestString("com.alipay.antorchard.noticeGame",
+                new JSONArray().put(gameStayBody().put("appId", appId)).toString());
+    }
+
+    public static String submitGameStayEvent(String appId, String event, long elapsed) throws org.json.JSONException {
+        JSONObject attrs = MyUtils.newJSONObject().put("CH_INFO", "lianyun_nc_sydb").put("CPS_ID", "unknown")
+                .put("GAME_VERSION", "6.5.72").put("PALADINX_VERSION", "2.1.95")
+                .put("PLAY_SCENE", "NORMAL").put("SCENE_ID", "nongchangleyuan");
+        if ("GAME_FIRST_FRAME".equals(event)) attrs.put("ALIVE_ENTER", "0");
+        if (elapsed > 0) attrs.put("GAME_ELAPASED_TIME", elapsed);
+        String source = "GAME_FIRST_FRAME".equals(event) ? "paladinx_auto"
+                : "loading_completed".equals(event) ? "my.reportLoadingCompleted" : "my.reportGamePlay";
+        JSONObject body = MyUtils.newJSONObject().put("appId", appId).put("eventAttrMap", attrs)
+                .put("eventId", event).put("source", source)
+                .put("idempotentNo", "platform_" + System.currentTimeMillis() + "_" + RandomUtil.getRandom(5) + "_" + RandomUtil.getRandom(1));
+        return ApplicationHook.requestString("com.alipay.gameevent.biz.rpc.submitEvent", new JSONArray().put(body).toString());
+    }
+
+    public static String finishGameStayTask(String scene, String taskId) throws org.json.JSONException {
+        // 参数格式以 SJ APK 的 finishTask 为参照，不沿用导出代码中的空 userId。
+        JSONObject body = MyUtils.newJSONObject().put("outBizNo", taskId + "_" + System.currentTimeMillis() + "_" + RandomUtil.getRandom(3))
+                .put("requestType", "NORMAL").put("sceneCode", scene).put("source", "ch_appcenter__chsub_9patch")
+                .put("taskType", taskId).put("userId", UserIdMap.getCurrentUid()).put("version", "0.1.2411251623.29");
+        return ApplicationHook.requestString("com.alipay.antiep.finishTask", new JSONArray().put(body).toString());
     }
 
     public static String smashedGoldenEgg() {

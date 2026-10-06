@@ -2,22 +2,25 @@ package io.github.aw1y2z.sesame.hook;
 
 import io.github.aw1y2z.sesame.util.XHelpers;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
+import io.github.aw1y2z.sesame.util.RunGeneration;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import java.util.HashMap;
 import java.util.Collections;
 
 /**
  * OAuth2 授权码服务助手类
- * 用于调用目标应用的 OpenAuthExtension.getAuthCode 方法
+ * 调用宿主代理提供的授权服务。
  */
 public class AuthCodeHelper {
     private static final String TAG = "Oauth2AuthCodeHelper";
     private static ClassLoader classLoader;
 
     /**
-     * 上一次失败的完整描述。宿主侧取授权码失败往往是**确定性**的（例如 facade 为 null），
-     * 每次请求都打完整堆栈会把运行日志淹没；只在失败描述变化时打堆栈，其余只记一行。
+     * 同一失败类型只记一次，不输出可能包含凭据的宿主异常消息。
      */
     private static volatile String lastFailDesc;
+    private static final ThreadLocal<String> failureReason = new ThreadLocal<>();
     
     /**
      * 初始化 Oauth2AuthCodeHelper
@@ -36,17 +39,23 @@ public class AuthCodeHelper {
      * @return code，失败返回null
      */
     public static String getAuthCode(String appId) {
-        try {
+        failureReason.remove();
+        try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
+            if (work == null || appId == null || !appId.matches("[0-9]+")) return null;
+            if (RunGeneration.isStale()) throw new TaskCancelledException();
             if (classLoader == null) {
-                Log.error("Oauth2AuthCodeHelper 未初始化，请先调用 init 方法");
-                return null;
+                return fail("授权助手未初始化，请重启支付宝后重试");
             }
-            // 1. 获取并实例化 Oauth2AuthCodeServiceImpl 类
-            Class<?> oauth2AuthCodeServiceImplClass = XHelpers.findClass(
-                    "com.alibaba.ariver.rpc.biz.proxy.Oauth2AuthCodeServiceImpl",
+            // 1. 使用宿主代理提供的服务，不能自行 new 未注入 facade 的实现类。
+            Class<?> serviceClass = XHelpers.findClass(
+                    "com.alibaba.ariver.permission.api.proxy.Oauth2AuthCodeService",
                     classLoader
             );
-            Object oauth2AuthCodeServiceImpl = XHelpers.newInstance(oauth2AuthCodeServiceImplClass);
+            Class<?> proxyClass = XHelpers.findClass("com.alibaba.ariver.kernel.common.RVProxy", classLoader);
+            Object oauth2AuthCodeServiceImpl = XHelpers.callStaticMethod(proxyClass, "get", serviceClass);
+            if (oauth2AuthCodeServiceImpl == null) {
+                throw new IllegalStateException("宿主授权服务未就绪");
+            }
             
             // 2. 获取并实例化 AuthSkipRequestModel 类
             Class<?> authSkipRequestModelClass = XHelpers.findClass(
@@ -79,7 +88,6 @@ public class AuthCodeHelper {
             appExtInfo.put("clientAppId", appId);
             XHelpers.callMethod(authSkipRequestModel, "setAppExtInfo", appExtInfo);
 
-            //Log.other("getAuthCode 请求体 -> " + authSkipRequestModel.toString());
             // 4. 调用 getAuthSkipResult 方法获取授权结果
             Object authSkipResult = XHelpers.callMethod(
                     oauth2AuthCodeServiceImpl,
@@ -88,32 +96,49 @@ public class AuthCodeHelper {
                     null,
                     authSkipRequestModel
             );
+            if (RunGeneration.isStale()) throw new TaskCancelledException();
             
             // 5. 解析返回结果中的授权码
             if (authSkipResult != null) {
-                //Log.other("getAuthCode 响应 -> " + authSkipResult.toString());
                 Object authExecuteResult = XHelpers.callMethod(authSkipResult, "getAuthExecuteResult");
                 if (authExecuteResult != null) {
-                //    Log.other("getAuthCode authExecuteResult -> " + authExecuteResult.toString());
                     Object authCodeObj = XHelpers.callMethod(authExecuteResult, "getAuthCode");
-                //    Log.other("getAuthCode authCode -> " + (authCodeObj != null ? authCodeObj : "null"));
-                    return authCodeObj instanceof String ? (String) authCodeObj : null;
+                    if (authCodeObj instanceof String && !((String) authCodeObj).trim().isEmpty()) {
+                        lastFailDesc = null;
+                        return (String) authCodeObj;
+                    }
+                    return fail("宿主返回的授权码为空或类型无效，请先完成目标小程序登录/授权");
                 }
             }
             
-            return null;
+            return fail("宿主未返回授权结果，请先打开目标小程序完成登录/授权");
+        } catch (TaskCancelledException e) {
+            throw e;
         } catch (Throwable e) {
-            // 返回 null 与「确实没有授权码」无法区分，必须留痕（原先被注释掉，等于失败无迹可查）；
-            // 但同一失败会随每次请求重复出现，故只在失败描述变化时打完整堆栈
-            String failDesc = String.valueOf(e);
-            if (!failDesc.equals(lastFailDesc)) {
-                lastFailDesc = failDesc;
-                Log.printStackTrace(TAG + " 主动调用获取授权码失败", e);
-            } else {
-                Log.error(TAG + " 主动调用获取授权码失败: " + failDesc);
-            }
-            return null;
+            // 不输出宿主响应/异常消息，避免其中包含授权码。
+            Throwable cause = e;
+            for (int i = 0; i < 8 && cause.getCause() != null && cause.getCause() != cause; i++) cause = cause.getCause();
+            String reason = cause instanceof ClassNotFoundException ? "当前支付宝缺少授权服务类，宿主版本不兼容"
+                    : cause instanceof NoSuchMethodException ? "当前支付宝授权方法不兼容"
+                    : cause instanceof IllegalStateException ? "宿主授权服务未就绪或尚未初始化，请先打开目标小程序"
+                    : "宿主授权调用异常（" + cause.getClass().getSimpleName() + "）";
+            return fail(reason);
         }
+    }
+
+    private static String fail(String reason) {
+        failureReason.set(reason);
+        if (!reason.equals(lastFailDesc)) {
+            lastFailDesc = reason;
+            Log.error(TAG + " 获取授权码失败：" + reason);
+        }
+        return null;
+    }
+
+    /** 仅当前调用线程的脱敏原因，避免其它游戏的并发授权覆盖阅读诊断。 */
+    public static String getFailureReason() {
+        String reason = failureReason.get();
+        return reason == null ? "宿主未返回有效授权码" : reason;
     }
     
     /**

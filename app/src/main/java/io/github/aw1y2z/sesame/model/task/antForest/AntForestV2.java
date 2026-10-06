@@ -66,6 +66,7 @@ import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 import io.github.aw1y2z.sesame.model.task.antFarm.AntFarm.TaskStatus;
 import io.github.aw1y2z.sesame.model.task.antFarm.AntFarmRpcCall;
 import io.github.aw1y2z.sesame.model.task.antGame.GameTask;
+import io.github.aw1y2z.sesame.model.task.forestRead.ReadForestTask;
 import io.github.aw1y2z.sesame.rpc.intervallimit.FixedOrRangeIntervalLimit;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcIntervalLimit;
 import io.github.aw1y2z.sesame.ui.ObjReference;
@@ -195,6 +196,7 @@ public class AntForestV2 extends ModelTask {
     private SelectModelField dontCollectList;
 
     private BooleanModelField drawGameCenterAward;
+    private BooleanModelField readForest;
     private ChoiceModelField CollectSelfEnergyType;
 
     private IntegerModelField CollectSelfEnergyThreshold;
@@ -332,6 +334,7 @@ public class AntForestV2 extends ModelTask {
         modelFields.addField(tryCount = new IntegerModelField("tryCount", "尝试收取(次数)", 1, 0, 10));
         modelFields.addField(retryInterval = new IntegerModelField("retryInterval", "重试间隔(毫秒)", 1000, 0, 10000));
         modelFields.addField(drawGameCenterAward = new BooleanModelField("drawGameCenterAward", "森林乐园 | 游戏宝箱", true));
+        modelFields.addField(readForest = new BooleanModelField("readForest", "无纸阅读", true));
         modelFields.addField(CollectBombEnergyLimit = new IntegerModelField("CollectBombEnergyLimit", "单个炸弹能量大于该值收取", 0, 0, 100000));
         modelFields.addField(continuousUseCardOptions = new SelectModelField("continuousUseCardOptions", "连续兑换使用道具卡片 | 选项", new LinkedHashSet<>(), CustomOption::getContinuousUseCardOptions));
         modelFields.addField(autoUseShieldCard = new BooleanModelField("autoUseShieldCard", "自动续用保护罩", false));
@@ -794,7 +797,14 @@ public class AntForestV2 extends ModelTask {
 
                 }
                 ForestEnergyInfo();
+                if (readForest.getValue()) {
+                    ReadForestTask.execute();
+                } else {
+                    Log.record("无纸阅读：跳过，配置开关已关闭");
+                }
 
+            } else if (readForest.getValue()) {
+                Log.record("无纸阅读：跳过，" + (TaskCommon.IS_ENERGY_TIME ? "当前为只收能量时段" : "未取得森林首页数据"));
             }
         } catch (Throwable t) {
             Log.err(TAG, "AntForestV2.run err:", t);

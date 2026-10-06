@@ -91,9 +91,7 @@ public enum GameTask {
 
             JSONObject bodyJson = new JSONObject();
             bodyJson.put("v", version);
-            // 注：authCode 在当前支付宝版本上必然为 null（AuthCodeHelper 自建实例未走宿主依赖注入，
-            // 其内部 facade 为 null 会抛 NPE），但实测游戏服并不校验该字段、登录仍能拿到 token；
-            // 真正生效的凭据是下面的 header「alipayMiniMark」。若将来出现登录失败，优先怀疑这里。
+            // 授权助手复用宿主代理服务；尚未就绪时可能返回 null，保留游戏服原有登录行为。
             bodyJson.put("code", authCode);
             bodyJson.put("pf", "zfb");
             bodyJson.put("reqId", reqId);
