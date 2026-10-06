@@ -11,7 +11,7 @@
 
 ## 每次合并必查：GMT+8、JSON 创建、JSON 读取
 
-合并 `MIUIX-api102`、移植 GR/AG/Sure-Xu 或其它来源代码时，必须检查最终合并结果中的所有新增、修改文件（包括自动合并成功的文件），逐项处理以下三类问题，不能只解决冲突或仅凭编译通过就认定完成。修 bug、新增功能同样适用。
+合并 `MIUIX-api102`、移植 GR/AG/Xu 或其它来源代码时，必须检查最终合并结果中的所有新增、修改文件（包括自动合并成功的文件），逐项处理以下三类问题，不能只解决冲突或仅凭编译通过就认定完成。修 bug、新增功能同样适用。
 
 1. **GMT+8**：业务日历统一使用 `MyUtils.getInstance()`（委托 `TimeUtil.getInstanceGMT8()`）；日期格式化、跨天、签到、定时窗口显式使用 GMT+8，禁止依赖设备默认时区。服务端时间若明确带 UTC/偏移量，先按协议正确解析，再转 GMT+8 做业务判断，不能把 UTC 字符串直接当东八区解析。
 2. **JSON 创建**：业务字符串转 `JSONObject` 统一通过 `MyUtils.newJSONObject(raw)`，空对象可用 `MyUtils.newJSONObject()`。不要把 Gson 与 `org.json` 混淆，也不要新增 Gson 替代现有工具。`MyUtils` 对无效输入返回空对象，调用方必须校验必要字段/成功状态，不能当作成功继续执行。已有严格解析路径若依赖解析异常中止任务，迁移时必须保留失败语义；确需保留直接构造的，在合并记录注明位置和理由。数组解析无对应 MyUtils 工厂时保留异常处理；创建空数组或用集合构造不作机械替换。
@@ -58,11 +58,11 @@ java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapp
 
 ## 项目是什么
 
-Sesame-M：支付宝自动化脚本的 Xposed 模块（`libxposed` API 102），仅供学习交流。是"芝麻粒"这个同源生态的一个分支，跟以下几个本地路径的 fork 是同源关系，移植/对照代码时会互相参考：
+Sesame-M：支付宝自动化脚本的 Xposed 模块（`libxposed` API 102），仅供学习交流。是"芝麻粒"这个同源生态的一个分支，跟以下几个本地路径的 fork 是同源关系；新增功能、修复及代码对照主要参考 AG 和 XU：
 
-- `E:\Work\Gr\Sesame-GR2026`（GR2026）
-- `E:\Work\Sure-Xu`（Sure-Xu）
-- `E:\Work\Sesame-AG`（Sesame-AG）
+- `E:\Work\Sesame-AG`（AG，主要参考）
+- `E:\Work\Xu`（XU，主要参考）
+- `E:\Work\Gr\Sesame-GR2026`（GR2026，旧版本、基本不再更新，仅按需作历史对照）
 
 品牌名固定写 **芝麻粒-M**（带 `-M` 后缀）；但代码里大量出现的裸"芝麻粒"字样多数指的是支付宝自己的游戏内货币/资产（会员积分、换金豆用的那个），跟品牌名是两回事，改品牌名字符串前先确认语境，别改错。
 

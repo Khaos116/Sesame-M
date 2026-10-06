@@ -8,6 +8,7 @@
 
 ## 2026-10-06
 
+- docs（本次提交）：主要参考 AG 与 `E:\Work\Xu`，GR2026 改为旧版历史对照；同步来源优先级和 XU 本地路径。
 - release `v1.2.10`：恢复无排查后缀的正常版本，归档两项功能实机反馈和阅读持续获能优化；20 项回归、Debug 编译、Release/R8 与原签名校验通过。
 - fix `517bcde2`：无纸阅读取消单轮 30 章限制，持续获能就读至服务端满额；保留无增长/异常停止，改为单调时钟约 15 分钟运行时限并记录未满额进度。
 - fix `517bcde2`：无纸阅读兼容进度的合法整数字符串，畸形/溢出/零上限仍停止；查询失败补字段类型诊断，C158 实机已反馈能够阅读获能。
@@ -937,7 +938,7 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 
 ### 2026-09-12：Release 开启混淆（minifyEnabled/shrinkResources），对照 GR2026/Sesame-AG/Sure-Xu 三份规则写 proguard-rules.pro
 
-用户明确要求正式包必须开混淆。三个参考项目里 GR2026 和 Sesame-AG 都是"整包 keep 自己代码"（`-keep class io.github.lazyimmortal.sesame.** { *; }` / `-keep class io.github.aoguai.sesameag.** { *; }`）——技术上混淆开了，但自己的业务代码一行都没真正混淆，只混淆了第三方库。Sure-Xu（`E:\Work\Sure-Xu\app\proguard-rules.pro`）是唯一一个做了外科手术式规则的，而且 Sure-Xu 和 M 同为 libxposed 102 架构（GR 是传统 Xposed API，AG 虽然也是 libxposed 102 但选了偷懒的整包 keep），参照对象选了 Sure-Xu 这份，不是简单照抄 GR/AG 的省事做法。
+用户明确要求正式包必须开混淆。三个参考项目里 GR2026 和 Sesame-AG 都是"整包 keep 自己代码"（`-keep class io.github.lazyimmortal.sesame.** { *; }` / `-keep class io.github.aoguai.sesameag.** { *; }`）——技术上混淆开了，但自己的业务代码一行都没真正混淆，只混淆了第三方库。Sure-Xu（`E:\Work\Xu\app\proguard-rules.pro`）是唯一一个做了外科手术式规则的，而且 Sure-Xu 和 M 同为 libxposed 102 架构（GR 是传统 Xposed API，AG 虽然也是 libxposed 102 但选了偷懒的整包 keep），参照对象选了 Sure-Xu 这份，不是简单照抄 GR/AG 的省事做法。
 
 **做法**：只保留三类必须不能被 R8 动的东西，其余全部允许真正混淆/内联/删除：
 
@@ -984,7 +985,7 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 
 ### 2026-09-12：处理上次审计留的三个候选——writeDishImage 做了，VersionHook 做了（默认关），福气鱼塘查了源头还未做
 
-**福气鱼塘**：检查了 `E:\Work\Sesame-AG`（Kotlin，`task/antFishPond/AntFishPond.kt` + `AntFishPondRpcCall.kt`）和 `E:\Work\Sure-Xu`（Java，`model/task/fish/FishTask.java` + `FishConfig.java`，与 GR 文件名/结构几乎一致）——**两边都已经有这个功能**，其中 Sure-Xu 是从 GR 移植过来的 Java 版本，且 Sure-Xu 自己的 `docs/GR-Sync.md` 记录了移植时顺带修过的 6 个 GR 原版缺陷（成功兑换也写失败标记、循环末尾无条件清零失败计数、自动黑名单开关未接入、状态查询与广告处理互相重入、任务等待忽略中断、浏览循环次数用 `max` 未限制上限等）。~~结论：以后真做这个功能时……本次没有动手移植~~——已经做了，见上面（更晚）的"福气鱼塘（FishTask）移植"记录，用的正是这里说的 Sure-Xu Java 版本打底。
+**福气鱼塘**：检查了 `E:\Work\Sesame-AG`（Kotlin，`task/antFishPond/AntFishPond.kt` + `AntFishPondRpcCall.kt`）和 `E:\Work\Xu`（Java，`model/task/fish/FishTask.java` + `FishConfig.java`，与 GR 文件名/结构几乎一致）——**两边都已经有这个功能**，其中 Sure-Xu 是从 GR 移植过来的 Java 版本，且 Sure-Xu 自己的 `docs/GR-Sync.md` 记录了移植时顺带修过的 6 个 GR 原版缺陷（成功兑换也写失败标记、循环末尾无条件清零失败计数、自动黑名单开关未接入、状态查询与广告处理互相重入、任务等待忽略中断、浏览循环次数用 `max` 未限制上限等）。~~结论：以后真做这个功能时……本次没有动手移植~~——已经做了，见上面（更晚）的"福气鱼塘（FishTask）移植"记录，用的正是这里说的 Sure-Xu Java 版本打底。
 
 **VersionHook 版本伪装——确认判断错了，已移植，默认关闭**：上次审计只读了 `VersionHook.java` 本身就下判断"个人偏好，不移植"，这次用户要求查清楚具体干什么、有没有用，深挖了实际生效路径才发现：这不是简单的"跳过本地判断分支"，而是**向支付宝服务端主动谎报一个更低的客户端版本号**，目的是规避服务端对高版本客户端才触发的拼图验证码风控（GR 原注释："使其认为安装了低版本，从而避免高版本特有的拼图验证"）。用户知悉这个真实性质后仍要求移植，默认关闭。
 
@@ -1321,3 +1322,8 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 
 - 用户确认农场游戏时长和阅读已正常，并要求去掉排查版本后缀；正式版本 1.2.9 → 1.2.10，保留原签名及 arm64-v8a，发布说明在统一文件顶部追加。阅读解析兼容和持续获能优化归档为 `517bcde2`，前两节「未提交」描述的是各验证阶段的历史状态。
 - GMT+8、MyUtils JSON 创建、opt* 读取检查及 20 项回归结果见前节；本次发布阶段只改版本值和文档，无业务时间/JSON 新改动，无例外。Debug/Release/R8 和签名已核验，发布提交后重建产物以同步提交号及 versionCode，并沿用 GMT+8 归档任务；农场代码未改，GeminiAI 保留。
+
+### 2026-10-06：参考项目目录与优先级更新
+
+- 按用户说明，后续主要参考 AG（`E:\Work\Sesame-AG`）和 XU（`E:\Work\Xu`）；GR2026 是基本不再更新的旧版本，仅按需作历史对照。更新 AGENTS.md、docs/MyFix.md、docs/GR-Sync.md 的来源说明及本地路径，历史记录中的路径同步更新，历史移植来源名称保留。
+- 仅修改文档，无业务时间、JSON 创建/读取、配置或打包改动；核对新目录及引用文件存在，旧本地路径无残留，执行差异格式检查，不运行业务回归或重新打包。

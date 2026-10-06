@@ -1,13 +1,13 @@
 # MyFix：合并 fork 代码到本地的规则与背景
 
-本页只放长期规则和背景资料，**不记录变更日志**；每次合并/修复/新增的记录一律写进 [CHANGELOG.md](../CHANGELOG.md)。合并来源 fork：GR2026、Sure-Xu、Sesame-AG，本地路径分别为 `E:\Work\Gr\Sesame-GR2026`、`E:\Work\Sure-Xu`、`E:\Work\Sesame-AG`。背景资料（GR2026 `MyUtils.java` 的完整拆解）放在文末「附录」，供后续合并对照。
+本页只放长期规则和背景资料，**不记录变更日志**；每次合并/修复/新增的记录一律写进 [CHANGELOG.md](../CHANGELOG.md)。新增功能、修复及代码对照主要参考 AG（`E:\Work\Sesame-AG`）和 XU（`E:\Work\Xu`）；GR2026（`E:\Work\Gr\Sesame-GR2026`）是旧版本，基本不再更新，仅按需作历史对照。背景资料（GR2026 `MyUtils.java` 的完整拆解）放在文末「附录」，供历史合并对照。
 
 ## 硬性规则：每次改代码、合并代码、写新代码都要检查
 
 以下规则是长期约束，合并上游代码、修 bug 或新增功能时都必须执行。每次合并必查 GMT+8、JSON 创建、JSON 读取三项，覆盖自动合并成功的新增/修改文件，逐项处理并记录结果；具体检查要求见 [AGENTS.md](../AGENTS.md) 的「每次合并必查」章节。
 
 1. **时间必须按 GMT+8，不能用裸 `Calendar.getInstance()` / 系统默认时区**。用 `MyUtils.getInstance()` 替代 `Calendar.getInstance()`。背景：GR 自己的代码里也反复出现这个 bug（用户不在 GMT+8 时区跑设备时，跨天判断、定时任务会全部错位），Sesame-M 这边已经排查修过好几处（`FriendWatch.needUpdateAll()`、`ApplicationHook` 的 `dayCalendar`/`setWakenAtTimeAlarm`/`updateDay` 等，见 CHANGELOG.md 2026-09-12 记录）。当前 `TimeUtil` 的日历已显式使用 GMT+8；历史记录中的未统一描述不代表当前状态。仍需检查调用链中的日期格式化、解析与跨天判断，服务端 UTC/带偏移时间须按协议解析，不能机械改成 GMT+8。
-2. **JSON 读取禁止裸 `.get*()`（`getString`/`getInt`/`getLong`/`getDouble`/`getBoolean`/`getJSONObject`/`getJSONArray`/不带类型后缀的 `get`），一律用对应的 `.opt*()` + 空指针防护**。背景：全仓库约 1986 处调用点的转换任务已在 2026-09-14 完成（见 CHANGELOG.md 记录），裸 `get*()` 在字段缺失/服务端返回结构变化时会直接抛异常导致任务崩掉，`opt*()` 返回 null/默认值后自己判空更稳。新写的代码、从 GR/AG/Sure-Xu 合并进来的代码，只要有 `org.json.JSONObject`/`JSONArray` 取值，一律按这个规范来，不要重新引入裸 `get*()`。
+2. **JSON 读取禁止裸 `.get*()`（`getString`/`getInt`/`getLong`/`getDouble`/`getBoolean`/`getJSONObject`/`getJSONArray`/不带类型后缀的 `get`），一律用对应的 `.opt*()` + 空指针防护**。背景：全仓库约 1986 处调用点的转换任务已在 2026-09-14 完成（见 CHANGELOG.md 记录），裸 `get*()` 在字段缺失/服务端返回结构变化时会直接抛异常导致任务崩掉，`opt*()` 返回 null/默认值后自己判空更稳。新写的代码、从 GR/AG/Xu 合并进来的代码，只要有 `org.json.JSONObject`/`JSONArray` 取值，一律按这个规范来，不要重新引入裸 `get*()`。
 3. **JSON 创建统一按 MyUtils 处理**。业务字符串转对象使用 `MyUtils.newJSONObject(raw)`，并验证必要字段和成功状态；无效输入返回空对象不能视为成功。严格解析路径迁移时必须保留失败语义，确需直接构造时记录位置和理由。数组解析保留异常防护，不机械替换集合/空数组构造。此处指 `org.json`，不是 Gson。
 
 5. **`GeminiAI` 不能删除**（`model/normal/answerAI/GeminiAI.java` 及其 `AnswerAIInterface`）。海外用户正在使用；上游 MIUIX-api102 重构 AI 答题为 `CustomAI` 时删掉了它，合并时如再遇到“上游删除 GeminiAI/TongyiAI”的冲突，必须保留 GeminiAI 并让 `AnswerAI` 继续提供 GEMINI 选项（配置 id `useGeminiAI`=1、`useGeminiAIToken` 不能改，否则用户已选的类型和令牌丢失）。通义千问已随上游移除，不必恢复。
