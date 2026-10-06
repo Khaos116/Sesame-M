@@ -52,8 +52,6 @@ public class AntStall extends ModelTask {
         taskTypeList.add("tianjiashouye");
         // 【木兰市集】逛精选好物
         //        taskTypeList.add("ANTSTALL_XLIGHT_VARIABLE_AWARD");
-        // 去饿了么果园逛一逛
-        taskTypeList.add("ANTSTALL_ELEME_VISIT");
         // 去点淘赚元宝提现
         taskTypeList.add("ANTSTALL_TASK_diantao202311");
         taskTypeList.add("ANTSTALL_TASK_nongchangleyuan");
@@ -836,7 +834,16 @@ public class AntStall extends ModelTask {
     }
     
     private static Boolean finishTask(String taskType, String title) {
-        // String s = AntStallRpcCall.finishTask(FriendIdMap.currentUid + "_" + taskType, taskType);
+        // AG 7906f6f8/defaultBlacklist：外跳浏览及游戏内事件不能用通用完成接口推进。
+        // 统一守住自动访问和未知类型兜底两个入口；已完成任务仍由 taskList 直接领奖。
+        if (MyUtils.closeUnRpc() && ("ANTSTALL_ELEME_VISIT".equals(taskType)
+                || "ANTSTALL_TASK_XCXYX_langmancanting".equals(taskType)
+                || "ANTSTALL_TASK_XCXYX_qingyunjue".equals(taskType)
+                || "ANTSTALL_TASK_XCXYX_sijiwuyu".equals(taskType))) {
+            Log.record("新村任务：跳过[" + title + "]，" + ("ANTSTALL_ELEME_VISIT".equals(taskType)
+                    ? "需要在饿了么果园实际浏览，通用接口不能自动完成" : "需要游戏内订单、闯关或合成事件，通用接口不能自动完成"));
+            return false;
+        }
         try {
             JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.finishTask(taskType));
             //检查并标记黑名单任务

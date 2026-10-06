@@ -49,6 +49,7 @@ python checks/check_standalone_no_xposed_class.py
 python checks/check_statistics_accounts.py
 python checks/check_upstream_merge.py
 python checks/check_ag_features.py
+python checks/check_ag_retirements.py
 java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin --console=plain
 ```
 

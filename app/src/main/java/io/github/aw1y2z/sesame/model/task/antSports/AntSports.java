@@ -141,7 +141,7 @@ public class AntSports extends ModelTask {
         modelFields.addField(earliestSyncStepTime = new IntegerModelField("earliestSyncStepTime", "同步步数 | 最早同步时间(24小时制)", 0, 0, 23));
         modelFields.addField(latestExchangeTime = new IntegerModelField("latestExchangeTime", "行走捐 | 最晚捐步时间(24小时制)", 22));
         modelFields.addField(minExchangeCount = new IntegerModelField("minExchangeCount", "行走捐 | 最小捐步步数", 10));
-        modelFields.addField(neverLand = new BooleanModelField("neverLand", "健康岛 | 开启", false));
+        modelFields.addField(neverLand = new BooleanModelField("neverLand", "健康岛 | 开启", true));
         modelFields.addField(QUERY_SIGN = new BooleanModelField("QUERY_SIGN", "健康岛 | 每日签到", false).setDependsOn("neverLand"));
         modelFields.addField(QUERY_TASK_CENTER = new BooleanModelField("QUERY_TASK_CENTER", "健康岛 | 做任务 加能量", false).setDependsOn("neverLand"));
         modelFields.addField(QUERY_BUBBLE_TASK = new BooleanModelField("QUERY_BUBBLE_TASK", "健康岛 | 领取能量球奖励", false).setDependsOn("neverLand"));
