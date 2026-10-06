@@ -39,6 +39,12 @@ import io.github.aw1y2z.sesame.entity.RpcEntity;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 public class AntMemberRpcCall {
 """ + method("model/task/antMember/AntMemberRpcCall.java", "    public static Boolean check()") + "\n}")
+    write("util/MessageUtil.java", "package io.github.aw1y2z.sesame.util; import org.json.JSONObject; public class MessageUtil {"
+          + 'public static final String CODE_UNSUPPORTED_RPC = "400000040";'
+          + method("util/MessageUtil.java", "    public static boolean isUnsupportedRpc(") + "}")
+    write("model/base/TaskAlternative.java", "package io.github.aw1y2z.sesame.model.base; import org.json.JSONObject;"
+          + "import io.github.aw1y2z.sesame.util.MessageUtil; public class TaskAlternative {"
+          + method("model/base/TaskAlternative.java", "    public static boolean hit(") + "}")
     write("data/task/TaskLifecycle.java", (SOURCE / "data/task/TaskLifecycle.java").read_text(encoding="utf-8"))
     hook = (SOURCE / "hook/ApplicationHook.java").read_text(encoding="utf-8")
     end = hook.index("                                    TaskCommon.update();")
@@ -422,7 +428,65 @@ public class GuardCheck {
             assert !guard(method, args).shouldSkip();
         }
     }
+    static void dailyReportRules() {
+        String method = "com.alipay.antiep.finishTask";
+        String[][] routes = {
+            {"ANTFOREST_VITALITY_TASK", "LSHS_huisho20_202508"},
+            {"ANTSTALL_TASK", "ANTSTALL_TASK_XCXYX_zhuzhaishijie"},
+            {"ANTSTALL_TASK", "ANTSTALL_TASK_XCXYX_zslxx"},
+            {"ANTFARM_DAILY_DRAW_TASK", "cclyx_wdhysj_3c_10"},
+            {"ANTFARM_DAILY_DRAW_TASK", "cclyx_sgbhsd_3c_zm10c"},
+            {"ANTFARM_DAILY_DRAW_TASK", "cclyx_3bei_zslxx_2"}
+        };
+        for (String[] route : routes) {
+            reset();
+            String args = new JSONArray().put(new JSONObject().put("sceneCode", route[0])
+                    .put("taskType", route[1])).toString();
+            RpcEntity request = new RpcEntity(method, args);
+            assert new RpcRequestGuard(request).shouldSkip() : "unsupported primary route still sent: " + route[1];
+            JSONObject response = json(request.getResponseString());
+            assert "RPC_SKIPPED".equals(response.optString("error"));
+            assert io.github.aw1y2z.sesame.model.base.TaskAlternative.hit(response, route[0])
+                    : "skipping primary must preserve alternative task completion";
+            assert !guard(method, args.replace(route[0], "OTHER_SCENE")).shouldSkip();
+            assert !guard(method, args.replace(route[1], route[1] + "_other")).shouldSkip();
+            assert !guard("other.finishTask", args).shouldSkip();
+            assert !guard("com.alipay.antiep.receiveTaskAward", args).shouldSkip();
+            assert !guard("com.alipay.antfarm.doFarmTask", new JSONArray().put(new JSONObject()
+                    .put("sceneCode", "ANTFARM").put("taskSceneCode", route[0]).put("bizKey", route[1])).toString()).shouldSkip();
+            java.io.File folder = new java.io.File(io.github.aw1y2z.sesame.util.FileUtil.root, route[1]);
+            try { io.github.aw1y2z.sesame.util.diagnostics.RpcFailureJournal.record(folder, method, args, response, now); }
+            catch (Exception e) { throw new AssertionError(e); }
+            assert !folder.exists() || folder.list().length == 0 : "local route skip counted as a failure";
+            MyUtils.enabled = false;
+            assert !guard(method, args).shouldSkip() : "unsupported-RPC preference must remain configurable";
+        }
+        for (String[] route : java.util.Arrays.copyOf(routes, 3)) {
+            reset();
+            String args = new JSONArray().put(new JSONObject().put("sceneCode", "ANTFARM")
+                    .put("taskSceneCode", route[0]).put("bizKey", route[1]).put("outBizNo", "1")).toString();
+            String fallback = "com.alipay.antfarm.doFarmTask";
+            JSONObject busy = json("{\"success\":false,\"resultCode\":\"102\",\"memo\":\"服务器正在开小差，请稍后再试～\"}");
+            for (long duration : new long[]{5*MIN, 5*MIN, 30*MIN}) {
+                assert !guard(fallback, args).shouldSkip();
+                guard(fallback, args).record(busy);
+                assert guard(fallback, args.replace("\"1\"", "\"2\"")).shouldSkip() : "busy fallback escaped cooldown";
+                assert !guard(fallback, args.replace(route[1], "OTHER_TASK")).shouldSkip();
+                assert !guard(fallback, args.replace(route[0], "OTHER_SCENE")).shouldSkip();
+                RuntimeInfo.account = "B"; assert !guard(fallback, args).shouldSkip(); RuntimeInfo.account = "A";
+                now += duration - 1; assert guard(fallback, args).shouldSkip();
+                now++; assert !guard(fallback, args).shouldSkip();
+            }
+        }
+        reset();
+        String unaffected = "[{\"sceneCode\":\"ANTFARM\",\"taskSceneCode\":\"ANTORCHARD_TASK\",\"bizKey\":\"OTHER_TASK\"}]";
+        guard("com.alipay.antfarm.doFarmTask", unaffected).record(json("{\"success\":false,\"resultCode\":\"102\",\"memo\":\"服务器正在开小差，请稍后再试～\"}"));
+        assert !guard("com.alipay.antfarm.doFarmTask", unaffected).shouldSkip() : "C158 rules must not change unrelated fallback tasks";
+        reset();
+        System.out.println("PASS C158 exact primary routes, preserved fallback/awards, local journal exclusion and task/account busy cooldowns");
+    }
     public static void main(String[] ignored) throws Exception {
+        dailyReportRules();
         bridges();
         // Device report: only farm reward 102 + busy message gets task-local transient backoff.
         String awardMethod = "com.alipay.antfarm.receiveFarmTaskAward";

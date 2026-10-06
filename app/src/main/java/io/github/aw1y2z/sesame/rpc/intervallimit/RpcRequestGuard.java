@@ -28,6 +28,8 @@ public final class RpcRequestGuard {
     private final String key;
     private final boolean core;
     private final boolean knownUnsupported;
+    private final boolean unsupportedTaskFinish;
+    private final boolean knownTaskFallback;
 
     /**
      * “请验证后继续”的暂停只放内存，不写 RuntimeInfo：重启支付宝（进程重建）或切换账号（TaskLifecycle 代数变化）
@@ -110,7 +112,28 @@ public final class RpcRequestGuard {
         }
         // v2：换前缀让旧版本写入的 24 小时暂停（风控/验证、人气大爆发误判等）整体作废，不再读取
         key = "RpcRequestGuard.v2." + identity;
-        knownUnsupported = isKnownUnsupported(method, args);
+        unsupportedTaskFinish = MyUtils.closeUnRpc() && "com.alipay.antiep.finishTask".equals(method)
+                && isKnownUnsupportedFinishTask(scene, args.optString("taskType"));
+        knownTaskFallback = "com.alipay.antfarm.doFarmTask".equals(method) && "ANTFARM".equals(scene)
+                && isKnownUnsupportedFinishTask(args.optString("taskSceneCode"), args.optString("bizKey"));
+        knownUnsupported = unsupportedTaskFinish || isKnownUnsupported(method, args);
+    }
+
+    /** 2026-10-06 C158 日报确认主完成接口不支持；仅跳过该接口，保留备用完成与领奖。 */
+    private static boolean isKnownUnsupportedFinishTask(String scene, String task) {
+        switch (scene) {
+            case "ANTFOREST_VITALITY_TASK":
+                return "LSHS_huisho20_202508".equals(task);
+            case "ANTSTALL_TASK":
+                return "ANTSTALL_TASK_XCXYX_zhuzhaishijie".equals(task)
+                        || "ANTSTALL_TASK_XCXYX_zslxx".equals(task);
+            case "ANTFARM_DAILY_DRAW_TASK":
+                return "cclyx_wdhysj_3c_10".equals(task)
+                        || "cclyx_sgbhsd_3c_zm10c".equals(task)
+                        || "cclyx_3bei_zslxx_2".equals(task);
+            default:
+                return false;
+        }
     }
 
     static boolean isKnownUnsupported(String method, JSONObject args) {
@@ -145,11 +168,14 @@ public final class RpcRequestGuard {
             JSONObject saved = MyUtils.newJSONObject(state.getString(key));
             long until = Math.max(saved.optLong("until"), verifyUntil());
             if (!knownUnsupported && until <= System.currentTimeMillis()) return false;
-            String reason = knownUnsupported ? "跳过GR已知异常任务" : "请求异常暂停中，剩余"
+            String reason = unsupportedTaskFinish ? "跳过已确认不支持的完成接口，保留备用完成与列表核对"
+                    : knownUnsupported ? "跳过GR已知异常任务" : "请求异常暂停中，剩余"
                     + Math.max(1, (until - System.currentTimeMillis()) / 1000) + "秒";
             JSONObject result = MyUtils.newJSONObject("{\"success\":false,\"error\":\"RPC_SKIPPED\",\"resultCode\":\"RPC_SKIPPED\"}");
             try {
                 result.put("resultDesc", reason).put("errorMessage", reason).put("memo", reason);
+                // 备用完成按 code 判断接口不支持；error 仍为 RPC_SKIPPED，不能计入失败或拉黑。
+                if (unsupportedTaskFinish) result.put("code", "400000040");
             } catch (Exception ignored) { }
             request.setResponseObject(result, result.toString());
             request.setError();
@@ -276,9 +302,10 @@ public final class RpcRequestGuard {
                 pause = core ? (failures < 3 ? MINUTE : 5 * MINUTE)
                         : (failures == 1 ? 5 * MINUTE : failures == 2 ? 30 * MINUTE : DAY);
             } else if (RpcFailurePolicy.kind(code) == RpcFailurePolicy.Kind.SYSTEM_ERROR
-                    || ("com.alipay.antfarm.receiveFarmTaskAward".equals(request.getRequestMethod())
+                    || (("com.alipay.antfarm.receiveFarmTaskAward".equals(request.getRequestMethod())
+                    || knownTaskFallback)
                     && "102".equals(code) && message.startsWith("服务器正在开小差"))) {
-                // Same task id busy 5+ times in a day (seen daily on DAILY_DRAW_TIMES tasks): retry every 6h, not every run.
+                // C158 已知备用任务繁忙按 5/30 分钟退避；庄园领奖高频繁忙仍沿用 6 小时上限。
                 boolean farmAward = "com.alipay.antfarm.receiveFarmTaskAward".equals(request.getRequestMethod());
                 pause = core ? (failures < 3 ? 5 * MINUTE : farmAward && failures >= 5 ? 6 * 60 * MINUTE : 30 * MINUTE)
                         : RpcFailurePolicy.SYSTEM_ERROR_MS;

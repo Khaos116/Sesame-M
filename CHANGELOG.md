@@ -8,8 +8,8 @@
 
 ## 2026-10-06
 
-- fix：配置搜索列表按模型/字段身份绑定 Compose 状态，修复搜索与原位置开关显示不一致；补真实 Compose 筛选/排序/清空与写入回归。
-
+- fix：按 C158 日报跳过 6 条精确场景/任务的失效主完成接口，保留备用完成与领奖；对应 doFarmTask 的 102 繁忙按任务短退避，芝麻信用与零星状态失败不扩大封禁。
+- fix `95e3c17f`：配置搜索列表按模型/字段身份绑定 Compose 状态，修复搜索与原位置开关显示不一致；补真实 Compose 筛选/排序/清空与写入回归。
 - feat `66aee698`：农场游戏时长与森林无纸阅读默认开启；复用宿主授权、按账号记账，补运行状态/失败原因和 Token 获取指引；19 项回归及 Debug 编译通过，实机待验证。
 
 ## 2026-10-05
@@ -1280,3 +1280,13 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 - 修复：复用已有 modelCode 与 GroupFieldsRow.key，为模型卡片和字段行提供稳定身份，让开关、展开状态和编辑状态随对应字段移动。配置字段编码、默认值、setObjectValue 写入和返回保存流程保持不变；本次未修改森林 RPC 或兑换/动物派遣业务。
 - GMT+8：仅调整 UI 组合身份，没有新增日期/时段处理。JSON 创建/读取：未新增或修改 JSON 操作，仍由原配置加载/保存机制负责；无例外与新增 Xposed 引用，GeminiAI 保留。
 - 验证：新增 check_config_search_state 抽取生产字段循环和 Boolean 渲染代码，使用本机缓存的真实 Compose 运行时/编译插件，只隔离 Android 线程/trace/parcel 与界面边界；覆盖搜索、清空、重排、空结果、筛选后切换与不同字段写入隔离。修复前断言失败，修复后通过；移除字段 key 的反向检验仍复现同一问题。20 项本地回归和 Debug Java/Kotlin 编译通过（原有弃用/检查脚本警告），git diff --check 通过。尚未在用户设备上验证，未打包、未提交或推送。
+
+### 2026-10-06：C158 异常日报 20 次失败（未提交）
+
+- 来源：用户 Desktop/芝麻粒M配置/rpc-failures.2026-10-06.C158.json，GMT+8，20 条各 1 次。400000040 不支持 RPC 6 次；doFarmTask 的 102 开小差 3 次；promiseActivityExtCheck 入参校验 6 次；已有进行中记录 1 次；收能量限频、金豆任务已完结、快递任务实例无效、neverland 网络 48 各 1 次。报告没有新版保护地接口，不能据此证明其已执行或失败。
+- 对照：GR 未提供这 6 个动态任务的明确失效名单；GR 的 Promise recordId 过滤是旧记录，不能套用到本日报的新记录。当前 M 的历史实测和 TaskAlternative 明确说明 400000040 只表示主接口不支持，备用 doFarmTask 回 102 仍可能生效。因此仅封主调用路径，任务保留备用完成与列表核对，不能把 102 当作整个任务永久失效。
+- 精确规则：仅 com.alipay.antiep.finishTask + ANTFOREST_VITALITY_TASK/LSHS_huisho20_202508；ANTSTALL_TASK/ANTSTALL_TASK_XCXYX_zhuzhaishijie、ANTSTALL_TASK_XCXYX_zslxx；ANTFARM_DAILY_DRAW_TASK/cclyx_wdhysj_3c_10、cclyx_sgbhsd_3c_zm10c、cclyx_3bei_zslxx_2。受既有「关闭不支持 RPC 完成的任务」开关控制；不按标题/前缀扩大范围，不拦 receiveTaskAward 或 doFarmTask。
+- 备用调用：本地跳过主接口仍以 error/resultCode=RPC_SKIPPED 标记，同时保留 code=400000040，让现有 TaskAlternative.hit 继续选择备用方案；本地跳过不写异常统计、不计自动黑名单失败。仅以上精确任务对应的 com.alipay.antfarm.doFarmTask + sceneCode=ANTFARM + taskSceneCode/bizKey，在 102 且“服务器正在开小差”时按任务/账号 5、5、30 分钟退避；时间到恢复，outBizNo 随机变化不能绕开暂停。其它备用任务不新增退避，庄园领奖既有 6 小时规则保持。
+- 暂不处理：Promise 的 6 个 recordId 缺任务名称/templateId、前后完成度，现有 join/feedback/push 后回读、无进展当天停止及连续确认机制保留；PROMISE_HAS_PROCESSING_TEMPLATE 已有旧记录复用。KUAIDI_VITALITY 已有失败当天停止，报告仅 1 次；挖矿“任务已完结”仅 1 次，没有当前任务列表不判永久失效。neverland 网络 48 沿用退避；收能量限频仅 1 次，不新增整轮/全天停收。未修改用户账号配置文件。
+- GMT+8：不新增日历，退避为绝对毫秒并沿用按账号状态和 GMT+8 日报；JSON 创建沿用 MyUtils，新增场景/任务读取为 optString，数组解析保留原判空和异常处理，无新 JSON 构造例外。无新线程、UI/Xposed 依赖或 GeminiAI 删除；MyFix.md 不写事件日志，按长期规则仅更新本 CHANGELOG。
+- 验证：check_rpc_guard 新增真实生产守卫 + TaskAlternative.hit/isUnsupportedRpc 的精确规则、备用/领奖保留、无关路径/偏好关闭、统计排除与任务/场景/账号隔离、5/30 分钟到期回归；修复前因主接口仍被发送而断言失败，修复后通过。20 项全量检查通过；收窄备用退避范围后 RPC 检查重跑通过，最终 Debug Java/Kotlin 编译通过，git diff --check 通过（既有脚本注解处理/弃用警告）。未请求真实支付宝接口，未打包、提交或推送；之前配置搜索修复保留在工作区。
