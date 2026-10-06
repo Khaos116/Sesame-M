@@ -11,6 +11,9 @@ cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "cac
 jars = sorted(cache.glob("*/*/json-*.jar"))
 assert jars, "Build first to cache org.json"
 stubs = {
+    "android.os.SystemClock": '''public class SystemClock {
+        public static long now; public static long elapsedRealtime(){return now;}}
+    ''',
     pkg + ".util.MyUtils": '''import org.json.*; public class MyUtils {
         public static JSONObject newJSONObject(){return new JSONObject();}
         public static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}
@@ -27,7 +30,8 @@ stubs = {
     ''',
     pkg + ".util.TimeUtil": '''import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
         public class TimeUtil {public static void sleep(long ms){assert !TaskLifecycle.isIdle();
-        assert TaskLifecycle.freezeIfIdle()==null; if(RunGeneration.isStale())throw new TaskCancelledException();}}
+        assert TaskLifecycle.freezeIfIdle()==null; if(RunGeneration.isStale())throw new TaskCancelledException();
+        android.os.SystemClock.now+=ms;}}
     ''',
     pkg + ".util.idMap.UserIdMap": '''public class UserIdMap {public static String uid="A";
         public static String getCurrentUid(){return uid;}}
@@ -92,7 +96,7 @@ public class ForestReadCheck {
     }
     public static class SkipResult {public Object getAuthExecuteResult(){return new ExecuteResult();}}
     public static class ExecuteResult {public String getAuthCode(){return "secret-code-"+UserIdMap.uid;}}
-    static class Reply {String path,raw; int status; Reply(String p,String r,int s){path=p;raw=r;status=s;}}
+    static class Reply {String path,raw; int status; long elapsed; Reply(String p,String r,int s){path=p;raw=r;status=s;}}
     static Queue<Reply> queue=new ArrayDeque<>(); static List<MockConnection> connections=new ArrayList<>();
     static class MockConnection extends HttpURLConnection {
         Reply reply; ByteArrayOutputStream sent=new ByteArrayOutputStream(); boolean disconnected;
@@ -101,6 +105,7 @@ public class ForestReadCheck {
         public void connect(){} public boolean usingProxy(){return false;}
         public OutputStream getOutputStream(){return sent;}
         public int getResponseCode()throws IOException{
+            android.os.SystemClock.now+=reply.elapsed;
             assert !getInstanceFollowRedirects(); assert getConnectTimeout()==10000 && getReadTimeout()==20000;
             assert !TaskLifecycle.isIdle(); assert TaskLifecycle.freezeIfIdle()==null;
             assert getRequestProperty("alipayminimark").equals("mini-mark");
@@ -129,6 +134,7 @@ public class ForestReadCheck {
     }
     static void add(String p,Object data){queue.add(new Reply(p,new JSONObject().put("code",2000).put("data",data).toString(),200));}
     static void raw(String p,String r,int s){queue.add(new Reply(p,r,s));}
+    static void slowLast(long ms){((ArrayDeque<Reply>)queue).getLast().elapsed=ms;}
     static void login(){add("/authorization",new JSONObject().put("token","secret-token-"+UserIdMap.uid));}
     static void energy(int current,int total){add("/user/forestPro",new JSONObject().put("current",current).put("total",total));}
     static JSONObject book(String id,String price){return new JSONObject().put("book_id",id).put("price",price).put("name",id);}
@@ -137,7 +143,7 @@ public class ForestReadCheck {
     static void update(){add("/user/updateWel",new JSONObject());add("/book/set_read_recently",new JSONObject());}
     static void reset(){assert queue.isEmpty():queue.size(); queue.clear(); connections.clear(); Status.flags.clear();
         RuntimeInfo.accounts.clear(); Log.messages.clear(); Log.runtime.clear(); Log.forest.clear(); UserIdMap.uid="A"; noCode=false; reads=0; opened=0; closed=0; cancel=false;
-        RVProxy.service=new HostService(); generation.set(0); networkFailure="";}
+        RVProxy.service=new HostService(); generation.set(0); networkFailure=""; android.os.SystemClock.now=0;}
     static void run(){ReadForestTask.execute();assert queue.isEmpty():queue.size(); assert TaskLifecycle.isIdle();
         for(MockConnection c:connections)assert c.disconnected;
         for(String m:Log.messages)assert !m.contains("secret-code") && !m.contains("secret-token");}
@@ -156,6 +162,17 @@ public class ForestReadCheck {
         UserIdMap.uid="B"; login(); energy(10,10); run(); assert Status.flags.size()==2;
         UserIdMap.uid="A"; Status.flags.clear(); login(); energy(10,10); run(); assert authCalls==calls+2;
         System.out.println("PASS host proxy auth_base, free-book dedup, completion, account/day state and secret isolation");
+        for(Object[] pair:List.of(new Object[]{"10","10"},new Object[]{10,"10"},new Object[]{"10",10},new Object[]{10.0,10.0},
+                new Object[]{" 0010 "," 0010 "},new Object[]{"2147483647","2147483647"})){
+            reset();login();add("/user/forestPro",new JSONObject().put("current",pair[0]).put("total",pair[1]));
+            run();assert Status.flags.size()==1 && reads==0 : "valid integer-string progress rejected";
+        }
+        reset();login();add("/user/forestPro",new JSONObject().put("current","0").put("total","10"));
+        index(book("one","0.00"));chapter(1,0);update();
+        add("/user/forestPro",new JSONObject().put("current","10").put("total","10"));run();
+        assert reads==1 && Status.flags.size()==1;
+        assert Log.runtime.stream().anyMatch(s->s.contains("成功获得能量 +10"));
+        System.out.println("PASS integer-string/mixed progress and reading-to-full flow");
         reset(); RuntimeInfo.getInstance().put("readForest.finishedBooks","{\"one\":\"done\"}");
         login(); energy(0,10); index(book("one","0.00"),book("two","0.00")); chapter(2,0); update(); energy(1,10); run();
         assert reads==1 && Status.flags.isEmpty();
@@ -163,14 +180,46 @@ public class ForestReadCheck {
         for(int i=1;i<=5;i++){chapter(i,i+1); update(); energy(0,100);} run(); assert reads==5 && Status.flags.isEmpty();
         reset(); login(); energy(0,100); index(book("one","0.00"));
         chapter(1,1); update(); energy(1,100); chapter(1,1); run(); assert reads==1 && Status.flags.isEmpty();
-        reset(); login(); energy(0,100); index(book("one","0.00"));
-        for(int i=1;i<=30;i++){chapter(i,i+1); update(); energy(i,100);} chapter(31,32); run();
-        assert reads==30 && Status.flags.isEmpty();
-        System.out.println("PASS persisted finished books, stagnant stop, chapter cycle and bounded iteration");
+        reset(); login(); energy(59,150); index(book("one","0.00"));
+        for(int i=1;i<=91;i++){chapter(i,i+1); update(); energy(59+i,150);}
+        ReadForestTask.execute();
+        assert reads==91 && Status.flags.size()==1 : "reading stopped before 150 despite continued progress: "+reads;
+        assert queue.isEmpty() && TaskLifecycle.isIdle();
+        assert Log.runtime.stream().anyMatch(s->s.contains("成功，服务端确认今日满额 150/150"));
+        System.out.println("PASS continued reading beyond 30 chapters from 59/150 to full");
+        reset();login();energy(0,150);index(book("one","0.00"));
+        for(int i=1;i<=36;i++){chapter(i,i+1);update();energy(Math.min(i,31),150);}
+        run();assert reads==36 && Status.flags.isEmpty();
+        assert Log.runtime.stream().anyMatch(s->s.contains("连续 5 章能量未增加") && s.contains("31/150"));
+        System.out.println("PASS stagnant stop still works after the former chapter limit");
+        reset(); login(); energy(0,100); index(book("one","0.00"));slowLast(15*60_000L);
+        run();assert reads==0 && Status.flags.isEmpty();
+        assert Log.runtime.stream().anyMatch(s->s.contains("15 分钟") && s.contains("尚未满额"));
+        reset(); login(); energy(0,100); index(book("one","0.00"));chapter(1,2);update();energy(1,100);
+        slowLast(15*60_000L);run();assert reads==1 && Status.flags.isEmpty();
+        assert Log.runtime.stream().anyMatch(s->s.contains("15 分钟") && s.contains("1/100"));
+        reset();login();energy(0,1);index(book("one","0.00"));chapter(1,2);update();energy(1,1);
+        slowLast(15*60_000L);run();assert reads==1 && Status.flags.size()==1;
+        assert Log.runtime.stream().anyMatch(s->s.contains("成功，服务端确认今日满额 1/1"));
+        System.out.println("PASS time budget prevents further chapter requests and completion wins at the boundary");
+        System.out.println("PASS persisted finished books, stagnant stop and chapter cycle");
         for(String p:List.of("{}","bad","{\"code\":2000,\"data\":{}}","{\"code\":2000,\"data\":{\"current\":0,\"total\":0}}",
-                "{\"code\":2000,\"data\":{\"current\":\"10\",\"total\":10}}","{\"code\":2000,\"data\":{\"current\":-1,\"total\":10}}")){
+                "{\"code\":2000,\"data\":{\"current\":\"ten\",\"total\":10}}","{\"code\":2000,\"data\":{\"current\":-1,\"total\":10}}")){
             reset(); login(); raw("/user/forestPro",p,200); run(); assert reads==0 && Status.flags.isEmpty();
             assert Log.runtime.stream().anyMatch(s->s.contains("查询能量进度失败") && s.contains("原因="));}
+        for(Object value:List.of("10.5","1e2","-1","+10","2147483648","","secret-token-A",1.5,2147483648L,
+                new java.math.BigDecimal("9.999999999999999999999"),true,
+                JSONObject.NULL,new JSONObject().put("token","secret-token-A"),new JSONArray().put("secret-token-A"))){
+            reset();login();add("/user/forestPro",new JSONObject().put("current",value).put("total",10));
+            run();assert reads==0 && Status.flags.isEmpty();
+            assert Log.runtime.stream().anyMatch(s->s.contains("字段类型") && s.contains("current="));
+        }
+        reset();login();add("/user/forestPro",new JSONObject().put("current","0").put("total","0"));
+        run();assert reads==0 && Status.flags.isEmpty();
+        reset();login();add("/user/forestPro",new JSONArray().put("secret-token-A"));run();
+        assert reads==0 && Status.flags.isEmpty();
+        assert Log.runtime.stream().anyMatch(s->s.contains("字段类型") && s.contains("data=数组"));
+        System.out.println("PASS malformed/overflow/zero-limit progress remains stopped and diagnostics do not leak values");
         for(String p:List.of("{\"code\":\"2000\",\"data\":{\"token\":\"x\"}}","{\"code\":2000,\"data\":{\"token\":true}}",
                 "{\"code\":2000,\"data\":{\"token\":\"\"}}")){
             reset(); raw("/authorization",p,200); run(); assert Status.flags.isEmpty();
