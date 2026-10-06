@@ -31,7 +31,9 @@ python checks/audit_regressions/run.py
 python checks/check_account_folder.py
 python checks/check_account_switch.py
 python checks/check_antfarm_tool_reward.py
+python checks/check_antfarm_auto_feed.py
 python checks/check_orchard_game_stay.py
+python checks/check_orchard_draw.py
 python checks/check_forest_read.py
 python checks/check_config_search_state.py
 python checks/check_gr_followups.py
@@ -50,8 +52,8 @@ java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapp
 ```
 
 改了哪块就重点看对应的检查（`check_rpc_guard` 管退避暂停、`check_merge_config` 管字段合并迁移、
-`check_manifest_permissions` 管权限声明、`check_standalone_no_xposed_class` 管独立进程引用、
-`check_account_folder` 管账号名目录、`check_antfarm_tool_reward` 管庄园道具领取、`check_orchard_game_stay` 管农场游戏时长任务、`check_forest_read` 管阅读授权/HTTP/停止条件、`check_config_search_state` 管配置搜索前后状态与字段写入、`check_puzzle_matcher`/`check_puzzle_directory`/`check_puzzle_samples` 管拼图匹配与截图；
+`check_manifest_permissions` 管权限声明、`check_standalone_no_xposed_class` 管独立进程引用、`check_antfarm_auto_feed` 管自动喂鸡重查/排期/停止条件、
+`check_account_folder` 管账号名目录、`check_antfarm_tool_reward` 管庄园道具领取、`check_orchard_game_stay` 管农场游戏时长任务、`check_orchard_draw` 管抽抽乐新旧活动/游戏上报/批量抽奖、`check_forest_read` 管阅读授权/HTTP/停止条件、`check_config_search_state` 管配置搜索前后状态与字段写入、`check_puzzle_matcher`/`check_puzzle_directory`/`check_puzzle_samples` 管拼图匹配与截图；
 各脚本头几行注释写了精确范围），提交前全量跑一遍最稳。
 
 涉及打包/签名相关改动（`build.gradle`、`proguard-rules.pro`、签名配置）额外跑一遍 `:app:assembleNormalRelease` 确认 R8 混淆和签名没问题。

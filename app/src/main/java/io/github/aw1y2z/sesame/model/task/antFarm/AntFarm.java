@@ -22,6 +22,7 @@ import io.github.aw1y2z.sesame.data.ModelGroup;
 import io.github.aw1y2z.sesame.data.TokenConfig;
 import io.github.aw1y2z.sesame.data.modelFieldExt.*;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.data.modelFieldExt.ChoiceModelField;
 import io.github.aw1y2z.sesame.entity.AlipayUser;
 import io.github.aw1y2z.sesame.entity.CustomOption;
@@ -740,24 +741,109 @@ public class AntFarm extends ModelTask {
     }
 
     private void autoFeedAnimal() {
-        syncAnimalStatus(ownerFarmId);
-        if (!AnimalFeedStatus.EATING.name().equals(ownerAnimal.animalFeedStatus)) {
+        String farmId = ownerFarmId;
+        if (farmId == null || farmId.isEmpty()) return;
+        for (int i = 1; i <= MAX_AUTO_FEED_RECHECKS; i++) {
+            if (hasChildTask("UPDATE|FA|" + farmId + "|" + i)) return;
+        }
+        autoFeedAnimal(farmId, UserIdMap.getCurrentUid(), 0);
+    }
+
+    private static final int MAX_AUTO_FEED_RECHECKS = 5;
+
+    private void autoFeedAnimal(String farmId, String uid, int rechecks) {
+        if (!feedAnimal.getValue() || uid == null || uid.isEmpty()
+                || !uid.equals(UserIdMap.getCurrentUid()) || !farmId.equals(ownerFarmId)) {
+            Log.record("自动喂鸡🥣停止重查：开关已关闭或账号/庄园已变化");
             return;
         }
-        double foodHaveEatten = 0d;
-        double consumeSpeed = 0d;
-        long nowTime = System.currentTimeMillis();
-        for (Animal animal : animals) {
-            foodHaveEatten += (nowTime - animal.startEatTime) / 1000 * animal.consumeSpeed;
-            consumeSpeed += animal.consumeSpeed;
+        try {
+            // 仅用本次返回计算，查询失败时不能沿用缓存中的进食状态与速度。
+            JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.syncAnimalStatus(farmId));
+            JSONObject farm = jo.optJSONObject("subFarmVO");
+            JSONArray currentAnimals = farm == null ? null : farm.optJSONArray("animals");
+            if (!MessageUtil.checkMemo(TAG, jo) || farm == null
+                    || !farmId.equals(farm.optString("farmId")) || currentAnimals == null) {
+                retryAutoFeedAnimal(farmId, uid, rechecks, "状态查询失败或庄园数据缺失，code="
+                        + jo.optString("resultCode", "未知") + "，" + jo.optString("memo", "无成功状态"));
+                return;
+            }
+            JSONObject ownAnimal = null;
+            for (int i = 0; i < currentAnimals.length(); i++) {
+                JSONObject animal = currentAnimals.optJSONObject(i);
+                if (animal != null && farmId.equals(animal.optString("masterFarmId"))) {
+                    ownAnimal = animal;
+                    break;
+                }
+            }
+            JSONObject status = ownAnimal == null ? null : ownAnimal.optJSONObject("animalStatusVO");
+            String feedStatus = status == null ? "" : status.optString("animalFeedStatus");
+            if (!AnimalFeedStatus.EATING.name().equals(feedStatus)) {
+                retryAutoFeedAnimal(farmId, uid, rechecks, "小鸡尚未恢复进食，状态="
+                        + (feedStatus.isEmpty() ? "缺失" : feedStatus));
+                return;
+            }
+            double food = farm.optDouble("foodInTrough", Double.NaN);
+            double eaten = 0d, speed = 0d;
+            long now = System.currentTimeMillis();
+            for (int i = 0; i < currentAnimals.length(); i++) {
+                JSONObject animal = currentAnimals.optJSONObject(i);
+                double animalSpeed = animal == null ? Double.NaN : animal.optDouble("consumeSpeed", Double.NaN);
+                long start = animal == null ? 0 : animal.optLong("startEatTime");
+                if (!Double.isFinite(animalSpeed) || animalSpeed < 0
+                        || (animalSpeed > 0 && (start <= 0 || start > now))) {
+                    retryAutoFeedAnimal(farmId, uid, rechecks, "进食速度或开始时间缺失/异常");
+                    return;
+                }
+                eaten += (now - start) / 1000d * animalSpeed;
+                speed += animalSpeed;
+            }
+            double remainMs = (food - eaten) / speed * 1000d;
+            if (!Double.isFinite(food) || food < 0 || !Double.isFinite(speed) || speed <= 0
+                    || !Double.isFinite(remainMs) || remainMs < 1 || remainMs >= Long.MAX_VALUE - now) {
+                retryAutoFeedAnimal(farmId, uid, rechecks, "进食速度为零或剩余进食时间异常");
+                return;
+            }
+            long nextFeedTime = now + (long) remainMs;
+            String taskId = "FA|" + farmId;
+            if (hasChildTask(taskId)) removeChildTask(taskId);
+            if (addChildTask(new ChildModelTask(taskId, "FA", () -> {
+                if (feedAnimal.getValue() && uid.equals(UserIdMap.getCurrentUid()) && farmId.equals(ownerFarmId)) {
+                    feedAnimal(farmId);
+                } else {
+                    Log.record("自动喂鸡🥣停止投喂：开关已关闭或账号/庄园已变化");
+                }
+            }, nextFeedTime))) {
+                Log.record("自动喂鸡🥣" + (rechecks > 0 ? "重查恢复，" : "") + "添加蹲点投喂["
+                        + UserIdMap.getCurrentMaskName() + "]在[" + TimeUtil.getCommonDate(nextFeedTime) + "]执行");
+            } else {
+                Log.record("自动喂鸡🥣蹲点投喂排期失败，等待下一轮庄园任务");
+            }
+        } catch (TaskCancelledException e) {
+            throw e;
+        } catch (Exception e) {
+            Log.err(TAG, "autoFeedAnimal err:", e);
+            retryAutoFeedAnimal(farmId, uid, rechecks, "状态查询异常：" + e.getClass().getSimpleName());
         }
-        long nextFeedTime = nowTime + (long) ((foodInTrough - foodHaveEatten) / consumeSpeed) * 1000;
-        String taskId = "FA|" + ownerFarmId;
-        if (hasChildTask(taskId)) {
-            removeChildTask(taskId);
+    }
+
+    private void retryAutoFeedAnimal(String farmId, String uid, int rechecks, String reason) {
+        if (hasChildTask("FA|" + farmId)) removeChildTask("FA|" + farmId);
+        if (rechecks >= MAX_AUTO_FEED_RECHECKS) {
+            Log.record("自动喂鸡🥣停止重查：" + reason + "；达到连续 " + MAX_AUTO_FEED_RECHECKS
+                    + " 次重查上限，等待下一轮庄园任务");
+            return;
         }
-        addChildTask(new ChildModelTask(taskId, "FA", () -> feedAnimal(ownerFarmId), nextFeedTime));
-        Log.record("添加蹲点投喂🥣[" + UserIdMap.getCurrentMaskName() + "]在[" + TimeUtil.getCommonDate(nextFeedTime) + "]执行");
+        int next = rechecks + 1;
+        // 执行器结束回调后按 ID 清理，下一次必须使用不同 ID，否则新排期也会被旧回调删掉。
+        String taskId = "UPDATE|FA|" + farmId + "|" + next;
+        if (hasChildTask(taskId)) return;
+        if (addChildTask(new ChildModelTask(taskId, "UPDATE", () -> autoFeedAnimal(farmId, uid, next),
+                System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(30)))) {
+            Log.record("自动喂鸡🥣" + reason + "；30 秒后重查（" + next + "/" + MAX_AUTO_FEED_RECHECKS + "）");
+        } else {
+            Log.record("自动喂鸡🥣重查排期失败：" + reason + "；等待下一轮庄园任务");
+        }
     }
 
 

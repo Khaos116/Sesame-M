@@ -238,24 +238,31 @@ public class AntOrchardRpcCall {
     /**
      * 农场抽抽乐-进入/查询活动
      */
-    public static String enterDrawActivityantorchard(String activityId, String sceneCode, String source) {
-        String args = "[{\"activityId\":\"" + activityId + "\",\"context\":{\"appMode\":\"INT\"},\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"" + source + "\"}]";
+    public static String enterDrawActivityantorchard(String activityId, String sceneCode, String source) throws org.json.JSONException {
+        JSONObject body = MyUtils.newJSONObject().put("activityId", activityId)
+                .put("context", MyUtils.newJSONObject().put("appMode", "student"))
+                .put("requestType", "RPC").put("sceneCode", sceneCode).put("source", source);
+        String args = new JSONArray().put(body).toString();
         return ApplicationHook.requestString("com.alipay.antiepdrawprod.enterDrawActivityantorchard", args);
     }
 
     /**
      * 农场抽抽乐-请求任务列表
      */
-    public static String listTaskantorchard(String sceneCode, String source) {
-        String args = "[{\"extend\":{\"appMode\":\"INT\"},\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"" + source + "\"}]";
+    public static String listTaskantorchard(String sceneCode, String source) throws org.json.JSONException {
+        JSONObject body = MyUtils.newJSONObject().put("extend", MyUtils.newJSONObject().put("appMode", "student"))
+                .put("requestType", "RPC").put("sceneCode", sceneCode).put("source", source);
+        String args = new JSONArray().put(body).toString();
         return ApplicationHook.requestString("com.alipay.antieptask.listTaskantorchard", args);
     }
 
     /**
      * 农场抽抽乐-领取任务奖励（与 {@link #receiveTaskAwardantorchard} 区分：抽抽乐场景无 awardCountForReceive 字段）
      */
-    public static String receiveDrawTaskAwardantorchard(String sceneCode, String taskType) {
-        String args = "[{\"ignoreLimit\":true,\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"antorchard\",\"taskType\":\"" + taskType + "\"}]";
+    public static String receiveDrawTaskAwardantorchard(String sceneCode, String taskType) throws org.json.JSONException {
+        JSONObject body = MyUtils.newJSONObject().put("ignoreLimit", true).put("requestType", "RPC")
+                .put("sceneCode", sceneCode).put("source", "antorchard").put("taskType", taskType);
+        String args = new JSONArray().put(body).toString();
         return ApplicationHook.requestString("com.alipay.antieptask.receiveTaskAwardantorchard", args);
     }
 
@@ -270,27 +277,45 @@ public class AntOrchardRpcCall {
     /**
      * 农场抽抽乐-同步抽奖次数
      */
-    public static String drawSyncantorchard(String activityId, String source) {
-        String args = "[{\"activityId\":\"" + activityId + "\",\"context\":{\"appMode\":\"INT\"},\"requestType\":\"RPC\",\"sceneCode\":\"ANTORCHARD_DRAW_TIMES\",\"source\":\"" + source + "\"}]";
+    public static String drawSyncantorchard(String activityId, String source) throws org.json.JSONException {
+        return drawSyncantorchard(activityId, "ANTORCHARD_DRAW_TIMES", source);
+    }
+
+    public static String drawSyncantorchard(String activityId, String sceneCode, String source) throws org.json.JSONException {
+        JSONObject body = MyUtils.newJSONObject().put("activityId", activityId)
+                .put("context", MyUtils.newJSONObject().put("appMode", "student"))
+                .put("requestType", "RPC").put("sceneCode", sceneCode).put("source", source);
+        String args = new JSONArray().put(body).toString();
         return ApplicationHook.requestString("com.alipay.antiepdrawprod.drawSyncantorchard", args);
+    }
+
+    public static String batchDrawantorchard(String activityId, String sceneCode, String source, int times, String userId) throws org.json.JSONException {
+        JSONObject body = MyUtils.newJSONObject().put("activityId", activityId).put("requestType", "RPC")
+                .put("sceneCode", sceneCode).put("source", source).put("times", times).put("userId", userId);
+        return ApplicationHook.requestString("com.alipay.antiepdrawprod.batchDrawantorchard", new JSONArray().put(body).toString());
     }
 
     /**
      * 农场抽抽乐-完成任务（小游戏/广告等 TODO 任务，尝试自动完成，失败由调用方拉黑）
      * 与 listTaskantorchard 同 facade(antieptask)，参数格式参照庄园 finishTaskopengreen
      */
-    public static String finishTaskantorchard(String taskType, String sceneCode) {
+    public static String finishTaskantorchard(String taskType, String sceneCode) throws org.json.JSONException {
         String taskTypeRandom = taskType + "_" + System.currentTimeMillis() + "_" + RandomUtil.getRandomString(8);
-        String requestData = "[{\"outBizNo\":\"" + taskTypeRandom + "\",\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"antorchard\",\"taskType\":\"" + taskType + "\"}]";
+        JSONObject body = MyUtils.newJSONObject().put("outBizNo", taskTypeRandom).put("requestType", "RPC")
+                .put("sceneCode", sceneCode).put("source", "antorchard").put("taskType", taskType);
+        String requestData = new JSONArray().put(body).toString();
         return ApplicationHook.requestString("com.alipay.antieptask.finishTaskantorchard", requestData);
     }
 
     /**
      * 农场抽抽乐-完成任务（互备腿：基于抓包证据，果园任务完成走 com.alipay.antiep.finishTask，NORMAL+userId+version 格式）
      */
-    public static String finishTaskantorchardV2(String taskType, String sceneCode, String userId) {
+    public static String finishTaskantorchardV2(String taskType, String sceneCode, String userId) throws org.json.JSONException {
         String outBizNo = userId + System.currentTimeMillis();
-        String requestData = "[{\"outBizNo\":\"" + outBizNo + "\",\"requestType\":\"NORMAL\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"antorchard\",\"taskType\":\"" + taskType + "\",\"userId\":\"" + userId + "\",\"version\":\"20250812.01\"}]";
+        JSONObject body = MyUtils.newJSONObject().put("outBizNo", outBizNo).put("requestType", "NORMAL")
+                .put("sceneCode", sceneCode).put("source", "antorchard").put("taskType", taskType)
+                .put("userId", userId).put("version", VERSION);
+        String requestData = new JSONArray().put(body).toString();
         return ApplicationHook.requestString("com.alipay.antiep.finishTask", requestData);
     }
 

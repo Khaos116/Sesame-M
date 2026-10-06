@@ -9,6 +9,8 @@ import io.github.aw1y2z.sesame.entity.AlipayUser;
 import io.github.aw1y2z.sesame.data.ModelFields;
 import io.github.aw1y2z.sesame.data.ModelGroup;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
+import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
+import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
@@ -206,43 +208,60 @@ public class AntOrchard extends ModelTask {
 
     /**
      * 农场抽抽乐（阿肥寻宝记 / 农场抽抽乐普通版）
-     * 流程：进入活动 → 遍历场景领取已完成任务奖励 → 同步次数 → 循环抽奖至次数为 0
+     * 兼容活动分组与新版顶层活动；游戏上报后回查任务，按服务端余额批量抽奖。
      */
     private void orchardChouChouLe() {
-        try {
+        try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
+            if (work == null) {
+                Log.record("农场抽抽乐：跳过，账号正在切换");
+                return;
+            }
+            userId = UserIdMap.getCurrentUid();
+            if (userId == null || userId.isEmpty()) {
+                Log.record("农场抽抽乐：跳过，当前账号为空");
+                return;
+            }
+            Log.record("农场抽抽乐：开始，查询任务与抽奖次数");
             String res = AntOrchardRpcCall.enterDrawActivityantorchard("", "ANTORCHARD_DRAW_TIMES", "antorchard");
             JSONObject resData = MyUtils.newJSONObject(res);
-            if (!MessageUtil.checkSuccess(TAG, resData)) {
+            if (!orchardDrawSuccessful(resData, "进入活动")) {
                 return;
             }
-            JSONArray drawSceneGroups = resData.optJSONArray("drawSceneGroups");
-            if (drawSceneGroups == null) {
-                JSONObject drawScene = resData.optJSONObject("drawScene");
-                if (drawScene != null) {
-                    drawSceneGroups = new JSONArray();
-                    drawSceneGroups.put(drawScene);
-                }
-            }
-            if (drawSceneGroups == null) {
+            JSONArray drawSceneGroups = orchardDrawScenes(resData);
+            if (drawSceneGroups == null || drawSceneGroups.length() == 0) {
+                Log.record("农场抽抽乐：停止，活动响应缺少有效场景");
                 return;
             }
+            Set<String> visited = new HashSet<>();
             for (int i = 0; i < drawSceneGroups.length(); i++) {
                 JSONObject drawScene = drawSceneGroups.optJSONObject(i);
                 if (drawScene == null) {
+                    Log.record("农场抽抽乐：跳过，无效活动场景");
                     continue;
                 }
                 JSONObject drawActivity = drawScene.optJSONObject("drawActivity");
                 if (drawActivity == null) {
+                    Log.record("农场抽抽乐：跳过，场景缺少活动信息");
                     continue;
                 }
-                String activityId = drawActivity.optString("activityId");
+                Object id = drawActivity.opt("activityId");
+                String activityId = id instanceof String || id instanceof Number ? drawActivity.optString("activityId") : "";
                 String drawScenename = drawActivity.optString("name");
-                String sceneCode = drawActivity.optString("sceneCode");
-                if (activityId.isEmpty() || sceneCode.isEmpty()) continue;
+                String sceneCode = drawActivity.opt("sceneCode") instanceof String ? drawActivity.optString("sceneCode") : "";
+                if (activityId.isEmpty() || sceneCode.isEmpty()) {
+                    Log.record("农场抽抽乐：跳过，场景缺少活动 ID 或场景编号");
+                    continue;
+                }
+                if (!visited.add(activityId + ":" + sceneCode)) continue;
                 orchardChouChouLeScene(activityId, drawScenename, sceneCode);
             }
+            Log.record("农场抽抽乐：本轮结束，已处理 " + visited.size() + " 个活动场景");
+        } catch (TaskCancelledException e) {
+            Log.record("农场抽抽乐：停止，任务已取消");
+            throw e;
         } catch (Throwable t) {
             Log.err(TAG, "orchardChouChouLe err:", t);
+            Log.record("农场抽抽乐：失败，异常类型=" + t.getClass().getSimpleName());
         }
     }
 
@@ -251,48 +270,64 @@ public class AntOrchard extends ModelTask {
             boolean doublecheck;
             int loopCount = 0;
             final int MAX_LOOP = 7;
+            Set<String> attempted = new HashSet<>();
             do {
                 doublecheck = false;
                 String listRes = AntOrchardRpcCall.listTaskantorchard(sceneCode + "_TASK", "antorchard");
                 JSONObject listTask = MyUtils.newJSONObject(listRes);
-                if (!MessageUtil.checkSuccess(TAG, listTask)) {
-                    break;
+                if (!orchardDrawSuccessful(listTask, "查询[" + drawScenename + "]任务")) {
+                    return;
                 }
                 JSONArray taskList = listTask.optJSONArray("taskInfoList");
                 if (taskList == null) {
-                    break;
+                    Log.record("农场抽抽乐：停止，任务列表缺失");
+                    return;
                 }
                 for (int i = 0; i < taskList.length(); i++) {
                     JSONObject taskInfo = taskList.optJSONObject(i);
                     if (taskInfo == null) {
                         continue;
                     }
+                    String taskStatus = orchardDrawTaskField(taskInfo, "taskStatus");
+                    String taskType = orchardDrawTaskField(taskInfo, "taskType");
+                    String taskSceneCode = orchardDrawTaskField(taskInfo, "sceneCode");
+                    if (taskSceneCode.isEmpty()) taskSceneCode = sceneCode + "_TASK";
                     JSONObject taskBaseInfo = taskInfo.optJSONObject("taskBaseInfo");
-                    if (taskBaseInfo == null) {
+                    JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo == null ? "" : taskBaseInfo.optString("bizInfo"));
+                    String taskName = bizInfo.optString("title", taskType);
+                    if (taskType.isEmpty() || taskStatus.isEmpty()) {
+                        Log.record("农场抽抽乐：跳过[" + taskName + "]，任务类型或状态缺失");
                         continue;
                     }
-                    JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.optString("bizInfo", "{}"));
-                    String taskName = bizInfo.optString("title");
-                    // 黑名单任务跳过（含预置小游戏种子与自动拉黑项）
                     if (OrchardChouChouLeTaskList.getValue().contains(taskName)) {
+                        Log.record("农场抽抽乐：跳过[" + taskName + "]，命中黑名单");
                         continue;
                     }
-                    String taskStatus = taskBaseInfo.optString("taskStatus");
-                    String taskType = taskBaseInfo.optString("taskType");
-                    String taskSceneCode = taskBaseInfo.optString("sceneCode");
-                    if (taskName.isEmpty() || taskType.isEmpty() || taskSceneCode.isEmpty()) continue;
                     JSONObject taskRights = taskInfo.optJSONObject("taskRights");
                     int rightsTimes = taskRights != null ? taskRights.optInt("rightsTimes") : 0;
                     int rightsTimesLimit = taskRights != null ? taskRights.optInt("rightsTimesLimit") : 0;
+                    if (!"TODO".equals(taskStatus) && !"FINISHED".equals(taskStatus)) {
+                        if (!"RECEIVED".equals(taskStatus)) {
+                            Log.record("农场抽抽乐：跳过[" + taskName + "]，未识别的任务状态=" + taskStatus);
+                        }
+                        continue;
+                    }
+                    if (!attempted.add(taskSceneCode + ":" + taskType + ":" + taskStatus + ":" + rightsTimes)) {
+                        if ("TODO".equals(taskStatus)) {
+                            Log.record("农场抽抽乐：任务[" + taskName + "]状态未推进，本轮不再重复尝试");
+                        }
+                        continue;
+                    }
 
                     // 已完成任务领取奖励（如每日签到）
                     if ("FINISHED".equals(taskStatus)) {
                         TimeUtil.sleep(2000);
                         String awardRes = AntOrchardRpcCall.receiveDrawTaskAwardantorchard(taskSceneCode, taskType);
                         JSONObject sginRes = MyUtils.newJSONObject(awardRes);
-                        if (MessageUtil.checkSuccess(TAG, sginRes)) {
-                            int incAwardCount = sginRes.optInt("incAwardCount", 0);
-                            Log.farm("农场抽抽乐🎖️[" + taskName + "]获得抽奖*" + incAwardCount);
+                        if (orchardDrawSuccessful(sginRes, "领取[" + taskName + "]奖励")) {
+                            int incAwardCount = sginRes.optInt("incAwardCount", -1);
+                            orchardDrawLog("任务[" + taskName + "]领取成功；"
+                                    + (incAwardCount >= 0 ? "获得抽奖次数=" + incAwardCount : "奖励次数未返回"));
                             if (rightsTimesLimit - rightsTimes > 0) {
                                 doublecheck = true;
                             }
@@ -300,61 +335,142 @@ public class AntOrchard extends ModelTask {
                             MessageUtil.checkResultCodeAndMarkTaskBlackList("OrchardChouChouLeTaskList", taskName, sginRes);
                         }
                     } else if ("TODO".equals(taskStatus)) {
-                        // 第二种方式：尝试自动完成（小游戏/任务），两条腿互备，失败由 checkResultCodeAndMarkTaskBlackList 自动拉黑
+                        boolean direct = "DRAW_GOLDENBEAN_liulan".equals(taskType);
+                        java.util.regex.Matcher app = java.util.regex.Pattern.compile("[?&]appId=([0-9]+)(?:[&#]|$)")
+                                .matcher(bizInfo.optString("targetUrl"));
+                        String appId = app.find() ? app.group(1) : "";
+                        GameTask game = GameTask.matchAppId(appId);
+                        if (game != null && !direct) {
+                            String countText = orchardDrawTaskField(taskInfo, "finishOnceAwardCnt");
+                            int count;
+                            try {
+                                count = countText.isEmpty() ? 1 : Integer.parseInt(countText);
+                            } catch (NumberFormatException e) {
+                                Log.record("农场抽抽乐：跳过[" + taskName + "]，游戏次数无效");
+                                continue;
+                            }
+                            if (count <= 0 || count > 10) {
+                                Log.record("农场抽抽乐：跳过[" + taskName + "]，游戏次数不在本轮允许范围 1–10");
+                                continue;
+                            }
+                            Log.record("农场抽抽乐：任务[" + taskName + "]匹配游戏[" + game.getTitle() + "]，开始上报");
+                            int reports = game.reportSync("农场抽抽乐", count);
+                            Log.record("农场抽抽乐：任务[" + taskName + "]游戏上报"
+                                    + (reports > 0 ? "成功 " + reports + " 次，回查服务端任务与抽奖次数" : "失败，未取得有效上报结果"));
+                            doublecheck |= reports > 0;
+                            continue;
+                        }
+                        if (!direct && (!taskInfo.optString("iepTaskTracer").isEmpty() || !appId.isEmpty())) {
+                            Log.record("农场抽抽乐：跳过[" + taskName + "]，未支持的任务或游戏(appId=" + appId + ")");
+                            continue;
+                        }
                         TimeUtil.sleep(1000);
-                        String userId = UserIdMap.getCurrentUid();
                         String finishRes = AntOrchardRpcCall.finishTaskantorchard(taskType, taskSceneCode);
                         JSONObject finishJo = MyUtils.newJSONObject(finishRes);
-                        MessageUtil.checkResultCodeAndMarkTaskBlackList("OrchardChouChouLeTaskList", taskName, finishJo);
-                        if (!MessageUtil.checkSuccess(TAG, finishJo)) {
+                        boolean finished = orchardDrawSuccessful(finishJo, "完成[" + taskName + "]任务");
+                        if (!finished && !direct) {
                             finishRes = AntOrchardRpcCall.finishTaskantorchardV2(taskType, taskSceneCode, userId);
                             finishJo = MyUtils.newJSONObject(finishRes);
-                            MessageUtil.checkResultCodeAndMarkTaskBlackList("OrchardChouChouLeTaskList", taskName, finishJo);
+                            finished = orchardDrawSuccessful(finishJo, "兼容接口完成[" + taskName + "]任务");
                         }
-                        if (MessageUtil.checkSuccess(TAG, finishJo)) {
-                            Log.farm("农场抽抽乐🧾完成[" + taskName + "]");
+                        if (finished) {
+                            orchardDrawLog("任务[" + taskName + "]完成接口成功，回查领奖状态");
                             doublecheck = true;
                         } else {
-                            Log.farm("农场抽抽乐⚠️未完成[" + taskName + "]#taskType=" + taskType);
+                            MessageUtil.checkResultCodeAndMarkTaskBlackList("OrchardChouChouLeTaskList", taskName, finishJo);
                         }
                     }
                 }
             } while (doublecheck && ++loopCount < MAX_LOOP);
+            if (doublecheck && loopCount >= MAX_LOOP) {
+                Log.record("农场抽抽乐：任务达到本轮 7 次回查上限，剩余任务下轮继续尝试");
+            }
 
-            // 同步抽奖次数
-            AntOrchardRpcCall.drawSyncantorchard(activityId, "taskaward");
-
-            // 抽奖
-            final int MAX_DRAW_LOOP = 30;
-            JSONObject jo = MyUtils.newJSONObject(AntOrchardRpcCall.enterDrawActivityantorchard(activityId, sceneCode, "antorchard"));
-            if (!MessageUtil.checkSuccess(TAG, jo)) {
+            JSONObject jo = MyUtils.newJSONObject(AntOrchardRpcCall.drawSyncantorchard(activityId, sceneCode, "taskaward"));
+            if (!orchardDrawSuccessful(jo, "同步抽奖次数")) {
                 return;
             }
             JSONObject drawAsset = jo.optJSONObject("drawAsset");
-            if (drawAsset == null) {
+            Object rawBalance = drawAsset == null ? null : drawAsset.opt("blance");
+            int blance;
+            try {
+                blance = rawBalance instanceof Number ? new java.math.BigDecimal(rawBalance.toString()).intValueExact()
+                        : rawBalance instanceof String && ((String) rawBalance).matches("[0-9]+")
+                        ? Integer.parseInt((String) rawBalance) : -1;
+            } catch (ArithmeticException | NumberFormatException e) {
+                blance = -1;
+            }
+            if (blance < 0) {
+                Log.record("农场抽抽乐：停止，同步响应缺少有效抽奖次数");
                 return;
             }
-            int blance = drawAsset.optInt("blance", 0);
-            int drawLoop = 0;
-            while (blance > 0 && ++drawLoop <= MAX_DRAW_LOOP) {
-                jo = MyUtils.newJSONObject(AntOrchardRpcCall.drawantorchard(activityId, sceneCode, "antorchard", userId));
-                if (MessageUtil.checkSuccess(TAG, jo)) {
-                    drawAsset = jo.optJSONObject("drawAsset");
-                    if (drawAsset == null) {
-                        break;
-                    }
-                    blance = drawAsset.optInt("blance", 0);
-                    JSONObject prizeVO = jo.optJSONObject("prizeVO");
-                    String prizeName = prizeVO != null ? prizeVO.optString("prizeName", "未知") : "未知";
-                    Log.farm("农场抽抽乐🎰️[" + drawScenename + "]抽奖:" + prizeName);
-                    TimeUtil.sleep(2000);
-                } else {
-                    break;
+            if (blance == 0) {
+                Log.record("农场抽抽乐：活动[" + drawScenename + "]无剩余抽奖次数");
+                return;
+            }
+            Log.record("农场抽抽乐：活动[" + drawScenename + "]剩余 " + blance + " 次，开始批量抽奖");
+            jo = MyUtils.newJSONObject(AntOrchardRpcCall.batchDrawantorchard(activityId, sceneCode, "antorchard", blance, userId));
+            if (!orchardDrawSuccessful(jo, "批量抽奖")) return;
+            JSONArray results = jo.optJSONArray("drawResultList");
+            StringJoiner prizes = new StringJoiner("、");
+            if (results != null) {
+                for (int i = 0; i < results.length(); i++) {
+                    JSONObject result = results.optJSONObject(i);
+                    JSONObject prize = result == null ? null : result.optJSONObject("prizeVO");
+                    if (prize != null && !prize.optString("prizeName").isEmpty()) prizes.add(prize.optString("prizeName"));
                 }
             }
+            orchardDrawLog("活动[" + drawScenename + "]批量抽奖成功；请求 " + blance + " 次；奖励="
+                    + (prizes.length() > 0 ? prizes : "奖励明细未返回，请查看活动页面"));
+        } catch (TaskCancelledException e) {
+            throw e;
         } catch (Throwable t) {
             Log.err(TAG, "orchardChouChouLeScene err:", t);
+            Log.record("农场抽抽乐：场景[" + drawScenename + "]失败，异常类型=" + t.getClass().getSimpleName());
         }
+    }
+
+    private static JSONArray orchardDrawScenes(JSONObject response) throws org.json.JSONException {
+        JSONArray scenes = response.optJSONArray("drawSceneGroups");
+        if (scenes != null && scenes.length() > 0) return scenes;
+        JSONObject scene = response.optJSONObject("drawScene");
+        if (scene != null) return new JSONArray().put(scene);
+        JSONObject activity = response.optJSONObject("drawActivity");
+        if (activity == null) return null;
+        JSONObject normalized = MyUtils.newJSONObject(activity.toString());
+        if (normalized.optString("sceneCode").isEmpty()) normalized.put("sceneCode", "ANTORCHARD_DRAW_TIMES");
+        return new JSONArray().put(MyUtils.newJSONObject().put("drawActivity", normalized));
+    }
+
+    private static String orchardDrawTaskField(JSONObject task, String field) {
+        JSONObject base = task.optJSONObject("taskBaseInfo");
+        Object raw = base == null ? null : base.opt(field);
+        String value = raw instanceof String ? ((String) raw).trim()
+                : "finishOnceAwardCnt".equals(field) && raw instanceof Number ? raw.toString() : "";
+        if (!value.isEmpty()) return value;
+        Object tracer = task.opt("iepTaskTracer");
+        if (!(tracer instanceof String)) return "";
+        for (String segment : ((String) tracer).split("~")) {
+            int colon = segment.indexOf(':');
+            if (colon > 0 && field.equals(segment.substring(0, colon))) return segment.substring(colon + 1).trim();
+        }
+        return "";
+    }
+
+    private static boolean orchardDrawSuccessful(JSONObject response, String step) {
+        boolean ok = Boolean.TRUE.equals(response.opt("success")) && !RpcRequestGuard.isFailure(response);
+        if (!ok) {
+            String code = response.optString("resultCode", response.optString("code", response.optString("error", "未返回")));
+            String reason = response.length() == 0 ? "响应为空或不是有效 JSON" : RpcRequestGuard.errorMessage(response);
+            Log.record("农场抽抽乐：" + step + "失败#状态码=" + code + "#原因=" + reason);
+        }
+        return ok;
+    }
+
+    private static void orchardDrawLog(String message) {
+        String text = "农场抽抽乐：" + message;
+        Log.record(text);
+        Log.farm(text);
     }
 
     /**
@@ -530,14 +646,7 @@ public class AntOrchard extends ModelTask {
                 String res = AntOrchardRpcCall.enterDrawActivityantorchard("", "ANTORCHARD_DRAW_TIMES", "antorchard");
                 JSONObject resData = MyUtils.newJSONObject(res);
                 if (MessageUtil.checkSuccess(TAG, resData)) {
-                    JSONArray drawSceneGroups = resData.optJSONArray("drawSceneGroups");
-                    if (drawSceneGroups == null) {
-                        JSONObject drawScene = resData.optJSONObject("drawScene");
-                        if (drawScene != null) {
-                            drawSceneGroups = new JSONArray();
-                            drawSceneGroups.put(drawScene);
-                        }
-                    }
+                    JSONArray drawSceneGroups = orchardDrawScenes(resData);
                     if (drawSceneGroups != null) {
                         for (int i = 0; i < drawSceneGroups.length(); i++) {
                             JSONObject drawScene = drawSceneGroups.optJSONObject(i);
