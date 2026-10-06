@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -296,18 +297,21 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                         SmallTitle(text = "无匹配字段")
                     }
                 }
-                items(sections.size) { index ->
+                items(sections.size, key = { sections[it].second.first().modelCode }) { index ->
                     val (title, fields) = sections[index]
                     title?.let { SmallTitle(text = it) }
                     CardColumn {
                         fields.forEach { fieldRow ->
-                            GroupFieldRow(
-                                activity = activity,
-                                userId = userId,
-                                groupCode = groupCode,
-                                row = fieldRow,
-                                onDependencyChanged = { depVersion++ }
-                            )
+                            // 搜索/依赖过滤会改变行位置，remember 状态必须跟随字段身份。
+                            key(fieldRow.key) {
+                                GroupFieldRow(
+                                    activity = activity,
+                                    userId = userId,
+                                    groupCode = groupCode,
+                                    row = fieldRow,
+                                    onDependencyChanged = { depVersion++ }
+                                )
+                            }
                         }
                     }
                 }
