@@ -130,8 +130,6 @@ public class AntForestV2 extends ModelTask {
 
     private static final Map<String, String> dressMap;
 
-    private static final Set<String> AntForestTaskTypeSet;
-
     static {
         dressMap = new HashMap<>();
         // position To positionType
@@ -148,19 +146,6 @@ public class AntForestV2 extends ModelTask {
         dressMap.put("bgGroundA", "bg__ground_a");
         dressMap.put("bgGroundB", "bg__ground_b");
         dressMap.put("bgGroundC", "bg__ground_c");
-
-        AntForestTaskTypeSet = new HashSet<>();
-        AntForestTaskTypeSet.add("VITALITYQIANDAOPUSH"); //
-        AntForestTaskTypeSet.add("ONE_CLICK_WATERING_V1"); // 给随机好友一键浇水
-        AntForestTaskTypeSet.add("GYG_YUEDU_2"); // 去森林图书馆逛15s
-        AntForestTaskTypeSet.add("GYG_TBRS"); // 逛一逛淘宝人生
-        AntForestTaskTypeSet.add("TAOBAO_tab2_2023"); // 去淘宝看科普视频
-        AntForestTaskTypeSet.add("GYG_diantao"); // 逛一逛点淘得红包
-        AntForestTaskTypeSet.add("GYG-taote"); // 逛一逛淘宝特价版
-        AntForestTaskTypeSet.add("NONGCHANG_20230818"); // 逛一逛淘宝芭芭农场
-        // AntForestTaskTypeSet.add("GYG_haoyangmao_20240103");//逛一逛淘宝薅羊毛
-        // AntForestTaskTypeSet.add("YAOYIYAO_0815");//去淘宝摇一摇领奖励
-        // AntForestTaskTypeSet.add("GYG-TAOCAICAI");//逛一逛淘宝买菜
     }
 
     private final AtomicInteger taskCount = new AtomicInteger(0);
@@ -2535,7 +2520,9 @@ public class AntForestV2 extends ModelTask {
                 Log.forest("森林任务🧾️完成[" + taskTitle + "]");
                 return true;
             }
-            // 另一种实现方案（见 TaskAlternative）
+            // 另一种实现方案（见 TaskAlternative）：逛一逛类外部场景（GYG_* / TAOBAO_* / NONGCHANG_* 等，
+            // 如森林图书馆、淘宝人生、科普视频、点淘、淘宝特价版、芭芭农场、摇一摇、买菜、薅羊毛）
+            // 由它统一兜底；原先按 taskType 维护的白名单已废弃，不再单独判断
             if (TaskAlternative.hit(jo, sceneCode)) {
                 TaskAlternative.trigger(null, taskType, taskTitle, taskType, sceneCode, "森林任务", msg -> Log.forest(msg));
                 return false;
