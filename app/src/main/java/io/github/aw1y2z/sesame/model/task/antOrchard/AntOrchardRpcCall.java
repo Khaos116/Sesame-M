@@ -128,6 +128,40 @@ public class AntOrchardRpcCall {
         return submitUserPlayDurationAction(gameAppId, source, 32);
     }
 
+    public static String orchardVisit(String source, boolean taobao) throws org.json.JSONException {
+        JSONObject body = MyUtils.newJSONObject().put("requestType", "NORMAL").put("sceneCode", "ORCHARD")
+                .put("source", source).put("version", taobao ? "" : VERSION);
+        if (!taobao) body.put("inHomepage", true);
+        return ApplicationHook.requestString(taobao ? "com.alipay.antorchard.orchardSimple" : "com.alipay.antfarm.orchardIndex", new JSONArray().put(body).toString());
+    }
+
+    public static String listStarTasks() throws org.json.JSONException {
+        JSONArray ids = new JSONArray();
+        for (String id : new String[]{"ORCHARD_NORMAL_STAR", "ORCHARD_NCLY_STAR30s_NCMXY", "ORCHARD_NCLY_STAR30s_NCDDP", "ORCHARD_NCLY_STAR30s_MSQYJ", "ORCHARD_NCLY_STAR30s_NCZPT"}) ids.put(id);
+        JSONObject body = MyUtils.newJSONObject().put("extend", MyUtils.newJSONObject().put("taskIdList", ids))
+                .put("requestType", "NORMAL").put("sceneCode", "ANTFARM_ORCHARD_TASK_V2").put("source", "ch_appcenter__chsub_9patch").put("version", VERSION);
+        return ApplicationHook.requestString("com.alipay.antiep.listTask", new JSONArray().put(body).toString());
+    }
+
+    public static String finishStarTask(String scene, String taskId) throws org.json.JSONException {
+        JSONObject body = MyUtils.newJSONObject().put("outBizNo", taskId + "_" + System.currentTimeMillis())
+                .put("requestType", "NORMAL").put("sceneCode", scene).put("source", "h5").put("taskType", taskId).put("version", VERSION);
+        return ApplicationHook.requestString("com.alipay.antiep.finishTask", new JSONArray().put(body).toString());
+    }
+
+    public static String orchardXlight(JSONObject position, JSONObject sdk) throws org.json.JSONException {
+        JSONObject body = MyUtils.newJSONObject().put("positionRequest", position).put("sdkPageInfo", sdk);
+        return ApplicationHook.requestString("com.alipay.adexchange.ad.facade.xlightPlugin", new JSONArray().put(body).toString());
+    }
+
+    public static String finishOrchardBrowse(String playBizId, JSONObject event, String scene, String taskType) throws org.json.JSONException {
+        JSONObject ext = MyUtils.newJSONObject();
+        if (!scene.isEmpty()) ext.put("iepTaskSceneCode", scene);
+        if (!taskType.isEmpty()) ext.put("iepTaskType", taskType);
+        JSONObject body = MyUtils.newJSONObject().put("extendInfo", ext).put("playBizId", playBizId).put("playEventInfo", event).put("source", "adx");
+        return ApplicationHook.requestString("com.alipay.adtask.biz.mobilegw.service.interaction.finish", new JSONArray().put(body).toString());
+    }
+
     public static String submitUserPlayDurationAction(String appId, String source, int seconds) {
         return ApplicationHook.requestString("com.alipay.gamecenteruprod.biz.rpc.v3.submitUserPlayDurationAction",
                 "[{\"gameAppId\":" + JSONObject.quote(appId) + ",\"playTime\":" + seconds

@@ -145,9 +145,9 @@ fun SelectionEditContent(
     // 所有 SELECT_AND_COUNT 类型字段都带"数量/次数"语义，统一显示次数编辑（滑块），
     // 例如小鸡乐园兑奖、帮喂小鸡、送麦子等"请填写X次数(每日)"字段。
     val withCount = liveField.type == "SELECT_AND_COUNT" || liveField.type == "SELECT_AND_COUNT_ONE"
-    // 合种浇水两列表用数值输入框而非滑块
-    val useInputBox = liveField.code == "cooperateWaterList" || liveField.code == "cooperateWaterTotalLimitList"
-    // 新勾选项默认值：只有合种浇水这两个字段取数值下限（本来就允许 0）；其余绝大多数 SelectAndCountModelField
+    // 克数直接输入，避免把10/18/33/66这类离散档位当连续滑块。
+    val useInputBox = liveField.code == "cooperateWaterList" || liveField.code == "cooperateWaterTotalLimitList" || liveField.code == "waterFriendGramList"
+    // 克数输入取数值下限：好友独立克数的0表示沿用全局档位；其余 SelectAndCountModelField
     // 字段用的是 (min=0, max=100) 的默认构造函数，valueRangeMin 也是 0——如果不加区分地取下限当默认值，
     // 勾选新好友/新场景后不手动拖一下滑块，保存下来的次数就是 0，业务侧会把 0 次当"今日已达上限"直接跳过，
     // 等于勾了等于没勾。所以非 useInputBox 字段维持原来的默认 1。

@@ -205,9 +205,24 @@ public class AntFarmRpcCall {
         return ApplicationHook.requestString("com.alipay.antfarm.listFarmTool", args1);
     }
 
-    public static String useFarmTool(String targetFarmId, String toolId, String toolType) {
-        String args1 = "[{\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"targetFarmId\":\"" + targetFarmId + "\",\"toolId\":\"" + toolId + "\",\"toolType\":\"" + toolType + "\",\"version\":\"" + VERSION + "\"}]";
-        return ApplicationHook.requestString("com.alipay.antfarm.useFarmTool", args1);
+    public static String useFarmTool(String targetFarmId, String toolId, String toolType) throws org.json.JSONException {
+        org.json.JSONObject args = io.github.aw1y2z.sesame.util.MyUtils.newJSONObject().put("requestType", "NORMAL")
+                .put("sceneCode", "ANTFARM").put("source", "H5").put("targetFarmId", targetFarmId)
+                .put("toolId", toolId).put("toolType", toolType).put("version", VERSION);
+        return ApplicationHook.requestString("com.alipay.antfarm.useFarmTool", new org.json.JSONArray().put(args).toString());
+    }
+
+    public static String useDollTool(String farmId, String toolId, String achievementId, String dollId) throws org.json.JSONException {
+        org.json.JSONObject args = io.github.aw1y2z.sesame.util.MyUtils.newJSONObject().put("requestType", "NORMAL")
+                .put("sceneCode", "ANTFARM").put("source", "H5").put("targetFarmId", farmId).put("toolId", toolId)
+                .put("toolType", "DOLLTOOL").put("achievementId", achievementId).put("dollId", dollId).put("version", VERSION);
+        return ApplicationHook.requestString("com.alipay.antfarm.useFarmTool", new org.json.JSONArray().put(args).toString());
+    }
+
+    public static String queryAntfarmDoll(String dollId) throws org.json.JSONException {
+        org.json.JSONObject args = io.github.aw1y2z.sesame.util.MyUtils.newJSONObject().put("dollId", dollId)
+                .put("requestType", "NORMAL").put("sceneCode", "ANTFARM").put("source", "H5").put("version", VERSION);
+        return ApplicationHook.requestString("com.alipay.antfarm.queryAntfarmDoll", new org.json.JSONArray().put(args).toString());
     }
 
     public static String rankingList(int pageStartSum) {
@@ -377,6 +392,18 @@ public class AntFarmRpcCall {
     /* 小鸡日记 */
     public static String queryChickenDiaryList() {
         return ApplicationHook.requestString("com.alipay.antfarm.queryChickenDiaryList", "[{\"requestType\":\"NORMAL" + "\",\"sceneCode\":\"DIARY\",\"source\":\"antfarm_icon\"}]");
+    }
+
+    public static String queryChickenDiaryList(String month) throws org.json.JSONException {
+        org.json.JSONObject args = io.github.aw1y2z.sesame.util.MyUtils.newJSONObject().put("queryMonthStr", month)
+                .put("requestType", "NORMAL").put("sceneCode", "DIARY").put("source", "antfarm_icon");
+        return ApplicationHook.requestString("com.alipay.antfarm.queryChickenDiaryList", new org.json.JSONArray().put(args).toString());
+    }
+
+    public static String collectChickenDiary(String diaryId) throws org.json.JSONException {
+        org.json.JSONObject args = io.github.aw1y2z.sesame.util.MyUtils.newJSONObject().put("diaryId", diaryId)
+                .put("collectStatus", true).put("requestType", "NORMAL").put("sceneCode", "MOOD").put("source", "H5");
+        return ApplicationHook.requestString("com.alipay.antfarm.collectChickenDiary", new org.json.JSONArray().put(args).toString());
     }
 
     public static String queryChickenDiary(String queryDayStr) {

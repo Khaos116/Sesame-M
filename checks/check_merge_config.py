@@ -170,6 +170,11 @@ fun main() {
     val cooperate = SelectAndCountModelField("cooperateWaterList", mapOf("A" to 5))
     edit(cooperate, "C")
     check((cooperate.value as Map<*, *>)["C"] == 0) { "合种浇水新勾选默认值应为 0，实际是 ${(cooperate.value as Map<*, *>)["C"]}" }
+    val grams = SelectAndCountModelField("waterFriendGramList", mapOf("A" to 66))
+    edit(grams, "B")
+    check(grams.value == mapOf("A" to 66, "B" to 0))
+    edit(grams, "B", 18)
+    check(grams.value == mapOf("A" to 66, "B" to 18))
     println("PASS: all count fields retain counts, edit counts and replace single selection")
 }
 '''.replace("@@WITH_COUNT@@", re.search(r"val withCount = [^\n]+", selection_ui)[0]) \

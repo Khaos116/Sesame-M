@@ -183,6 +183,7 @@ public class AntOrchard extends ModelTask {
             // 执行农场任务
             if (orchardListTask.getValue()) {
                 orchardListTask();
+                orchardStarTasks();
             }
 
 
@@ -1088,6 +1089,242 @@ public class AntOrchard extends ModelTask {
     /**
      * 农场任务列表处理
      */
+    private static JSONObject orchardExtraDisplay(JSONObject task) {
+        JSONObject display = task.optJSONObject("taskDisplayConfig");
+        if (display != null) return display;
+        JSONObject biz = task.optJSONObject("bizInfo");
+        return biz != null ? biz : MyUtils.newJSONObject(task.optString("bizInfo"));
+    }
+
+    private static String orchardUrlParam(JSONObject display, String key) {
+        List<String> urls = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        String target = display.optString("targetUrl");
+        if (!target.isEmpty()) { urls.add(target); seen.add(target); }
+        for (int i = 0; i < urls.size() && i < 12; i++) {
+            android.net.Uri uri = android.net.Uri.parse(urls.get(i));
+            if (!uri.isHierarchical()) continue;
+            String value = uri.getQueryParameter(key);
+            if (value != null && !value.isEmpty()) return value;
+            for (String nestedKey : new String[]{"url", "sourceUrl", "schema"}) {
+                String nested = uri.getQueryParameter(nestedKey);
+                if (nested != null && seen.add(nested)) urls.add(nested);
+            }
+        }
+        return "";
+    }
+
+    private static String orchardTaskSource(JSONObject display) {
+        for (String key : new String[]{"source", "chInfo", "alipayFarmSource"}) {
+            String value = orchardUrlParam(display, key);
+            if (!value.isEmpty()) return value;
+        }
+        return "";
+    }
+
+    private static boolean orchardExtraOk(JSONObject result) {
+        String code = result.optString("resultCode");
+        if (!code.isEmpty() && !"SUCCESS".equals(code) && !"100".equals(code) && !"200".equals(code)) return false;
+        return (Boolean.TRUE.equals(result.opt("success")) || "100".equals(result.optString("resultCode"))
+                || "SUCCESS".equals(result.optString("resultCode"))) && !RpcRequestGuard.isFailure(result);
+    }
+
+    private static JSONObject orchardUnwrapExtra(JSONObject result) {
+        JSONObject nested = result.optJSONObject("resData");
+        return nested == null || RpcRequestGuard.isFailure(result) ? result : nested;
+    }
+
+    private static boolean isExtraOrchardBrowse(JSONObject task) {
+        String action = task.optString("actionType");
+        return "ANTFARM_ORCHARD_NORMAL_GONGGEFANGWEN".equals(task.optString("taskId")) || "XLIGHT".equals(action)
+                || (("VISIT".equals(action) || "SYSTEM_SWITCH".equals(action)) && "TAOBAO".equals(task.optString("taskPlantType")));
+    }
+
+    private void orchardStarTasks() {
+        try {
+            JSONObject response = MyUtils.newJSONObject(AntOrchardRpcCall.listStarTasks());
+            JSONArray tasks = response.optJSONArray("taskInfos");
+            if (!orchardExtraOk(response) || tasks == null) { Log.record("努力流星：任务查询失败或缺少列表，" + RpcRequestGuard.errorMessage(response)); return; }
+            boolean listChanged = false;
+            for (int i = 0; i < tasks.length(); i++) {
+                JSONObject task = tasks.optJSONObject(i);
+                if (task == null || task.optString("taskType").isEmpty()) continue;
+                String id = task.optString("taskType"), label = "努力流星｜" + orchardExtraDisplay(task).optString("title", id);
+                if (!label.equals(AntOrchardTaskListMap.get(id))) { AntOrchardTaskListMap.add(id, label); listChanged = true; }
+            }
+            if (listChanged && !AntOrchardTaskListMap.save()) Log.record("努力流星：黑名单选项保存失败，请检查存储权限");
+            Set<String> seen = new HashSet<>();
+            if (tasks.length() == 0) Log.record("努力流星：本轮没有可执行任务");
+            for (int i = 0; i < tasks.length(); i++) {
+                JSONObject task = tasks.optJSONObject(i);
+                if (task == null || task.optString("taskType").isEmpty() || !seen.add(task.optString("taskType"))) continue;
+                JSONObject display = orchardExtraDisplay(task);
+                String id = task.optString("taskType"), title = display.optString("title", id);
+                if (AntOrchardTaskList.getValue().contains(id) || AntOrchardTaskList.getValue().contains(title)) { Log.record("努力流星：跳过黑名单任务[" + title + "]"); continue; }
+                runExtraOrchardTask(task, true);
+            }
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.record("努力流星：执行异常，" + t.getClass().getSimpleName()); Log.err(TAG, "orchardStarTasks", t); }
+    }
+
+    private static int extraOrchardCount(JSONObject task, String key) {
+        Object value = task.opt(key);
+        if (!(value instanceof Number) && !(value instanceof String)) return -1;
+        try { int count = new java.math.BigDecimal(value.toString().trim()).intValueExact(); return count >= 0 ? count : -1;
+        } catch (NumberFormatException | ArithmeticException e) { return -1; }
+    }
+
+    private static String extraOrchardSnapshot(JSONObject task) {
+        return task.optString("taskStatus") + ":" + extraOrchardCount(task, "rightsTimes") + ":" + extraOrchardCount(task, "taskProgress");
+    }
+
+    private static int extraOrchardStage(String state) {
+        if ("RECEIVED".equals(state) || "DONE".equals(state) || "AWARDED".equals(state)) return 2;
+        if ("FINISHED".equals(state) || "COMPLETE".equals(state) || "WAIT_RECEIVE".equals(state) || "TO_RECEIVE".equals(state) || "UNLOCKED".equals(state)) return 1;
+        return "TODO".equals(state) || "WAIT_COMPLETE".equals(state) ? 0 : -1;
+    }
+
+    private static boolean extraOrchardAdvanced(JSONObject before, JSONObject after) {
+        int from = extraOrchardStage(before.optString("taskStatus")), to = extraOrchardStage(after.optString("taskStatus"));
+        if (from >= 0 && to > from) return true;
+        if (to < 0 || to < from) return false;
+        for (String key : new String[]{"rightsTimes", "taskProgress"}) {
+            int old = extraOrchardCount(before, key), fresh = extraOrchardCount(after, key);
+            if (old >= 0 && fresh > old) return true;
+        }
+        return false;
+    }
+
+    private JSONObject refreshExtraOrchardTask(String id, boolean star) throws Exception {
+        JSONObject response = MyUtils.newJSONObject(star ? AntOrchardRpcCall.listStarTasks() : AntOrchardRpcCall.orchardListTask());
+        JSONArray tasks = response.optJSONArray(star ? "taskInfos" : "taskList");
+        if (!orchardExtraOk(response) || tasks == null) return null;
+        for (int i = 0; i < tasks.length(); i++) {
+            JSONObject task = tasks.optJSONObject(i);
+            if (task != null && id.equals(task.optString(star ? "taskType" : "taskId"))) return task;
+        }
+        return null;
+    }
+
+    private void runExtraOrchardTask(JSONObject initial, boolean star) {
+        String label = star ? "努力流星" : "农场浏览";
+        String id = initial.optString(star ? "taskType" : "taskId");
+        JSONObject task = initial;
+        try {
+            if (id.isEmpty()) { Log.record(label + "：任务缺少编号，跳过"); return; }
+            for (int round = 0; round < 20; round++) {
+                TimeUtil.sleep(0);
+                JSONObject display = orchardExtraDisplay(task);
+                String title = display.optString("title", id), state = task.optString("taskStatus");
+                if ("RECEIVED".equals(state) || "DONE".equals(state) || "AWARDED".equals(state)) { Log.record(label + "：已完成并领奖[" + title + "]"); return; }
+                String scene = task.optString("sceneCode");
+                boolean rewardReady = "FINISHED".equals(state) || "COMPLETE".equals(state) || "WAIT_RECEIVE".equals(state) || "TO_RECEIVE".equals(state) || "UNLOCKED".equals(state);
+                JSONObject acted;
+                if (rewardReady) {
+                    if (Boolean.TRUE.equals(task.opt("directReceiveAward"))) {
+                        TimeUtil.sleep(500);
+                        JSONObject after = refreshExtraOrchardTask(id, star);
+                        if (after != null && extraOrchardAdvanced(task, after)) { task = after; continue; }
+                        Log.record(label + "：任务已完成，自动发奖尚未确认[" + title + "]"); return;
+                    }
+                    String plantType = star ? "ANTIEP" : task.optString("taskPlantType");
+                    if (plantType.isEmpty()) { Log.record(label + "：缺少领奖类型，跳过[" + title + "]"); return; }
+                    acted = MyUtils.newJSONObject(AntOrchardRpcCall.triggerTbTask(id, plantType));
+                } else if ("TODO".equals(state) || "WAIT_COMPLETE".equals(state)) {
+                    int limit = extraOrchardCount(task, "rightsTimesLimit");
+                    if (limit > 0 && extraOrchardCount(task, "rightsTimes") >= limit) { Log.record(label + "：已达到任务次数上限，领奖以服务端状态为准[" + title + "]"); return; }
+                    if (star) {
+                        if (scene.isEmpty()) { Log.record(label + "：缺少任务场景，跳过[" + title + "]"); return; }
+                        if (!"ORCHARD_NORMAL_STAR".equals(id) && !reportOrchardStarGame(task, display)) return;
+                        acted = MyUtils.newJSONObject(AntOrchardRpcCall.finishStarTask(scene, id));
+                    } else { acted = performOrchardBrowse(task, display); if (acted == null) return; }
+                } else { Log.record(label + "：不支持的任务状态[" + state + "]，跳过[" + title + "]"); return; }
+                TimeUtil.sleep(500);
+                JSONObject after = refreshExtraOrchardTask(id, star);
+                if (after == null) { Log.record(label + "：动作后回查失败或任务缺失，结果未确认[" + title + "]"); return; }
+                if (!extraOrchardAdvanced(task, after)) {
+                    Log.record(label + "：进度未推进，停止[" + title + "]；code=" + acted.optString("resultCode", acted.optString("code", "缺失")) + "，原因=" + RpcRequestGuard.errorMessage(acted)); return;
+                }
+                String message = label + "：" + (rewardReady ? "领奖状态已推进" : "完成进度已推进") + "[" + title + "]，" + extraOrchardSnapshot(task) + "→" + extraOrchardSnapshot(after);
+                Log.record(message); Log.farm(message); task = after;
+            }
+            Log.record(label + "：达到本轮20阶段上限，下轮继续");
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.record(label + "：执行异常，" + t.getClass().getSimpleName()); Log.err(TAG, "runExtraOrchardTask", t); }
+    }
+
+    private boolean reportOrchardStarGame(JSONObject task, JSONObject display) throws Exception {
+        JSONObject ball = display.optJSONObject("floatBallConfig");
+        int seconds = ball == null ? -1 : extraOrchardCount(ball, "floatBallDuration");
+        String app = "", source = "";
+        for (JSONObject root : new JSONObject[]{display, task, ball, display.optJSONObject("gameInfo"), display.optJSONObject("extend"), task.optJSONObject("extend")}) {
+            if (root == null) continue;
+            for (String key : new String[]{"gameAppId", "appId", "game_id"}) if (app.isEmpty() && root.opt(key) instanceof String) app = root.optString(key).trim();
+            for (String key : new String[]{"source", "chInfo", "oriChInfo", "alipayFarmSource"}) if (source.isEmpty() && root.opt(key) instanceof String) source = root.optString(key).trim();
+        }
+        for (String key : new String[]{"gameAppId", "appId", "game_id"}) if (app.isEmpty()) app = orchardUrlParam(display, key);
+        for (String key : new String[]{"source", "chInfo", "oriChInfo", "alipayFarmSource"}) if (source.isEmpty()) source = orchardUrlParam(display, key);
+        if (!"nongchangleyuan".equals(display.optString("type")) || seconds <= 0 || seconds > 1800 || app.isEmpty() || source.isEmpty()) {
+            Log.record("努力流星：游戏缺少有效appId、来源或时长，不支持完成；跳过[" + task.optString("taskType") + "]"); return false;
+        }
+        Log.record("努力流星：按任务要求等待" + (seconds + 1) + "秒[" + display.optString("title", task.optString("taskType")) + "]");
+        TimeUtil.sleep((seconds + 1) * 1000L);
+        JSONObject result = MyUtils.newJSONObject(AntOrchardRpcCall.submitUserPlayDurationAction(app, source, seconds + 1));
+        if (!orchardExtraOk(result)) { Log.record("努力流星：游戏时长上报失败，" + RpcRequestGuard.errorMessage(result)); return false; }
+        return true;
+    }
+
+    private JSONObject performOrchardBrowse(JSONObject task, JSONObject display) throws Exception {
+        String source = orchardTaskSource(display), action = task.optString("actionType");
+        if ("ANTFARM_ORCHARD_NORMAL_GONGGEFANGWEN".equals(task.optString("taskId")) || "TAOBAO".equals(task.optString("taskPlantType"))) {
+            if (source.isEmpty()) { Log.record("农场浏览：缺少任务提供的访问来源，跳过"); return null; }
+            return orchardUnwrapExtra(MyUtils.newJSONObject(AntOrchardRpcCall.orchardVisit(source, "TAOBAO".equals(task.optString("taskPlantType")))));
+        }
+        if (!"XLIGHT".equals(action)) return null;
+        String pageUrl = orchardUrlParam(display, "url");
+        if (pageUrl.isEmpty() && display.optString("targetUrl").startsWith("https://")) pageUrl = display.optString("targetUrl");
+        String space = orchardUrlParam(display, "spaceCodeFeeds"), token = orchardUrlParam(display, "tokenFeeds");
+        String scene = orchardUrlParam(display, "iepTaskSceneCode"), type = orchardUrlParam(display, "iepTaskType");
+        if (!pageUrl.startsWith("https://") || space.isEmpty()) { Log.record("农场浏览：广告任务缺少有效页面或spaceCodeFeeds，跳过"); return null; }
+        JSONObject ext = MyUtils.newJSONObject(), refer = MyUtils.newJSONObject();
+        if (!token.isEmpty()) refer.put("referToken", token);
+        String limit = orchardUrlParam(display, "canDoTaskTimesLimit");
+        if (token.isEmpty() && !limit.isEmpty()) ext.put("canDoTaskTimesLimit", limit);
+        String session = "u_" + RandomUtil.getRandomString(5) + "_" + RandomUtil.getRandomString(5), cursor = "";
+        Set<String> seenPages = new HashSet<>();
+        for (int page = 1; page <= 5; page++) {
+            JSONObject position = MyUtils.newJSONObject().put("extMap", ext).put("referInfo", refer).put("spaceCode", space).put("searchInfo", MyUtils.newJSONObject());
+            if (page > 1 && token.isEmpty() && pageUrl.contains("multi-stage-task.html") && !scene.isEmpty() && !type.isEmpty()) position.put("searchInfo", MyUtils.newJSONObject().put("rangeFilter", "goodsPrice:-").put("tabKey", "all"));
+            JSONObject sdk = MyUtils.newJSONObject().put("adComponentType", "FEEDS").put("adComponentVersion", "4.30.21").put("enableFusion", true)
+                    .put("networkType", "WWAN").put("pageFrom", "ch_url-https://render.alipay.com/p/yuyan/180020010001263018/game.html")
+                    .put("pageNo", page).put("pageUrl", pageUrl).put("session", session).put("unionAppId", "2060090000304921")
+                    .put("usePlayLink", "true").put("xlightRuntimeSDKversion", "4.30.21").put("xlightSDKType", "h5").put("xlightSDKVersion", "4.30.21");
+            if (!cursor.isEmpty()) sdk.put("playingPageInfo", cursor);
+            JSONObject envelope = MyUtils.newJSONObject(AntOrchardRpcCall.orchardXlight(position, sdk));
+            JSONObject result = orchardUnwrapExtra(envelope);
+            JSONObject playing = result.optJSONObject("playingResult");
+            if (RpcRequestGuard.isFailure(envelope) || RpcRequestGuard.isFailure(result) || playing == null) { Log.record("农场浏览：广告查询失败或缺少playingResult，" + RpcRequestGuard.errorMessage(result)); return null; }
+            String biz = playing.optString("playingBizId");
+            JSONObject detail = playing.optJSONObject("eventRewardDetail");
+            JSONArray events = detail == null ? null : detail.optJSONArray("eventRewardInfoList");
+            JSONObject selected = null;
+            if (!biz.isEmpty() && events != null) for (int i = 0; i < events.length(); i++) {
+                JSONObject event = events.optJSONObject(i);
+                if (event != null && "BROWSE".equals(event.optString("playingEventType")) && (selected == null || event.optInt("order", Integer.MAX_VALUE) < selected.optInt("order", Integer.MAX_VALUE))) selected = event;
+            }
+            if (selected != null) {
+                int seconds = selected.has("eventStep") ? extraOrchardCount(selected, "eventStep") : 15;
+                if (seconds <= 0 || seconds > 1800) { Log.record("农场浏览：浏览事件时长无效，停止"); return null; }
+                Log.record("农场浏览：按事件要求等待" + seconds + "秒[" + display.optString("title", task.optString("taskId")) + "]");
+                TimeUtil.sleep(seconds * 1000L);
+                return orchardUnwrapExtra(MyUtils.newJSONObject(AntOrchardRpcCall.finishOrchardBrowse(biz, selected, scene, type)));
+            }
+            cursor = playing.optString("playingPageInfo");
+            if (cursor.isEmpty() || !seenPages.add(cursor)) { Log.record("农场浏览：没有可完成事件或分页重复，停止"); return null; }
+        }
+        Log.record("农场浏览：达到5页上限，未发现可完成事件"); return null;
+    }
+
     private void orchardListTask() {
         try {
             String result = AntOrchardRpcCall.orchardListTask();
@@ -1176,6 +1413,11 @@ public class AntOrchard extends ModelTask {
                 String taskId = jo.optString("taskId", "");
                 JSONObject displayConfig = jo.optJSONObject("taskDisplayConfig");
                 String title = displayConfig != null ? displayConfig.optString("title", "未知任务") : "未知任务";
+                if (AntOrchardTaskList.getValue().contains(title) || AntOrchardTaskList.getValue().contains(taskId) || AntOrchardTaskList.getValue().contains(groupId)) continue;
+                if (isExtraOrchardBrowse(jo)) {
+                    runExtraOrchardTask(jo, false);
+                    continue;
+                }
                 if (AntOrchardTaskList.getValue().contains(title)
                         || ORCHARD_TASK_BLACKLIST.contains(title)
                         || ORCHARD_TASK_BLACKLIST.contains(groupId)
@@ -1194,6 +1436,7 @@ public class AntOrchard extends ModelTask {
             }
             // 核对本轮 doFarmTask 的结果（响应不可信，以任务列表为准）
             verifyPendingTasksByList();
+        } catch (TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "handleTaskList err:", t);
         }

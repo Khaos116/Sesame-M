@@ -10,6 +10,7 @@ import io.github.aw1y2z.sesame.entity.AlipayVersion;
 import io.github.aw1y2z.sesame.entity.RpcEntity;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -465,9 +466,38 @@ public class AntForestRpcCall {
     }
     
     /* 新版动物伙伴：派遣 */
-    public static String assignMonopolyCreature(String creatureCode) {
-        String extra = ",\"creatureCode\":\"" + creatureCode + "\",\"secondConfirm\":false";
-        return ApplicationHook.requestString("alipay.antisle.monopoly.h5.assignMonopolyCreature", monopolyPayload(extra));
+    public static String assignMonopolyCreature(String creatureCode) throws JSONException {
+        return assignMonopolyCreature(creatureCode, false);
+    }
+
+    public static String assignMonopolyCreature(String creatureCode, boolean secondConfirm) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("creatureCode", creatureCode)
+                .put("secondConfirm", secondConfirm).put("source", "monopoly_home_animal")
+                .put("uniqueId", RandomUtil.getRandomString(16));
+        return ApplicationHook.requestString("alipay.antisle.monopoly.h5.assignMonopolyCreature", new JSONArray().put(args).toString());
+    }
+
+    public static String queryMonopolyCertificate(String projectId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("projectId", projectId)
+                .put("source", "monopoly_auto_exchange").put("version", "20240704");
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryTreeForExchange", new JSONArray().put(args).toString());
+    }
+
+    public static String exchangeMonopolyCertificate(long projectId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("projectId", projectId).put("source", "monopoly_auto_exchange")
+                .put("sToken", String.valueOf(System.currentTimeMillis())).put("userManualSelect", false).put("version", "20230501");
+        return ApplicationHook.requestString("alipay.antmember.forest.h5.exchangeTree", new JSONArray().put(args).toString());
+    }
+
+    public static String memberForestSignin(String version) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("chInfo", "forestWater").put("scene", "promote")
+                .put("extInfo", MyUtils.newJSONObject().put("version", version));
+        return ApplicationHook.requestString("com.alipay.amic.commonmodule.rpc.MemberForestSigninFacade.memberForestSignin", new JSONArray().put(args).toString());
+    }
+
+    public static String plantAward(String speed) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("awardType", "WATER").put("awardSpeed", speed).put("source", "forestWater");
+        return ApplicationHook.requestString("com.alipay.ugshopping.biz.service.rpc.plant.PlantFacade.plantAward", new JSONArray().put(args).toString());
     }
     
     public static String collectAnimalRobEnergy(String propId, String propType, String shortDay) {

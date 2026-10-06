@@ -240,6 +240,7 @@ public class AntForestV2 extends ModelTask {
     private BooleanModelField AutoAntForestVitalityTaskList;
     private SelectModelField AntForestVitalityTaskList;
     private ChoiceModelField waterFriendType;
+    private SelectAndCountModelField waterFriendGramList;
     private BooleanModelField waterFriendEnergySendChat;
 
     private BooleanModelField waterFriendEnergyFirst;
@@ -257,6 +258,8 @@ public class AntForestV2 extends ModelTask {
     private BooleanModelField monopolyAnimalEnergy;
     private BooleanModelField monopolyDispatchAnimal;
     private ChoiceModelField monopolyDispatchPriority;
+    private BooleanModelField monopolyExchangeCertificate;
+    private BooleanModelField waterMemberPlant;
     private BooleanModelField AutoMonopolyTaskList;
     private SelectModelField MonopolyTaskList;
     private BooleanModelField collectGiftBox;
@@ -349,6 +352,7 @@ public class AntForestV2 extends ModelTask {
         modelFields.addField(returnWater33 = new IntegerModelField("returnWater33", "返水 | 33克需收能量(0不限)", 33).setDependsOn("returnWater"));
         modelFields.addField(waterFriendType = new ChoiceModelField("waterFriendType", "浇水 | 动作", WaterFriendType.WATER_00, WaterFriendType.nickNames));
         modelFields.addField(waterFriendList = new SelectAndCountModelField("waterFriendList", "浇水 | 好友列表", new LinkedHashMap<>(), AlipayUser::getList, "请填写浇水次数(每日)", 1, 3));
+        modelFields.addField(waterFriendGramList = new SelectAndCountModelField("waterFriendGramList", "浇水 | 好友独立克数", new LinkedHashMap<>(), AlipayUser::getList, "只填10、18、33、66；未设置或0沿用浇水动作；仍需开启浇水并在好友列表设置次数", 0, 66));
         modelFields.addField(waterFriendEnergySendChat = new BooleanModelField("waterFriendEnergySendChat", "浇水 | 发送已浇水提醒", false));
         modelFields.addField(waterFriendEnergyFirst = new BooleanModelField("waterFriendEnergyFirst", "浇水 | 每次首先执行", false));
         modelFields.addField(doubleWaterFriendEnergy = new BooleanModelField("doubleWaterFriendEnergy", "浇水 | 强制检查重复一次", false));
@@ -368,6 +372,8 @@ public class AntForestV2 extends ModelTask {
         modelFields.addField(useEnergyRainLimit = new BooleanModelField("useEnergyRainLimit", "兑换使用限时能量雨卡", false));
         modelFields.addField(userPatrol = new BooleanModelField("userPatrol", "旧版保护地巡护", false));
         modelFields.addField(monopolyPatrol = new BooleanModelField("monopolyPatrol", "新版保护地 | 自动前进", false));
+        modelFields.addField(monopolyExchangeCertificate = new BooleanModelField("monopolyExchangeCertificate", "新版保护地 | 自动兑换保护证书", false).setDescription("仅兑换当前地图尚未持有的证书，可能消耗森林能量"));
+        modelFields.addField(waterMemberPlant = new BooleanModelField("waterMemberPlant", "会员绿植 | 自动浇水", false).setDescription("使用活动水滴浇水，回查进度；未开通活动时跳过"));
         modelFields.addField(monopolyTasks = new BooleanModelField("monopolyTasks", "新版保护地 | 自动任务", false));
         modelFields.addField(monopolyAnimalEnergy = new BooleanModelField("monopolyAnimalEnergy", "新版动物伙伴 | 领取能量", false));
         modelFields.addField(monopolyDispatchAnimal = new BooleanModelField("monopolyDispatchAnimal", "新版动物伙伴 | 自动派遣", false));
@@ -724,6 +730,12 @@ public class AntForestV2 extends ModelTask {
                 }
                 if (monopolyAnimalEnergy.getValue()) {
                     collectMonopolyAnimalEnergy();
+                }
+                if (monopolyExchangeCertificate.getValue()) {
+                    exchangeMonopolyCertificate();
+                }
+                if (waterMemberPlant.getValue()) {
+                    waterMemberPlant();
                 }
                 // 动物伙伴自动派遣：新版受独立开关与优先级控制，旧版仍只看"派遣动物伙伴"选择
                 Integer monopolyDispatchPriorityValue = monopolyDispatchPriority.getValue();
@@ -2296,10 +2308,13 @@ public class AntForestV2 extends ModelTask {
                     TimeUtil.sleep(100);
                     if (MessageUtil.checkResultCode(TAG, jo)) {
                         String bizNo = jo.optString("bizNo");
-                        KVNode<Integer, Boolean> waterCountKVNode = returnFriendWater(uid, bizNo, remainCount, waterEnergy);
+                        int friendWaterEnergy = friendWaterEnergy(uid, waterEnergy);
+                        if (friendWaterEnergy <= 0) continue;
+                        KVNode<Integer, Boolean> waterCountKVNode = returnFriendWater(uid, bizNo, remainCount, friendWaterEnergy);
                         int wateredCount = waterCountKVNode.getKey();
                         if (wateredCount > 0) {
                             Status.waterFriendToday(uid, wateredCount, taskUid);
+                            Log.record("好友浇水：成功[" + UserIdMap.getMaskName(uid) + "]，本次" + wateredCount + "次，每次" + friendWaterEnergy + "g");
                         }
                         if (!waterCountKVNode.getValue()) {
                             break;
@@ -4328,9 +4343,119 @@ public class AntForestV2 extends ModelTask {
         }
     }
 
-    /* 新版动物伙伴：自动派遣（已有动物在巡护时不替换） */
+    private int friendWaterEnergy(String uid, int defaultGrams) {
+        Integer grams = waterFriendGramList.getValue().get(uid);
+        if (grams == null || grams == 0) return defaultGrams;
+        if (grams == 10 || grams == 18 || grams == 33 || grams == 66) return grams;
+        Log.record("好友浇水：独立克数无效[" + grams + "]，请填写10、18、33、66；跳过该好友");
+        return 0;
+    }
+
+    private static long forestFeatureLong(JSONObject object, String key) {
+        Object value = object.opt(key);
+        if (!(value instanceof Number) && !(value instanceof String)) return -1;
+        try {
+            long number = new java.math.BigDecimal(value.toString()).longValueExact();
+            return number >= 0 ? number : -1;
+        } catch (NumberFormatException | ArithmeticException e) { return -1; }
+    }
+
+    private void exchangeMonopolyCertificate() {
+        try {
+            TimeUtil.sleep(0);
+            JSONObject entry = MyUtils.newJSONObject(AntForestRpcCall.queryMonopolyEntryInfo());
+            if (!"SUCCESS".equals(entry.optString("resultCode")) || RpcRequestGuard.isFailure(entry)) { Log.record("保护证书：入口查询失败，" + RpcRequestGuard.errorMessage(entry)); return; }
+            JSONObject display = entry.optJSONObject("displayInfo");
+            JSONObject map = display == null ? null : display.optJSONObject("mapDisplay");
+            JSONObject guide = map == null ? null : map.optJSONObject("protectionGuideDisplay");
+            String url = guide == null ? "" : guide.optString("redirectUrl");
+            if (url == null || url.isEmpty()) { Log.record("保护证书：当前地图没有证书项目"); return; }
+            android.net.Uri uri = android.net.Uri.parse(url);
+            String id = uri.getQueryParameter("projectId");
+            String nested = uri.getQueryParameter("url");
+            if (id == null && nested != null) id = android.net.Uri.parse(nested).getQueryParameter("projectId");
+            if (id == null || !id.matches("[0-9]+")) { Log.record("保护证书：入口缺少有效项目编号，跳过"); return; }
+            JSONObject before = MyUtils.newJSONObject(AntForestRpcCall.queryMonopolyCertificate(id));
+            if (!"SUCCESS".equals(before.optString("resultCode")) || RpcRequestGuard.isFailure(before)) { Log.record("保护证书：资格查询失败，" + RpcRequestGuard.errorMessage(before)); return; }
+            JSONObject project = before.optJSONObject("exchangeableTree");
+            if (project == null || forestFeatureLong(project, "projectId") != Long.parseLong(id)) { Log.record("保护证书：项目数据缺失或不符，跳过"); return; }
+            long certCount = forestFeatureLong(project, "certCount");
+            if (certCount < 0) { Log.record("保护证书：缺少持有数量，跳过"); return; }
+            if (!"AVAILABLE".equals(before.optString("applyAction")) || certCount > 0) { Log.record("保护证书：已持有或当前不可兑换"); return; }
+            long cost = forestFeatureLong(project, "energy"), balance = forestFeatureLong(before, "currentEnergy");
+            if (cost < 0 || balance < cost || project.optBoolean("overLimit") || !project.optBoolean("hasBudget", true)) {
+                Log.record("保护证书：能量或额度不足，成本=" + cost + "g，余额=" + balance + "g"); return;
+            }
+            String flag = "forest::certificateUnconfirmed::" + id;
+            if (Status.hasFlagToday(flag)) { Log.record("保护证书：本日已提交但结果未确认，避免重复扣能量"); return; }
+            // 请求发出后即占用一次预算；响应丢失时靠回查确认，不重复提交。
+            Status.flagToday(flag);
+            JSONObject exchanged = MyUtils.newJSONObject(AntForestRpcCall.exchangeMonopolyCertificate(Long.parseLong(id)));
+            JSONObject after = MyUtils.newJSONObject(AntForestRpcCall.queryMonopolyCertificate(id));
+            JSONObject afterProject = after.optJSONObject("exchangeableTree");
+            if ("SUCCESS".equals(after.optString("resultCode")) && !RpcRequestGuard.isFailure(after) && afterProject != null && forestFeatureLong(afterProject, "projectId") == Long.parseLong(id)
+                    && forestFeatureLong(afterProject, "certCount") > certCount) {
+                String message = "保护证书：兑换成功[" + project.optString("projectName", "当前地图") + "]，成本=" + cost + "g";
+                Log.record(message); Log.forest(message);
+            } else { Log.record("保护证书：兑换未确认，code=" + exchanged.optString("resultCode", "缺失") + "，原因=" + RpcRequestGuard.errorMessage(exchanged)); }
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.record("保护证书：执行异常，" + t.getClass().getSimpleName()); Log.err(TAG, "exchangeMonopolyCertificate", t); }
+    }
+
+    private void waterMemberPlant() {
+        try {
+            JSONObject response = MyUtils.newJSONObject(AntForestRpcCall.memberForestSignin("plant_black_v2"));
+            // ponytail: 每轮最多50次浇水；需要更大额度时由下一轮继续。
+            for (int round = 0; round < 50; round++) {
+                TimeUtil.sleep(0);
+                if (!Boolean.TRUE.equals(response.opt("success")) || !"SUCCESS".equals(response.optString("resultCode"))) {
+                    Log.record("会员绿植：状态查询失败，" + RpcRequestGuard.errorMessage(response)); return;
+                }
+                JSONObject data = response.optJSONObject("resultData");
+                JSONObject channel = data == null ? null : data.optJSONObject("plantChannelResponse");
+                JSONObject plant = data == null ? null : data.optJSONObject("plantInfo");
+                if (channel == null || !Boolean.TRUE.equals(channel.opt("access")) || plant == null || !"in_progress".equals(plant.optString("status"))) {
+                    Log.record("会员绿植：活动未开通或当前没有待浇水绿植"); return;
+                }
+                JSONObject info = plant.optJSONObject("plantInfoMap");
+                JSONObject water = info == null ? null : info.optJSONObject("WATER");
+                JSONObject pot = info == null ? null : info.optJSONObject("WATERING_POT");
+                JSONObject ext = pot == null ? null : pot.optJSONObject("extInfo");
+                JSONObject progress = info == null ? null : info.optJSONObject("PLANT_PROGRESS_V2");
+                progress = progress == null ? null : progress.optJSONObject("extInfo");
+                if (water == null || ext == null || progress == null) { Log.record("会员绿植：缺少水滴或进度数据，停止"); return; }
+                long cost = forestFeatureLong(ext, "costPerWater"), balance = forestFeatureLong(water, "value"), before = forestFeatureLong(progress, "totalWaterG");
+                if (cost <= 0 || balance < 0 || before < 0) { Log.record("会员绿植：水滴或成本数据无效，停止"); return; }
+                JSONArray pots = new JSONArray(ext.optString("availablePots", "[]"));
+                boolean five = false, one = false;
+                for (int i = 0; i < pots.length(); i++) { five |= "five".equals(pots.optString(i)); one |= "one".equals(pots.optString(i)); }
+                String speed = five && balance / cost >= 5 ? "five" : one && balance >= cost ? "one" : "";
+                if (speed.isEmpty()) { Log.record("会员绿植：水滴不足或无可用浇水档位，结束"); return; }
+                JSONObject awarded = MyUtils.newJSONObject(AntForestRpcCall.plantAward(speed));
+                response = MyUtils.newJSONObject(AntForestRpcCall.memberForestSignin(water.optString("darwinVersion", "plant_black_v2")));
+                JSONObject afterData = response.optJSONObject("resultData");
+                JSONObject afterPlant = afterData == null ? null : afterData.optJSONObject("plantInfo");
+                JSONObject afterInfo = afterPlant == null ? null : afterPlant.optJSONObject("plantInfoMap");
+                JSONObject afterProgress = afterInfo == null ? null : afterInfo.optJSONObject("PLANT_PROGRESS_V2");
+                afterProgress = afterProgress == null ? null : afterProgress.optJSONObject("extInfo");
+                JSONObject afterWater = afterInfo == null ? null : afterInfo.optJSONObject("WATER");
+                long total = afterProgress == null ? -1 : forestFeatureLong(afterProgress, "totalWaterG");
+                long remaining = afterWater == null ? -1 : forestFeatureLong(afterWater, "value");
+                if (!Boolean.TRUE.equals(response.opt("success")) || !"SUCCESS".equals(response.optString("resultCode")) || total <= before || remaining < 0 || remaining >= balance) {
+                    Log.record("会员绿植：浇水后进度或扣水未确认，停止；code=" + awarded.optString("resultCode", "缺失") + "，原因=" + RpcRequestGuard.errorMessage(awarded)); return;
+                }
+                String message = "会员绿植：浇水成功，累计" + before + "→" + total + "，水滴" + balance + "→" + remaining;
+                Log.record(message); Log.forest(message); TimeUtil.sleep(300);
+            }
+            Log.record("会员绿植：达到本轮50次上限，下轮继续");
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.record("会员绿植：执行异常，" + t.getClass().getSimpleName()); Log.err(TAG, "waterMemberPlant", t); }
+    }
+
+    /* 在工作的伙伴只有确认到期时才允许替换。 */
     private boolean dispatchMonopolyAnimal(boolean canConsumeAnimalProp) {
         try {
+            TimeUtil.sleep(0);
             if (!canConsumeAnimalProp) {
                 return false;
             }
@@ -4338,14 +4463,24 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            if (jo.optBoolean("usingMonopolyCreature")) {
-                Log.record("新版动物伙伴🦩已有动物在巡护，保留当前伙伴");
+            Object using = jo.opt("usingMonopolyCreature");
+            JSONArray creatureList = jo.optJSONArray("creatureList");
+            if (!(using instanceof Boolean) || creatureList == null) {
+                Log.record("新版动物伙伴：缺少占用状态或动物列表，本轮不派遣");
                 return true;
             }
-            JSONArray creatureList = jo.optJSONArray("creatureList");
-            if (creatureList == null) {
-                Log.record("新版动物伙伴🦩入口缺少动物列表，跳过");
-                return false;
+            boolean replacing = Boolean.TRUE.equals(using);
+            if (replacing) {
+                JSONObject current = null;
+                for (int i = 0; i < creatureList.length(); i++) {
+                    JSONObject creature = creatureList.optJSONObject(i);
+                    if (creature != null && "using".equals(creature.optString("status"))) { current = creature; break; }
+                }
+                if (!isMonopolyCreatureExpired(current)) {
+                    Log.record("新版动物伙伴：当前伙伴未确认到期，保留当前伙伴");
+                    return true;
+                }
+                Log.record("新版动物伙伴：当前伙伴已到期，尝试派遣新伙伴");
             }
             List<JSONObject> candidates = new ArrayList<>();
             boolean allHasInitialRobEnergy = true;
@@ -4361,7 +4496,7 @@ public class AntForestV2 extends ModelTask {
             }
             if (candidates.isEmpty()) {
                 Log.record("新版动物伙伴🦩当前没有可派遣的动物");
-                return false;
+                return replacing;
             }
             // 都能给出预计产出时选最高的，否则按服务端顺序取第一个
             JSONObject selected = candidates.get(0);
@@ -4378,14 +4513,45 @@ public class AntForestV2 extends ModelTask {
                 return false;
             }
             JSONObject assigned = MyUtils.newJSONObject(AntForestRpcCall.assignMonopolyCreature(creatureCode));
+            String code = assigned.optString("resultCode");
+            if ("MONOPOLY_CREATURE_USE_CONFIRM".equals(code) || "ANIMAL_PROP_IN_USE_CONFIRM".equals(code)) {
+                if (!replacing) {
+                    Log.record("新版动物伙伴：派遣时占用状态变化，保留现有伙伴，下轮重查");
+                    return true;
+                }
+                assigned = MyUtils.newJSONObject(AntForestRpcCall.assignMonopolyCreature(creatureCode, true));
+            }
             if (MessageUtil.checkResultCode(TAG, assigned)) {
-                Log.forest("新版动物伙伴🦩派遣[" + selected.optString("creatureName", creatureCode) + "]");
+                JSONObject after = MyUtils.newJSONObject(AntForestRpcCall.queryUsingCreatureInfo(UserIdMap.getCurrentUid()));
+                JSONObject active = after.optJSONObject("userCreatureVO");
+                if ("SUCCESS".equals(after.optString("resultCode")) && Boolean.TRUE.equals(after.opt("usingMonopolyCreature"))
+                        && active != null && creatureCode.equals(active.optString("creatureCode"))) {
+                    String message = "新版动物伙伴：" + (replacing ? "到期替换" : "派遣") + "成功[" + selected.optString("creatureName", creatureCode) + "]";
+                    Log.record(message); Log.forest(message);
+                } else {
+                    Log.record("新版动物伙伴：派遣请求已接受，回查未确认新伙伴在工作；下轮重查");
+                }
                 return true;
             }
+            Log.record("新版动物伙伴：派遣失败，code=" + assigned.optString("resultCode", "缺失") + "，原因=" + assigned.optString("resultDesc", "应答无效"));
+            if (replacing) return true;
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "dispatchMonopolyAnimal err:", t);
         }
         return false;
+    }
+
+    private boolean isMonopolyCreatureExpired(JSONObject creature) {
+        JSONObject energy = creature == null ? null : creature.optJSONObject("robEnergyVO");
+        if (energy == null) return false;
+        Object remain = energy.opt("robRemainDays");
+        Object worked = energy.opt("alreadyWorkDays");
+        Object max = energy.opt("maxWorkDays");
+        return (remain instanceof Number && ((Number) remain).doubleValue() == energy.optInt("robRemainDays") && energy.optInt("robRemainDays") <= 0)
+                || (worked instanceof Number && max instanceof Number && ((Number) max).doubleValue() == energy.optInt("maxWorkDays")
+                && ((Number) worked).doubleValue() == energy.optInt("alreadyWorkDays") && energy.optInt("maxWorkDays") > 0
+                && energy.optInt("alreadyWorkDays") >= energy.optInt("maxWorkDays"));
     }
 
     /* 新版动物是否空闲可派遣 */

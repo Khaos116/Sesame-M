@@ -117,6 +117,10 @@ public class AntFarm extends ModelTask {
     private BooleanModelField acceptGift;
     private SelectAndCountModelField visitFriendList;
     private BooleanModelField chickenDiary;
+    private ChoiceModelField collectChickenDiary;
+    private BooleanModelField useFenceTool;
+    private BooleanModelField useDollTool;
+    private ChoiceModelField dollSupplementOrder;
     private BooleanModelField drawMachine;
     private BooleanModelField AutoAntFarmDrawMachineTaskList;
     private SelectModelField AntFarmDrawMachineTaskList;
@@ -148,6 +152,10 @@ public class AntFarm extends ModelTask {
         modelFields.addField(AutoAntFarmDoFarmTaskList = new BooleanModelField("AutoAntFarmDoFarmTaskList", "庄园饲料 | 自动黑名单", true).setDependsOn("receiveFarmTaskAward"));
         modelFields.addField(AntFarmDoFarmTaskList = new SelectModelField("AntFarmDoFarmTaskList", "庄园饲料 | 黑名单列表", new LinkedHashSet<>(), AlipayAntFarmDoFarmTaskList::getList).setDependsOn("AutoAntFarmDoFarmTaskList"));
         modelFields.addField(useNewEggTool = new BooleanModelField("useNewEggTool", "新蛋卡 | 使用", false));
+        modelFields.addField(useFenceTool = new BooleanModelField("useFenceTool", "篱笆卡 | 自动使用", false));
+        modelFields.addField(useDollTool = new BooleanModelField("useDollTool", "数字公仔补签卡 | 自动补签", false));
+        modelFields.addField(dollSupplementOrder = new ChoiceModelField("dollSupplementOrder", "数字公仔补签 | 顺序", 0, new String[]{"从早到晚", "从晚到早"}).setDependsOn("useDollTool"));
+        modelFields.addField(collectChickenDiary = new ChoiceModelField("collectChickenDiary", "小鸡日记 | 点赞范围", 0, new String[]{"关闭", "今日", "当月", "全部历史"}));
         modelFields.addField(useAccelerateTool = new BooleanModelField("useAccelerateTool", "加速卡 | 使用", false));
         modelFields.addField(useAccelerateToolOptions = new SelectModelField("useAccelerateToolOptions", "加速卡 | 选项", new LinkedHashSet<>(), CustomOption::getUseAccelerateToolOptions).setDependsOn("useAccelerateTool"));
         modelFields.addField(useBigEaterTool = new BooleanModelField("useBigEaterTool", "加饭卡 | 使用", false));
@@ -364,6 +372,9 @@ public class AntFarm extends ModelTask {
                     syncAnimalStatus(ownerFarmId);
                 }
             });
+            step("篱笆卡", () -> { if (useFenceTool.getValue()) useFenceTool(); });
+            step("公仔补签", () -> { if (useDollTool.getValue()) supplementDolls(); });
+            step("日记点赞", () -> { if (collectChickenDiary.getValue() > 0) likeChickenDiaries(); });
 
             step("收爱心鸡蛋", () -> {
                 if (harvestProduce.getValue() && benevolenceScore >= 1) {
@@ -2190,6 +2201,153 @@ public class AntFarm extends ModelTask {
                 break;
             }
         }
+    }
+
+    private static boolean farmFeatureOk(JSONObject response) {
+        String code = response.optString("resultCode");
+        if (!code.isEmpty() && !"SUCCESS".equals(code) && !"100".equals(code) && !"200".equals(code)) return false;
+        return ("SUCCESS".equals(response.optString("memo")) || "SUCCESS".equals(response.optString("resultCode"))
+                || Boolean.TRUE.equals(response.opt("success"))) && !RpcRequestGuard.isFailure(response);
+    }
+
+    private JSONObject findFeatureTool(String type) throws JSONException {
+        JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.listFarmTool());
+        JSONArray tools = response.optJSONArray("toolList");
+        if (!farmFeatureOk(response) || tools == null) { Log.record("庄园道具：库存查询失败或缺少列表，" + RpcRequestGuard.errorMessage(response)); return null; }
+        for (int i = 0; i < tools.length(); i++) {
+            JSONObject tool = tools.optJSONObject(i);
+            if (tool != null && type.equals(tool.optString("toolType")) && tool.optInt("toolCount", -1) > 0 && !tool.optString("toolId").isEmpty()) return tool;
+        }
+        Log.record("庄园道具：没有可用的" + type + "，跳过");
+        return null;
+    }
+
+    private void useFenceTool() {
+        try {
+            TimeUtil.sleep(0);
+            JSONObject state = MyUtils.newJSONObject(AntFarmRpcCall.syncAnimalStatus(ownerFarmId));
+            JSONObject farm = state.optJSONObject("subFarmVO");
+            if (!farmFeatureOk(state) || farm == null || !ownerFarmId.equals(farm.optString("farmId"))) { Log.record("篱笆卡：庄园状态查询失败或不符，跳过；" + RpcRequestGuard.errorMessage(state)); return; }
+            JSONObject buff = state.optJSONObject("buffInfoVO");
+            if (buff != null && "FENCE".equals(buff.optString("buffType"))) {
+                if (!(buff.opt("hasBuffEffect") instanceof Boolean)) { Log.record("篱笆卡：效果状态无效，跳过"); return; }
+                if (Boolean.TRUE.equals(buff.opt("hasBuffEffect"))) { Log.record("篱笆卡：仍在生效，剩余" + buff.optInt("buffCountDown", 0) / 60 + "分钟，跳过重复使用"); return; }
+            }
+            String flag = "farm::fenceUnconfirmed";
+            if (Status.hasFlagToday(flag)) { Log.record("篱笆卡：本日已提交但结果未确认，避免重复消耗"); return; }
+            JSONObject tool = findFeatureTool("FENCETOOL");
+            if (tool == null) return;
+            Status.flagToday(flag);
+            JSONObject used = MyUtils.newJSONObject(AntFarmRpcCall.useFarmTool(ownerFarmId, tool.optString("toolId"), "FENCETOOL"));
+            JSONObject after = MyUtils.newJSONObject(AntFarmRpcCall.syncAnimalStatus(ownerFarmId));
+            JSONObject afterFarm = after.optJSONObject("subFarmVO"), afterBuff = after.optJSONObject("buffInfoVO");
+            if (farmFeatureOk(after) && afterFarm != null && ownerFarmId.equals(afterFarm.optString("farmId")) && afterBuff != null
+                    && "FENCE".equals(afterBuff.optString("buffType")) && Boolean.TRUE.equals(afterBuff.opt("hasBuffEffect"))) {
+                Status.clearFlag(flag);
+                String message = "篱笆卡：使用成功，已确认篱笆生效"; Log.record(message); Log.farm(message);
+            } else { Log.record("篱笆卡：使用未确认，code=" + used.optString("resultCode", "缺失") + "，原因=" + RpcRequestGuard.errorMessage(used)); }
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.record("篱笆卡：执行异常，" + t.getClass().getSimpleName()); Log.err(TAG, "useFenceTool", t); }
+    }
+
+    private void supplementDolls() {
+        try {
+            TimeUtil.sleep(0);
+            JSONObject tool = findFeatureTool("DOLLTOOL");
+            if (tool == null) return;
+            JSONObject cabin = MyUtils.newJSONObject(AntFarmRpcCall.queryLoveCabin(UserIdMap.getCurrentUid()));
+            JSONArray dolls = cabin.optJSONArray("loveCabinDollList");
+            if (!farmFeatureOk(cabin) || dolls == null) { Log.record("公仔补签：已拥有公仔查询失败或缺少列表，停止"); return; }
+            Set<String> owned = new HashSet<>();
+            for (int i = 0; i < dolls.length(); i++) { JSONObject doll = dolls.optJSONObject(i); if (doll != null) owned.add(doll.optString("dollId")); }
+            Calendar cal = MyUtils.getInstance();
+            int end = cal.get(Calendar.YEAR) * 12 + cal.get(Calendar.MONTH), start = 2022 * 12 + 9;
+            List<String> missing = new ArrayList<>();
+            for (int index = start; index <= end; index++) {
+                String id = String.format(Locale.CHINA, "%04d_%02d_MONTH_DOLL", index / 12, index % 12 + 1);
+                if (!owned.contains(id)) missing.add(id);
+            }
+            if (dollSupplementOrder.getValue() == 1) Collections.reverse(missing);
+            if (missing.isEmpty()) { Log.record("公仔补签：月度公仔已集齐，无须补签"); return; }
+            int count = tool.optInt("toolCount"), confirmed = 0;
+            for (String id : missing) {
+                TimeUtil.sleep(0);
+                if (confirmed >= count) break;
+                JSONObject query = MyUtils.newJSONObject(AntFarmRpcCall.queryAntfarmDoll(id));
+                JSONObject info = query.optJSONObject("dollInfoVO");
+                if (!farmFeatureOk(query) || info == null || !(info.opt("acquired") instanceof Boolean)) { Log.record("公仔补签：公仔详情查询失败或缺少持有状态，停止；" + RpcRequestGuard.errorMessage(query)); return; }
+                if (Boolean.TRUE.equals(info.opt("acquired")) || info.optString("achievementId").isEmpty()) continue;
+                String flag = "farm::dollUnconfirmed::" + id;
+                if (Status.hasFlagToday(flag)) { Log.record("公仔补签：本日该公仔已提交但结果未确认，停止重复补签"); return; }
+                Status.flagToday(flag);
+                JSONObject used = MyUtils.newJSONObject(AntFarmRpcCall.useDollTool(ownerFarmId, tool.optString("toolId"), info.optString("achievementId"), id));
+                JSONObject after = MyUtils.newJSONObject(AntFarmRpcCall.queryAntfarmDoll(id));
+                JSONObject acquired = after.optJSONObject("dollInfoVO");
+                if (!farmFeatureOk(after) || acquired == null || !Boolean.TRUE.equals(acquired.opt("acquired"))) {
+                    Log.record("公仔补签：补签结果未确认，停止；code=" + used.optString("resultCode", "缺失") + "，原因=" + RpcRequestGuard.errorMessage(used)); return;
+                }
+                Status.clearFlag(flag); confirmed++;
+                String message = "公仔补签：成功获得[" + info.optString("dollName", id) + "]"; Log.record(message); Log.farm(message);
+                if (confirmed < count) { tool = findFeatureTool("DOLLTOOL"); if (tool == null) break; }
+                TimeUtil.sleep(300);
+            }
+            Log.record("公仔补签：本轮确认获得" + confirmed + "只公仔");
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.record("公仔补签：执行异常，" + t.getClass().getSimpleName()); Log.err(TAG, "supplementDolls", t); }
+    }
+
+    private boolean likeChickenDiary(String date) throws JSONException {
+        if (!date.isEmpty() && !date.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) { Log.record("日记点赞：列表日期无效，停止"); return false; }
+        JSONObject query = MyUtils.newJSONObject(AntFarmRpcCall.queryChickenDiary(date));
+        JSONObject data = query.optJSONObject("data"), diary = data == null ? null : data.optJSONObject("chickenDiary");
+        if (!farmFeatureOk(query) || diary == null || !(diary.opt("collectStatus") instanceof Boolean) || diary.optString("diaryId").isEmpty()) {
+            Log.record("日记点赞：详情查询失败或关键字段缺失，停止；" + RpcRequestGuard.errorMessage(query)); return false;
+        }
+        if (Boolean.TRUE.equals(diary.opt("collectStatus"))) return true;
+        JSONObject liked = MyUtils.newJSONObject(AntFarmRpcCall.collectChickenDiary(diary.optString("diaryId")));
+        JSONObject after = MyUtils.newJSONObject(AntFarmRpcCall.queryChickenDiary(date));
+        JSONObject afterData = after.optJSONObject("data"), afterDiary = afterData == null ? null : afterData.optJSONObject("chickenDiary");
+        if (farmFeatureOk(after) && afterDiary != null && diary.optString("diaryId").equals(afterDiary.optString("diaryId")) && Boolean.TRUE.equals(afterDiary.opt("collectStatus"))) {
+            String message = "日记点赞：成功[" + diary.optString("diaryDateStr", date) + "]"; Log.record(message); Log.farm(message); return true;
+        }
+        Log.record("日记点赞：结果未确认，停止；code=" + liked.optString("resultCode", "缺失") + "，原因=" + RpcRequestGuard.errorMessage(liked)); return false;
+    }
+
+    private void likeChickenDiaries() {
+        try {
+            TimeUtil.sleep(0);
+            int scope = collectChickenDiary.getValue();
+            String flag = "farm::diaryLikeDone::" + scope;
+            if (Status.hasFlagToday(flag)) { Log.record("日记点赞：今日所选范围已处理，跳过"); return; }
+            if (!likeChickenDiary("")) return;
+            if (scope <= 1) { Status.flagToday(flag); Log.record("日记点赞：今日处理完成"); return; }
+            Calendar month = MyUtils.getInstance(); month.set(Calendar.DAY_OF_MONTH, 1);
+            Set<String> seenDates = new HashSet<>();
+            // ponytail: 历史最多回溯120个月，防止服务端错误翻页导致死循环。
+            for (int page = 0; page < 120; page++) {
+                TimeUtil.sleep(0);
+                String key = String.format(Locale.CHINA, "%04d-%02d", month.get(Calendar.YEAR), month.get(Calendar.MONTH) + 1);
+                JSONObject list = MyUtils.newJSONObject(AntFarmRpcCall.queryChickenDiaryList(key));
+                JSONObject data = list.optJSONObject("data");
+                JSONArray rows = data == null ? null : data.optJSONArray("chickenDiaryBriefList");
+                if (!farmFeatureOk(list) || rows == null) { Log.record("日记点赞：月份列表查询失败或缺失，停止；" + RpcRequestGuard.errorMessage(list)); return; }
+                for (int i = rows.length() - 1; i >= 0; i--) {
+                    TimeUtil.sleep(0);
+                    JSONObject row = rows.optJSONObject(i);
+                    if (row == null || row.optString("dateStr").isEmpty()) { Log.record("日记点赞：列表缺少日期，停止"); return; }
+                    String date = row.optString("dateStr");
+                    if (Boolean.TRUE.equals(row.opt("collectStatus")) || !seenDates.add(date)) continue;
+                    if (!likeChickenDiary(date)) return;
+                    TimeUtil.sleep(200);
+                }
+                if (scope == 3 && !(data.opt("hasPreviousMore") instanceof Boolean)) { Log.record("日记点赞：历史分页状态缺失，停止；未记完成"); return; }
+                if (scope == 2 || Boolean.FALSE.equals(data.opt("hasPreviousMore"))) { Status.flagToday(flag); Log.record("日记点赞：所选范围处理完成"); return; }
+                if (rows.length() == 0) { Log.record("日记点赞：历史翻页无数据，停止"); return; }
+                month.add(Calendar.MONTH, -1);
+            }
+            Log.record("日记点赞：达到120个月查询上限，超出范围的历史未处理");
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.record("日记点赞：执行异常，" + t.getClass().getSimpleName()); Log.err(TAG, "likeChickenDiaries", t); }
     }
 
     private Boolean useFarmTool(String targetFarmId, ToolType toolType) {
