@@ -80,6 +80,7 @@ import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.Statistics;
 import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.StringUtil;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 import io.github.aw1y2z.sesame.util.idMap.AntForestHuntTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.AntForestVitalityTaskListMap;
@@ -4514,21 +4515,34 @@ public class AntForestV2 extends ModelTask {
                 return;
             }
 
-            // 执行浇水
-            JSONObject waterJo = new JSONObject(AntForestRpcCall.teamWater(teamId, finalWaterAmount));
-            boolean retryable = MessageUtil.isRetryable(waterJo);
-            if (MessageUtil.checkResultCode(TAG, waterJo) || MessageUtil.checkSuccess(TAG, waterJo)) {
+            // 执行浇水。记账原则与真爱合种一致：只有「确定没发出去」才不计当日额度，
+            // 其余（响应判定不成、超时、解析异常）一律按已浇记账——否则每次自动运行都会重发一次。
+            JSONObject waterJo = null;
+            Throwable waterErr = null;
+            try {
+                waterJo = new JSONObject(AntForestRpcCall.teamWater(teamId, finalWaterAmount));
+            } catch (Throwable t) {
+                waterErr = t;
+            }
+            boolean accountWater = true;
+            if (waterErr != null) {
+                if (ApplicationHook.isOffline() || waterErr instanceof TaskCancelledException) {
+                    // 确定没发出去（离线 / 本轮代际已作废）：不记账，下一轮再试
+                    accountWater = false;
+                    Log.record("组队合种浇水未发出(离线/本轮作废)，下次运行再试");
+                } else {
+                    // 超时 / 响应解析异常：请求可能已经到服务端，按已浇记账避免重复
+                    Log.err(TAG, "teamWater err:", waterErr);
+                    Log.record("组队合种浇水结果不明(超时/解析异常)，按已浇记账避免重复");
+                }
+            } else if (MessageUtil.checkResultCode(TAG, waterJo) || MessageUtil.checkSuccess(TAG, waterJo)) {
                 Log.forest("组队合种🚿给合种浇水" + finalWaterAmount + "g");
                 Toast.show("组队合种🚿给合种浇水" + finalWaterAmount + "g");
-            } else if (retryable) {
-                // 限流/远端异常属临时故障：不计当日额度，下一轮再试
-                Log.record("组队合种浇水失败(可重试)，下次运行再试");
             } else {
-                // 判定不成但非临时故障（多为今日已浇过/额度用尽）：按已浇记账，保留响应原文便于排查。
-                // 不记账的话每次自动运行都会重发一次浇水请求，和真爱合种是同一类问题。
+                // 判定不成（结构不符 / 今日已浇过 / 额度用尽）：按已浇记账，保留响应原文便于排查
                 Log.record("组队合种浇水未确认成功，按已浇记账避免重复：" + waterJo);
             }
-            if (!retryable) {
+            if (accountWater) {
                 Status.forestHuntHelpToday(FLAG_TEAM_WATER_DAILY_COUNT, todayUsed + finalWaterAmount, UserIdMap.getCurrentUid());
                 Log.record("组队合种今日浇水累计: " + (todayUsed + finalWaterAmount) + "g / " + userDailyTarget + "g");
             }
@@ -4692,10 +4706,9 @@ public class AntForestV2 extends ModelTask {
 
     /**
      * 真爱合种浇水（每日一次）。
-     * <p>当日标记**先落再发请求**：这个动作一天只该做一次，不能把标记挂在响应判定上——
-     * 响应一旦不被判定为成功（结构不符、或服务端提示今日已浇/额度用尽），标记就落不下去，
-     * 每次自动运行都会重发一次浇水请求，表现为"反复浇水"。
-     * <p>只有明确的临时故障（网络异常、限流/远端异常）才撤销标记，留到下一轮再试。
+     * <p>当日标记**先落再发请求**，而且**只在「确定没发出去」时才撤销**（离线、本轮代际已作废）。
+     * <p>响应判定不成、超时、响应解析异常等一律**保留标记**：请求可能已经到服务端（水已经浇了），
+     * 撤销标记会让「改配置触发的那一轮」再浇一次，表现为"每次修改配置返回就再浇一次"。
      */
     private static void loveteamWater(String teamId, String teamName, int waterNum) {
         Status.flagToday(FLAG_LOVETEAM_WATER);
@@ -4706,16 +4719,17 @@ public class AntForestV2 extends ModelTask {
                 Toast.show("真爱浇水🚿给[" + teamName + "]合种浇水" + waterNum + "g");
                 return;
             }
-            if (MessageUtil.isRetryable(jo)) {
-                Status.clearFlag(FLAG_LOVETEAM_WATER);
-                Log.record("真爱合种浇水失败(可重试)，下次运行再试");
-                return;
-            }
-            // 其余失败（多为今日已浇过 / 额度用尽）当日不再重发，保留响应原文便于排查
-            Log.record("真爱合种浇水未成功，今日不再尝试：" + jo);
+            // 判定不成（结构不符 / 今日已浇过 / 额度用尽）当日不再重发，保留响应原文便于排查
+            Log.record("真爱合种浇水未确认成功，今日不再尝试：" + jo);
         } catch (Throwable th) {
-            Status.clearFlag(FLAG_LOVETEAM_WATER);
-            Log.err(TAG, "loveteamWater err:", th);
+            if (ApplicationHook.isOffline() || th instanceof TaskCancelledException) {
+                // 确定没发出去：撤销标记，下一轮再试
+                Status.clearFlag(FLAG_LOVETEAM_WATER);
+                Log.record("真爱合种浇水未发出(离线/本轮作废)，下次运行再试");
+            } else {
+                // 可能已经发出去（超时 / 响应解析异常）：保留标记，避免每轮重浇
+                Log.err(TAG, "loveteamWater err:", th);
+            }
         }
     }
 
