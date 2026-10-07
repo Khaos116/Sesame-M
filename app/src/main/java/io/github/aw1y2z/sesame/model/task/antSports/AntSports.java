@@ -305,8 +305,11 @@ public class AntSports extends ModelTask {
                 AntSportsTaskListMap.add(task, task);
             }
 
-            if (sportsTasks) {
+            if (sportsTasks && !Status.hasFlagToday(FLAG_RISK_TODAY)) {
                 JSONObject jo = new JSONObject(AntSportsRpcCall.queryCoinTaskPanel());
+                if (!MessageUtil.checkSuccess(TAG, jo)) {
+                    markIfRisk(jo);
+                }
                 if (MessageUtil.checkSuccess(TAG, jo)) {
                     jo = jo.getJSONObject("data");
                     if (jo.has("taskList")) {
@@ -375,6 +378,38 @@ public class AntSports extends ModelTask {
     private static final int TASK_INTERVAL_MIN_MS = 5000;
     private static final int TASK_INTERVAL_MAX_MS = 9000;
 
+    /** 命中风控（1009）当天的标记：被拦后官方连只读查询也不放行，本模块当天不再执行运动侧操作 */
+    private static final String FLAG_RISK_TODAY = "sports::risk1009";
+
+    /** 运动「做任务得运动币:签到」当日完成标记（服务端回读 signed=true 才落） */
+    private static final String FLAG_SIGN_IN_COIN_TASK = "sports::signInCoinTask";
+
+    /** 命中风控就打当日标记并记一条结果日志；返回是否命中 */
+    private static boolean markIfRisk(JSONObject jo) {
+        if (!isRisk(jo)) {
+            return false;
+        }
+        Status.flagToday(FLAG_RISK_TODAY);
+        Log.other("运动任务⛔命中风控(1009)，今日不再执行");
+        return true;
+    }
+
+    /** 1009 判定：顶层与 data 两层都要查（部分接口把 error 包在 data 里） */
+    private static boolean isRisk(JSONObject jo) {
+        if (jo == null) {
+            return false;
+        }
+        if (isRiskFields(jo)) {
+            return true;
+        }
+        JSONObject data = jo.optJSONObject("data");
+        return data != null && isRiskFields(data);
+    }
+
+    private static boolean isRiskFields(JSONObject jo) {
+        return "1009".equals(jo.optString("errorTip", "").trim()) || jo.optInt("error", 0) == 1009;
+    }
+
     /** 任务之间随机间隔，避免机器式的固定频率 */
     private void sleepTaskInterval() {
         TimeUtil.sleep(RandomUtil.nextInt(TASK_INTERVAL_MIN_MS, TASK_INTERVAL_MAX_MS));
@@ -382,10 +417,14 @@ public class AntSports extends ModelTask {
 
     // 运动
     private void sportsTasks() {
+        if (Status.hasFlagToday(FLAG_RISK_TODAY)) {
+            return;
+        }
         try {
             signInCoinTask();
             JSONObject jo = new JSONObject(AntSportsRpcCall.queryCoinTaskPanel());
             if (!MessageUtil.checkSuccess(TAG, jo)) {
+                markIfRisk(jo);
                 return;
             }
             jo = jo.getJSONObject("data");
@@ -480,6 +519,9 @@ public class AntSports extends ModelTask {
     }
 
     private void signInCoinTask() {
+        if (Status.hasFlagToday(FLAG_SIGN_IN_COIN_TASK)) {
+            return;
+        }
         try {
             JSONObject jo = new JSONObject(AntSportsRpcCall.signInCoinTask());
 
@@ -496,6 +538,8 @@ public class AntSports extends ModelTask {
                     //                        Log.record("没有签到");
                 }
             } else {
+                // 服务端回读确认「今日已签到」：落当日标记，后续运行不再调签到接口
+                Status.flagToday(FLAG_SIGN_IN_COIN_TASK);
                 Log.record("运动签到今日已签到");
             }
         } catch (Throwable t) {

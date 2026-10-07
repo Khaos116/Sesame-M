@@ -56,9 +56,7 @@ public class Status {
     // other
     private final Set<String> flagLogList = new HashSet<>();
 
-    // 爱心鸡结号(S2)：上一个已捐蛋的轮次号；持久化以避免进程重启后同一轮重复捐
-    private String competitionDonatedRound;
-    
+
     /**
      * 当日整型标记：tag -> 累计值（如金豆夺宝芝麻粒换豆当日已兑换金豆数）。
      * <p>随 status.json 的每日重置自动清空（updateDay -> unload -> new Status()）。
@@ -450,17 +448,7 @@ public class Status {
         }
     }
 
-    public static synchronized boolean isCompetitionDonated(String roundId) {
-        return roundId != null && roundId.equals(INSTANCE.competitionDonatedRound);
-    }
 
-    public static synchronized void markCompetitionDonated(String roundId) {
-        if (roundId == null || roundId.isEmpty()) {
-            return;
-        }
-        INSTANCE.competitionDonatedRound = roundId;
-        save();
-    }
     
     public static synchronized int getVitalityExchangeBenefitCountToday(String skuId) {
         Integer exchangedCount = INSTANCE.vitality_ExchangeBenefitLogList.get(skuId);

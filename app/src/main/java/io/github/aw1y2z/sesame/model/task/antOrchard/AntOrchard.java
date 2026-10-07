@@ -101,6 +101,9 @@ public class AntOrchard extends ModelTask {
 
     /** 本次施肥是否用一键5次批量（由 canSpreadManure 判定，doSpreadManure 消费） */
     private static boolean spreadUseBatchThisTime = false;
+
+    /** 本轮是否已记过「已达次数上限」：主场景额度用完后每轮还会再查一次，只留一行 */
+    private static boolean spreadLimitLoggedThisRun = false;
     private static final ArrayList<String> enableSceneList = new ArrayList<>();
 
     @Override
@@ -667,6 +670,7 @@ public class AntOrchard extends ModelTask {
      */
     private void orchardSpreadManure() {
         try {
+            spreadLimitLoggedThisRun = false;
             // 轮次上限兜底：每轮最多施肥一次，按「上限/批量步长 + 余量」估算并留足两场景的量
             final int MAX_SPREAD_ROUND = (MAIN_SPREAD_DAILY_LIMIT / BATCH_SPREAD_SIZE + 10) * 8;
             int round = 0;
@@ -725,8 +729,17 @@ public class AntOrchard extends ModelTask {
         try {
             String sceneName = scene.name();
             String wua = getWua();
-            String result = AntOrchardRpcCall.orchardSpreadManure(spreadUseBatchThisTime, wua);
+            String result = AntOrchardRpcCall.orchardSpreadManure(sceneName, spreadUseBatchThisTime, wua);
             JSONObject jo = new JSONObject(result);
+
+            // 场景侧的业务拒绝（P03 场景未就绪 / P14 摇钱树已达持仓金额上限）再请求也不会变，
+            // 打当日标记后当天不再重放批量请求，也避免被当成 error 打印
+            String resultCode = jo.optString("resultCode", "");
+            if ("P03".equals(resultCode) || "P14".equals(resultCode)) {
+                Status.flagToday("spreadManureLimit:" + sceneName, userId);
+                Log.record("农场施肥⏭️[" + sceneName + "]被拒：" + jo.optString("memo", resultCode));
+                return false;
+            }
 
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
@@ -869,7 +882,10 @@ public class AntOrchard extends ModelTask {
                         }
                     }
                     if (usedTimes >= limit) {
-                        Log.record("农场施肥⏭️已达次数上限[" + usedTimes + "/" + limit + "]");
+                        if (!spreadLimitLoggedThisRun) {
+                            spreadLimitLoggedThisRun = true;
+                            Log.record("农场施肥⏭️已达次数上限[" + usedTimes + "/" + limit + "]");
+                        }
                         return false;
                     }
                     spreadUseBatchThisTime = batch;
@@ -1296,17 +1312,34 @@ public class AntOrchard extends ModelTask {
      * 获取额外信息（每日肥料包）
      */
     private void extraInfoGet() {
+        if (Status.hasFlagToday("orchard::fertilizerPacket")) {
+            return;
+        }
         try {
             String result = AntOrchardRpcCall.extraInfoGet();
             JSONObject jo = new JSONObject(result);
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 JSONObject fertilizerPacket = jo.getJSONObject("data").getJSONObject("extraData").getJSONObject("fertilizerPacket");
+                String status = fertilizerPacket.getString("status");
+                if ("todayFertilizerFinish".equals(status)) {
+                    // 服务端回读：今日这个包已是「已领完」态（响应同时带 tomorrowFertilizerNum）→ 落当日标记
+                    Status.flagToday("orchard::fertilizerPacket", userId);
+                    return;
+                }
 
-                if ("todayFertilizerWaitTake".equals(fertilizerPacket.getString("status"))) {
+                if ("todayFertilizerWaitTake".equals(status)) {
                     int fertilizerNum = fertilizerPacket.getInt("todayFertilizerNum");
                     String takeResult = AntOrchardRpcCall.extraInfoSet();
                     if (MessageUtil.checkResultCode(TAG, new JSONObject(takeResult))) {
                         Log.farm("每日肥料💩[" + fertilizerNum + "g]");
+                        // 回读确认服务端已离开「待领取」态才落当日标记；状态未知时宁可不打，下轮再查
+                        JSONObject verify = new JSONObject(AntOrchardRpcCall.extraInfoGet());
+                        if (MessageUtil.checkResultCode(TAG, verify)
+                                && !"todayFertilizerWaitTake".equals(verify.getJSONObject("data")
+                                .getJSONObject("extraData").getJSONObject("fertilizerPacket")
+                                .optString("status"))) {
+                            Status.flagToday("orchard::fertilizerPacket", userId);
+                        }
                     }
                 }
             }
@@ -1471,6 +1504,8 @@ public class AntOrchard extends ModelTask {
             String result = AntOrchardRpcCall.yebPlantSceneRevenuePage();
             JSONObject jo = new JSONObject(result);
             if (!MessageUtil.checkResultCode(TAG, jo)) {
+                // 服务端偶发 error 3000「系统出错，正在排查」，属临时故障，记流程日志即可
+                Log.record("摇钱树收益详情未获取：" + (result.length() > 200 ? result.substring(0, 200) : result));
                 return;
             }
 
@@ -1669,7 +1704,7 @@ public class AntOrchard extends ModelTask {
                             for (int j = 0; j < need; j++) {
                                 // 修复：传递正确的wua参数
                                 String wua = getWua();
-                                String spreadResultStr = AntOrchardRpcCall.orchardSpreadManure(false, wua);
+                                String spreadResultStr = AntOrchardRpcCall.orchardSpreadManure("main", false, wua);
                                 Log.record("施肥第 " + (j + 1) + " 次结果：" + spreadResultStr);
                                 JSONObject resultJson = new JSONObject(spreadResultStr);
                                 if (!MessageUtil.checkResultCode(TAG, resultJson)) {
