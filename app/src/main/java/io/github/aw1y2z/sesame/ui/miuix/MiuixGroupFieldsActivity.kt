@@ -313,7 +313,7 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                 }
                 items(sections.size, key = { sections[it].second.first().modelCode }) { index ->
                     val (title, fields) = sections[index]
-                    Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f)) { title?.let { SmallTitle(text = it) } }
                         TextButton(
                             text = "立即执行",
@@ -333,7 +333,7 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                     }
                     if (actions.isNotEmpty()) {
                         FlowRow(
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
