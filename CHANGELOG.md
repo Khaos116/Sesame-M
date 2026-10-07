@@ -8,7 +8,7 @@
 
 ## 2026-10-07
 
-- fix（本次）：按用户要求完整移除WebDAV设置入口、页面注册和上传/恢复客户端；负向检查防止恢复，保留原有本地配置备份。
+- fix `733c40f0`：按用户要求完整移除WebDAV设置入口、页面注册和上传/恢复客户端；负向检查防止恢复，保留原有本地配置备份。
 
 - release（构建源码`250ce69d`）：按要求先clean再完整重编1.2.11正式包`180747`，versionCode 1932；R8/Lint、签名及16KB页对齐通过。
 
@@ -1747,3 +1747,5 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 - GMT+8/JSON创建/JSON读取：本次删除独立功能，没有新增业务日期或JSON解析；设置页剩余入口及共享配置工具沿用现有实现。
 
 - 移除后的70项全量隔离回归及clean后的NormalDebug Java/Kotlin编译通过；源码、资源及Manifest无WebDAV检查通过，原有本地配置共享工具回归保持通过。
+
+- 移除后按用户要求执行`clean :app:assembleNormalRelease --no-build-cache`，R8与Release关键Lint通过，归档`APK/Release/Sesame-M-Normal-arm64-v8a-1.2.11_20261007_190728.apk`。版本1.2.11、versionCode 1934、arm64-v8a、3,160,754字节；签名证书保持一致、16KB页对齐通过。APK条目、Manifest、DEX及资源无WebDAV残留，SHA-256为`d0c70924131014b7e82758678f6b341ee8b97ca7df401dcf876c68b7e3133601`。
