@@ -2,6 +2,7 @@ package io.github.aw1y2z.sesame.model.task.antStall;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import io.github.aw1y2z.sesame.util.MyUtils;
 
 import io.github.aw1y2z.sesame.data.ConfigV2;
 import io.github.aw1y2z.sesame.data.ModelFields;
@@ -664,8 +665,12 @@ public class AntStall extends ModelTask {
                 return;
             }
             JSONObject signListModel = jo.optJSONObject("signListModel");
-            if (signListModel != null && !signListModel.optBoolean("currentKeySigned")) {
-                signToday();
+            if (signListModel != null && signListModel.opt("currentKeySigned") instanceof Boolean) {
+                if (signListModel.optBoolean("currentKeySigned")) {
+                    Status.flagToday("antstall::signToday");
+                } else if (!Status.hasFlagToday("antstall::signToday")) {
+                    signToday();
+                }
             }
 
             JSONArray taskModels = jo.optJSONArray("taskModels");
@@ -791,6 +796,9 @@ public class AntStall extends ModelTask {
     }
     
     private void signToday() {
+        if (Status.hasFlagToday("antstall::signToday")) {
+            return;
+        }
         try {
             JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.signToday());
             if (MessageUtil.checkResultCode(TAG, jo)) {
@@ -1191,7 +1199,7 @@ public class AntStall extends ModelTask {
                 if (!isThrowManure) {
                     continue;
                 }
-                JSONObject dynamic = new JSONObject();
+                JSONObject dynamic = MyUtils.newJSONObject();
                 dynamic.put("bizId", lossDynamic.optString("bizId"));
                 dynamic.put("bizType", lossDynamic.optString("bizType"));
                 dynamicList.put(dynamic);

@@ -12,7 +12,7 @@ from run import method, SOURCE
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches/modules-2/files-2.1"
 json_jar = next(p for p in (cache / "org.json/json").glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar", "-javadoc.jar")))
 member = "model/task/antMember/AntMember.java"
-code = "import org.json.*; import java.util.*;\npublic class MergeCheck {\n"
+code = "import org.json.*; import java.util.*; import java.util.regex.Pattern;\npublic class MergeCheck {\n"
 code += 'static final String TAG = "test";\n'
 for signature in (
     "private static boolean goldTicketOk(", "private JSONObject getGoldTicketAssetInfo(",
@@ -101,6 +101,7 @@ public static void main(String[] args) throws Exception {
     assert teamState(new JSONObject().put("nextAction", "Team").put("teamHomeResult", new JSONObject().put("mainMember", new JSONObject()))) == 1;
     Locale.setDefault(Locale.forLanguageTag("tr-TR"));
     assert isTransactionTask("XIADAN") && !isTransactionTask("BROWSE");
+    assert !isTransactionTask("2060170000359285") && isTransactionTask("x_70000_y");
     assert Log.errors == 0;
     System.out.println("PASS: missing/invalid sign-in and consume data, task structure, decimal locale, tri-state teams and transaction guard");
 }
@@ -129,6 +130,7 @@ public class FlowCheck {
     }
     static class TimeUtil { static void sleep(long ms) {} }
     static class StringUtil { static boolean isEmpty(String s) { return s == null || s.isEmpty(); } }
+    static class ApplicationHook { static boolean offline; static boolean isOffline() { return offline; } }
     static class Toast { static void show(String s) {} }
     static class UserIdMap { static String getCurrentUid() { return "self"; } }
     static JSONObject ok() { return new JSONObject().put("resultCode", "SUCCESS"); }
@@ -151,6 +153,9 @@ public class FlowCheck {
         static void forestHuntHelpToday(String key, int n, String uid) { used = n; }
     }
     static class AntMemberRpcCall {
+        static String gameHome; static int prizes;
+        static String gameCenterHomePage() { return gameHome; }
+        static String batchReceiveTaskPrize() { prizes++; return new JSONObject().put("success",true).toString(); }
         static String fresh, last, join; static int reads; static List<String> calls = new ArrayList<>();
         static String queryHome() { return ok().put("entrance", new JSONObject().put("openApp", true)).toString(); }
         static String CreditAccumulateStrategyRpcManager() { return reads++ == 0 ? tasks(new JSONArray().put(task(0, 2))) : fresh; }
@@ -168,6 +173,7 @@ public class FlowCheck {
     static String tasks(JSONArray list) { return ok().put("data", new JSONObject().put("toCompleteVOS", list)).toString(); }
     static class AntFarm { static boolean bindPigeonFeedback(JSONArray items) { return true; } }
     static class Member {
+        static final int GAME_CENTER_CERT_LIMIT=30;
         Field<Set<String>> MemberCreditSesameTaskList = new Field<>(new HashSet<>());
         Field<Boolean> AutoMemberCreditSesameTaskList = new Field<>(true);
         @@MEMBER@@
@@ -180,7 +186,7 @@ public class FlowCheck {
     }
     static class AntForestRpcCall {
         static final int VITALITY_ITEM_PAGE_SIZE = 20;
-        static String water; static int waters; static boolean forever, brokenItems;
+        static String water; static int waters; static boolean forever, brokenItems, cancelled;
         static List<String> pages = new ArrayList<>(); static List<Boolean> switches = new ArrayList<>();
         static String itemList(String label, int offset) {
             pages.add(label + ":" + offset);
@@ -195,8 +201,8 @@ public class FlowCheck {
             .put("userBaseInfo", new JSONObject().put("currentEnergy", 100)).toString(); }
         static String queryMiscInfo(String type, String id) { return ok().put("combineHandlerVOMap",
             new JSONObject().put("teamCanWaterCount", new JSONObject().put("waterCount", 100))).toString(); }
-        static String teamWater(String id, int amount) { waters++; return water; }
-        static String loveteamWater(String id, int amount) { waters++; return water; }
+        static String teamWater(String id, int amount) { waters++; if (cancelled) throw new TaskCancelledException(); return water; }
+        static String loveteamWater(String id, int amount) { waters++; if (cancelled) throw new TaskCancelledException(); return water; }
         static String loveteamHome() { return ok().put("userInfo", new JSONObject().put("teamId", "team")).toString(); }
         static String updateUserConfiginTeam(boolean inTeam) { switches.add(inTeam); return ok().toString(); }
     }
@@ -209,7 +215,7 @@ public class FlowCheck {
         @@FOREST@@
     }
     enum PlantScene { MAIN; String nickname() { return name(); } }
-    static class AntOrchardRpcCall { static String response; static String orchardSpreadManure(boolean batch, String wua) { return response; } }
+    static class AntOrchardRpcCall { static String response; static String orchardSpreadManure(String scene, boolean batch, String wua) { return response; } }
     static class Orchard {
         static final int BATCH_SPREAD_SIZE = 5;
         boolean spreadUseBatchThisTime; int fertilizerProgress = 100; String userId = "self";
@@ -217,7 +223,20 @@ public class FlowCheck {
         String getWua() { return ""; } static int targetSpreadTimes(Integer n) { return n; }
         @@ORCHARD@@
     }
+    static class GameCenterMallItemMap { static void add(String id, String name) {} static void save(String uid) {} }
+    static class Mall {
+        Map<String,JSONObject> skuInfo=new HashMap<>();
+        JSONArray list=new JSONArray().put(new JSONObject().put("spuId","P"));
+        JSONArray getGameCenterMallItemList(String type) { return list; }
+        @@MALL@@
+    }
+    enum GameTask {
+        @@GAMES@@
+        String title,appId,gid,action,channel,version; int requestsPerEgg;
+        @@GAME_METHODS@@
+    }
     static class AntFarmRpcCall {
+        static String detail; static String getMallItemDetail(String id) { return detail; }
         static String ranks;
         static String enterDonationCompetitionRank() { return ranks; }
         static String queryCompetitionEntranceInfo() { return new JSONObject().put("memo", "SUCCESS").put("animationInfo",
@@ -237,7 +256,9 @@ public class FlowCheck {
         @@FARM@@
     }
     static void reset() {
+        ApplicationHook.offline = false; AntForestRpcCall.cancelled = false;
         Status.flags.clear(); Status.used = 0; Log.results.clear(); MessageUtil.blackHits = 0;
+        AntMemberRpcCall.prizes = 0;
         AntMemberRpcCall.reads = 0; AntMemberRpcCall.calls.clear(); AntForestRpcCall.waters = 0;
         AntMemberRpcCall.join = ok().put("data", new JSONObject().put("recordId", "R")).toString();
     }
@@ -284,17 +305,51 @@ public class FlowCheck {
         assert AntForestRpcCall.pages.contains("SKIN:20") && AntForestRpcCall.pages.contains("OTHER:20");
         AntForestRpcCall.pages.clear(); AntForestRpcCall.forever = true; f.getAllSkuInfo();
         assert AntForestRpcCall.pages.size() == 50;
-        AntForestRpcCall.brokenItems = true; f = new Forest(); f.getAllSkuInfo(); assert f.skuInfo.isEmpty();
+        AntForestRpcCall.brokenItems = true; assert !f.getAllSkuInfo() : "old cache cannot confirm a fresh fetch";
+        f = new Forest(); assert !f.getAllSkuInfo() && f.skuInfo.isEmpty();
         for (String response : new String[]{"broken", "{}", "{\"data\":true}", "{\"success\":\"false\"}", "{\"resultCode\":{}}",
                 "{\"resultCode\":\"REMOTE_INVOKE_EXCEPTION\"}", "{\"resultCode\":\"3000\"}"}) {
-            reset(); AntForestRpcCall.water = response; f.teamCooperateWater(); assert Status.used == 0;
-            Forest.loveteam(20); assert !Status.hasFlagToday(Forest.FLAG_LOVETEAM_WATER);
+            reset(); AntForestRpcCall.water = response; f.teamCooperateWater(); f.teamCooperateWater(); assert Status.used == 20 && AntForestRpcCall.waters == 1;
+            Forest.loveteam(20); Forest.loveteam(20); assert Status.hasFlagToday(Forest.FLAG_LOVETEAM_WATER) && AntForestRpcCall.waters == 2;
         }
         for (String response : new String[]{"{\"success\":true}", "{\"resultCode\":\"SUCCESS\"}", "{\"resultCode\":\"LIMIT\"}"}) {
             reset(); AntForestRpcCall.water = response; f.teamCooperateWater(); f.teamCooperateWater();
             assert Status.used == 20 && AntForestRpcCall.waters == 1;
             Forest.loveteam(20); Forest.loveteam(20);
             assert Status.hasFlagToday(Forest.FLAG_LOVETEAM_WATER) && AntForestRpcCall.waters == 2;
+        }
+        reset(); ApplicationHook.offline = true; f.teamCooperateWater(); Forest.loveteam(20);
+        assert Status.used == 0 && AntForestRpcCall.waters == 0 && !Status.hasFlagToday(Forest.FLAG_LOVETEAM_WATER);
+        reset(); AntForestRpcCall.cancelled = true;
+        try { f.teamCooperateWater(); throw new AssertionError("team cancel swallowed"); } catch (TaskCancelledException expected) {}
+        try { Forest.loveteam(20); throw new AssertionError("love cancel swallowed"); } catch (TaskCancelledException expected) {}
+        assert Status.used == 20 && Status.hasFlagToday(Forest.FLAG_LOVETEAM_WATER) && AntForestRpcCall.waters == 2;
+        Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+        assert GameTask.matchTaskType("GAME_DONE_SLJYD") == GameTask.Forest_sljyd;
+        assert GameTask.matchTaskType("game_done_slxcc_xs_3") == GameTask.Forest_slxcc;
+        assert GameTask.matchTaskType("GAME_DONE_DDPLY") == GameTask.Farm_ddply;
+        assert GameTask.matchTaskType("GAME_DONE_UNKNOWN") == null && GameTask.matchTaskType(null) == null;
+        Mall mall=new Mall(); AntFarmRpcCall.detail=new JSONObject().put("success",true).put("mallItemDetail",
+            new JSONObject().put("mallSubItemDetailList",new JSONArray().put(new JSONObject().put("skuId","sku").put("skuName","name")))).toString();
+        assert mall.getAllSkuInfo() && mall.getAllSkuInfo() && mall.skuInfo.size()==1;
+        AntFarmRpcCall.detail="broken"; assert !mall.getAllSkuInfo();
+        mall.list=null; assert !mall.getAllSkuInfo();
+        Set<String> pending=new HashSet<>();
+        for (String bad : new String[]{"broken","{}","{\"data\":{}}","{\"data\":{\"taskModuleList\":[{}]}}",
+                "{\"data\":{\"taskModuleList\":[{\"taskList\":[1]}]}}"}) assert !Member.collectNotDoneIds(bad,pending);
+        assert Member.collectNotDoneIds("{\"data\":{\"taskModuleList\":[]}}",pending) && pending.isEmpty();
+        assert Member.collectNotDoneIds("{\"data\":{\"taskModuleList\":[{\"taskList\":[{\"taskId\":\"T\",\"taskStatus\":\"NOT_DONE\"}]}]}}",pending) && pending.contains("T");
+        for (JSONObject taskModule : new JSONObject[]{new JSONObject(),new JSONObject().put("needReceive","true"),
+                new JSONObject().put("needReceiveTaskCertCnt","1"),new JSONObject().put("needReceiveTaskCertCnt",1.5),
+                new JSONObject().put("needReceive",true).put("reachTaskCertLimit",true)}) {
+            reset(); AntMemberRpcCall.gameHome=new JSONObject().put("success",true).put("data",
+                new JSONObject().put("taskModule",taskModule).put("taskPrizePopup",JSONObject.NULL)).toString();
+            m.gameCenterTaskPrize(); assert AntMemberRpcCall.prizes==0;
+        }
+        reset(); AntMemberRpcCall.gameHome="broken";m.gameCenterTaskPrize();assert AntMemberRpcCall.prizes==0;
+        for (JSONObject taskModule : new JSONObject[]{new JSONObject().put("needReceive",true),new JSONObject().put("needReceiveTaskCertCnt",1)}) {
+            reset(); AntMemberRpcCall.gameHome=new JSONObject().put("success",true).put("data",new JSONObject().put("taskModule",taskModule)).toString();
+            m.gameCenterTaskPrize(); assert AntMemberRpcCall.prizes==1;
         }
         fertilize(false,101,true,true); fertilize(true,105,true,true); fertilize(true,106,true,false);
         fertilize(false,99,true,false); fertilize(true,null,false,false); fertilize(true,"bad",false,false);
@@ -313,16 +368,21 @@ public class FlowCheck {
 '''
 for placeholder, path, signatures in (
     ("@@RETRY@@", "util/MessageUtil.java", ("public static boolean isRetryable(",)),
-    ("@@MEMBER@@", member, ("private void collectSesame(", "private void reportSesameTask(", "private String lastOperateRecordId(")),
-    ("@@FOREST@@", "model/task/antForest/AntForestV2.java", ("private void getAllSkuInfo(", "private static JSONArray optItemInfoVOList(",
-        "private static boolean hasMore(", "private void getSkuInfoByItemInfoVO(", "private void teamCooperateWater(",
+    ("@@MEMBER@@", member, ("private void collectSesame(", "private void reportSesameTask(", "private String lastOperateRecordId(", "public void gameCenterTaskPrize(", "private static boolean collectNotDoneIds(", "private static boolean collectNotDoneFromArray(")),
+    ("@@FOREST@@", "model/task/antForest/AntForestV2.java", ("private boolean getAllSkuInfo(", "private static JSONArray optItemInfoVOList(",
+        "private static boolean hasMore(", "private boolean getSkuInfoByItemInfoVO(", "private void teamCooperateWater(",
         "private static JSONObject queryTeamHomePage(", "private static String getTeamId(", "private static int getTeamCanWaterCount(",
         "private static boolean updateUserConfiginTeam(", "private static int teamState(", "private static void loveteam(",
         "private static String getLoveteamName(", "private static boolean hasWaterResult(", "private static void loveteamWater(")),
+    ("@@MALL@@", "model/task/antFarm/AntFarm.java", ("private boolean getAllSkuInfo(", "private boolean getSkuInfoByItemInfoVO(")),
+    ("@@GAME_METHODS@@", "model/task/antGame/GameTask.java", ("GameTask(String title,", "public static GameTask matchTaskType(")),
     ("@@ORCHARD@@", "model/task/antOrchard/AntOrchard.java", ("private boolean doSpreadManure(",)),
     ("@@FARM@@", "model/task/antFarm/AntFarm.java", ("private void stealRankS2(", "private static int rankingInt(")),
 ):
     flows = flows.replace(placeholder, "\n".join(method(path, signature) for signature in signatures))
+
+game_source=(SOURCE / "model/task/antGame/GameTask.java").read_text(encoding="utf-8")
+flows=flows.replace("@@GAMES@@",game_source.split("public enum GameTask {",1)[1].split(";",1)[0]+";")
 
 with tempfile.TemporaryDirectory(prefix="sesame-merge-") as tmp:
     for name, source in (("MergeCheck", code), ("FlowCheck", flows)):

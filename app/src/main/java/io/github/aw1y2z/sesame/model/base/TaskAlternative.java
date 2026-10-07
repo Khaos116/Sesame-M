@@ -6,6 +6,7 @@ import org.json.JSONObject;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.util.Log;
@@ -40,7 +41,13 @@ public final class TaskAlternative {
         }
         String key = bizKey.toLowerCase(java.util.Locale.ROOT);
         for (String keyword : TRANSACTION_BIZ_KEYWORDS) {
-            if (key.contains(keyword)) {
+            // 纯数字关键词按「整段数字」匹配：直接 contains 时 70000 会命中 appId
+            // （如 2060170000359285 里的 "170000"）,把「玩游戏」这类任务误判成交易类
+            if (keyword.matches("[0-9]+")) {
+                if (Pattern.compile("(?<![0-9])" + keyword + "(?![0-9])").matcher(key).find()) {
+                    return true;
+                }
+            } else if (key.contains(keyword)) {
                 return true;
             }
         }

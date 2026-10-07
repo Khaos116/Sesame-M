@@ -19,6 +19,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -51,6 +52,42 @@ public enum GameTask {
         }
         for (GameTask task : values()) {
             if (appId.equals(task.appId)) {
+                return task;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 根据任务类型匹配游戏（能量雨结束列表下发的游戏任务使用）。
+     * <p>taskType 形如 {@code GAME_DONE_SLJYD}：前缀固定，后缀是游戏代号。而这个代号恰好是枚举里
+     * gid/action 的缩写（SLJYD → zfb_sljydx / sljyd_game_xiaochu_every_10），所以按代号在 gid、
+     * action 里做包含匹配即可，不必为每个游戏单独写一个 if。
+     *
+     * @return 枚举里没有对应常量的游戏返回 null
+     */
+    public static GameTask matchTaskType(String taskType) {
+        if (taskType == null || taskType.isEmpty()) {
+            return null;
+        }
+        String key = taskType.toUpperCase(Locale.ROOT);
+        if (key.startsWith("GAME_DONE_")) {
+            key = key.substring("GAME_DONE_".length());
+        }
+        key = key.toLowerCase(Locale.ROOT);
+        if (key.length() < 4) {
+            return null;
+        }
+        // 有些 taskType 会带后缀（如 SLJYD_XS_3），取第一段代号再匹配一次
+        String head = key.contains("_") ? key.substring(0, key.indexOf('_')) : key;
+        for (GameTask task : values()) {
+            if (task.gid.toLowerCase(Locale.ROOT).contains(key)
+                    || task.action.toLowerCase(Locale.ROOT).contains(key)) {
+                return task;
+            }
+            if (head.length() >= 4
+                    && (task.gid.toLowerCase(Locale.ROOT).contains(head)
+                    || task.action.toLowerCase(Locale.ROOT).contains(head))) {
                 return task;
             }
         }

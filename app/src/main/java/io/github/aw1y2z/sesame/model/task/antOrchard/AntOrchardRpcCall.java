@@ -61,11 +61,14 @@ public class AntOrchardRpcCall {
         return ApplicationHook.requestString("com.alipay.antorchard.orchardSyncIndex", "[{\"requestType\":\"NORMAL\",\"sceneCode\":\"ORCHARD\",\"source\":\"ch_appcenter__chsub_9patch\",\"syncIndexTypes\":\"QUERY_MAIN_ACCOUNT_INFO\",\"version\":\"" + VERSION + "\"}]");
     }
 
-    // 主要修复：统一方法签名，只保留一个orchardSpreadManure方法
-    public static String orchardSpreadManure(Boolean useBatchSpread, String wua) {
-        // 修复：正确格式化布尔值
+    /**
+     * 施肥。{@code plantScene} 必须是当前已切换到的场景（{@code main}/{@code yeb}）：
+     * 报文里声明成别的场景，服务端会回 P03「平行场景信息异常」，余额宝(摇钱树)场景就施肥失败。
+     */
+    public static String orchardSpreadManure(String plantScene, Boolean useBatchSpread, String wua) {
         String useBatchSpreadStr = Boolean.TRUE.equals(useBatchSpread) ? "true" : "false";
-        return ApplicationHook.requestString("com.alipay.antfarm.orchardSpreadManure", "[{\"plantScene\":\"main\",\"requestType\":\"NORMAL\",\"sceneCode\":\"ORCHARD\",\"source\":\"ch_appcenter__chsub_9patch\",\"useBatchSpread\":" + useBatchSpreadStr + ",\"version\":\"" + VERSION + "\",\"wua\":\"" + (wua != null ? wua : "") + "\"}]");
+        String scene = (plantScene == null || plantScene.isEmpty()) ? "main" : plantScene;
+        return ApplicationHook.requestString("com.alipay.antfarm.orchardSpreadManure", "[{\"plantScene\":\"" + scene + "\",\"requestType\":\"NORMAL\",\"sceneCode\":\"ORCHARD\",\"source\":\"ch_appcenter__chsub_9patch\",\"useBatchSpread\":" + useBatchSpreadStr + ",\"version\":\"" + VERSION + "\",\"wua\":\"" + (wua != null ? wua : "") + "\"}]");
     }
 
     public static String receiveTaskAward(String sceneCode, String taskType) {

@@ -65,7 +65,7 @@ public class StallCheck {
     }
     enum TaskStatus {TODO,RECEIVED}
     static class TimeUtil {static void sleep(long ms){}}
-    static class Status {static void flagToday(String s){}}
+    static class Status { static boolean hasFlagToday(String s){return false;}static void flagToday(String s){}}
     static class Field<T> {T value;Field(T v){value=v;}T getValue(){return value;}}
     Field<Set<String>> AntStallTaskList=new Field<>(new HashSet<>());
     Field<Boolean> doTaskOnce=new Field<>(false);

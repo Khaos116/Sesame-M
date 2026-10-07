@@ -17,6 +17,7 @@ import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
+import io.github.aw1y2z.sesame.util.Statistics;
 import io.github.aw1y2z.sesame.model.task.antForest.AntForestRpcCall;
 import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
 
@@ -189,6 +190,7 @@ public class WhackMole {
             
             // 2. 打有能量球的地鼠 (使用 oldwhackMole)
             int hitCount = 0;
+            int hitEnergy = 0;
             Random random = new Random();
             for (Long moleId : bubbleMoleIds) {
                 try {
@@ -197,6 +199,7 @@ public class WhackMole {
                     if (whackResp.optBoolean("success")) {
                         int energy = whackResp.optInt("energyAmount", 0);
                         hitCount++;
+                        hitEnergy += energy;
                         Log.forest("森林能量⚡️[兼容打地鼠:" + moleId + "+" + energy + "g]");
                         if (hitCount < bubbleMoleIds.size()) {
                             Thread.sleep(100 + random.nextInt(201)); // 100-300ms 随机延迟
@@ -231,6 +234,12 @@ public class WhackMole {
             if (MessageUtil.checkSuccess(TAG, settleResp)) {
                 int total = settleResp.optInt("totalEnergy", 0);
                 Log.forest("森林能量⚡️[兼容模式完成(打" + (remainingIds.size() + hitCount) + "个)总能量+" + total + "g]");
+                // 结算的 totalEnergy 与逐次击打的 energyAmount 是同一笔能量，只记一次
+                int gained = Math.max(total, hitEnergy);
+                if (gained > 0) {
+                    Statistics.addData(Statistics.DataType.COLLECTED, gained);
+                    Statistics.save();
+                }
             }
         } catch (Throwable t) {
             Log.record("兼容模式出错:" + (t.getMessage() != null ? t.getMessage() : "未知错误"));
@@ -290,6 +299,10 @@ public class WhackMole {
             }
         }
         Log.forest("森林能量⚡️[激进模式" + sessions.size() + "局#总计" + totalEnergy + "g]");
+        if (totalEnergy > 0) {
+            Statistics.addData(Statistics.DataType.COLLECTED, totalEnergy);
+            Statistics.save();
+        }
     }
     
     /**

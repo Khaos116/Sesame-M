@@ -134,8 +134,6 @@ public class AntForestV2 extends ModelTask {
 
     private static final Map<String, String> dressMap;
 
-    private static final Set<String> AntForestTaskTypeSet;
-
     static {
         dressMap = new HashMap<>();
         // position To positionType
@@ -152,19 +150,6 @@ public class AntForestV2 extends ModelTask {
         dressMap.put("bgGroundA", "bg__ground_a");
         dressMap.put("bgGroundB", "bg__ground_b");
         dressMap.put("bgGroundC", "bg__ground_c");
-
-        AntForestTaskTypeSet = new HashSet<>();
-        AntForestTaskTypeSet.add("VITALITYQIANDAOPUSH"); //
-        AntForestTaskTypeSet.add("ONE_CLICK_WATERING_V1"); // 给随机好友一键浇水
-        AntForestTaskTypeSet.add("GYG_YUEDU_2"); // 去森林图书馆逛15s
-        AntForestTaskTypeSet.add("GYG_TBRS"); // 逛一逛淘宝人生
-        AntForestTaskTypeSet.add("TAOBAO_tab2_2023"); // 去淘宝看科普视频
-        AntForestTaskTypeSet.add("GYG_diantao"); // 逛一逛点淘得红包
-        AntForestTaskTypeSet.add("GYG-taote"); // 逛一逛淘宝特价版
-        AntForestTaskTypeSet.add("NONGCHANG_20230818"); // 逛一逛淘宝芭芭农场
-        // AntForestTaskTypeSet.add("GYG_haoyangmao_20240103");//逛一逛淘宝薅羊毛
-        // AntForestTaskTypeSet.add("YAOYIYAO_0815");//去淘宝摇一摇领奖励
-        // AntForestTaskTypeSet.add("GYG-TAOCAICAI");//逛一逛淘宝买菜
     }
 
     private final AtomicInteger taskCount = new AtomicInteger(0);
@@ -607,8 +592,8 @@ public class AntForestV2 extends ModelTask {
                             wateringBubbles = new JSONArray();
                         }
                         if (wateringBubbles.length() > 0) {
-                            int collected = 0;
                             for (int i = 0; i < wateringBubbles.length(); i++) {
+                                int collected = 0;
                                 JSONObject wateringBubble = wateringBubbles.optJSONObject(i);
                                 if (wateringBubble == null) {
                                     continue;
@@ -627,7 +612,7 @@ public class AntForestV2 extends ModelTask {
                                                 for (int j = 0; j < bubbles.length(); j++) {
                                                     JSONObject b = bubbles.optJSONObject(j);
                                                     if (b != null) {
-                                                        collected = b.optInt("collectedEnergy");
+                                                        collected += b.optInt("collectedEnergy");
                                                     }
                                                 }
                                             }
@@ -667,7 +652,7 @@ public class AntForestV2 extends ModelTask {
                                                 for (int j = 0; j < bubbles.length(); j++) {
                                                     JSONObject b = bubbles.optJSONObject(j);
                                                     if (b != null) {
-                                                        collected = b.optInt("collectedEnergy");
+                                                        collected += b.optInt("collectedEnergy");
                                                     }
                                                 }
                                             }
@@ -750,6 +735,7 @@ public class AntForestV2 extends ModelTask {
                             jo = MyUtils.newJSONObject(AntForestRpcCall.collectAnimalRobEnergy(propId, propType, shortDay));
                             if (MessageUtil.checkResultCode(TAG, jo)) {
                                 Log.forest("动物能量🦩派遣" + animalName + "收取能量[" + energy + "g]");
+                                Statistics.addData(Statistics.DataType.COLLECTED, energy);
                             }
                             TimeUtil.sleep(500);
                             break;
@@ -2624,7 +2610,9 @@ public class AntForestV2 extends ModelTask {
                             if (!signRecord.optBoolean("signed")) {
                                 JSONObject resData2 = MyUtils.newJSONObject(AntForestRpcCall.antiepSign(signId, "ANTFOREST_ENERGY_SIGN", UserIdMap.getCurrentUid()));
                                 if (MessageUtil.checkSuccess(TAG, resData2)) {
-                                    Log.forest("过期能量💊[" + signRecord.optInt("awardCount") + "g]");
+                                    int expiredEnergy = signRecord.optInt("awardCount");
+                                    Log.forest("过期能量💊[" + expiredEnergy + "g]");
+                                    Statistics.addData(Statistics.DataType.COLLECTED, expiredEnergy);
                                 }
                             }
                             break;
@@ -2806,7 +2794,11 @@ public class AntForestV2 extends ModelTask {
 
     private void vitalityExchangeBenefit() {
         try {
-            getAllSkuInfo();
+            // 清单当日拉一次即可：单轮最多 5 个分类共 20 多次请求，且它同时是配置页兑换选项的来源，
+            // 不能完全不拉；拉不到 SKU 就不打标记，留给下一轮重试
+            if (!Status.hasFlagToday("forest::vitalitySkuList") && getAllSkuInfo()) {
+                Status.flagToday("forest::vitalitySkuList");
+            }
             Map<String, Integer> exchangeList = vitality_ExchangeBenefitList.getValue();
             for (Map.Entry<String, Integer> entry : exchangeList.entrySet()) {
                 String skuId = entry.getKey();
@@ -3138,6 +3130,9 @@ public class AntForestV2 extends ModelTask {
     }
 
     private void vantiepSign() {
+        if (Status.hasFlagToday("forest::vantiepSign")) {
+            return;
+        }
         try {
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryTaskList());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -3159,6 +3154,10 @@ public class AntForestV2 extends ModelTask {
                 }
                 String signKey = signRecord.optString("signKey");
                 int awardCount = signRecord.optInt("awardCount");
+                if (signKey.equals(currentSignKey) && Boolean.TRUE.equals(signRecord.opt("signed"))) {
+                    Status.flagToday("forest::vantiepSign");
+                    break;
+                }
                 if (signKey.equals(currentSignKey) && !signRecord.optBoolean("signed")) {
                     JSONObject joSign = MyUtils.newJSONObject(AntForestRpcCall.antiepSign(signId, UserIdMap.getCurrentUid(), sceneCode));
                     TimeUtil.sleep(300); // 等待300毫秒
@@ -3166,6 +3165,21 @@ public class AntForestV2 extends ModelTask {
                         int continuousCount = joSign.optInt("continuousCount");
                         Log.forest("森林签到📆拯救第" + continuousCount + "天#复活[" + awardCount + "g能量]");
                         Statistics.addData(Statistics.DataType.COLLECTED, awardCount);
+                        // 回读确认：重新拉列表，本期 currentSignKey 已签才落当日标记
+                        JSONObject verify = MyUtils.newJSONObject(AntForestRpcCall.queryTaskList());
+                        if (MessageUtil.checkResultCode(TAG, verify)) {
+                            JSONArray verifyList = verify.optJSONArray("forestSignVOList");
+                            JSONObject verifySign = verifyList == null ? null : verifyList.optJSONObject(0);
+                            JSONArray verifyRecords = verifySign == null ? null : verifySign.optJSONArray("signRecords");
+                            for (int j = 0; verifyRecords != null && j < verifyRecords.length(); j++) {
+                                JSONObject verifyRecord = verifyRecords.optJSONObject(j);
+                                if (verifyRecord != null && currentSignKey.equals(verifyRecord.optString("signKey"))
+                                        && Boolean.TRUE.equals(verifyRecord.opt("signed"))) {
+                                    Status.flagToday("forest::vantiepSign");
+                                    break;
+                                }
+                            }
+                        }
                         // return awardCount;
                     }
                     break;
@@ -3207,6 +3221,10 @@ public class AntForestV2 extends ModelTask {
                 String awardType = signRecord.optString("awardType");
                 JSONObject extInfo = signRecord.optJSONObject("extInfo");
                 String awardName = extInfo != null ? extInfo.optString("awardName") : "";
+                if (signKey.equals(currentSignKey) && Boolean.TRUE.equals(signRecord.opt("signed"))) {
+                    Status.flagToday("forest::vantiepSign");
+                    break;
+                }
                 if (signKey.equals(currentSignKey) && !signRecord.optBoolean("signed")) {
                     JSONObject joSign = MyUtils.newJSONObject(AntForestRpcCall.antiepSign(signId, UserIdMap.getCurrentUid(), sceneCode));
                     TimeUtil.sleep(300); // 等待300毫秒
@@ -3354,8 +3372,7 @@ public class AntForestV2 extends ModelTask {
                 }
             }
             //可能是触发限时挑战奖励的
-            String touchResp = AntForestRpcCall.batchQueryAndTouchopengreen();
-            Log.other("批量领取活力值能量响应#" + (touchResp != null && touchResp.length() > 800 ? touchResp.substring(0, 800) : touchResp));
+            AntForestRpcCall.batchQueryAndTouchopengreen();
         } catch (Throwable t) {
             Log.err(TAG, "doForsetTaskList err:", t);
         }
@@ -3461,7 +3478,9 @@ public class AntForestV2 extends ModelTask {
                 Log.forest("森林任务🧾️完成[" + taskTitle + "]");
                 return true;
             }
-            // 另一种实现方案（见 TaskAlternative）
+            // 另一种实现方案（见 TaskAlternative）：逛一逛类外部场景（GYG_* / TAOBAO_* / NONGCHANG_* 等，
+            // 如森林图书馆、淘宝人生、科普视频、点淘、淘宝特价版、芭芭农场、摇一摇、买菜、薅羊毛）
+            // 由它统一兜底；原先按 taskType 维护的白名单已废弃，不再单独判断
             if (TaskAlternative.hit(jo, sceneCode)) {
                 TaskAlternative.trigger(null, taskType, taskTitle, taskType, sceneCode, "森林任务", msg -> Log.forest(msg));
                 return false;
@@ -3675,50 +3694,64 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            if (!jo.has("energyRainEndGameGroupTask")) {
-                Status.flagToday("EnergyRain::PlayGame");
-                return;
-            }
-
-            // 2. 初始化新任务（需要接入森林救援队）
-            if (jo.optBoolean("needInitTask", false)) {
-                Log.record("检测到新任务，准备接入[森林救援队]...");
-                String initResStr = AntForestRpcCall.initTask("GAME_DONE_SLJYD");
-                JSONObject initRes = MyUtils.newJSONObject(initResStr);
-                if (!MessageUtil.checkResultCode(TAG, initRes)) {
-                    return;
-                }
-            }
-
-            // 3. 仅当森林救援队(GAME_DONE_SLJYD)未完结时才上报，避免每轮重复发起外部请求
             JSONObject groupTask = jo.optJSONObject("energyRainEndGameGroupTask");
             JSONArray taskInfoList = groupTask != null ? groupTask.optJSONArray("taskInfoList") : null;
-
-            String sljydStatus = null;
-            if (taskInfoList != null) {
-                for (int i = 0; i < taskInfoList.length(); i++) {
-                    JSONObject task = taskInfoList.optJSONObject(i);
-                    JSONObject baseInfo = task != null ? task.optJSONObject("taskBaseInfo") : null;
-                    if (baseInfo == null) continue;
-                    if ("GAME_DONE_SLJYD".equals(baseInfo.optString("taskType"))) {
-                        sljydStatus = baseInfo.optString("taskStatus");
-                        break;
-                    }
-                }
-            }
-
-            // 需要初始化、或任务处于待办/未触发时上报；已完结/无任务则仅标记今日已处理
-            boolean needInit = jo.optBoolean("needInitTask", false);
-            boolean shouldReport = needInit
-                    || "TODO".equals(sljydStatus)
-                    || "NOT_TRIGGER".equals(sljydStatus);
-
-            if (shouldReport) {
-                GameTask.Forest_sljyd.report("森林", 1);
+            if (taskInfoList == null || taskInfoList.length() == 0) {
+                // 原来这条分支没有任何日志就打了标记，事后分不清是"服务端确实没下发"还是我们没识别出来
+                Log.forest("能量雨游戏🎮本次未下发游戏任务"
+                        + (groupTask == null ? "(无energyRainEndGameGroupTask)" : "(taskInfoList为空)"));
                 Status.flagToday("EnergyRain::PlayGame");
                 return;
             }
-            Log.record("森林救援队🐱无需上报(状态:" + sljydStatus + ")，今日跳过");
+
+            // 2. 逐个处理下发的游戏任务：任务列表里的游戏不止一个，
+            // 原来只认 GAME_DONE_SLJYD，别的游戏（含我们还没收录常量的）会被静默跳过
+            boolean needInit = jo.optBoolean("needInitTask", false);
+            boolean reported = false;
+            for (int i = 0; i < taskInfoList.length(); i++) {
+                JSONObject task = taskInfoList.optJSONObject(i);
+                JSONObject baseInfo = task != null ? task.optJSONObject("taskBaseInfo") : null;
+                if (baseInfo == null) continue;
+
+                String taskType = baseInfo.optString("taskType");
+                String taskStatus = baseInfo.optString("taskStatus");
+                JSONObject bizInfo = task.optJSONObject("bizInfo");
+
+                GameTask gameTask = GameTask.matchTaskType(taskType);
+                if (gameTask == null && bizInfo != null) {
+                    gameTask = GameTask.matchAppId(bizInfo.optString("appId"));
+                }
+                if (gameTask == null) {
+                    // 枚举里没有这个游戏的常量(appId/gid/action)，登录不了游戏服，只能跳过
+                    Log.forest("能量雨游戏🎮任务#" + taskType + "#状态=" + taskStatus + "#未收录游戏");
+                    continue;
+                }
+
+                boolean needPlay = needInit
+                        || "TODO".equals(taskStatus)
+                        || "NOT_TRIGGER".equals(taskStatus);
+                Log.forest("能量雨游戏🎮任务[" + gameTask.getTitle() + "]#taskType=" + taskType
+                        + "#状态=" + taskStatus + (needPlay ? "" : "#无需上报"));
+                if (!needPlay) {
+                    continue;
+                }
+                if (needInit) {
+                    JSONObject initRes = MyUtils.newJSONObject(AntForestRpcCall.initTask(taskType));
+                    if (!MessageUtil.checkResultCode(TAG, initRes)) {
+                        // 初始化失败时不打标记，留给下一轮重试
+                        Log.forest("能量雨游戏🎮任务[" + gameTask.getTitle() + "]初始化失败");
+                        return;
+                    }
+                    TimeUtil.sleep(500);
+                }
+                gameTask.report("森林", 1);
+                reported = true;
+            }
+            if (!reported) {
+                Log.forest("能量雨游戏🎮今日无待上报的游戏任务");
+            }
+            // 仍然只查一次：需要初始化、或任务处于待办/未触发时已在上报，
+            // 其余情况（已完结/无任务）只标记今日已处理，避免每轮重复发起外部请求
             Status.flagToday("EnergyRain::PlayGame");
 
         } catch (Throwable th) {
@@ -5869,9 +5902,11 @@ public class AntForestV2 extends ModelTask {
      * <p>原先只查 SC_ASSETS 的第一页 ⇒ 权益列表只有一小部分；改为按官方实测的 5 个 labelType
      * 分别拉取，并用响应里的 hasMore 翻页。
      */
-    private void getAllSkuInfo() {
+    /** @return 是否真的取到 SKU（调用方据此决定要不要打当日标记，取不到时留给下一轮重试） */
+    private boolean getAllSkuInfo() {
         try {
             int got = 0;
+            boolean gotSku = false;
             for (String labelType : VITALITY_LABEL_TYPES) {
                 int cnt = 0;
                 for (int page = 0; page < VITALITY_ITEM_MAX_PAGES; page++) {
@@ -5886,7 +5921,7 @@ public class AntForestV2 extends ModelTask {
                     for (int i = 0; i < itemInfoVOList.length(); i++) {
                         JSONObject itemInfoVO = itemInfoVOList.optJSONObject(i);
                         if (itemInfoVO != null) {
-                            getSkuInfoByItemInfoVO(itemInfoVO);
+                            gotSku |= getSkuInfoByItemInfoVO(itemInfoVO);
                             cnt++;
                         }
                     }
@@ -5899,8 +5934,10 @@ public class AntForestV2 extends ModelTask {
             }
             VitalityBenefitIdMap.save(UserIdMap.getCurrentUid());
             Log.i("活力值商店列表：共取" + got + "条，清单共" + VitalityBenefitIdMap.getMap().size() + "条");
+            return gotSku;
         } catch (Throwable th) {
             Log.err(TAG, "getAllSkuInfo err:", th);
+            return false;
         }
     }
 
@@ -5942,22 +5979,26 @@ public class AntForestV2 extends ModelTask {
     }
 
     /** 单个 SPU 的 SKU 入表；落盘由调用方整批结束后统一 save（原先每个 SPU 都写一次文件） */
-    private void getSkuInfoByItemInfoVO(JSONObject spuItem) {
+    private boolean getSkuInfoByItemInfoVO(JSONObject spuItem) {
         try {
+            if (!(spuItem.opt("spuId") instanceof String)) return false;
             String spuId = spuItem.optString("spuId");
             JSONArray skuModelList = spuItem.optJSONArray("skuModelList");
             if (spuId.isEmpty() || skuModelList == null) {
-                return;
+                return false;
             }
+            boolean got = false;
             for (int i = 0; i < skuModelList.length(); i++) {
                 JSONObject skuModel = skuModelList.optJSONObject(i);
                 if (skuModel == null) {
                     continue;
                 }
+                if (!(skuModel.opt("skuId") instanceof String)) continue;
                 String skuId = skuModel.optString("skuId");
                 if (skuId.isEmpty()) {
                     continue;
                 }
+                got = true;
                 String skuName = skuModel.optString("skuName");
                 if (!skuModel.has("spuId")) {
                     skuModel.put("spuId", spuId);
@@ -5965,9 +6006,11 @@ public class AntForestV2 extends ModelTask {
                 skuInfo.put(skuId, skuModel);
                 VitalityBenefitIdMap.add(skuId, skuName);
             }
+            return got;
         } catch (Throwable th) {
             Log.err(TAG, "getSkuInfoByItemInfoVO err:", th);
         }
+        return false;
     }
 
     /*
@@ -6115,29 +6158,19 @@ public class AntForestV2 extends ModelTask {
                 return;
             }
 
-            // 执行浇水
+            if (ApplicationHook.isOffline()) return;
+            // 先保留额度：RPC返回异常或取消也可能发生在服务端已扣能量之后。
+            Status.forestHuntHelpToday(FLAG_TEAM_WATER_DAILY_COUNT, todayUsed + finalWaterAmount, UserIdMap.getCurrentUid());
             JSONObject waterJo = MyUtils.newJSONObject(AntForestRpcCall.teamWater(teamId, finalWaterAmount));
-            if (!hasWaterResult(waterJo)) {
-                Log.record("组队合种浇水响应为空或无效，保留额度待重试");
-                return;
-            }
-            boolean retryable = MessageUtil.isRetryable(waterJo);
             if (MessageUtil.checkResultCode(TAG, waterJo) || MessageUtil.checkSuccess(TAG, waterJo)) {
                 Log.forest("组队合种🚿给合种浇水" + finalWaterAmount + "g");
                 Toast.show("组队合种🚿给合种浇水" + finalWaterAmount + "g");
-            } else if (retryable) {
-                // 限流/远端异常属临时故障：不计当日额度，下一轮再试
-                Log.record("组队合种浇水失败(可重试)，下次运行再试");
             } else {
-                // 判定不成但非临时故障（多为今日已浇过/额度用尽）：按已浇记账，保留响应原文便于排查。
-                // 不记账的话每次自动运行都会重发一次浇水请求，和真爱合种是同一类问题。
-                Log.record("组队合种浇水未确认成功，按已浇记账避免重复：" + waterJo);
+                Log.record("组队合种浇水未确认成功，保留额度避免重复：" + waterJo);
             }
-            if (!retryable) {
-                Status.forestHuntHelpToday(FLAG_TEAM_WATER_DAILY_COUNT, todayUsed + finalWaterAmount, UserIdMap.getCurrentUid());
-                Log.record("组队合种今日浇水累计: " + (todayUsed + finalWaterAmount) + "g / " + userDailyTarget + "g");
-            }
-        } catch (Throwable t) {
+            Log.record("组队合种今日浇水累计: " + (todayUsed + finalWaterAmount) + "g / " + userDailyTarget + "g");
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "teamCooperateWater err:", t);
         } finally {
             // 任何分支（含异常和提前 return）都要切回个人模式，否则会一直停在组队模式影响其它功能
@@ -6161,7 +6194,8 @@ public class AntForestV2 extends ModelTask {
                 return null;
             }
             return homeJo;
-        } catch (Throwable t) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "queryTeamHomePage err:", t);
         }
         return null;
@@ -6217,7 +6251,8 @@ public class AntForestV2 extends ModelTask {
                 Log.record("合种浇水切换成功：" + (needReturn ? "切到组队模式" : "切到个人模式"));
                 return true;
             }
-        } catch (Throwable th) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable th) {
             Log.err(TAG, "updateUserConfig err:", th);
         }
         return false;
@@ -6261,7 +6296,8 @@ public class AntForestV2 extends ModelTask {
                 return;
             }
             loveteamWater(teamId, getLoveteamName(jo, teamId), waterNum);
-        } catch (Throwable th) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable th) {
             Log.err(TAG, "loveteam err:", th);
         }
     }
@@ -6296,18 +6332,17 @@ public class AntForestV2 extends ModelTask {
 
     /**
      * 真爱合种浇水（每日一次）。
-     * <p>当日标记**先落再发请求**：这个动作一天只该做一次，不能把标记挂在响应判定上——
-     * 响应一旦不被判定为成功（结构不符、或服务端提示今日已浇/额度用尽），标记就落不下去，
-     * 每次自动运行都会重发一次浇水请求，表现为"反复浇水"。
-     * <p>只有明确的临时故障（网络异常、限流/远端异常）才撤销标记，留到下一轮再试。
+     * <p>当日标记**先落再发请求**，离线时不发请求、不落标记；请求发起后不撤销标记。
+     * <p>响应判定不成、超时、响应解析异常等一律**保留标记**：请求可能已经到服务端（水已经浇了），
+     * 撤销标记会让「改配置触发的那一轮」再浇一次，表现为"每次修改配置返回就再浇一次"。
      */
     private static void loveteamWater(String teamId, String teamName, int waterNum) {
+        if (ApplicationHook.isOffline()) return;
         Status.flagToday(FLAG_LOVETEAM_WATER);
         try {
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.loveteamWater(teamId, waterNum));
             if (!hasWaterResult(jo)) {
-                Status.clearFlag(FLAG_LOVETEAM_WATER);
-                Log.record("真爱合种浇水响应为空或无效，待下轮重试");
+                Log.record("真爱合种浇水响应为空或无效，保留标记避免重复");
                 return;
             }
             if (MessageUtil.checkSuccess(TAG, jo) || MessageUtil.checkResultCode(TAG, jo)) {
@@ -6315,15 +6350,10 @@ public class AntForestV2 extends ModelTask {
                 Toast.show("真爱浇水🚿给[" + teamName + "]合种浇水" + waterNum + "g");
                 return;
             }
-            if (MessageUtil.isRetryable(jo)) {
-                Status.clearFlag(FLAG_LOVETEAM_WATER);
-                Log.record("真爱合种浇水失败(可重试)，下次运行再试");
-                return;
-            }
-            // 其余失败（多为今日已浇过 / 额度用尽）当日不再重发，保留响应原文便于排查
-            Log.record("真爱合种浇水未成功，今日不再尝试：" + jo);
-        } catch (Throwable th) {
-            Status.clearFlag(FLAG_LOVETEAM_WATER);
+            // 判定不成（结构不符 / 今日已浇过 / 额度用尽）当日不再重发，保留响应原文便于排查
+            Log.record("真爱合种浇水未确认成功，今日不再尝试：" + jo);
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable th) {
             Log.err(TAG, "loveteamWater err:", th);
         }
     }

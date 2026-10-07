@@ -1,6 +1,7 @@
 """Replay production daily/weekly ranking plans, budgets and readback against isolated RPCs."""
 from pathlib import Path
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -26,7 +27,7 @@ signatures = ["private static final class RankingSnapshot", "private static int 
               "private boolean confirmRankingDonation(", "private boolean dailyRankingDonation(",
               "private void scheduleRankingWatch(",
               "private Boolean donationCompetition(", "private boolean isCompetitionRoundActive("]
-signatures += ["private boolean donateToCompetition(", "private void stealRankS2("]
+signatures += ["private boolean donateToCompetition(", "private int queryProjectDonationNum(", "private void stealRankS2("]
 
 code = r'''
 import java.util.*;
@@ -49,6 +50,13 @@ public class FarmRankingCheck {
  Str rankingDonationTime=new Str();String ownerUserId="A";double harvestBenevolenceScore=30;
  boolean check(){return true;}
  static class UserIdMap {static String uid="A";static String getCurrentUid(){return uid;}}
+ static class Status {
+   static final Set<String> flags=new HashSet<>();
+   static String key(String flag){return UserIdMap.uid+":"+rankingDay(System.now)+":"+flag;}
+   static boolean hasFlagToday(String flag){return flags.contains(key(flag));}
+   static void flagToday(String flag){flags.add(key(flag));}
+ }
+ @@FLAGS@@
  static class RuntimeInfo {
    static final Map<String,RuntimeInfo> accounts=new HashMap<>();Map<String,String> data=new HashMap<>();static boolean fail;
    static RuntimeInfo getInstance(){return accounts.computeIfAbsent(UserIdMap.uid,k->new RuntimeInfo());}
@@ -76,6 +84,7 @@ public class FarmRankingCheck {
  static class AntFarmRpcCall {
    static int donated=0,uses=0,reads=0,leader=8;static boolean weekly,unknown,noChange,switchOwner;static String activity="season",round="week1";
    static String queryCompetitionEntranceInfo(){return new JSONObject().put("memo","SUCCESS").put("animationInfo",new JSONObject().put("competitionProjectInfo",new JSONObject().put("projectId","weeklyProject").put("projectName","project"))).toString();}
+   static String getProjectInfo(String id){return new JSONObject().put("memo","SUCCESS").put("userProjectDonationNum",donated).toString();}
    static String enterDonationCompetitionRank(){reads++;return rank(weekly).toString();}
    static String enterCompetitionAwardPage(){return award().toString();}
    static String listActivityInfo(){return new JSONObject().put("memo","SUCCESS").put("activityInfos",new JSONArray().put(new JSONObject().put("activityId","charity").put("donationLimit",100).put("donationTotal",0))).toString();}
@@ -85,7 +94,7 @@ public class FarmRankingCheck {
       return unknown?"garbage":new JSONObject().put("memo","SUCCESS").put("donation",new JSONObject().put("harvestBenevolenceScore",30-amount)).toString();}
  }
  @@METHODS@@
- static void reset(FarmRankingCheck f){UserIdMap.uid=f.ownerUserId="A";System.now=at("2026-10-07T19:58:00");RuntimeInfo.accounts.clear();RuntimeInfo.fail=false;
+ static void reset(FarmRankingCheck f){UserIdMap.uid=f.ownerUserId="A";System.now=at("2026-10-07T19:58:00");RuntimeInfo.accounts.clear();RuntimeInfo.fail=false;Status.flags.clear();
    AntFarmRpcCall.donated=AntFarmRpcCall.uses=AntFarmRpcCall.reads=0;AntFarmRpcCall.weekly=AntFarmRpcCall.unknown=AntFarmRpcCall.noChange=AntFarmRpcCall.switchOwner=false;
    AntFarmRpcCall.activity="season";AntFarmRpcCall.round="week1";AntFarmRpcCall.leader=8;f.foodCalls=0;f.foodUnderfill=f.foodMoveLeader=f.rankingFoodRefillBusy=f.rankingFoodRefill.n=false;f.competitionStealLimit.n=0;f.competitionTargetRank.n=1;f.rankingDonation.n=f.rankingStable.n=true;f.rankingWatch.n=false;f.rankingWatchChildId=null;f.rankingDailyBudget.n=20;f.rankingWeeklyBudget.n=50;f.harvestBenevolenceScore=30;f.children.clear();}
  public static void main(String[] args)throws Exception {
@@ -156,10 +165,24 @@ public class FarmRankingCheck {
    reset(f);AntFarmRpcCall.weekly=true;f.competitionTargetRank.n=2;f.competitionStealLimit.n=4;f.stealRankS2();assert AntFarmRpcCall.uses==0;
    reset(f);AntFarmRpcCall.weekly=true;f.competitionTargetRank.n=2;f.rankingDailyBudget.n=4;f.stealRankS2();assert AntFarmRpcCall.uses==0;
    for(int invalid:new int[]{0,101}){reset(f);AntFarmRpcCall.weekly=true;f.competitionTargetRank.n=invalid;f.stealRankS2();assert AntFarmRpcCall.uses==0;}
+   reset(f);AntFarmRpcCall.weekly=true;AntFarmRpcCall.unknown=true;AntFarmRpcCall.noChange=true;
+   assert !f.donateToCompetition(3) && Status.hasFlagToday(FLAG_COMPETITION_DONATE_TRIED) && !Status.hasFlagToday(FLAG_COMPETITION_DONATED_TODAY);
+   assert !f.donateToCompetition(3) && AntFarmRpcCall.uses==1;
+   reset(f);AntFarmRpcCall.weekly=true;AntFarmRpcCall.unknown=true;
+   assert f.donateToCompetition(3) && Status.hasFlagToday(FLAG_COMPETITION_DONATED_TODAY);
+   assert f.donateToCompetition(3) && AntFarmRpcCall.uses==1;
+   System.now=at("2026-10-08T19:58:00");AntFarmRpcCall.unknown=false;
+   assert f.donateToCompetition(3) && AntFarmRpcCall.uses==2;
+   reset(f);Status.flagToday(FLAG_CHARITY_DONATION_DONE);f.harvestBenevolenceScore=0;f.rankingFoodRefill.n=true;
+   assert f.donateToCompetition(3) && AntFarmRpcCall.uses==0 && f.foodCalls==0;
+   reset(f);AntFarmRpcCall.weekly=true;AntFarmRpcCall.switchOwner=true;
+   assert !f.donateToCompetition(3) && AntFarmRpcCall.uses==1 && !Status.hasFlagToday(FLAG_COMPETITION_DONATED_TODAY);
    java.lang.System.out.println("PASS farm ranking: typed daily/S2 schemas, own account, stars/cheapest plan, budget zero/caps, GMT+8 day/week reset, restart persistence, pre-RPC write failure, unknown/readback guards, schedule identity and cancellation");
  }
 }
 '''.replace("@@METHODS@@", "\n".join(method(farm, signature) for signature in signatures))
+code = code.replace("@@FLAGS@@", "\n".join(re.search(r"    private static final String " + flag + r" = [^;]+;", source).group() for flag in
+    ("FLAG_CHARITY_DONATION_DONE", "FLAG_COMPETITION_DONATE_TRIED", "FLAG_COMPETITION_DONATED_TODAY")))
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches/modules-2/files-2.1/org.json/json"
 jar = sorted(p for p in cache.glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar", "-javadoc.jar")))[-1]
 with tempfile.TemporaryDirectory(prefix="sesame-farm-ranking-") as directory:

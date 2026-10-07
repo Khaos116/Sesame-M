@@ -424,8 +424,30 @@ public class AntMemberRpcCall {
         return ApplicationHook.requestString("com.alipay.gamecenteruprod.biz.rpc.v3.queryModularTaskList", "[{\"deviceLevel\":\"high\",\"source\":\"ch_appcollect__chsub_my-recentlyUsed\",\"sourceTab\":\"luckydraw\",\"unityDeviceLevel\":\"high\"}]");
     }
     
-    public static String queryTaskList() {
-        return ApplicationHook.requestString("com.alipay.gamecenteruprod.biz.rpc.v4.queryTaskList", "[{\"__git\":\"52f2c9969ae\",\"source\":\"ch_alipaysearch__chsub_normal\"}]");
+    /**
+     * 游戏中心（会员场景 xlyy_WJCNJT）首页：任务进度与是否有待领奖励
+     */
+    public static String gameCenterHomePage() {
+        return ApplicationHook.requestString("com.alipay.gamecenteruprod.biz.rpc.external.gamecenter.queryHomePage",
+                "[{\"__git\":\"9e159d58cce04c13a\",\"channelTaskPassThrough\":\"\",\"deviceLevel\":\"high\",\"guideType\":\"\",\"moduleId\":\"\",\"sceneId\":\"xlyy_WJCNJT\",\"source\":\"zfbhy_mc_wkenoz66\",\"unityDeviceLevel\":\"high\"}]");
+    }
+
+    /**
+     * 游戏中心任务流（feedsList 里是「去玩某个游戏」的任务）
+     */
+    public static String gameCenterGameFeeds(int pageNum, int pageSize) {
+        return ApplicationHook.requestString("com.alipay.gamecenteruprod.biz.rpc.external.gamecenter.queryGameFeeds",
+                "[{\"__git\":\"9e159d58cce04c13a\",\"deviceLevel\":\"high\",\"filterGameIdList\":[],\"pageNum\":" + pageNum
+                        + ",\"pageSize\":" + pageSize
+                        + ",\"sceneId\":\"xlyy_WJCNJT\",\"source\":\"zfbhy_mc_wkenoz66\",\"unityDeviceLevel\":\"high\"}]");
+    }
+
+    /**
+     * 游戏中心一键领取任务奖励（整场景批量，无需任务 id）
+     */
+    public static String batchReceiveTaskPrize() {
+        return ApplicationHook.requestString("com.alipay.gamecenteruprod.biz.rpc.external.gamecenter.batchReceiveTaskPrize",
+                "[{\"__git\":\"9e159d58cce04c13a\",\"deviceLevel\":\"high\",\"sceneId\":\"xlyy_WJCNJT\",\"source\":\"zfbhy_mc_wkenoz66\",\"unityDeviceLevel\":\"high\"}]");
     }
     
     /**
