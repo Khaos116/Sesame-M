@@ -148,6 +148,10 @@ public class GreenFinance extends ModelTask {
      * @param sceneId sceneId
      */
     private void signIn(final String sceneId) {
+        String signFlag = "greenFinance::signIn::" + sceneId;
+        if (Status.hasFlagToday(signFlag)) {
+            return;
+        }
         try {
             String s = GreenFinanceRpcCall.signInQuery(sceneId);
             JSONObject jo = new JSONObject(s);
@@ -157,6 +161,8 @@ public class GreenFinance extends ModelTask {
             }
             JSONObject result = jo.getJSONObject("result");
             if (result.getBoolean("isTodaySignin")) {
+                // 服务端回读确认今日已签：落当日标记，之后不再查询/提交
+                Status.flagToday(signFlag);
                 return;
             }
             s = GreenFinanceRpcCall.signInTrigger(sceneId);
@@ -164,6 +170,12 @@ public class GreenFinance extends ModelTask {
             jo = new JSONObject(s);
             if (jo.optBoolean("success")) {
                 Log.other("绿色经营📊签到成功");
+                // 只认回读结果，不认「我发过 trigger」
+                JSONObject verify = new JSONObject(GreenFinanceRpcCall.signInQuery(sceneId));
+                if (verify.optBoolean("success")
+                        && verify.getJSONObject("result").optBoolean("isTodaySignin")) {
+                    Status.flagToday(signFlag);
+                }
             } else {
                 Log.i(TAG + ".signIn.signInTrigger", jo.optString("resultDesc"));
             }
@@ -177,31 +189,31 @@ public class GreenFinance extends ModelTask {
      */
     private void behaviorTick() {
         //绿色行动
-        if (greenFinanceLsxd.getValue()) {
+        if (greenFinanceLsxd.getValue() && !Status.hasFlagToday("greenFinance::tick::lsxd")) {
             TimeUtil.sleep(1000);
             doTick("lsxd");
             TimeUtil.sleep(1500);
         }
         //绿色采购
-        if (greenFinanceLscg.getValue()) {
+        if (greenFinanceLscg.getValue() && !Status.hasFlagToday("greenFinance::tick::lscg")) {
             TimeUtil.sleep(1000);
             doTick("lscg");
             TimeUtil.sleep(1500);
         }
         //绿色物流
-        if (greenFinanceLswl.getValue()) {
+        if (greenFinanceLswl.getValue() && !Status.hasFlagToday("greenFinance::tick::lswl")) {
             TimeUtil.sleep(1000);
             doTick("lswl");
             TimeUtil.sleep(1500);
         }
         //绿色办公
-        if (greenFinanceLsbg.getValue()) {
+        if (greenFinanceLsbg.getValue() && !Status.hasFlagToday("greenFinance::tick::lsbg")) {
             TimeUtil.sleep(1000);
             doTick("lsbg");
             TimeUtil.sleep(1500);
         }
         //绿色销售
-        if (greenFinanceWdxd.getValue()) {
+        if (greenFinanceWdxd.getValue() && !Status.hasFlagToday("greenFinance::tick::wdxd")) {
             TimeUtil.sleep(1000);
             doTick("wdxd");
             TimeUtil.sleep(1500);
@@ -214,6 +226,10 @@ public class GreenFinance extends ModelTask {
      * @param type 打开类型
      */
     private void doTick(final String type) {
+        String tickFlag = "greenFinance::tick::" + type;
+        if (Status.hasFlagToday(tickFlag)) {
+            return;
+        }
         try {
             String str = GreenFinanceRpcCall.queryUserTickItem(type);
             JSONObject jsonObject = new JSONObject(str);
@@ -238,6 +254,25 @@ public class GreenFinance extends ModelTask {
                 Log.other("绿色经营📊[" + jsonObject.getString("title") + "]打卡成功");
 //                Thread.sleep(executeIntervalInt);
             }
+            // 回读确认：服务端返回的行为项全部为 Y（今日已打卡）才落当日标记
+            JSONObject verified = new JSONObject(GreenFinanceRpcCall.queryUserTickItem(type));
+            if (verified.optBoolean("success")) {
+                JSONArray verifiedArray = verified.optJSONArray("result");
+                if (verifiedArray != null && verifiedArray.length() > 0) {
+                    boolean allTicked = true;
+                    for (int i = 0; i < verifiedArray.length(); i++) {
+                        JSONObject item = verifiedArray.optJSONObject(i);
+                        if (item == null || !"Y".equals(item.optString("status"))) {
+                            allTicked = false;
+                            break;
+                        }
+                    }
+                    if (allTicked) {
+                        Status.flagToday(tickFlag);
+                        Log.other("绿色经营📊[行为打卡:" + type + "]今日全部完成");
+                    }
+                }
+            }
         } catch (Throwable th) {
             Log.err(TAG, "doTick err:", th);
         }
@@ -248,6 +283,9 @@ public class GreenFinance extends ModelTask {
      */
     private void donation() {
         if (!greenFinanceDonation.getValue()) {
+            return;
+        }
+        if (Status.hasFlagToday("greenFinance::donation")) {
             return;
         }
         try {
@@ -264,6 +302,8 @@ public class GreenFinance extends ModelTask {
             }
             double amount = Double.parseDouble(strAmount);
             if (amount <= 0) {
+                // 服务端回读：已无过期金币可捐 → 落当日标记，后续运行不再查询
+                Status.flagToday("greenFinance::donation");
                 return;
             }
             //不管是否可以捐小于非100的倍数了，，第一次捐200，最后按amount-200*n
@@ -305,6 +345,17 @@ public class GreenFinance extends ModelTask {
                     return;
                 }
                 Log.other("绿色经营📊成功捐助[" + name + "]" + am + "金币");
+            }
+            // 回读确认：过期金币清零才认为「今日该捐的已捐完」
+            JSONObject afterJo = new JSONObject(GreenFinanceRpcCall.queryExpireMcaPoint(1));
+            if (afterJo.optBoolean("success")) {
+                String afterAmount = JsonUtil.getValueByPath(afterJo, "result.expirePoint.amount");
+                if (afterAmount.matches("-?\\d+(\\.\\d+)?")) {
+                    if (Double.parseDouble(afterAmount) <= 0) {
+                        Status.flagToday("greenFinance::donation");
+                        Log.other("绿色经营📊今日捐助完成#过期金币已清零");
+                    }
+                }
             }
         } catch (Throwable th) {
             Log.err(TAG, "donation err:", th);

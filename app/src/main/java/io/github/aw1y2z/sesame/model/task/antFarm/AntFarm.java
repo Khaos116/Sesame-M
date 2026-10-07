@@ -61,6 +61,15 @@ public class AntFarm extends ModelTask {
      * <p>持久化 key，**不能改名**。
      */
     private static final String FLAG_COMPETITION_DONATE_TRIED = "antFarm::competitionDonateTried";
+
+    /**
+     * 小鸡乐园「刷任务」当日跳过标记：上报后服务端未刷新出新的宝箱次数时当天不再刷，
+     * 避免每轮运行都重发一次任务上报。持久化 key，**不能改名**。
+     */
+    private static final String FLAG_GAME_DRAW_TASK_SKIP = "antFarm::gameDrawTaskSkip";
+
+    /** 投喂被服务端拒绝的「饲料槽已满」结果码（按码判据，不认文案） */
+    private static final String CODE_FEED_TROUGH_FULL = "331";
     /** 小鸡所在空间标识：家庭空间。睡觉/起床靠它区分走家庭接口还是个人小屋接口 */
     private static final String SPACE_TYPE_CHICK_FAMILY = "ChickFamily";
 
@@ -82,6 +91,11 @@ public class AntFarm extends ModelTask {
      * 一轮里连着刷 3 次只是白刷（每轮开头重置，见 {@link #run()}）。
      */
     private boolean farmTaskAwardBusy = false;
+    /**
+     * 本轮投喂时服务端回了「饲料槽已满」(结果码见 CODE_FEED_TROUGH_FULL)：本轮不再投喂；
+     * 槽满后每 10 秒级的重试只是白打接口，每轮开头重置 (见 run())。
+     */
+    private boolean feedTroughFullThisRun = false;
     private double finalScore = 0d;
     private int foodInTrough = 0;
 
@@ -239,6 +253,7 @@ public class AntFarm extends ModelTask {
     public void run() {
         try {
             farmTaskAwardBusy = false;
+            feedTroughFullThisRun = false;
             if (enterFarm() == null) {
                 return;
             }
@@ -1904,6 +1919,9 @@ public class AntFarm extends ModelTask {
     }
 
     private void feedAnimal(String farmId) {
+        if (feedTroughFullThisRun) {
+            return;
+        }
         try {
             syncAnimalStatus(ownerFarmId);
             if (foodStock < 180) {
@@ -1911,7 +1929,14 @@ public class AntFarm extends ModelTask {
                 return;
             }
             JSONObject jo = new JSONObject(AntFarmRpcCall.feedAnimal(farmId));
-            if (MessageUtil.checkMemo(TAG, jo)) {
+            boolean ok = MessageUtil.checkMemo(TAG, jo);
+            if (!ok && CODE_FEED_TROUGH_FULL.equals(jo.optString("resultCode"))) {
+                // 服务端回读：饲料槽已满，本轮不再投喂 (下一轮再看)
+                feedTroughFullThisRun = true;
+                Log.record("投喂小鸡⏭️饲料槽已满，本轮不再投喂");
+                return;
+            }
+            if (ok) {
                 int feedFood = foodStock - jo.getInt("foodStock");
                 add2FoodStock(-feedFood);
                 Log.farm("投喂小鸡🥣消耗[" + feedFood + "g]#剩余[" + foodStock + "g饲料]");
@@ -3392,7 +3417,27 @@ public class AntFarm extends ModelTask {
                     int remainToTask = limit - used;
                     // 已开数量 < 上限 且 无可用次数 → 触发任务刷取
                     if (remainToTask > 0 && quotaCanUse == 0) {
-                        GameTask.Farm_ddply.report("庄园", remainToTask);
+                        if (!Status.hasFlagToday(FLAG_GAME_DRAW_TASK_SKIP)) {
+                            // 本地 quotaCanUse/used 已被本次开箱流程改过，不能当基线，先回读一次真实值
+                            JSONObject beforeJo = new JSONObject(AntFarmRpcCall.queryGameList());
+                            JSONObject beforeRights = beforeJo.optJSONObject("gameCenterDrawRights");
+                            int beforeUsed = beforeRights != null ? beforeRights.optInt("usedQuota", used) : used;
+                            int beforeQuota = beforeRights != null ? beforeRights.optInt("quotaCanUse", quotaCanUse) : quotaCanUse;
+                            // report 是异步线程，上报完立刻回读会读到旧状态，这里用同步版
+                            int successes = GameTask.Farm_ddply.reportSync("庄园", remainToTask);
+                            if (successes > 0) {
+                                JSONObject afterJo = new JSONObject(AntFarmRpcCall.queryGameList());
+                                JSONObject afterRights = afterJo.optJSONObject("gameCenterDrawRights");
+                                int afterQuota = afterRights != null ? afterRights.optInt("quotaCanUse", beforeQuota) : beforeQuota;
+                                int afterUsed = afterRights != null ? afterRights.optInt("usedQuota", beforeUsed) : beforeUsed;
+                                if (afterQuota > beforeQuota || afterUsed > beforeUsed) {
+                                    Log.record("小鸡乐园🎁刷任务生效#可用次数[" + beforeQuota + "→" + afterQuota + "]");
+                                } else {
+                                    Status.flagToday(FLAG_GAME_DRAW_TASK_SKIP);
+                                    Log.record("小鸡乐园🎁刷任务未推进#今日不再刷任务");
+                                }
+                            }
+                        }
                     } else if (remainToTask <= 0) {
                         Log.record("今日 " + limit + " 个金蛋任务已全部满额");
                     }

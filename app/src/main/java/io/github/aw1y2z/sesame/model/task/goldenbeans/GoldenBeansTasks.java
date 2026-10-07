@@ -14,6 +14,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
+import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.idMap.GoldenBeansTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
@@ -107,8 +108,16 @@ public final class GoldenBeansTasks {
      *
      * @return 签到后的同步响应，供后续弹窗与任务使用
      */
+    /** 金豆签到当日完成标记：按入口区分（农场 / 炼金各自的签到列表互不相通） */
+    private static String signFlag(GoldenBeansEntry entry) {
+        return "goldenBeans::sign::" + entry.bizType;
+    }
+
     private JSONObject doSign(JSONObject indexJo, GoldenBeansEntry entry, int interval) {
         signFailed = false;
+        if (Status.hasFlagToday(signFlag(entry))) {
+            return null;
+        }
         try {
             JSONObject signInfo = indexJo.optJSONObject("signInfo");
             if (signInfo == null) {
@@ -152,6 +161,8 @@ public final class GoldenBeansTasks {
                             sign.optInt("continuousCount", 0));
                     String dayInfo = continuousDays > 0 ? "[第" + continuousDays + "天]" : "";
                     String awardText = awardCount > 0 ? "#获得[" + awardCount + "豆]" : "";
+                    // 服务端回读已确认今日签到：落当日标记，后续运行不再查询/提交该入口签到
+                    Status.flagToday(signFlag(entry));
                     Log.goldenBeans("金豆[" + entry.alias + "]签到📅" + dayInfo + awardText);
                 } else {
                     // 已提交签到但服务端未确认：视为未完成，下轮重试（重试只会得到"已签到"，无副作用）
@@ -159,6 +170,14 @@ public final class GoldenBeansTasks {
                     Log.goldenBeans("金豆[" + entry.alias + "]签到⚠️未通过服务端状态确认");
                 }
                 return syncResponse;
+            }
+            for (int i = 0; i < signList.length(); i++) {
+                JSONObject sign = signList.optJSONObject(i);
+                if (sign != null && sign.optBoolean("today", false) && sign.optBoolean("signed", false)) {
+                    // 本轮主页 signInfo 里今日项已 signed=true：服务端回读确认，落当日标记
+                    Status.flagToday(signFlag(entry));
+                    break;
+                }
             }
             Log.i("金豆[" + entry.alias + "]签到📅今日已签到");
         } catch (Throwable th) {

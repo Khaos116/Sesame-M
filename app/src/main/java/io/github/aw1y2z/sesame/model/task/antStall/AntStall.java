@@ -633,7 +633,10 @@ public class AntStall extends ModelTask {
                 return;
             }
             JSONObject signListModel = jo.getJSONObject("signListModel");
-            if (!signListModel.getBoolean("currentKeySigned")) {
+            if (signListModel.getBoolean("currentKeySigned")) {
+                // 服务端回读 currentKeySigned=true：今日确实已签 → 落当日标记
+                Status.flagToday("antstall::signToday");
+            } else if (!Status.hasFlagToday("antstall::signToday")) {
                 signToday();
             }
             
@@ -750,6 +753,9 @@ public class AntStall extends ModelTask {
     }
     
     private void signToday() {
+        if (Status.hasFlagToday("antstall::signToday")) {
+            return;
+        }
         try {
             JSONObject jo = new JSONObject(AntStallRpcCall.signToday());
             if (MessageUtil.checkResultCode(TAG, jo)) {

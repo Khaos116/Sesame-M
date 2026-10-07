@@ -381,6 +381,9 @@ public class AntSports extends ModelTask {
     /** 命中风控（1009）当天的标记：被拦后官方连只读查询也不放行，本模块当天不再执行运动侧操作 */
     private static final String FLAG_RISK_TODAY = "sports::risk1009";
 
+    /** 运动「做任务得运动币:签到」当日完成标记（服务端回读 signed=true 才落） */
+    private static final String FLAG_SIGN_IN_COIN_TASK = "sports::signInCoinTask";
+
     /** 命中风控就打当日标记并记一条结果日志；返回是否命中 */
     private static boolean markIfRisk(JSONObject jo) {
         if (!isRisk(jo)) {
@@ -516,6 +519,9 @@ public class AntSports extends ModelTask {
     }
 
     private void signInCoinTask() {
+        if (Status.hasFlagToday(FLAG_SIGN_IN_COIN_TASK)) {
+            return;
+        }
         try {
             JSONObject jo = new JSONObject(AntSportsRpcCall.signInCoinTask());
 
@@ -532,6 +538,8 @@ public class AntSports extends ModelTask {
                     //                        Log.record("没有签到");
                 }
             } else {
+                // 服务端回读确认「今日已签到」：落当日标记，后续运行不再调签到接口
+                Status.flagToday(FLAG_SIGN_IN_COIN_TASK);
                 Log.record("运动签到今日已签到");
             }
         } catch (Throwable t) {

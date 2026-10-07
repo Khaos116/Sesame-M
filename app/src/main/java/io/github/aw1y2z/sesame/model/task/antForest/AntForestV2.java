@@ -2221,6 +2221,9 @@ public class AntForestV2 extends ModelTask {
     }
 
     private void vantiepSign() {
+        if (Status.hasFlagToday("forest::vantiepSign")) {
+            return;
+        }
         try {
             JSONObject jo = new JSONObject(AntForestRpcCall.queryTaskList());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -2236,6 +2239,11 @@ public class AntForestV2 extends ModelTask {
                 JSONObject signRecord = signRecords.getJSONObject(i);
                 String signKey = signRecord.getString("signKey");
                 int awardCount = signRecord.getInt("awardCount");
+                if (signKey.equals(currentSignKey) && signRecord.getBoolean("signed")) {
+                    // 服务端回读：本期 currentSignKey 已签 → 落当日标记
+                    Status.flagToday("forest::vantiepSign");
+                    break;
+                }
                 if (signKey.equals(currentSignKey) && !signRecord.getBoolean("signed")) {
                     JSONObject joSign = new JSONObject(AntForestRpcCall.antiepSign(signId, UserIdMap.getCurrentUid(), sceneCode));
                     TimeUtil.sleep(300); // 等待300毫秒
@@ -2243,6 +2251,20 @@ public class AntForestV2 extends ModelTask {
                         int continuousCount = joSign.getInt("continuousCount");
                         Log.forest("森林签到📆拯救第" + continuousCount + "天#复活[" + awardCount + "g能量]");
                         Statistics.addData(Statistics.DataType.COLLECTED, awardCount);
+                        // 回读确认：重新拉列表，本期 currentSignKey 已签才落当日标记
+                        JSONObject verify = new JSONObject(AntForestRpcCall.queryTaskList());
+                        if (MessageUtil.checkResultCode(TAG, verify)) {
+                            JSONArray verifyRecords = verify.getJSONArray("forestSignVOList")
+                                    .getJSONObject(0).getJSONArray("signRecords");
+                            for (int j = 0; j < verifyRecords.length(); j++) {
+                                JSONObject verifyRecord = verifyRecords.getJSONObject(j);
+                                if (currentSignKey.equals(verifyRecord.optString("signKey"))
+                                        && verifyRecord.optBoolean("signed")) {
+                                    Status.flagToday("forest::vantiepSign");
+                                    break;
+                                }
+                            }
+                        }
                         // return awardCount;
                     }
                     break;
@@ -2278,6 +2300,11 @@ public class AntForestV2 extends ModelTask {
                 String awardType = signRecord.getString("awardType");
                 JSONObject extInfo = signRecord.getJSONObject("extInfo");
                 String awardName = extInfo.getString("awardName");
+                if (signKey.equals(currentSignKey) && signRecord.getBoolean("signed")) {
+                    // 服务端回读：本期 currentSignKey 已签 → 落当日标记
+                    Status.flagToday("forest::vantiepSign");
+                    break;
+                }
                 if (signKey.equals(currentSignKey) && !signRecord.getBoolean("signed")) {
                     JSONObject joSign = new JSONObject(AntForestRpcCall.antiepSign(signId, UserIdMap.getCurrentUid(), sceneCode));
                     TimeUtil.sleep(300); // 等待300毫秒

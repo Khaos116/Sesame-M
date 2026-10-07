@@ -1312,17 +1312,34 @@ public class AntOrchard extends ModelTask {
      * 获取额外信息（每日肥料包）
      */
     private void extraInfoGet() {
+        if (Status.hasFlagToday("orchard::fertilizerPacket")) {
+            return;
+        }
         try {
             String result = AntOrchardRpcCall.extraInfoGet();
             JSONObject jo = new JSONObject(result);
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 JSONObject fertilizerPacket = jo.getJSONObject("data").getJSONObject("extraData").getJSONObject("fertilizerPacket");
+                String status = fertilizerPacket.getString("status");
+                if ("todayFertilizerFinish".equals(status)) {
+                    // 服务端回读：今日这个包已是「已领完」态（响应同时带 tomorrowFertilizerNum）→ 落当日标记
+                    Status.flagToday("orchard::fertilizerPacket", userId);
+                    return;
+                }
 
-                if ("todayFertilizerWaitTake".equals(fertilizerPacket.getString("status"))) {
+                if ("todayFertilizerWaitTake".equals(status)) {
                     int fertilizerNum = fertilizerPacket.getInt("todayFertilizerNum");
                     String takeResult = AntOrchardRpcCall.extraInfoSet();
                     if (MessageUtil.checkResultCode(TAG, new JSONObject(takeResult))) {
                         Log.farm("每日肥料💩[" + fertilizerNum + "g]");
+                        // 回读确认服务端已离开「待领取」态才落当日标记；状态未知时宁可不打，下轮再查
+                        JSONObject verify = new JSONObject(AntOrchardRpcCall.extraInfoGet());
+                        if (MessageUtil.checkResultCode(TAG, verify)
+                                && !"todayFertilizerWaitTake".equals(verify.getJSONObject("data")
+                                .getJSONObject("extraData").getJSONObject("fertilizerPacket")
+                                .optString("status"))) {
+                            Status.flagToday("orchard::fertilizerPacket", userId);
+                        }
                     }
                 }
             }
