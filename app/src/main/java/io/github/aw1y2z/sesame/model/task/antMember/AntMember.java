@@ -10,6 +10,8 @@ import io.github.aw1y2z.sesame.data.ModelFields;
 import io.github.aw1y2z.sesame.data.ModelGroup;
 import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
+import io.github.aw1y2z.sesame.data.modelFieldExt.StringModelField;
+import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
 import io.github.aw1y2z.sesame.entity.AlipayAntMemberTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayMemberCreditSesameTaskList;
@@ -19,6 +21,7 @@ import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.model.extensions.ExtensionsHandle;
 import io.github.aw1y2z.sesame.model.task.antOrchard.AntOrchard;
+import io.github.aw1y2z.sesame.model.task.antFarm.AntFarm;
 import io.github.aw1y2z.sesame.model.task.antOrchard.AntOrchardRpcCall;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 import io.github.aw1y2z.sesame.util.*;
@@ -66,6 +69,12 @@ public class AntMember extends ModelTask {
     private BooleanModelField memberSign;
     private BooleanModelField memberPointExchangeBenefit;
     private SelectModelField memberPointExchangeBenefitList;
+    private BooleanModelField memberPointExchangeSecKill;
+    private StringModelField memberPointExchangeSecKillTimes;
+    private IntegerModelField memberPointExchangeSecKillBudget;
+    private String memberExchangeScheduledId;
+    private final Object benefitExchangeLock = new Object();
+    private StringModelField memberBenefitSearchKeywords;
     
     private BooleanModelField collectSesame;
     private BooleanModelField AutoMemberCreditSesameTaskList;
@@ -77,6 +86,31 @@ public class AntMember extends ModelTask {
     private BooleanModelField enableGoldTicket;
     private BooleanModelField enableGoldTicketConsume;
     private BooleanModelField KuaiDiFuLiJia;
+    private BooleanModelField collectStickers;
+    private BooleanModelField billBlockWorld;
+    private BooleanModelField merchantSign;
+    private BooleanModelField sesameAchievements;
+    private BooleanModelField collectInsuredGold;
+    private BooleanModelField beanSignIn;
+    private BooleanModelField beanBrowseTasks;
+    private BooleanModelField beanDrawPrize;
+    private BooleanModelField beanGuardianQuiz;
+    private BooleanModelField beanExchangeRight;
+    private SelectModelField beanExchangeRightList;
+    private IntegerModelField beanExchangeRightBudget;
+    private BooleanModelField yebExpGoldSign, yebExpGoldRewards;
+    private BooleanModelField yebExpGoldTasks;
+    private SelectModelField yebExpGoldTaskList;
+    private IntegerModelField yebExpGoldTaskBudget;
+    private BooleanModelField yebVoucherConvertAll, yebTrialActivateAllOwned, yebTrialExchangeActivate;
+    private IntegerModelField yebVoucherDailyBudget, yebTrialExchangeBudget, yebTrialActivationBudget;
+    private SelectModelField yebTrialExchangeCampaigns;
+    private StringModelField yebTrialActivationIds;
+    private BooleanModelField sesameGrainExchange;
+    private SelectModelField sesameGrainExchangeList;
+    private IntegerModelField sesameGrainExchangeBudget;
+    private BooleanModelField merchantKmdk;
+    private BooleanModelField merchantMoreTask;
 
     @Override
     public ModelFields getFields() {
@@ -87,6 +121,10 @@ public class AntMember extends ModelTask {
         modelFields.addField(memberSign = new BooleanModelField("memberSign", "会员签到", false));
         modelFields.addField(memberPointExchangeBenefit = new BooleanModelField("memberPointExchangeBenefit", "会员积分 | 兑换权益", false));
         modelFields.addField(memberPointExchangeBenefitList = new SelectModelField("memberPointExchangeBenefitList", "会员积分 | 权益列表", new LinkedHashSet<>(), MemberBenefit::getList).setDependsOn("memberPointExchangeBenefit"));
+        modelFields.addField(memberPointExchangeSecKill = new BooleanModelField("memberPointExchangeSecKill", "会员积分 | 整点抢兑", false).setDependsOn("memberPointExchangeBenefit"));
+        modelFields.addField(memberPointExchangeSecKillTimes = new StringModelField("memberPointExchangeSecKillTimes", "会员积分 | 抢兑时间(HH:mm逗号分隔)", "10:00,20:00").setDependsOn("memberPointExchangeSecKill"));
+        modelFields.addField(memberPointExchangeSecKillBudget = new IntegerModelField("memberPointExchangeSecKillBudget", "会员积分 | 抢兑每日积分预算(0不兑换)", 0, 0, 1000000).setDependsOn("memberPointExchangeSecKill"));
+        modelFields.addField(memberBenefitSearchKeywords = new StringModelField("memberBenefitSearchKeywords", "会员积分 | 搜索补充关键词(逗号分隔)", "").setDescription("只补充权益目录，兑换仍需勾选商品；每轮最多10个关键词，每词首页20项"));
         modelFields.addField(collectSesame = new BooleanModelField("collectSesame", "芝麻粒 | 领取", false));
         modelFields.addField(AutoMemberCreditSesameTaskList = new BooleanModelField("AutoMemberCreditSesameTaskList", "芝麻粒任务 | 自动黑名单", true).setDependsOn("collectSesame"));
         modelFields.addField(MemberCreditSesameTaskList = new SelectModelField("MemberCreditSesameTaskList", "芝麻粒任务 | 黑名单列表", new LinkedHashSet<>(), AlipayMemberCreditSesameTaskList::getList).setDependsOn("AutoMemberCreditSesameTaskList"));
@@ -97,6 +135,42 @@ public class AntMember extends ModelTask {
         modelFields.addField(KuaiDiFuLiJia = new BooleanModelField("KuaiDiFuLiJia", "我的快递 | 福利加", false));
         modelFields.addField(enableGoldTicket = new BooleanModelField("enableGoldTicket", "黄金票 | 签到与收取", false));
         modelFields.addField(enableGoldTicketConsume = new BooleanModelField("enableGoldTicketConsume", "黄金票 | 提取/兑换黄金", false));
+        modelFields.addField(collectStickers = new BooleanModelField("CollectStickers", "账单贴纸 | 领取升级与奖励", false));
+        modelFields.addField(billBlockWorld = new BooleanModelField("billBlockWorld", "账单积木世界 | 免费积木与章节奖励", false));
+        modelFields.addField(merchantSign = new BooleanModelField("merchantSign", "商家服务 | 签到", false));
+        modelFields.addField(sesameAchievements = new BooleanModelField("sesameAchievements", "芝麻成就馆 | 领取已达成勋章", false));
+        modelFields.addField(collectInsuredGold = new BooleanModelField("collectInsuredGold", "蚂蚁保 | 保障金领取与浏览任务", false));
+        modelFields.addField(beanSignIn = new BooleanModelField("beanSignIn", "安心豆 | 签到与等级奖励", false));
+        modelFields.addField(beanBrowseTasks = new BooleanModelField("beanBrowseTasks", "安心豆 | 浏览任务", false));
+        modelFields.addField(beanDrawPrize = new BooleanModelField("beanDrawPrize", "安心豆 | 抽奖（1豆/天）", false));
+        modelFields.addField(beanGuardianQuiz = new BooleanModelField("beanGuardianQuiz", "安心豆 | 保险知识闯关", false));
+        modelFields.addField(beanExchangeRight = new BooleanModelField("beanExchangeRight", "安心豆 | 权益目录与兑换", false));
+        modelFields.addField(beanExchangeRightList = new SelectModelField("beanExchangeRightList", "安心豆 | 兑换列表", new LinkedHashSet<>(), io.github.aw1y2z.sesame.entity.BeanRight::getList).setDependsOn("beanExchangeRight"));
+        modelFields.addField(beanExchangeRightBudget = new IntegerModelField("beanExchangeRightBudget", "安心豆 | 每日兑换预算（0仅刷新目录）", 0, 0, 1000000).setDependsOn("beanExchangeRight"));
+        beanDrawPrize.setDescription("默认关闭；每天最多尝试一次，按来源协议消耗1豆，余额扣减异常或结果未知时当天不重试；奖励金额为接口返回，实际到账以支付宝为准。");
+        modelFields.addField(yebExpGoldSign = new BooleanModelField("yebExpGoldSign", "余额宝体验金 | 签到", false));
+        modelFields.addField(yebExpGoldRewards = new BooleanModelField("yebExpGoldRewards", "余额宝体验金 | 领取已完成任务奖励", false));
+        modelFields.addField(yebExpGoldTasks = new BooleanModelField("yebExpGoldTasks", "余额宝体验金 | 任务目录与指定任务", false));
+        modelFields.addField(yebExpGoldTaskList = new SelectModelField("yebExpGoldTaskList", "余额宝体验金 | 任务列表", new LinkedHashSet<>(), io.github.aw1y2z.sesame.entity.YebTask::getList).setDependsOn("yebExpGoldTasks"));
+        modelFields.addField(yebExpGoldTaskBudget = new IntegerModelField("yebExpGoldTaskBudget", "余额宝体验金 | 每日任务尝试上限（0仅刷新目录）", 0, 0, 50).setDependsOn("yebExpGoldTasks"));
+        yebExpGoldTasks.setDescription("只执行勾选且接口明确为浏览类型的任务，领取已完成奖励；类型未验证仅显示目录。结果未知不重试。");
+        modelFields.addField(yebVoucherConvertAll = new BooleanModelField("yebVoucherConvertAll", "余额宝体验金 | 使用当前全部体验金券", false)
+                .setDescription("来源接口只能整批使用，明确开启后仍需整批张数不超过日预算；不动现金余额，结果未知不重复。"));
+        modelFields.addField(yebVoucherDailyBudget = new IntegerModelField("yebVoucherDailyBudget", "体验金券 | 每日使用张数预算（0不用）", 0, 0, 100).setDependsOn("yebVoucherConvertAll"));
+        modelFields.addField(yebTrialExchangeCampaigns = new SelectModelField("yebTrialExchangeCampaigns", "余额宝体验金 | 允许兑换活动", new LinkedHashSet<>(), YebVouchers::getExchangeOptions));
+        modelFields.addField(yebTrialExchangeBudget = new IntegerModelField("yebTrialExchangeBudget", "余额宝体验金 | 每日兑换额度预算（0不兑）", 0, 0, 1000000));
+        modelFields.addField(yebTrialActivationIds = new StringModelField("yebTrialActivationIds", "余额宝体验金 | 激活已有资产trialId（逗号分隔）", "")
+                .setDescription("只接受当前账号实时资产目录中的指定ID；不会将新兑换equityNo猜作trialId。还需正数日激活预算。"));
+        modelFields.addField(yebTrialActivateAllOwned = new BooleanModelField("yebTrialActivateAllOwned", "余额宝体验金 | 按预算激活全部已有资产", false)
+                .setDescription("开启后从当前账号稳定资产目录逐个激活非A资产，替代手填ID；每天受激活张数预算限制，仍需同trialId状态A回查。"));
+        modelFields.addField(yebTrialExchangeActivate = new BooleanModelField("yebTrialExchangeActivate", "余额宝体验金 | 直接激活本轮兑换券", false)
+                .setDescription("仅本轮勾选活动兑换且余额回查成功后，用实际equityNo及equityType=voucher提交，不当作trialId。共用激活预算；受理不等于收益到账，缺终态回查时保留回执，跨日不重发。"));
+        modelFields.addField(yebTrialActivationBudget = new IntegerModelField("yebTrialActivationBudget", "余额宝体验金 | 每日激活资产数（0不激活）", 0, 0, 100));
+        modelFields.addField(sesameGrainExchange = new BooleanModelField("sesameGrainExchange", "芝麻粒 | 商品目录与兑换", false));
+        modelFields.addField(sesameGrainExchangeList = new SelectModelField("sesameGrainExchangeList", "芝麻粒 | 兑换列表", new LinkedHashSet<>(), io.github.aw1y2z.sesame.entity.SesameGift::getList).setDependsOn("sesameGrainExchange"));
+        modelFields.addField(sesameGrainExchangeBudget = new IntegerModelField("sesameGrainExchangeBudget", "芝麻粒 | 每日兑换预算（0仅刷新目录）", 0, 0, 1000000).setDependsOn("sesameGrainExchange"));
+        modelFields.addField(merchantKmdk = new BooleanModelField("merchantKmdk", "商家服务 | 开门打卡", false));
+        modelFields.addField(merchantMoreTask = new BooleanModelField("merchantMoreTask", "商家服务 | 积分任务", false));
         return modelFields;
     }
     
@@ -129,6 +203,25 @@ public class AntMember extends ModelTask {
             }
             
             memberPointExchangeBenefit();
+            scheduleMemberExchange();
+            if (collectStickers.getValue()) collectBillStickers();
+            BillBlockWorld.run(billBlockWorld.getValue());
+            MerchantService.run(merchantSign.getValue(), merchantKmdk.getValue(), merchantMoreTask.getValue(), AntMemberTaskList.getValue());
+            if (sesameAchievements.getValue()) SesameAchievements.run();
+            if (collectInsuredGold.getValue()) InsuredGold.run(AntMemberTaskList.getValue());
+            if (beanSignIn.getValue()) BeanRewards.run();
+            if (beanBrowseTasks.getValue()) BeanRewards.runBrowse(AntMemberTaskList.getValue());
+            if (beanGuardianQuiz.getValue()) BeanRewards.runQuiz();
+            if (beanDrawPrize.getValue()) BeanRewards.runDraw();
+            if (beanExchangeRight.getValue()) BeanRewards.runExchange(beanExchangeRightList.getValue(), beanExchangeRightBudget.getValue());
+            if (yebExpGoldTasks.getValue()) YebExpGold.runTasks(yebExpGoldTaskList.getValue(), AntMemberTaskList.getValue(), yebExpGoldTaskBudget.getValue());
+            YebExpGold.run(yebExpGoldSign.getValue(), yebExpGoldRewards.getValue(), AntMemberTaskList.getValue());
+            Set<String> trialIds = new LinkedHashSet<>(java.util.Arrays.asList(yebTrialActivationIds.getValue().trim().split("[,，\\s]+")));
+            trialIds.remove("");
+            YebVouchers.run(yebVoucherConvertAll.getValue(), yebVoucherDailyBudget.getValue(), yebTrialExchangeCampaigns.getValue(),
+                    yebTrialExchangeBudget.getValue(), trialIds, yebTrialActivationBudget.getValue(),
+                    yebTrialActivateAllOwned.getValue(), yebTrialExchangeActivate.getValue());
+            if (sesameGrainExchange.getValue()) SesameGrainExchange.run(sesameGrainExchangeList.getValue(), sesameGrainExchangeBudget.getValue());
             if (collectSesame.getValue()) {
                 CheckInTaskRpcManager();
                 collectSesame();
@@ -161,10 +254,180 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.printStackTrace(TAG, t);
         }
     }
     
+    static JSONObject memberFeaturePayload(JSONObject root) {
+        if (RpcRequestGuard.isFailure(root)) return null;
+        if (root.has("errCode") && !"0".equals(root.optString("errCode"))) return null;
+        String code = root.optString("resultCode");
+        if (!code.isEmpty() && !"SUCCESS".equals(code) && !"100".equals(code) && !"200".equals(code)) return null;
+        JSONObject data = root.optJSONObject("data");
+        if (data == null) data = root;
+        if (data.length() > 0 && RpcRequestGuard.isFailure(data)) return null;
+        if (data.has("errCode") && !"0".equals(data.optString("errCode"))) return null;
+        code = data.optString("resultCode");
+        if (!code.isEmpty() && !"SUCCESS".equals(code) && !"100".equals(code) && !"200".equals(code)) return null;
+        if (Boolean.TRUE.equals(root.opt("success")) || Boolean.TRUE.equals(data.opt("success"))
+                || "SUCCESS".equals(root.optString("resultCode")) || "100".equals(root.optString("resultCode"))
+                || (root.has("errCode") && "0".equals(root.optString("errCode")))) return data;
+        return null;
+    }
+
+    static Map<String, JSONObject> memberRowsById(JSONArray rows, String key) {
+        if (rows == null) return null;
+        Map<String, JSONObject> result = new LinkedHashMap<>();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (row == null || !(row.opt(key) instanceof String) || row.optString(key).isEmpty()) return null;
+            if (result.put(row.optString(key), row) != null) return null;
+        }
+        return result;
+    }
+
+    private boolean receiveBillStickers(String year, String month) throws JSONException {
+        TimeUtil.sleep(0);
+        JSONObject data = memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.queryStickerCanReceiveList(year, month)));
+        JSONArray pages = data == null ? null : data.optJSONArray("canReceivePageList");
+        if (pages == null) return false;
+        JSONArray rows = new JSONArray();
+        for (int i = 0; i < pages.length(); i++) {
+            JSONObject page = pages.optJSONObject(i);
+            JSONArray list = page == null ? null : page.optJSONArray("stickerCanReceiveList");
+            if (list == null) return false;
+            for (int j = 0; j < list.length(); j++) rows.put(list.opt(j));
+        }
+        Map<String, JSONObject> candidates = memberRowsById(rows, "id");
+        if (candidates == null) return false;
+        if (candidates.isEmpty()) return true;
+        JSONArray ids = new JSONArray(), configs = new JSONArray();
+        // ponytail: at most 50 free stickers per run; remaining inventory waits for the next run.
+        for (Map.Entry<String, JSONObject> entry : candidates.entrySet()) {
+            if (!(entry.getValue().opt("stickerConfigId") instanceof String) || entry.getValue().optString("stickerConfigId").isEmpty()) return false;
+            if (Status.hasFlagToday("member::stickerReceive::" + entry.getKey())) return false;
+            ids.put(entry.getKey()); configs.put(entry.getValue().optString("stickerConfigId"));
+            if (ids.length() == 50) break;
+        }
+        for (int i = 0; i < ids.length(); i++) Status.flagToday("member::stickerReceive::" + ids.optString(i));
+        TimeUtil.sleep(0);
+        JSONObject received = memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.receiveSticker(year, month, ids, configs)));
+        JSONObject after = memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.queryStickerCanReceiveList(year, month)));
+        JSONArray afterPages = after == null ? null : after.optJSONArray("canReceivePageList");
+        if (received == null || afterPages == null) return false;
+        Set<String> remaining = new HashSet<>();
+        for (int i = 0; i < afterPages.length(); i++) {
+            JSONObject page = afterPages.optJSONObject(i);
+            Map<String, JSONObject> pending = memberRowsById(page == null ? null : page.optJSONArray("stickerCanReceiveList"), "id");
+            if (pending == null) return false;
+            remaining.addAll(pending.keySet());
+        }
+        for (int i = 0; i < ids.length(); i++) if (remaining.contains(ids.optString(i))) return false;
+        Log.other("账单贴纸🎟️领取回查成功#" + ids.length() + "张");
+        return remaining.isEmpty();
+    }
+
+    private boolean upgradeBillStickers(String year, String month, String day) throws JSONException {
+        TimeUtil.sleep(0);
+        JSONObject home = memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.queryStickerHomePage(year, month, day)));
+        JSONObject common = home == null ? null : home.optJSONObject("commonStickerRes");
+        Map<String, JSONObject> stickers = memberRowsById(common == null ? null : common.optJSONArray("stickerDetailList"), "stickerConfigId");
+        if (stickers == null || stickers.size() > 100) return false;
+        for (Map.Entry<String, JSONObject> entry : stickers.entrySet()) {
+            TimeUtil.sleep(0);
+            String id = entry.getKey(); JSONObject sticker = entry.getValue();
+            if ("upgradable".equalsIgnoreCase(sticker.optString("status"))) {
+                JSONObject current = sticker.optJSONObject("currentLevel"), target = sticker.optJSONObject("upgradableLevel");
+                if (current == null || target == null || !(current.opt("levelCode") instanceof String) || !(target.opt("levelCode") instanceof String)) return false;
+                String from = current.optString("levelCode"), to = target.optString("levelCode");
+                if (from.isEmpty() || to.isEmpty() || from.equals(to)) return false;
+                String flag = "member::stickerUpgrade::" + year + month + "::" + id + "::" + from;
+                if (Status.hasFlagToday(flag)) return false;
+                Status.flagToday(flag);
+                JSONArray requests = new JSONArray().put(MyUtils.newJSONObject().put("year", year).put("month", month)
+                        .put("stickerConfigId", id).put("currentLevelCode", from).put("upgradableLevelCode", to));
+                JSONObject result = memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.upgradeStickerBatch(requests)));
+                JSONObject after = memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.queryStickerHomePage(year, month, day)));
+                JSONObject afterCommon = after == null ? null : after.optJSONObject("commonStickerRes");
+                Map<String, JSONObject> fresh = memberRowsById(afterCommon == null ? null : afterCommon.optJSONArray("stickerDetailList"), "stickerConfigId");
+                JSONObject item = fresh == null ? null : fresh.get(id);
+                JSONObject level = item == null ? null : item.optJSONObject("currentLevel");
+                JSONArray failures = result == null ? null : result.optJSONArray("failStickerCfgIdList");
+                if (result == null || (failures != null && failures.length() > 0) || level == null || !to.equals(level.opt("levelCode"))) return false;
+                sticker = item;
+                Log.other("账单贴纸⬆️升级回查成功[" + sticker.optString("name", id) + "]");
+            }
+            if (!Boolean.TRUE.equals(sticker.opt("hasBenefit")) || "notReceived".equalsIgnoreCase(sticker.optString("status"))) continue;
+            JSONObject detail = memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.queryStickerDetailPage(year, month, id)));
+            Boolean receivable = billStickerBenefitState(detail);
+            if (receivable == null) return false;
+            if (!receivable) continue;
+            String flag = "member::stickerBenefit::" + year + month + "::" + id;
+            if (Status.hasFlagToday(flag)) return false;
+            Status.flagToday(flag);
+            JSONObject result = memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.triggerStickerUpgradePrize(id)));
+            Boolean pending = billStickerBenefitState(memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.queryStickerDetailPage(year, month, id))));
+            if (result == null || pending == null || pending) return false;
+            Log.other("账单贴纸🎁升级权益回查成功[" + sticker.optString("name", id) + "]");
+        }
+        return true;
+    }
+
+    private static Boolean billStickerBenefitState(JSONObject detail) {
+        JSONObject res = detail == null ? null : detail.optJSONObject("stickerDetailRes");
+        JSONArray rows = res == null ? null : res.optJSONArray("stickerDetailList");
+        if (rows == null || rows.length() == 0) return null;
+        boolean pending = false;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i), benefit = row == null ? null : row.optJSONObject("upgradeBenefitModel");
+            if (benefit == null || !(benefit.opt("status") instanceof String) || benefit.optString("status").isEmpty()) return null;
+            pending |= "can_receive".equalsIgnoreCase(benefit.optString("status"));
+        }
+        return pending;
+    }
+
+    private boolean collectBillStickerPrizes() throws JSONException {
+        TimeUtil.sleep(0);
+        JSONObject home = memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.queryStickerPrizeHomePage()));
+        JSONArray ids = home == null ? null : home.optJSONArray("prizeConsumerIdList");
+        if (ids == null || ids.length() > 100) return false;
+        Set<String> unique = new HashSet<>();
+        for (int i = 0; i < ids.length(); i++) {
+            Object raw = ids.opt(i);
+            if (!(raw instanceof String) || ((String) raw).isEmpty() || !unique.add((String) raw)) return false;
+        }
+        for (String id : unique) {
+            TimeUtil.sleep(0);
+            String flag = "member::stickerDrawing::" + id;
+            if (Status.hasFlagToday(flag)) return false;
+            Status.flagToday(flag);
+            JSONObject drawn = memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.triggerStickerDrawing(id)));
+            JSONObject after = memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.queryStickerPrizeHomePage()));
+            JSONArray remaining = after == null ? null : after.optJSONArray("prizeConsumerIdList");
+            if (drawn == null || remaining == null) return false;
+            for (int i = 0; i < remaining.length(); i++) {
+                if (!(remaining.opt(i) instanceof String) || id.equals(remaining.opt(i))) return false;
+            }
+            Log.other("账单贴纸🎁免费抽奖回查成功");
+        }
+        return true;
+    }
+
+    private void collectBillStickers() {
+        if (!collectStickers.getValue() || Status.hasFlagToday("member::billStickersDone")) return;
+        try {
+            TimeUtil.sleep(0);
+            java.util.Calendar date = MyUtils.getInstance();
+            String year = Integer.toString(date.get(java.util.Calendar.YEAR));
+            String month = String.format(java.util.Locale.ROOT, "%02d", date.get(java.util.Calendar.MONTH) + 1);
+            String day = String.format(java.util.Locale.ROOT, "%02d", date.get(java.util.Calendar.DAY_OF_MONTH));
+            if (receiveBillStickers(year, month) && upgradeBillStickers(year, month, day) && collectBillStickerPrizes()) Status.flagToday("member::billStickersDone");
+            else Log.record("账单贴纸：未确认全部完成，保留后续查询；已提交项目当天不重复尝试");
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.err(TAG, "collectBillStickers", t); }
+    }
+
     public static void initMemberTaskListMap(boolean AutoAntMemberTaskList, boolean AutoMemberCreditSesameTaskList, boolean AntMemberTask, boolean collectSesame) {
         try {
             //初始化AntMemberTaskListMap
@@ -1795,8 +2058,88 @@ public class AntMember extends ModelTask {
     }
     */
     // 会员积分兑换 - 获取权益列表（无条件）+ 兑换（受开关控制）
-    private void memberPointExchangeBenefit() {
+    private static long nextMemberExchangeTime(String times, long now) {
+        if (times == null) return -1;
+        long best = -1;
+        for (String token : times.split("[,，;；]")) {
+            String text = token.trim();
+            if (!text.matches("\\d{2}:\\d{2}")) continue;
+            int hour = Integer.parseInt(text.substring(0, 2)), minute = Integer.parseInt(text.substring(3));
+            if (hour > 23 || minute > 59) continue;
+            java.util.Calendar date = MyUtils.getInstance(); date.setTimeInMillis(now);
+            date.set(java.util.Calendar.HOUR_OF_DAY, hour); date.set(java.util.Calendar.MINUTE, minute);
+            date.set(java.util.Calendar.SECOND, 0); date.set(java.util.Calendar.MILLISECOND, 0);
+            if (date.getTimeInMillis() <= now) date.add(java.util.Calendar.DAY_OF_MONTH, 1);
+            long at = date.getTimeInMillis();
+            if (best < 0 || at < best) best = at;
+        }
+        return best;
+    }
+
+    private synchronized void scheduleMemberExchange() {
+        long at = memberPointExchangeSecKill.getValue() && memberPointExchangeBenefit.getValue() && memberPointExchangeSecKillBudget.getValue() > 0
+                ? nextMemberExchangeTime(memberPointExchangeSecKillTimes.getValue(), MyUtils.getInstance().getTimeInMillis()) : -1;
+        String id = at > 0 ? "memberBenefitSecKill_" + at : null;
+        if (id != null && id.equals(memberExchangeScheduledId) && getChildTask(id) != null) return;
+        if (memberExchangeScheduledId != null) removeChildTask(memberExchangeScheduledId);
+        memberExchangeScheduledId = null;
+        if (id == null) return;
+        if (addChildTask(new ChildModelTask(id, "antMember", () -> executeMemberExchange(at), at))) memberExchangeScheduledId = id;
+    }
+
+    private void executeMemberExchange(long at) {
+        boolean reschedule = true;
         try {
+            TimeUtil.sleep(0);
+            long now = MyUtils.getInstance().getTimeInMillis();
+            if (TaskCommon.IS_ENERGY_TIME || !memberPointExchangeSecKill.getValue() || !memberPointExchangeBenefit.getValue() || memberPointExchangeSecKillBudget.getValue() <= 0
+                    || now < at || now - at > 60000L || nextMemberExchangeTime(memberPointExchangeSecKillTimes.getValue(), at - 1) != at) return;
+            String flag = "member::secKillSlot::" + at;
+            if (Status.hasFlagToday(flag)) return;
+            Status.flagToday(flag);
+            memberPointExchangeBenefit(true);
+        } catch (TaskCancelledException e) { reschedule = false; throw e;
+        } catch (Throwable t) { Log.err(TAG, "executeMemberExchange", t);
+        } finally {
+            synchronized (this) {
+                if (("memberBenefitSecKill_" + at).equals(memberExchangeScheduledId)) memberExchangeScheduledId = null;
+            }
+            if (reschedule) scheduleMemberExchange();
+        }
+    }
+
+    private static int memberTimedPrice(JSONObject price, int hour) {
+        if (price == null || !"POINT_PAY".equals(price.opt("strategyType"))) return -1;
+        try {
+            Object points = price.opt("point"), grab = price.opt("grabHour"), cash = price.opt("yuan");
+            if (!(points instanceof Number || points instanceof String) || !(grab instanceof Number || grab instanceof String)) return -1;
+            int amount = new java.math.BigDecimal(points.toString()).intValueExact();
+            if (amount < 0 || new java.math.BigDecimal(grab.toString()).intValueExact() != hour) return -1;
+            if (price.has("yuan") && (!(cash instanceof Number || cash instanceof String) || new java.math.BigDecimal(cash.toString()).signum() != 0)) return -1;
+            return amount;
+        } catch (NumberFormatException | ArithmeticException e) { return -1; }
+    }
+
+    private boolean exchangeTimedBenefit(String benefitId, String itemId, int points) {
+        synchronized (benefitExchangeLock) {
+            TimeUtil.sleep(0);
+            int budget = memberPointExchangeSecKillBudget.getValue(), spent = Status.getIntFlagToday("member::secKillSpent");
+            if (benefitId == null || benefitId.isEmpty() || itemId == null || itemId.isEmpty() || points < 0 || budget <= 0 || spent < 0 || points > budget - spent || !Status.canMemberPointExchangeBenefitToday(benefitId)
+                    || Status.hasFlagToday("member::benefitExchangeAttempt::" + benefitId)) return false;
+            // Reserve before the request: an uncertain debit still occupies today's point budget.
+            Status.setIntFlagToday("member::secKillSpent", spent + points);
+            return exchangeBenefit(benefitId, itemId);
+        }
+    }
+
+    private void memberPointExchangeBenefit() {
+        memberPointExchangeBenefit(false);
+    }
+
+    private void memberPointExchangeBenefit(boolean timed) {
+        try {
+            if (timed) { exchangeSelectedTimedBenefits(memberPointExchangeBenefitList.getValue()); return; }
+            JSONArray searched = queryMemberBenefitSearchResults();
             String userId = UserIdMap.getCurrentUid();
             // 依次尝试多个 deliveryId，找到可用的分类
             String[] deliveryIds = {"94000SR2023102305988003", "94000SR2024011106752003", "94000SR2024071108523003", "94000SR2024071808609003"};
@@ -1811,6 +2154,7 @@ public class AntMember extends ModelTask {
                 }
                 Log.i(TAG, "queryDeliveryZoneDetail deliveryId=" + deliveryId + " 失败，尝试下一个");
             }
+            if (jo == null && searched.length() > 0) jo = MyUtils.newJSONObject().put("resultCode", "SUCCESS").put("entityInfoList", searched);
             if (jo == null) {
                 // 所有 deliveryId 都失败，尝试备用接口
                 Log.i(TAG, "queryDeliveryZoneDetail 全部失败，尝试备用接口");
@@ -1819,6 +2163,17 @@ public class AntMember extends ModelTask {
                 return;
             }
             JSONArray entityInfoList = jo.optJSONArray("entityInfoList");
+            if (entityInfoList != null && entityInfoList != searched) {
+                Set<String> known = new HashSet<>();
+                for (int i = 0; i < entityInfoList.length(); i++) {
+                    JSONObject entity = entityInfoList.optJSONObject(i), benefit = entity == null ? null : entity.optJSONObject("benefitInfo");
+                    if (benefit != null) known.add(benefit.optString("benefitId"));
+                }
+                for (int i = 0; i < searched.length(); i++) {
+                    JSONObject entity = searched.optJSONObject(i), benefit = entity == null ? null : entity.optJSONObject("benefitInfo");
+                    if (benefit != null && known.add(benefit.optString("benefitId"))) entityInfoList.put(entity);
+                }
+            }
             if (entityInfoList == null || entityInfoList.length() == 0) {
                 Log.record("会员积分[当前分类无可兑换权益，尝试备用接口]");
                 fetchBenefitsFromNavi(userId);
@@ -1865,6 +2220,16 @@ public class AntMember extends ModelTask {
                     continue;
                 }
                 String itemId = benefitInfo.optString("itemId");
+                // Selected timed goods use only the scheduled budgeted path when enabled.
+                if (!timed && memberPointExchangeSecKill.getValue() && pricePresentation.has("grabHour")) {
+                    Object grab = pricePresentation.opt("grabHour");
+                    if (grab instanceof Number || grab instanceof String) {
+                        try {
+                            int hour = new java.math.BigDecimal(grab.toString()).intValueExact();
+                            if (hour >= 0 && hour <= 23) continue;
+                        } catch (NumberFormatException | ArithmeticException ignored) { continue; }
+                    } else continue;
+                }
                 if (exchangeBenefit(benefitId, itemId)) {
                     String point = pricePresentation.optString("point");
                     Log.other("会员积分🎐兑换[" + name + "]#花费[" + point + "积分]");
@@ -1872,7 +2237,54 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "memberPointExchangeBenefit err:", t);
+        }
+    }
+
+    private JSONArray queryMemberBenefitSearchResults() {
+        JSONArray result = new JSONArray();
+        String configured = memberBenefitSearchKeywords.getValue();
+        if (configured == null || configured.trim().isEmpty()) return result;
+        Set<String> keywords = new LinkedHashSet<>(), ids = new HashSet<>();
+        // ponytail: ten keywords, first 20 results each; add pagination only if this ceiling is insufficient.
+        for (String part : configured.split("[,，;；]")) {
+            String keyword = part.trim();
+            if (keyword.isEmpty() || keyword.length() > 64 || !keywords.add(keyword)) continue;
+            if (keywords.size() > 10) break;
+            try {
+                TimeUtil.sleep(0);
+                JSONObject data = memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.searchMemberBenefit(keyword)));
+                JSONArray rows = data == null ? null : data.optJSONArray("entityInfoList");
+                if (rows == null) { Log.record("会员权益搜索：查询未确认[" + keyword + "]"); continue; }
+                for (int i = 0; i < rows.length() && i < 20; i++) {
+                    JSONObject entity = rows.optJSONObject(i), benefit = entity == null ? null : entity.optJSONObject("benefitInfo");
+                    JSONObject price = benefit == null ? null : benefit.optJSONObject("pricePresentation");
+                    if (benefit == null || price == null || !"POINT_PAY".equals(price.opt("strategyType"))
+                            || !(benefit.opt("benefitId") instanceof String) || benefit.optString("benefitId").isEmpty()
+                            || !(benefit.opt("name") instanceof String) || benefit.optString("name").isEmpty()) continue;
+                    if (ids.add(benefit.optString("benefitId"))) result.put(entity);
+                }
+            } catch (TaskCancelledException e) { throw e;
+            } catch (Throwable t) { Log.err(TAG, "queryMemberBenefitSearchResults", t); }
+        }
+        return result;
+    }
+
+    private void exchangeSelectedTimedBenefits(Set<String> selected) throws JSONException {
+        int checked = 0;
+        // Query only explicitly selected goods; no full-catalog burst or hardcoded product IDs.
+        for (String id : selected) {
+            TimeUtil.sleep(0);
+            if (++checked > 50 || !memberPointExchangeSecKill.getValue() || !memberPointExchangeBenefit.getValue()
+                    || Status.getIntFlagToday("member::secKillSpent") >= memberPointExchangeSecKillBudget.getValue()) return;
+            if (id == null || id.isEmpty() || !Status.canMemberPointExchangeBenefitToday(id)
+                    || Status.hasFlagToday("member::benefitExchangeAttempt::" + id)) continue;
+            JSONObject data = memberFeaturePayload(MyUtils.newJSONObject(AntMemberRpcCall.querySingleBenefitDetail(id)));
+            JSONObject benefit = data == null ? null : data.optJSONObject("benefitDetail");
+            if (benefit == null || !id.equals(benefit.opt("benefitId")) || !(benefit.opt("itemId") instanceof String)) continue;
+            int points = memberTimedPrice(benefit.optJSONObject("pricePresentation"), MyUtils.getInstance().get(java.util.Calendar.HOUR_OF_DAY));
+            if (points >= 0 && exchangeTimedBenefit(id, benefit.optString("itemId"), points)) Log.other("会员整点抢兑🎐[" + benefit.optString("name", id) + "]#花费[" + points + "积分]");
         }
     }
 
@@ -1959,12 +2371,18 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "fetchBenefitsFromNavi err:", t);
         }
     }
     
     private Boolean exchangeBenefit(String benefitId, String itemId) {
+        synchronized (benefitExchangeLock) {
+        if (benefitId == null || benefitId.isEmpty() || itemId == null || itemId.isEmpty() || !Status.canMemberPointExchangeBenefitToday(benefitId)
+                || Status.hasFlagToday("member::benefitExchangeAttempt::" + benefitId)) return false;
         try {
+            TimeUtil.sleep(0);
+            Status.flagToday("member::benefitExchangeAttempt::" + benefitId);
             JSONObject jo = MyUtils.newJSONObject(AntMemberRpcCall.exchangeBenefit(benefitId, itemId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 Status.memberPointExchangeBenefitToday(benefitId);
@@ -1972,9 +2390,11 @@ public class AntMember extends ModelTask {
             }
         }
         catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "exchangeBenefit err:", t);
         }
         return false;
+        }
     }
     
     private void collectSesame() {
@@ -2054,6 +2474,7 @@ public class AntMember extends ModelTask {
                     return;
                 }
                 JSONArray ja = jo.optJSONArray("creditFeedbackVOS");
+                if (!AntFarm.bindPigeonFeedback(ja)) return;
                 for (int j = 0; ja != null && j < ja.length(); j++) {
                     jo = ja.optJSONObject(j);
                     if (jo == null || !"UNCLAIMED".equals(jo.optString("status"))) {
@@ -2147,6 +2568,7 @@ public class AntMember extends ModelTask {
                 return;
             }
             JSONArray creditFeedbackVOS = jo.optJSONArray("creditFeedbackVOS");
+            if (!AntFarm.bindPigeonFeedback(creditFeedbackVOS)) return;
             if (creditFeedbackVOS != null && creditFeedbackVOS.length() != 0) {
                 jo = MyUtils.newJSONObject(AntMemberRpcCall.collectAllCreditFeedback());
                 if (MessageUtil.checkResultCode(TAG, jo)) {

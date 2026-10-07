@@ -29,6 +29,8 @@ import io.github.aw1y2z.sesame.util.Statistics;
 import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.TimeUtil;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
+import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 import io.github.aw1y2z.sesame.util.idMap.AntOceanAntiepTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.AntOceanFishBlackListMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -70,6 +72,8 @@ public class AntOcean extends ModelTask {
     private SelectModelField AntOceanFishBlackList;  // 摸鱼黑名单列表
     private ChoiceModelField cleanOceanType;
     private SelectModelField cleanOceanList;
+    private BooleanModelField recommendedSailing;
+    private BooleanModelField giveFriendPiece;
     private BooleanModelField exchangeUniversalPiece;
     private BooleanModelField useUniversalPiece;
     private BooleanModelField replica;
@@ -85,6 +89,8 @@ public class AntOcean extends ModelTask {
         modelFields.addField(AntOceanAntiepTaskList = new SelectModelField("AntOceanAntiepTaskList", "海洋任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntOceanAntiepTaskList::getList).setDependsOn("AutoAntOceanAntiepTaskList"));
         modelFields.addField(cleanOceanType = new ChoiceModelField("cleanOceanType", "清理海域 | 动作", CleanOceanType.NONE, CleanOceanType.nickNames));
         modelFields.addField(cleanOceanList = new SelectModelField("cleanOceanList", "清理海域 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("cleanOceanType"));
+        modelFields.addField(recommendedSailing = new BooleanModelField("recommendedSailing", "好友清理任务 | 推荐航行", false).setDependsOn("queryTaskList").setDescription("遵守清理海域动作/好友列表，每日最多查询20次推荐；任务清理一位即止"));
+        modelFields.addField(giveFriendPiece = new BooleanModelField("giveFriendPiece", "清理好友后 | 赠送碎片", false).setDescription("清理成功后尝试赠送，每位好友每天最多一次、总计最多20次，不补兑碎片"));
         modelFields.addField(exchangeUniversalPiece = new BooleanModelField("exchangeUniversalPiece", "万能拼图 | 制作", false));
         modelFields.addField(useUniversalPiece = new BooleanModelField("useUniversalPiece", "万能拼图 | 使用", false));
         modelFields.addField(replica = new BooleanModelField("replica", "潘多拉海域", false));
@@ -148,6 +154,7 @@ public class AntOcean extends ModelTask {
             }
 
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "AntOcean.start.run err:", t);
         }
     }
@@ -783,6 +790,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "queryUserRanking err:", t);
         }
     }
@@ -804,13 +812,19 @@ public class AntOcean extends ModelTask {
                 TimeUtil.sleep(1000);
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "cleanFriendOcean err:", t);
         }
     }
 
     private Boolean cleanFriendOcean(String userId) {
+        return cleanFriendOcean(userId, false);
+    }
+
+    private Boolean cleanFriendOcean(String userId, boolean recommended) {
         try {
-            JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.queryFriendPage(userId));
+            TimeUtil.sleep(0);
+            JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.queryFriendPage(userId, recommended));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
@@ -818,7 +832,7 @@ public class AntOcean extends ModelTask {
                 return false;
             }
             jo = MyUtils.newJSONObject(AntOceanRpcCall.cleanFriendOcean(userId));
-            if (jo.has("resultDesc")) {
+            if (!MessageUtil.checkResultCode(TAG, jo)) {
                 String resultDesc = jo.optString("resultDesc");
                 if (resultDesc.contains("上限")) {
                     Log.other("神奇海洋🐳" + resultDesc);
@@ -832,9 +846,11 @@ public class AntOcean extends ModelTask {
                 if (cleanRewardVOS != null) {
                     checkReward(cleanRewardVOS);
                 }
+                if (giveFriendPiece.getValue()) giveOceanFriendPiece(userId);
                 return true;
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "cleanFriendOcean err:", t);
         }
         return false;
@@ -849,6 +865,7 @@ public class AntOcean extends ModelTask {
      */
     private boolean helpCleanOneFriend() {
         try {
+            if (recommendedSailing.getValue()) return helpCleanRecommendedFriend();
             JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.queryUserRanking());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
@@ -879,9 +896,62 @@ public class AntOcean extends ModelTask {
             }
             return cleanOneFromFillFlagList(jo.optJSONArray("fillFlagVOList"));
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "helpCleanOneFriend err:", t);
         }
         return false;
+    }
+
+    private boolean helpCleanRecommendedFriend() {
+        if (!recommendedSailing.getValue() || cleanOceanType.getValue() == CleanOceanType.NONE) return false;
+        try {
+            JSONObject skipped = MyUtils.newJSONObject();
+            String budget = "Ocean::recommendedSailingCount";
+            while (Status.getIntFlagToday(budget) < 20 && !Status.hasFlagToday("Ocean::HELP_CLEAN_ALL_FRIEND_LIMIT")) {
+                TimeUtil.sleep(0);
+                Status.setIntFlagToday(budget, Status.getIntFlagToday(budget) + 1);
+                JSONObject root = MyUtils.newJSONObject(AntOceanRpcCall.sailingAway(skipped));
+                if (!MessageUtil.checkResultCode(TAG, root) || RpcRequestGuard.isFailure(root)) return false;
+                JSONObject data = root.optJSONObject("resData");
+                if (data == null) data = root;
+                Object raw = data.opt("friendId");
+                if (!(raw instanceof String) || ((String) raw).isEmpty()) return false;
+                String id = (String) raw;
+                if (skipped.has(id)) return false;
+                skipped.put(id, "clean");
+                if (id.equals(UserIdMap.getCurrentUid())) continue;
+                boolean selected = cleanOceanList.getValue().contains(id);
+                if (cleanOceanType.getValue() == CleanOceanType.NOT_CLEAN) selected = !selected;
+                if (!selected) continue;
+                String flag = "Ocean::recommendedCleanAttempt::" + id;
+                if (Status.hasFlagToday(flag)) continue;
+                Status.flagToday(flag);
+                if (cleanFriendOcean(id, true)) return true;
+            }
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.err(TAG, "helpCleanRecommendedFriend", t); }
+        return false;
+    }
+
+    private void giveOceanFriendPiece(String userId) {
+        String flag = "Ocean::giveFriendPiece::" + userId, budget = "Ocean::giveFriendPieceCount";
+        if (!giveFriendPiece.getValue() || userId == null || userId.isEmpty() || userId.equals(UserIdMap.getCurrentUid())
+                || Status.hasFlagToday(flag) || Status.getIntFlagToday(budget) >= 20) return;
+        try {
+            TimeUtil.sleep(0);
+            Status.flagToday(flag);
+            Status.setIntFlagToday(budget, Status.getIntFlagToday(budget) + 1);
+            JSONObject root = MyUtils.newJSONObject(AntOceanRpcCall.giveFriendPiece(userId));
+            if (!MessageUtil.checkResultCode(TAG, root) || RpcRequestGuard.isFailure(root)) {
+                Log.record("海洋赠送碎片：未确认或已赠/好友达上限，当天不重复[" + UserIdMap.getMaskName(userId) + "]"); return;
+            }
+            JSONObject data = root.optJSONObject("resData");
+            if (data == null) data = root;
+            JSONArray rewards = data.optJSONArray("normalRewardVOS");
+            if (rewards != null && rewards.length() > 0) checkReward(rewards);
+            else Log.record("海洋赠送碎片：接口已接受，未返回可确认的奖励");
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.err(TAG, "giveOceanFriendPiece", t); }
     }
 
     /**
@@ -909,6 +979,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "cleanOneFromFillFlagList err:", t);
         }
         return false;
@@ -942,6 +1013,7 @@ public class AntOcean extends ModelTask {
                 receiveTaskAward(sceneCode, taskType, taskTitle);
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "queryTaskList err:", t);
         }
     }
@@ -1020,6 +1092,7 @@ public class AntOcean extends ModelTask {
             }
             Log.other("海洋任务⚠️未完成[" + taskTitle + "]#taskType=" + taskType + "，需在支付宝内手动完成");
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "finishOceanTask err:", t);
         }
         return false;

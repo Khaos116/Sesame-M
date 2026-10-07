@@ -4,6 +4,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.HashSet;
+import java.util.Calendar;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -28,6 +29,7 @@ import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.util.*;
 import io.github.aw1y2z.sesame.util.idMap.*;
+import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 
 public class ProtectEcology extends ModelTask {
     private static final String TAG = ProtectEcology.class.getSimpleName();
@@ -43,6 +45,8 @@ public class ProtectEcology extends ModelTask {
     }
     
     private static BooleanModelField cooperateWater;
+    private static BooleanModelField cooperateSendCooperateBeckon;
+    private static SelectModelField cooperateBeckonList;
     private static SelectAndCountModelField cooperateWaterList;
     private static SelectAndCountModelField cooperateWaterTotalLimitList;
     private static ChoiceModelField protectMarathonType;
@@ -66,6 +70,9 @@ public class ProtectEcology extends ModelTask {
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();
         modelFields.addField(cooperateWater = new BooleanModelField("cooperateWater", "合种 | 浇水", false));
+        modelFields.addField(cooperateSendCooperateBeckon = new BooleanModelField("cooperateSendCooperateBeckon", "合种 | 队长召唤队友浇水", false));
+        cooperateSendCooperateBeckon.setDescription("独立开关，向选中的合种队友发送官方召唤通知；东八区18点后、仅队长且队友可召唤时执行，每人每合种每天一次、总计最多20次；默认关闭。");
+        modelFields.addField(cooperateBeckonList = new SelectModelField("cooperateBeckonList", "合种 | 召唤合种列表", new HashSet<>(), CooperateUser::getList).setDependsOn("cooperateSendCooperateBeckon"));
         modelFields.addField(cooperateWaterList = new SelectAndCountModelField("cooperateWaterList", "合种 | 日浇水量列表", new LinkedHashMap<>(), CooperateUser::getList, "请填写浇水克数(每日)", 0, 1000).setDependsOn("cooperateWater"));
         modelFields.addField(cooperateWaterTotalLimitList = new SelectAndCountModelField("cooperateWaterTotalLimitList", "合种 | 总浇水量列表", new LinkedHashMap<>(), CooperateUser::getList, "请填写浇水克数(上限总量)", 0, 1000).setDependsOn("cooperateWater"));
         modelFields.addField(protectMarathonType = new ChoiceModelField("protectMarathonType", "碳中和 | 马拉松", ProtectType.NONE, ProtectType.nickNames));
@@ -98,6 +105,7 @@ public class ProtectEcology extends ModelTask {
     
     @Override
     public void run() {
+        if (cooperateSendCooperateBeckon.getValue()) cooperateBeckon();
         if (cooperateWater.getValue()) {
             cooperateWater();
         }
@@ -188,6 +196,106 @@ public class ProtectEcology extends ModelTask {
         }
     }
     
+    private static JSONObject beckonResponse(String raw) {
+        JSONObject root = MyUtils.newJSONObject(raw);
+        if (RpcRequestGuard.isFailure(root) || root.has("success") && !Boolean.TRUE.equals(root.opt("success"))
+                || root.has("resultCode") && !Set.of("SUCCESS", "100", "200").contains(root.optString("resultCode"))
+                || !MessageUtil.checkResultCode(TAG, root)) return null;
+        JSONObject data = root.optJSONObject("data");
+        if (data == null) return root;
+        if (RpcRequestGuard.isFailure(data) || data.has("success") && !Boolean.TRUE.equals(data.opt("success"))
+                || data.has("resultCode") && !Set.of("SUCCESS", "100", "200").contains(data.optString("resultCode"))) return null;
+        return data;
+    }
+
+    private static JSONObject beckonPlant(String id) throws Exception {
+        TimeUtil.sleep(0);
+        JSONObject data = beckonResponse(CooperateRpcCall.queryCooperatePlant(id));
+        JSONObject plant = data == null ? null : data.optJSONObject("cooperatePlant");
+        if (plant == null || !id.equals(plant.opt("cooperationId")) || !(plant.opt("admin") instanceof String)
+                || plant.optString("admin").isEmpty()) return null;
+        return plant;
+    }
+
+    private static Map<String, JSONObject> beckonMembers(String id) throws Exception {
+        TimeUtil.sleep(0);
+        JSONObject data = beckonResponse(CooperateRpcCall.queryCooperateRank("D", id));
+        JSONArray rows = data == null ? null : data.optJSONArray("cooperateRankInfos");
+        if (rows == null || rows.length() > 200 || data.has("cooperationId") && !id.equals(data.opt("cooperationId"))
+                || data.has("hasNext") && !Boolean.FALSE.equals(data.opt("hasNext"))) return null;
+        Map<String, JSONObject> result = new LinkedHashMap<>();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (row == null || !(row.opt("userId") instanceof String) || row.optString("userId").isEmpty()
+                    || !(row.opt("canBeckon") instanceof Boolean) || result.put(row.optString("userId"), row) != null) return null;
+        }
+        return result;
+    }
+
+    private static void cooperateBeckon() {
+        try {
+            TimeUtil.sleep(0);
+            if (!cooperateSendCooperateBeckon.getValue()) return;
+            String uid = UserIdMap.getCurrentUid();
+            if (uid == null || uid.isEmpty()) return;
+            JSONObject data = beckonResponse(CooperateRpcCall.queryUserCooperatePlantList());
+            JSONArray rows = data == null ? null : data.optJSONArray("cooperatePlants");
+            if (rows == null || rows.length() > 50) return;
+            Map<String, JSONObject> plants = new LinkedHashMap<>();
+            for (int i = 0; i < rows.length(); i++) {
+                JSONObject row = rows.optJSONObject(i);
+                if (row == null || !(row.opt("cooperationId") instanceof String) || row.optString("cooperationId").isEmpty()
+                        || plants.put(row.optString("cooperationId"), row) != null) return;
+            }
+            CooperationIdMap.load(uid);
+            for (String id : plants.keySet()) {
+                JSONObject plant = plants.get(id);
+                if (!(plant.opt("name") instanceof String) || plant.optString("name").isEmpty()) plant = beckonPlant(id);
+                if (plant != null && plant.opt("name") instanceof String && !plant.optString("name").isEmpty()) CooperationIdMap.add(id, plant.optString("name"));
+            }
+            TimeUtil.sleep(0);
+            if (!uid.equals(UserIdMap.getCurrentUid()) || !CooperationIdMap.save(uid)
+                    || MyUtils.getInstance().get(Calendar.HOUR_OF_DAY) < 18) return;
+            Set<String> selected = cooperateBeckonList.getValue();
+            if (selected == null || selected.isEmpty()) return;
+            for (String id : new java.util.ArrayList<>(selected)) {
+                if (!plants.containsKey(id)) continue;
+                JSONObject plant = beckonPlant(id);
+                if (plant == null) return;
+                if (!uid.equals(plant.optString("admin"))) continue;
+                Map<String, JSONObject> members = beckonMembers(id);
+                if (members == null) return;
+                for (String target : members.keySet()) {
+                    String flag = "cooperate::beckonAttempt::" + id + "::" + target;
+                    if (uid.equals(target) || !Boolean.TRUE.equals(members.get(target).opt("canBeckon")) || Status.hasFlagToday(flag)) continue;
+                    int attempts = Status.getIntFlagToday("cooperate::beckonAttempts");
+                    if (attempts < 0 || attempts >= 20) return;
+                    plant = beckonPlant(id);
+                    if (plant == null || !uid.equals(plant.optString("admin"))) return;
+                    Map<String, JSONObject> fresh = beckonMembers(id);
+                    JSONObject current = fresh == null ? null : fresh.get(target);
+                    if (fresh == null) return;
+                    if (current == null || !Boolean.TRUE.equals(current.opt("canBeckon"))) continue;
+                    TimeUtil.sleep(0);
+                    if (!cooperateSendCooperateBeckon.getValue() || !cooperateBeckonList.getValue().contains(id)
+                            || !uid.equals(UserIdMap.getCurrentUid()) || MyUtils.getInstance().get(Calendar.HOUR_OF_DAY) < 18) return;
+                    Status.setIntFlagToday("cooperate::beckonAttempts", attempts + 1);
+                    Status.flagToday(flag);
+                    JSONObject accepted = beckonResponse(CooperateRpcCall.sendCooperateBeckon(target, id));
+                    Map<String, JSONObject> after = beckonMembers(id);
+                    JSONObject remaining = after == null ? null : after.get(target);
+                    if (accepted == null || remaining == null || !Boolean.FALSE.equals(remaining.opt("canBeckon"))) {
+                        Log.record("合种召唤：同队友资格变化未确认，当天不重复");
+                        return;
+                    }
+                    Log.forest("合种🚿[" + plant.optString("name", id) + "]#召唤请求与队友资格回查确认，通知送达以支付宝为准");
+                    TimeUtil.sleep(300);
+                }
+            }
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.err(TAG, "cooperateBeckon", t); }
+    }
+
     private static void cooperateWater() {
         try {
             JSONObject jo = MyUtils.newJSONObject(CooperateRpcCall.queryUserCooperatePlantList());

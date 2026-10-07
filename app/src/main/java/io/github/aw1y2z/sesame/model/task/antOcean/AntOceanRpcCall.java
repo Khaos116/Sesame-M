@@ -3,6 +3,7 @@ package io.github.aw1y2z.sesame.model.task.antOcean;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import io.github.aw1y2z.sesame.util.MyUtils;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.util.Log;
@@ -147,12 +148,30 @@ public class AntOceanRpcCall {
         return ApplicationHook.requestString("alipay.antmember.forest.h5.collectEnergy", "[{\"bubbleIds\":[" + bubbleId + "],\"channel\":\"ocean\",\"source\":\"ANT_FOREST\",\"uniqueId\":\"" + getUniqueId() + "\",\"userId\":\"" + userId + "\",\"version\":\"" + VERSION + "\"}]");
     }
     
-    public static String cleanFriendOcean(String userId) {
-        return ApplicationHook.requestString("alipay.antocean.ocean.h5.cleanFriendOcean", "[{\"cleanedUserId\":\"" + userId + "\",\"source\":\"ANT_FOREST\",\"uniqueId\":\"" + getUniqueId() + "\"}]");
+    public static String cleanFriendOcean(String userId) throws JSONException {
+        return ApplicationHook.requestString("alipay.antocean.ocean.h5.cleanFriendOcean", new JSONArray().put(MyUtils.newJSONObject()
+                .put("cleanedUserId", userId).put("source", "ANT_FOREST").put("uniqueId", getUniqueId())).toString());
     }
     
     public static String queryFriendPage(String userId) {
-        return ApplicationHook.requestString("alipay.antocean.ocean.h5.queryFriendPage", "[{\"friendUserId\":\"" + userId + "\",\"interactFlags\":\"T\",\"source\":\"ANT_FOREST\"," + "\"uniqueId\":\"" + getUniqueId() + "\",\"version\":\"" + VERSION + "\"}]");
+        try { return queryFriendPage(userId, false); } catch (JSONException e) { throw new IllegalArgumentException(e); }
+    }
+
+    public static String queryFriendPage(String userId, boolean recommended) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("friendUserId", userId).put("interactFlags", recommended ? "" : "T")
+                .put("source", recommended ? "chInfo_ch_appcenter__chsub_9patch" : "ANT_FOREST").put("uniqueId", getUniqueId()).put("version", VERSION);
+        if (recommended) args.put("fromAct", "SAIL_AWAY").put("currentUserId", io.github.aw1y2z.sesame.util.idMap.UserIdMap.getCurrentUid());
+        return ApplicationHook.requestString("alipay.antocean.ocean.h5.queryFriendPage", new JSONArray().put(args).toString());
+    }
+
+    public static String sailingAway(JSONObject skipUsers) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("skipUsers", skipUsers).put("source", "chInfo_ch_appcenter__chsub_9patch").put("uniqueId", getUniqueId());
+        return ApplicationHook.requestString("alipay.antocean.ocean.h5.sailingAway", new JSONArray().put(args).toString());
+    }
+
+    public static String giveFriendPiece(String userId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("friendUserId", userId).put("source", "chInfo_ch_appcenter__chsub_9patch").put("uniqueId", getUniqueId());
+        return ApplicationHook.requestString("alipay.antocean.ocean.h5.giveFriendPiece", new JSONArray().put(args).toString());
     }
     
     public static String queryUserRanking() {

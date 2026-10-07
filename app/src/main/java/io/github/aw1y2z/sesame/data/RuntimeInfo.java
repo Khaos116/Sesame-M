@@ -103,6 +103,19 @@ public class RuntimeInfo {
         save();
     }
 
+    /** 消耗资源前的事实记录：写盘失败时恢复内存，调用方不能继续动作。 */
+    public synchronized boolean putVerified(String key, String value) {
+        if (userId == null || userId.isEmpty()) return false;
+        Object previous = joCurrent.opt(key);
+        try {
+            joCurrent.put(key, value);
+            joAll.put(userId, joCurrent);
+            if (FileUtil.write2File(joAll.toString(), FileUtil.runtimeInfoFile(userId))) return true;
+        } catch (JSONException e) { Log.err(TAG, "putVerified", e); }
+        try { joCurrent.put(key, previous); } catch (JSONException e) { Log.err(TAG, "putVerified rollback", e); }
+        return false;
+    }
+
     /** 删除所有以 prefix 开头的 key，给切版本后清冷却记录用。 */
     public void clearPrefix(String prefix) {
         if (prefix == null || prefix.isEmpty()) return;

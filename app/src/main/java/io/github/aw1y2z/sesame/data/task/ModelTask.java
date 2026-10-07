@@ -140,6 +140,28 @@ public abstract class ModelTask extends Model {
         return childTaskMap.get(childId);
     }
 
+    protected List<ChildModelTask> getChildTaskSnapshot() {
+        return new ArrayList<>(childTaskMap.values());
+    }
+
+    protected final long taskGeneration() {
+        return generation;
+    }
+
+    /** 周期子任务复用主任务执行槽和代际检查；主任务忙时放弃本次，不阻塞停止。 */
+    protected final boolean runExclusiveChild(long expectedGeneration, Runnable action) {
+        if (generation != expectedGeneration || !running.compareAndSet(false, true)) return false;
+        RunGeneration previous = RunGeneration.bind(expectedGeneration, () -> generation);
+        try {
+            TimeUtil.sleep(0);
+            action.run();
+            return true;
+        } finally {
+            RunGeneration.restore(previous);
+            running.set(false);
+        }
+    }
+
     public Boolean addChildTask(ChildModelTask childTask) {
         String childId = childTask.getId();
         childTask.modelTask = this;
@@ -403,6 +425,40 @@ public abstract class ModelTask extends Model {
                 }
             }
             return count;
+        }
+    }
+
+    /** 配置页按已注册模块名启动；继续遵守模块开关、检查与生命周期。 */
+    public static boolean startNamedTask(String code, String uid) {
+        return startNamedTask(code, uid, "");
+    }
+
+    protected boolean supportsManualAction(String action) { return false; }
+    protected Boolean checkManualAction(String action) { return check(); }
+    protected void runManualAction(String action) { throw new UnsupportedOperationException(action); }
+
+    public static boolean startNamedTask(String code, String uid, String action) {
+        if (code == null || uid == null || uid.isEmpty() || !uid.equals(UserIdMap.getCurrentUid())) return false;
+        try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
+            if (work == null || !uid.equals(UserIdMap.getCurrentUid())) return false;
+            for (Model model : getModelArray()) {
+                if (model instanceof ModelTask && code.equals(model.getClass().getSimpleName())) {
+                    ModelTask task = (ModelTask) model;
+                    if (action == null || !action.isEmpty() && (!task.supportsManualAction(action) || !task.isEnable() || !task.checkManualAction(action))) return false;
+                    stopAllTask();
+                    NotificationUtil.startRound();
+                    if (action.isEmpty()) return task.startTask(false);
+                    long generation = task.taskGeneration();
+                    return task.addChildTask(new ChildModelTask("MANUAL|" + code + "|" + System.nanoTime(), task.getGroup().getCode(), () -> {
+                        if (!uid.equals(UserIdMap.getCurrentUid())) return;
+                        boolean ran = task.runExclusiveChild(generation, () -> {
+                            if (uid.equals(UserIdMap.getCurrentUid()) && task.isEnable() && task.checkManualAction(action)) task.runManualAction(action);
+                        });
+                        if (!ran) Log.record("手动任务等待上一轮退出，请稍后再试");
+                    }, System.currentTimeMillis()));
+                }
+            }
+            return false;
         }
     }
 

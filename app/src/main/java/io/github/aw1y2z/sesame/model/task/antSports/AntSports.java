@@ -49,6 +49,7 @@ import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.TimeUtil;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.idMap.AntSportsTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.AntStallTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.PathThemeMapListMap;
@@ -78,6 +79,7 @@ public class AntSports extends ModelTask {
     private ChoiceModelField clubTradeMemberType;
     private SelectModelField clubTradeMemberList;
     private BooleanModelField sportsTasks;
+    private BooleanModelField threeHoursDonate;
     private BooleanModelField AutoAntSportsTaskList;
     private SelectModelField AntSportsTaskList;
     private BooleanModelField neverLand;
@@ -126,6 +128,8 @@ public class AntSports extends ModelTask {
         modelFields.addField(walkMinimumCompleteCount = new BooleanModelField("walkMinimumCompleteCount", "全主题路线(选最少完成数) | 开启", false).setDependsOn("walk"));
         //modelFields.addField(walkCustomPathIdList = new SelectModelField("walkCustomPathIdList", "行走路线 | 自定义路线列表", new LinkedHashSet<>(), WalkPath::getThemeListFromRpc, "请选择要行走的路线，选择多条则随机走其中一条"));
         modelFields.addField(sportsTasks = new BooleanModelField("sportsTasks", "运动任务", false));
+        modelFields.addField(threeHoursDonate = new BooleanModelField("threeHoursDonate", "3小时公益 | 捐赠今日可捐步数", false)
+                .setDescription("使用当前账号小程序授权换取本轮会话，只捐查询到的今日步数，每天至多提交一次；结果未知跨日不重发。首次请在支付宝正常打开3小时公益完成授权。"));
         modelFields.addField(AutoAntSportsTaskList = new BooleanModelField("AutoAntSportsTaskList", "运动任务 | 自动黑名单", true).setDependsOn("sportsTasks"));
         modelFields.addField(AntSportsTaskList = new SelectModelField("AntSportsTaskList", "运动任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntSportsTaskList::getList).setDependsOn("AutoAntSportsTaskList"));
         modelFields.addField(receiveCoinAsset = new BooleanModelField("receiveCoinAsset", "收运动币", false));
@@ -262,6 +266,8 @@ public class AntSports extends ModelTask {
                 }
             });
 
+            step("3小时公益捐步", () -> ThreeHoursDonate.run(threeHoursDonate.getValue()));
+
             step("文体中心", () -> {
                 if (tiyubiz.getValue()) {
                     userTaskGroupQuery("SPORTS_DAILY_SIGN_GROUP");
@@ -300,6 +306,8 @@ public class AntSports extends ModelTask {
                 }
             });
 
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
         } catch (Throwable t) {
             Log.err(TAG, "start.run err:", t);
         }
@@ -308,7 +316,10 @@ public class AntSports extends ModelTask {
     // 单个子任务抛异常只跳过自己，不影响 run() 后面的其它运动任务
     private void step(String name, Runnable action) {
         try {
+            TimeUtil.sleep(0);
             action.run();
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
         } catch (Throwable t) {
             Log.err(TAG, "run[" + name + "] err:", t);
         }

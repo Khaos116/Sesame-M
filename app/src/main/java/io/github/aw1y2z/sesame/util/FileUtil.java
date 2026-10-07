@@ -467,6 +467,18 @@ public class FileUtil {
     public static File getMemberBenefitIdMapFile(String userId) {
         return getFile(getUserDataDirectoryFile(userId), "memberBenefit.json");
     }
+
+    public static File getSesameGiftIdMapFile(String userId) {
+        return getFile(getUserDataDirectoryFile(userId), "sesameGift.json");
+    }
+
+    public static File getBeanRightIdMapFile(String userId) {
+        return getFile(getUserDataDirectoryFile(userId), "beanRight.json");
+    }
+
+    public static File getYebTaskIdMapFile(String userId) {
+        return getFile(getUserDataDirectoryFile(userId), "yebTask.json");
+    }
     
     public static File getPromiseSimpleTemplateIdMapFile(String userId) {
         return getFile(getUserDataDirectoryFile(userId), "promiseSimpleTemplate.json");

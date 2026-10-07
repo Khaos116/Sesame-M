@@ -10,10 +10,14 @@ import java.util.Locale;
 import io.github.aw1y2z.sesame.data.ModelFields;
 import io.github.aw1y2z.sesame.data.ModelGroup;
 import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
+import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField;
+import io.github.aw1y2z.sesame.data.modelFieldExt.StringModelField;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 
 /**
  * 其他任务（好家无忧卡）。移植自 GR 分支，见 docs/MyFix.md。
@@ -25,6 +29,12 @@ public class OtherTask extends ModelTask {
     private static final String TAG = "OtherTask";
 
     private BooleanModelField haojiaWuyou;
+    private BooleanModelField haojiaCoinSign, haojiaCoinBrowse, haojiaCoinRewards;
+    private IntegerModelField haojiaCoinBudget;
+    private BooleanModelField hundredCardSign, hundredCardRewards, huaHuaCardFlip, huaHuaCardMerge, huaHuaCardTasks;
+    private BooleanModelField hundredCardSelectedTasks, hundredCardSelectedSignup, hundredCardAutoTasks;
+    private StringModelField hundredCardTaskTargets;
+    private IntegerModelField legacyCardDailyBudget;
 
     private OtherRequestGate gate;
 
@@ -42,6 +52,27 @@ public class OtherTask extends ModelTask {
     public ModelFields getFields() {
         ModelFields fields = new ModelFields();
         fields.addField(haojiaWuyou = new BooleanModelField("haojiaWuyou", "好家无忧卡", false));
+        fields.addField(haojiaCoinSign = new BooleanModelField("haojiaCoinSign", "好家缴费金 | 签到", false));
+        fields.addField(haojiaCoinBrowse = new BooleanModelField("haojiaCoinBrowse", "好家缴费金 | 浏览任务（按要求完整等待）", false));
+        fields.addField(haojiaCoinRewards = new BooleanModelField("haojiaCoinRewards", "好家缴费金 | 已完成任务奖励", false));
+        fields.addField(haojiaCoinBudget = new IntegerModelField("haojiaCoinBudget", "好家缴费金 | 每日操作尝试上限（0不执行）", 0, 0, 50));
+        fields.addField(hundredCardSign = new BooleanModelField("hundredCardSign", "百次立减卡 | 当前活动签到", false));
+        fields.addField(hundredCardRewards = new BooleanModelField("hundredCardRewards", "百次立减卡 | 已完成任务奖励", false));
+        fields.addField(hundredCardSelectedTasks = new BooleanModelField("hundredCardSelectedTasks", "百次立减卡 | 明确选定任务发送及状态回查", false)
+                .setDescription("空目标列表或旧卡预算0时只刷新任务目录，运行日志提供可复制目标JSON。正数预算只发送本人明确选定的任务并按服务端browseTime完整等待；不打开页面、不宣称实际浏览，排除付款、注册、邀请、开通等任务。"));
+        fields.addField(hundredCardTaskTargets = new StringModelField("hundredCardTaskTargets", "百次立减卡 | 选定任务JSON列表", "[]"));
+        hundredCardTaskTargets.setDescription("默认[]只刷新目录。可从运行日志复制格式：[{\"taskId\":\"当前任务ID\",\"taskCenId\":\"当前任务中心ID\"}]，最多20项。仅当前账号实时唯一匹配且等待1至300秒的任务；需报名时须另开选定任务报名，报名后先回查NOT_DONE/TODO及报名要求解除。报名、发送、领取共用旧卡每日预算，各计一次，未知回执停止写入。");
+        fields.addField(hundredCardSelectedSignup = new BooleanModelField("hundredCardSelectedSignup", "百次立减卡 | 明确选定任务报名及回查", false)
+                .setDescription("配合选定任务列表。只处理当前查询明确NONE_SIGNUP或需要报名的选定任务；同ID/中心及原任务合同不变，报名后转为NOT_DONE/TODO且needSignUp不再为true才继续完整等待。仅请求受理不算报名完成；每次报名预留一次预算，未确认跨日不重发。")
+                .setDependsOn("hundredCardSelectedTasks"));
+        fields.addField(hundredCardAutoTasks = new BooleanModelField("hundredCardAutoTasks", "百次立减卡 | 当前活动自动任务", false)
+                .setDescription("按来源流程自动选择当前账号有明确1～300秒等待要求的任务，排除TRANSFORMER、COMMON_EVENT_TASK及付款、开通等业务。报名受理后仅本轮继续完整等待，发送及领奖回查同任务状态；每次报名、发送、领奖共用旧卡每日预算，未确认回执不自动重发。不代表实际打开页面浏览。"));
+        fields.addField(huaHuaCardFlip = new BooleanModelField("huaHuaCardFlip", "花花卡 | 当前活动已有免费次数翻卡", false));
+        fields.addField(huaHuaCardMerge = new BooleanModelField("huaHuaCardMerge", "花花卡 | 当前活动已有碎片合卡", false));
+        fields.addField(huaHuaCardTasks = new BooleanModelField("huaHuaCardTasks", "花花卡 | 当前活动任务报名、上报及领奖", false)
+                .setDescription("按原活动queryV2→signup/send→award流程处理当前账号任务，跳过SCENE_TASK及付款、开通等任务；每次请求各占一次旧卡每日预算。接口受理后本轮继续，保留回执且不自动重发；奖励到账以活动页面为准。"));
+        fields.addField(legacyCardDailyBudget = new IntegerModelField("legacyCardDailyBudget", "旧卡活动 | 每日操作尝试预算（0不用）", 0, 0, 20)
+                .setDescription("每次签到上报、选定任务报名、发送、领取、翻卡或合卡各计一次；只使用当前查询资格，不开通产品，不购买次数，未知回执跨日停止。"));
         return fields;
     }
 
@@ -55,9 +86,13 @@ public class OtherTask extends ModelTask {
         if (!check()) return;
         gate = new OtherRequestGate();
         try {
+            HaoJiaPaymentCoin.run(gate, haojiaCoinSign.getValue(), haojiaCoinBrowse.getValue(), haojiaCoinRewards.getValue(), haojiaCoinBudget.getValue());
+            LegacyCardRewards.run(gate, hundredCardSign.getValue(), hundredCardRewards.getValue(), huaHuaCardFlip.getValue(), huaHuaCardMerge.getValue(), legacyCardDailyBudget.getValue(), hundredCardSelectedTasks.getValue(), hundredCardTaskTargets.getValue(), hundredCardSelectedSignup.getValue(), huaHuaCardTasks.getValue(), hundredCardAutoTasks.getValue());
             if (haojiaWuyou.getValue()) {
                 runHaoJia();
             }
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
         } catch (Throwable t) {
             Log.i(TAG, "其他任务执行异常");
             Log.printStackTrace(TAG, t);
@@ -67,7 +102,7 @@ public class OtherTask extends ModelTask {
     private void runHaoJia() {
         Log.record("好家无忧卡开始执行");
         try {
-            JSONObject sign = new JSONObject(gate.call("查询好家无忧卡签到", HaoJiaRpcCall::querySignIn));
+            JSONObject sign = MyUtils.newJSONObject(gate.call("查询好家无忧卡签到", HaoJiaRpcCall::querySignIn));
             if (ok(sign)) {
                 JSONObject component = component(sign, "independent_component_sign_in_00966139_independent_component_sign_in_recall");
                 JSONObject content = component == null ? null : component.optJSONObject("content");
@@ -78,12 +113,12 @@ public class OtherTask extends ModelTask {
                     String code = template == null ? "" : template.optString("code");
                     JSONArray records = order == null ? null : order.optJSONArray("signInRecordInfoList");
                     if (!code.isEmpty() && !hasSignedToday(records)) {
-                        JSONObject result = new JSONObject(gate.call("好家无忧卡签到", () -> HaoJiaRpcCall.doSignIn(code)));
+                        JSONObject result = MyUtils.newJSONObject(gate.call("好家无忧卡签到", () -> HaoJiaRpcCall.doSignIn(code)));
                         if (ok(result)) Log.record("好家无忧卡签到完成");
                     }
                 }
             }
-            JSONObject tasks = new JSONObject(gate.call("查询好家无忧卡任务", HaoJiaRpcCall::queryTaskList));
+            JSONObject tasks = MyUtils.newJSONObject(gate.call("查询好家无忧卡任务", HaoJiaRpcCall::queryTaskList));
             JSONObject component = component(tasks, "independent_component_task_reward_00793835_independent_component_task_reward_query");
             JSONObject content = component == null ? null : component.optJSONObject("content");
             JSONArray list = content == null ? null : content.optJSONArray("playTaskOrderInfoList");
@@ -96,10 +131,12 @@ public class OtherTask extends ModelTask {
                 String code = task.optString("code");
                 int browseTime = display == null ? 0 : display.optInt("browseTime", 0);
                 if (browseTime > 0) sleep(browseTime * 1000L);
-                if (!code.isEmpty() && ok(new JSONObject(gate.call("好家无忧卡完成任务", () -> HaoJiaRpcCall.applyTask(code))))) Log.record("好家无忧卡完成任务 " + name);
+                if (!code.isEmpty() && ok(MyUtils.newJSONObject(gate.call("好家无忧卡完成任务", () -> HaoJiaRpcCall.applyTask(code))))) Log.record("好家无忧卡完成任务 " + name);
             }
         } catch (OtherRequestGate.BudgetExhausted | OtherRequestGate.Denied stopped) {
             // gate 已经记录过原因，这里不重复打日志。
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
         } catch (Throwable t) {
             Log.i(TAG, "好家无忧卡执行异常");
             Log.printStackTrace(TAG, t);

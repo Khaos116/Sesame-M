@@ -1296,10 +1296,27 @@ public class ApplicationHook extends XposedModule {
                         // 配置页"执行"按钮会带 group（ModelGroup 的 code）：BASE＝全部任务，
                         // 其余只跑该分组的任务；不带 group 时保持原行为（整轮执行）。
                         String groupCode = intent.getStringExtra("group");
+                        String modelCode = intent.getStringExtra("model");
+                        String manualAction = intent.getStringExtra("taskAction");
+                        boolean reloadExecutionConfig = intent.getBooleanExtra("reloadConfig", false);
+                        String executeUid = intent.getStringExtra("userId");
+                        if (!StringUtil.isEmpty(modelCode) && (StringUtil.isEmpty(executeUid) || !Objects.equals(executeUid, UserIdMap.getCurrentUid()))) {
+                            Log.record("手动任务账号不匹配，忽略请求");
+                            break;
+                        }
                         BroadcastReceiver.PendingResult r2 = goAsync();
                         new Thread(() -> {
                             try {
-                                if (StringUtil.isEmpty(groupCode)) {
+                                if (!StringUtil.isEmpty(modelCode)) {
+                                    boolean started = false;
+                                    try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
+                                        if (work != null && Objects.equals(executeUid, UserIdMap.getCurrentUid())) {
+                                            if (reloadExecutionConfig) { ModelTask.stopAllTask();ConfigV2.load(executeUid); }
+                                            started = ModelTask.startNamedTask(modelCode, executeUid, manualAction == null ? "" : manualAction);
+                                        }
+                                    }
+                                    Log.record("手动执行【" + modelCode + "】" + (started ? "已启动" : "未启动，请检查开关、账号或任务状态"));
+                                } else if (StringUtil.isEmpty(groupCode)) {
                                     initHandler(false);
                                 } else if (ModelGroup.BASE == ModelGroup.getByCode(groupCode)) {
                                     ModelTask.stopAllTask();

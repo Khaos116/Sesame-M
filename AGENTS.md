@@ -50,10 +50,56 @@ python checks/check_statistics_accounts.py
 python checks/check_upstream_merge.py
 python checks/check_ag_features.py
 python checks/check_ag_retirements.py
+python checks/check_rob_expand_card.py
+python checks/check_farm_npc.py
+python checks/check_zhima_pigeon.py
+python checks/check_farm_daily_limit.py
+python checks/check_forest_makeup.py
+python checks/check_bill_stickers.py
+python checks/check_merchant_service.py
+python checks/check_ocean_friend_flow.py
+python checks/check_member_exchange_schedule.py
+python checks/check_member_benefit_search.py
+python checks/check_animal_guess.py
+python checks/check_sesame_achievements.py
+python checks/check_yeb_exp_gold.py
+python checks/check_forest_whitelist.py
+python checks/check_sesame_grain_exchange.py
+python checks/check_forest_boost.py
+python checks/check_farm_reward_space.py
+python checks/check_forest_find_end.py
+python checks/check_forest_revived_self.py
+python checks/check_insured_gold.py
+python checks/check_bean_sign.py
+python checks/check_bean_browse.py
+python checks/check_bean_draw.py
+python checks/check_bean_quiz.py
+python checks/check_bean_exchange.py
+python checks/check_cooperate_beckon.py
+python checks/check_forest_smart_double.py
+python checks/check_planting_flowers.py
+python checks/check_forest_schedule.py
+python checks/check_bill_world.py
+python checks/check_yeb_exp_gold_tasks.py
+python checks/check_webdav_backup.py
+python checks/check_manual_task.py
+python checks/check_cache_maintenance.py
+python checks/check_forest_prop_support.py
+python checks/check_farm_ranking.py
+python checks/check_farm_family.py
+python checks/check_sesame_tree.py
+python checks/check_haojia_payment_coin.py
+python checks/check_forest_expiring_props.py
+python checks/check_farm_dynamic_food.py
+python checks/check_farm_manual_actions.py
+python checks/check_yeb_vouchers.py
+python checks/check_legacy_card_rewards.py
+python checks/check_farm_extra_reward_tools.py
+python checks/check_three_hours_donate.py
 java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin --console=plain
 ```
 
-改了哪块就重点看对应的检查（`check_rpc_guard` 管退避暂停、`check_merge_config` 管字段合并迁移、
+改了哪块就重点看对应的检查（`check_farm_npc` 管普通NPC雇佣/领奖重雇及取消、`check_rob_expand_card` 管 N倍卡替换/续用及二次确认、`check_rpc_guard` 管退避暂停、`check_merge_config` 管字段合并迁移、
 `check_manifest_permissions` 管权限声明、`check_standalone_no_xposed_class` 管独立进程引用、`check_antfarm_auto_feed` 管自动喂鸡重查/排期/停止条件、
 `check_account_folder` 管账号名目录、`check_antfarm_tool_reward` 管庄园道具领取、`check_orchard_game_stay` 管农场游戏时长任务、`check_orchard_draw` 管抽抽乐新旧活动/游戏上报/批量抽奖、`check_forest_read` 管阅读授权/HTTP/停止条件、`check_config_search_state` 管配置搜索前后状态与字段写入、`check_puzzle_matcher`/`check_puzzle_directory`/`check_puzzle_samples` 管拼图匹配与截图；
 各脚本头几行注释写了精确范围），提交前全量跑一遍最稳。

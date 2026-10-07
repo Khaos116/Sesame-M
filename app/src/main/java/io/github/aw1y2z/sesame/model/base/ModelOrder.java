@@ -8,6 +8,9 @@ import io.github.aw1y2z.sesame.model.extensions.ExtensionsHandle;
 import io.github.aw1y2z.sesame.model.normal.answerAI.AnswerAI;
 import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 import io.github.aw1y2z.sesame.model.task.antDodo.AntDodo;
+import io.github.aw1y2z.sesame.model.task.antAnimalGuess.AntAnimalGuess;
+import io.github.aw1y2z.sesame.model.task.plantingFlowers.PlantingFlowers;
+import io.github.aw1y2z.sesame.model.task.cacheMaintenance.CacheMaintenance;
 import io.github.aw1y2z.sesame.model.task.antFarm.AntFarm;
 import io.github.aw1y2z.sesame.model.task.antForest.AntForestV2;
 import io.github.aw1y2z.sesame.model.task.antMember.AntMember;
@@ -65,6 +68,9 @@ public class ModelOrder {
         clazzList.add(MyBankWelfare.class);
         clazzList.add(MyBankBenefitSignIn.class);
         clazzList.add(OtherTask.class);
+        clazzList.add(AntAnimalGuess.class);
+        clazzList.add(PlantingFlowers.class);
+        clazzList.add(CacheMaintenance.class);
 
         ExtensionsHandle.handleAlphaRequest("ModelOrder", "addExtensionsClass", clazzList);
     }

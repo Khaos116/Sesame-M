@@ -69,6 +69,11 @@
             android:resizeableActivity="true" />
 
         <activity
+            android:name=".ui.miuix.MiuixWebDavActivity"
+            android:exported="false"
+            android:resizeableActivity="true" />
+
+        <activity
             android:name=".ui.miuix.MiuixAboutActivity"
             android:exported="false"
             android:resizeableActivity="true" />

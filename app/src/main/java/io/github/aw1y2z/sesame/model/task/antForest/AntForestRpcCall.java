@@ -27,22 +27,29 @@ public class AntForestRpcCall {
     private static String VERSION = "";
     /** 找能量接口版本，档位对照 AG 的 AntForestRpcCall（>10.6.10 用最新，其余同 VERSION 档） */
     private static String TAKE_LOOK_VERSION = "20230501";
+    private static String TASK_LIST_VERSION = "20230501";
+    private static String TASK_LIST_EXT_VERSION = "20230501";
     
     public static void init() {
         AlipayVersion alipayVersion = ApplicationHook.getAlipayVersion();
         if (alipayVersion.compareTo(new AlipayVersion("10.6.10.8000")) > 0) {
             VERSION = "20250818";
             TAKE_LOOK_VERSION = "20260107";
+            TASK_LIST_VERSION = "20250821";
+            TASK_LIST_EXT_VERSION = "20260109";
         }
         else if (alipayVersion.compareTo(new AlipayVersion("10.5.88.8000")) > 0) {
             VERSION = "20240403";
             TAKE_LOOK_VERSION = "20240403";
+            TASK_LIST_VERSION = TASK_LIST_EXT_VERSION = "20240403";
         }
         else if (alipayVersion.compareTo(new AlipayVersion("10.3.96.8100")) > 0) {
             VERSION = "20230501";
+            TASK_LIST_VERSION = TASK_LIST_EXT_VERSION = "20230501";
         }
         else {
             VERSION = "20230501";
+            TASK_LIST_VERSION = TASK_LIST_EXT_VERSION = "20230501";
         }
     }
     
@@ -88,15 +95,48 @@ public class AntForestRpcCall {
     
     /** 找能量：服务端每次返回一个推荐好友（friendId），skipUsers 里的用户不再推荐。对照 AG AntForestRpcCall.takeLook。 */
     public static String takeLook(JSONObject skipUsers, boolean takeLookStart) throws JSONException {
-        JSONObject arg = new JSONObject();
+        return takeLook(skipUsers, takeLookStart, "");
+    }
+
+    public static String queryTakeLookCombineBiz(JSONObject skipUsers) throws JSONException {
+        JSONObject ext = MyUtils.newJSONObject().put("takeLookExposedTimes", 0);
+        if (skipUsers != null && skipUsers.length() > 0) ext.put("skipUsers", skipUsers.toString());
+        JSONObject args = MyUtils.newJSONObject().put("extInfo", ext)
+                .put("source", "chInfo_ch_appid-60000002").put("version", "20260616");
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryCombineBiz", new JSONArray().put(args).toString());
+    }
+
+    public static String takeLook(JSONObject skipUsers, boolean takeLookStart, String exposedUserId) throws JSONException {
+        JSONObject arg = MyUtils.newJSONObject();
         arg.put("contactsStatus", "N");
-        arg.put("exposedUserId", "");
+        arg.put("exposedUserId", takeLookStart ? exposedUserId : "");
         arg.put("skipUsers", skipUsers);
         arg.put("source", "chInfo_ch_appid-60000002");
         arg.put("takeLookEnd", false);
         arg.put("takeLookStart", takeLookStart);
         arg.put("version", TAKE_LOOK_VERSION);
         return ApplicationHook.requestString("alipay.antforest.forest.h5.takeLook", new JSONArray().put(arg).toString());
+    }
+
+    public static String takeLookEnd() throws JSONException {
+        return takeLookEnd("chInfo_ch_appid-60000002");
+    }
+
+    public static String takeLookEnd(String source) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("contactsStatus", "N")
+                .put("source", source).put("version", TASK_LIST_VERSION);
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.takeLookEnd", new JSONArray().put(args).toString());
+    }
+
+    public static String queryTakeLookEndTaskList() throws JSONException {
+        return queryTakeLookEndTaskList("chInfo_ch_appid-60000002");
+    }
+
+    public static String queryTakeLookEndTaskList(String source) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("fromAct", "take_look_end_task_list")
+                .put("source", source).put("version", TASK_LIST_VERSION)
+                .put("extend", MyUtils.newJSONObject().put("osType", "android").put("version", TASK_LIST_EXT_VERSION));
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryTaskList", new JSONArray().put(args).toString());
     }
     
     public static RpcEntity getCollectEnergyRpcEntity(String bizType, String userId, long bubbleId) {
@@ -266,8 +306,10 @@ public class AntForestRpcCall {
     }
     
     
-    public static String receiveTaskAward(String sceneCode, String taskType) {
-        return ApplicationHook.requestString("com.alipay.antiep.receiveTaskAward", "[{\"ignoreLimit\":false," + "\"requestType\":\"H5\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"ANTFOREST\",\"taskType\":\"" + taskType + "\"}]");
+    public static String receiveTaskAward(String sceneCode, String taskType) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("ignoreLimit", false).put("requestType", "H5")
+                .put("sceneCode", sceneCode).put("source", "ANTFOREST").put("taskType", taskType);
+        return ApplicationHook.requestString("com.alipay.antiep.receiveTaskAward", new JSONArray().put(args).toString());
     }
     
     public static String finishTask(String sceneCode, String taskType) {
@@ -311,12 +353,13 @@ public class AntForestRpcCall {
     }
     
     //{"propGroup":"doubleClick","propId":"0fa28fd0eqb61b1615bib0gy1i8b2130","propType":"LIMIT_TIME_ENERGY_DOUBLE_CLICK","sToken":"1765587286732_b5409fdd","secondConfirm":false,"source":"chInfo_ch_appcenter__chsub_9patch","timezoneId":"Asia/Shanghai","version":"20250813"}]}
-    public static String consumeProp(String propGroup, String propId, String propType, Boolean secondConfirm) {
+    public static String consumeProp(String propGroup, String propId, String propType, Boolean secondConfirm) throws JSONException {
         String sToken = System.currentTimeMillis() + "_" + getRandomString(8);
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.consumeProp", "[{\"propGroup\":\"" + propGroup + "\",\"propId\":\"" + propId + "\",\"propType\":\"" + propType + "\",\"sToken\":\"" + sToken + "\",\"secondConfirm\":" + secondConfirm + ",\"source" +
-                                                                                       "\":\"chInfo_ch_appcenter__chsub_9patch\",\"timezoneId\":\"Asia/Shanghai\",\"version\":\"" + VERSION + "\"}]");
-        
-        //return ApplicationHook.requestString("alipay.antforest.forest.h5.consumeProp", "[{\"propId\":\"" + propId + "\",\"propType\":\"" + propType + "\",\"source\":\"chInfo_ch_appcenter__chsub_9patch\"," + "\"timezoneId\":\"Asia/Shanghai\",\"version\":\"" + VERSION + "\"}]");
+        JSONObject args = MyUtils.newJSONObject("{}");
+        args.put("propGroup", propGroup).put("propId", propId).put("propType", propType).put("sToken", sToken)
+                .put("secondConfirm", secondConfirm).put("source", "chInfo_ch_appcenter__chsub_9patch")
+                .put("timezoneId", "Asia/Shanghai").put("version", VERSION);
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.consumeProp", new JSONArray().put(args).toString());
     }
     public static String consumeProp(String propGroup, String propId, String propType) {
         String sToken = System.currentTimeMillis() + "_" + getRandomString(8);
@@ -468,6 +511,24 @@ public class AntForestRpcCall {
     /* 新版动物伙伴：派遣 */
     public static String assignMonopolyCreature(String creatureCode) throws JSONException {
         return assignMonopolyCreature(creatureCode, false);
+    }
+
+    public static String listForestMakeupCards() throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("requestType", "RPC").put("scAssetsType", "makeup_card")
+                .put("sceneCode", "antforest").put("source", "ANTFOREST");
+        return ApplicationHook.requestString("com.alipay.antiep.listUserSingleSCAssets", new JSONArray().put(args).toString());
+    }
+
+    public static String queryForestSignMonth(String viewMonth, String beginTime, String endTime) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("requestType", "RPC").put("sceneCode", "ANTFOREST_LIANXU_SIGN_2025")
+                .put("source", "ANTFOREST").put("viewMonth", viewMonth).put("beginTime", beginTime).put("endTime", endTime);
+        return ApplicationHook.requestString("com.alipay.antiep.signListPage", new JSONArray().put(args).toString());
+    }
+
+    public static String manualMakeUpSign(String date) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("requestType", "RPC").put("sceneCode", "ANTFOREST_LIANXU_SIGN_2025")
+                .put("source", "ANTFOREST").put("makeUpDate", date);
+        return ApplicationHook.requestString("com.alipay.antiep.manualMakeUpSign", new JSONArray().put(args).toString());
     }
 
     public static String assignMonopolyCreature(String creatureCode, boolean secondConfirm) throws JSONException {

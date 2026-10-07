@@ -868,6 +868,10 @@ fun SettingsTab(activity: MiuixMainActivity, currentAccount: String) {
     SmallTitle(text = "功能设置")
     CardColumn {
         ArrowPreference(
+            title = "WebDAV 备份恢复",
+            onClick = { context.startActivity(Intent(context, MiuixWebDavActivity::class.java)) }
+        )
+        ArrowPreference(
             title = "好友统计",
             onClick = { context.startActivity(Intent(context, MiuixFriendStatsActivity::class.java)) }
         )

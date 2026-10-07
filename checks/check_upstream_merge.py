@@ -110,6 +110,7 @@ public static void main(String[] args) throws Exception {
 flows = r'''
 import org.json.*; import java.util.*;
 public class FlowCheck {
+    static class TaskCancelledException extends RuntimeException {}
     static final String TAG = "test";
     static class Field<T> { T value; Field(T v) { value = v; } T getValue() { return value; } }
     static class MyUtils {
@@ -165,6 +166,7 @@ public class FlowCheck {
         return new JSONObject().put("templateId", "T").put("title", "task").put("completedNum", done).put("needCompleteNum", need);
     }
     static String tasks(JSONArray list) { return ok().put("data", new JSONObject().put("toCompleteVOS", list)).toString(); }
+    static class AntFarm { static boolean bindPigeonFeedback(JSONArray items) { return true; } }
     static class Member {
         Field<Set<String>> MemberCreditSesameTaskList = new Field<>(new HashSet<>());
         Field<Boolean> AutoMemberCreditSesameTaskList = new Field<>(true);
@@ -222,8 +224,16 @@ public class FlowCheck {
             new JSONObject().put("competitionProjectInfo", new JSONObject().put("projectId", "S2").put("projectName", "project"))).toString(); }
     }
     static class Farm {
-        double harvestBenevolenceScore; Field<Integer> competitionStealLimit = new Field<>(0); int donated;
-        boolean donationCompetition(String id, String name, int n) { donated += n; return true; }
+        double harvestBenevolenceScore; Field<Integer> competitionStealLimit = new Field<>(0), competitionTargetRank = new Field<>(1); int donated;
+        Field<Boolean> rankingDonation = new Field<>(false), rankingFoodRefill = new Field<>(false);
+        boolean rankingFoodRefillBusy; String ownerUserId = "self";
+        static class RankingSnapshot { String owner = "self"; }
+        static RankingSnapshot rankingSnapshot(JSONObject response, String uid, boolean weekly) { return null; }
+        boolean rankingOwner(String uid) { return true; }
+        static boolean rankingWindow(RankingSnapshot rank, long now) { return true; }
+        int rankingQuota(RankingSnapshot rank) { return 0; }
+        void useDynamicSpecialFood(double target, RankingSnapshot rank) { throw new AssertionError("refill disabled"); }
+        boolean donationCompetition(String id, String name, int n, String purpose) { donated += n; return true; }
         @@FARM@@
     }
     static void reset() {
@@ -310,7 +320,7 @@ for placeholder, path, signatures in (
         "private static boolean updateUserConfiginTeam(", "private static int teamState(", "private static void loveteam(",
         "private static String getLoveteamName(", "private static boolean hasWaterResult(", "private static void loveteamWater(")),
     ("@@ORCHARD@@", "model/task/antOrchard/AntOrchard.java", ("private boolean doSpreadManure(",)),
-    ("@@FARM@@", "model/task/antFarm/AntFarm.java", ("private void stealRankS2(",)),
+    ("@@FARM@@", "model/task/antFarm/AntFarm.java", ("private void stealRankS2(", "private static int rankingInt(")),
 ):
     flows = flows.replace(placeholder, "\n".join(method(path, signature) for signature in signatures))
 

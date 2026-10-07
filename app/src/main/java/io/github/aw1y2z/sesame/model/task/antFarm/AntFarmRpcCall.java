@@ -12,6 +12,7 @@ import java.util.UUID;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -46,9 +47,52 @@ public class AntFarmRpcCall {
         return ApplicationHook.requestString("com.alipay.antiep.inviteP2P", args1);
     }
 
-    public static String syncAnimalStatus(String farmId) {
-        String args1 = "[{\"farmId\":\"" + farmId + "\",\"operType\":\"FEEDSYNC\",\"queryFoodStockInfo\":false," + "\"recall\":false,\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\"," + "\"userId\":\"" + farmId2UserId(farmId) + "\",\"version\":\"" + VERSION + "\"}]";
-        return ApplicationHook.requestString("com.alipay.antfarm.syncAnimalStatus", args1);
+    public static String syncAnimalStatus(String farmId) throws org.json.JSONException {
+        JSONObject args = MyUtils.newJSONObject("{}");
+        args.put("farmId", farmId).put("operType", "FEEDSYNC").put("queryFoodStockInfo", false)
+                .put("recall", false).put("requestType", "NORMAL").put("sceneCode", "ANTFARM")
+                .put("source", "H5").put("userId", farmId2UserId(farmId)).put("version", VERSION);
+        return ApplicationHook.requestString("com.alipay.antfarm.syncAnimalStatus", new JSONArray().put(args).toString());
+    }
+
+    public static String queryNpcFarm(String farmId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject("{}");
+        args.put("farmId", farmId).put("operTag", "SYNC_NPC").put("operType", "QUERY_FARM_INFO")
+                .put("requestType", "NORMAL").put("sceneCode", "ANTFARM").put("source", "H5").put("version", VERSION);
+        return ApplicationHook.requestString("com.alipay.antfarm.syncAnimalStatus", new JSONArray().put(args).toString());
+    }
+
+    public static String hireNpcAnimal(String animalId, String source) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject("{}");
+        args.put("hireActionType", "HIRE_IN_SELF_FARM").put("hireAnimalId", animalId).put("isNpcAnimal", true)
+                .put("requestType", "NORMAL").put("sceneCode", "ANTFARM").put("source", source).put("version", VERSION);
+        return ApplicationHook.requestString("com.alipay.antfarm.hireAnimal", new JSONArray().put(args).toString());
+    }
+
+    public static String sendBackNpcAnimal(String animalId, String currentFarmId, String masterFarmId) throws JSONException {
+        return sendBackNpcAnimal(animalId, currentFarmId, masterFarmId, "H5");
+    }
+
+    public static String sendBackNpcAnimal(String animalId, String currentFarmId, String masterFarmId, String source) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject("{}");
+        args.put("animalId", animalId).put("currentFarmId", currentFarmId).put("masterFarmId", masterFarmId)
+                .put("receiveNPCReward", true).put("requestType", "NORMAL").put("sceneCode", "ANTFARM")
+                .put("sendType", "NORMAL").put("source", source).put("version", VERSION);
+        return ApplicationHook.requestString("com.alipay.antfarm.sendBackAnimal", new JSONArray().put(args).toString());
+    }
+
+    public static String listPigeonFarmTasks() throws JSONException {
+        JSONObject args = MyUtils.newJSONObject("{}");
+        args.put("requestType", "NORMAL").put("sceneCode", "ANTFARM").put("source", "zhimaxiaoji_lianjin")
+                .put("taskSceneCode", "ANTFARM_ZHIMA_NPC_TASK").put("version", VERSION);
+        return ApplicationHook.requestString("com.alipay.antfarm.listFarmTask", new JSONArray().put(args).toString());
+    }
+
+    public static String receivePigeonFarmAward(String taskId, String awardType) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject("{}");
+        args.put("taskId", taskId).put("awardType", awardType).put("requestType", "NORMAL").put("sceneCode", "ANTFARM")
+                .put("source", "zhimaxiaoji_lianjin").put("taskSceneCode", "ANTFARM_ZHIMA_NPC_TASK").put("version", VERSION);
+        return ApplicationHook.requestString("com.alipay.antfarm.receiveFarmTaskAward", new JSONArray().put(args).toString());
     }
 
     public static String sleep() {
@@ -190,9 +234,11 @@ public class AntFarmRpcCall {
         return ApplicationHook.requestString("com.alipay.antfarm.listToolTaskDetails", args1);
     }
 
-    public static String receiveToolTaskReward(String rewardType, int rewardCount, String taskType) {
-        String args1 = "[{\"ignoreLimit\":false,\"requestType\":\"NORMAL\",\"rewardCount\":" + rewardCount + "," + "\"rewardType\":\"" + rewardType + "\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"taskType\":\"" + taskType + "\",\"version\":\"" + VERSION + "\"}]";
-        return ApplicationHook.requestString("com.alipay.antfarm.receiveToolTaskReward", args1);
+    public static String receiveToolTaskReward(String rewardType, int rewardCount, String taskType) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("ignoreLimit", false).put("requestType", "NORMAL")
+                .put("rewardCount", rewardCount).put("rewardType", rewardType).put("sceneCode", "ANTFARM")
+                .put("source", "H5").put("taskType", taskType).put("version", VERSION);
+        return ApplicationHook.requestString("com.alipay.antfarm.receiveToolTaskReward", new JSONArray().put(args).toString());
     }
 
     public static String feedAnimal(String farmId) {
@@ -392,6 +438,14 @@ public class AntFarmRpcCall {
     /* 小鸡日记 */
     public static String queryChickenDiaryList() {
         return ApplicationHook.requestString("com.alipay.antfarm.queryChickenDiaryList", "[{\"requestType\":\"NORMAL" + "\",\"sceneCode\":\"DIARY\",\"source\":\"antfarm_icon\"}]");
+    }
+
+    public static String useFarmFood(JSONArray cuisineList) throws JSONException {
+        if (cuisineList == null || cuisineList.length() == 0) return "";
+        JSONObject args = MyUtils.newJSONObject();
+        args.put("cuisineList", cuisineList).put("requestType", "NORMAL").put("sceneCode", "ANTFARM")
+                .put("source", "chInfo_ch_appcenter__chsub_9patch").put("version", VERSION);
+        return ApplicationHook.requestString("com.alipay.antfarm.useFarmFood", new JSONArray().put(args).toString());
     }
 
     public static String queryChickenDiaryList(String month) throws org.json.JSONException {
@@ -647,14 +701,23 @@ public class AntFarmRpcCall {
         return ApplicationHook.requestString("com.alipay.antfarm.inviteFriendVisitFamily", args);
     }
     */
-    public static String batchInviteP2P(String ownerGroupId, String inviteUID) {
-        String args = "[{\"inviteP2PVOList\":[{\"beInvitedUserId\":\"" + inviteUID + "\",\"bizTraceId\":\"\"}],\"invitedBizExtendInfo\":{\"familyId\":\"" + ownerGroupId + "\",\"inviteSceneCode\":\"ANTFARM_FAMILY_INVITE\"},\"linkParams\":{\"groupId\":\"" + ownerGroupId + "\",\"inviteSceneCode" + "\":\"ANTFARM_FAMILY_INVITE\",\"inviteUserId\":\"" + UserIdMap.getCurrentUid() + "\",\"source\":\"familyInvite\"},\"requestType\":\"RPC\",\"sceneCode\":\"ANTFARM_FAMILY_INVITE\",\"source\":\"antfarm\"}]";
-        return ApplicationHook.requestString("com.alipay.antiep.batchInviteP2P", args);
+    public static String batchInviteP2P(String ownerGroupId, String inviteUID) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("inviteP2PVOList", new JSONArray().put(MyUtils.newJSONObject().put("beInvitedUserId", inviteUID).put("bizTraceId", "")))
+                .put("invitedBizExtendInfo", MyUtils.newJSONObject().put("familyId", ownerGroupId).put("inviteSceneCode", "ANTFARM_FAMILY_INVITE"))
+                .put("linkParams", MyUtils.newJSONObject().put("groupId", ownerGroupId).put("inviteSceneCode", "ANTFARM_FAMILY_INVITE").put("inviteUserId", UserIdMap.getCurrentUid()).put("source", "familyInvite"))
+                .put("requestType", "RPC").put("sceneCode", "ANTFARM_FAMILY_INVITE").put("source", "antfarm");
+        return ApplicationHook.requestString("com.alipay.antiep.batchInviteP2P", new JSONArray().put(args).toString(), 1, 0);
     }
 
-    public static String assignFamilyMember(String assignAction, String beAssignUser) {
-        String args = "[{\"assignAction\":\"" + assignAction + "\",\"beAssignUser\":\"" + beAssignUser + "\",\"requestType\":\"RPC\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\"}]";
-        return ApplicationHook.requestString("com.alipay.antfarm.assignFamilyMember", args);
+    public static String assignFamilyMember(String assignAction, String beAssignUser) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("assignAction", assignAction).put("beAssignUser", beAssignUser)
+                .put("requestType", "RPC").put("sceneCode", "ANTFARM").put("source", "H5");
+        return ApplicationHook.requestString("com.alipay.antfarm.assignFamilyMember", new JSONArray().put(args).toString(), 1, 0);
+    }
+
+    public static String familyTreadMill() throws JSONException {
+        return ApplicationHook.requestString("com.alipay.antfarm.familyTreadMill", new JSONArray().put(MyUtils.newJSONObject()
+                .put("openSportsPolicy", true).put("requestType", "NORMAL").put("sceneCode", "ANTFARM").put("source", "H5").put("timeZoneId", "Asia/Shanghai")).toString());
     }
 
     public static String clickForGiftV2(String foodType, int giftIndex) {

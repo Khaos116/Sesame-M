@@ -606,7 +606,11 @@ public class Status {
     }
     
     public static synchronized Boolean canUseAccelerateToolToday() {
-        return !hasFlagToday("farm::useFarmToolLimit::" + "ACCELERATE" + "TOOL") && INSTANCE.useAccelerateToolCount < 8;
+        if (hasFlagToday("farm::useFarmToolLimit::ACCELERATETOOL")) return false;
+        AntFarm task = ModelTask.getModel(AntFarm.class);
+        if (task == null || task.getAccelerateToolDailyLimit() == null) return false;
+        int limit = task.getAccelerateToolDailyLimit().getValue();
+        return limit == -1 || (limit > 0 && INSTANCE.useAccelerateToolCount < limit);
     }
     
     public static synchronized void useAccelerateToolToday() {

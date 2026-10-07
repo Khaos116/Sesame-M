@@ -7,6 +7,7 @@ import io.github.aw1y2z.sesame.entity.AlipayAntFarmDrawMachineTaskList;
 import io.github.aw1y2z.sesame.entity.GameCenterMallItem;
 import io.github.aw1y2z.sesame.model.task.antForest.AntForestRpcCall;
 import io.github.aw1y2z.sesame.model.task.antGame.GameTask;
+import io.github.aw1y2z.sesame.model.task.antMember.AntMemberRpcCall;
 import io.github.aw1y2z.sesame.util.idMap.AntFarmDoFarmTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.AntFarmDrawMachineTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.GameCenterMallItemMap;
@@ -103,12 +104,23 @@ public class AntFarm extends ModelTask {
     private BooleanModelField useSpecialFood;
     @Getter
     private IntegerModelField useSpecialFoodCountLimit;
+    private BooleanModelField dynamicSpecialFood;
+    private IntegerModelField dynamicFoodDailyLimit;
+    private BooleanModelField rankingFoodRefill;
+    private boolean rankingFoodRefillBusy;
     private BooleanModelField useNewEggTool;
+    private BooleanModelField useFullRewardTool;
+    private BooleanModelField rewardStealTool;
+    private BooleanModelField rewardShareTool;
+    private SelectModelField rewardOrnamentTools;
+    private IntegerModelField rewardExtraToolDailyLimit;
     private BooleanModelField harvestProduce;
     private ChoiceModelField donationType;
     private IntegerModelField donationAmount;
     private BooleanModelField receiveFarmTaskAward;
     private BooleanModelField useAccelerateTool;
+    @Getter
+    private IntegerModelField accelerateToolDailyLimit;
     private SelectModelField useAccelerateToolOptions;
     private BooleanModelField feedFriendAnimal;
     private SelectAndCountModelField feedFriendAnimalList;
@@ -130,19 +142,37 @@ public class AntFarm extends ModelTask {
     private IntegerModelField ornamentsDressUpDays;
     private ChoiceModelField hireAnimalType;
     private SelectModelField hireAnimalList;
+    private ChoiceModelField farmNpcType;
+    private static final String[] FARM_NPC_NAMES = {"关闭", "黄金鸡", "农场小鸡", "芝麻大表鸽"};
+    private static final String[] FARM_NPC_IDS = {"", "20250725105101013088000000000004", "20250613105101013088000000000002", "20250901105101013088000000000006"};
+    private static final String[] FARM_NPC_SOURCES = {"", "licaixiaoji_2025_1", "feiliaoji_202507", "zhimaxiaoji_lianjin"};
+    private static final String PIGEON_TEMPLATE = "hjwf_myzy_gyxj_erfang";
+    private static final String PIGEON_CATEGORY = "ZMZY#FEED_ZM_CHICKEN";
+    private static final String PIGEON_RECEIPT_KEY = "farmNpcPigeonReceipt";
     private BooleanModelField drawGameCenterAward;
     private BooleanModelField competition;                    // 爱心鸡结号(S2) | 开启
     private BooleanModelField competitionReceiveTask;          // 爱心鸡结号 | 领取奖励
     private BooleanModelField competitionDonate;               // 爱心鸡结号 | 自动捐蛋
     private BooleanModelField competitionStealRank;            // 爱心鸡结号 | 偷榜
     private IntegerModelField competitionStealMinutes;         // 爱心鸡结号 | 偷榜提前分钟数
-    private IntegerModelField competitionStealLimit;           // 爱心鸡结号 | 偷榜捐献上限
+    private IntegerModelField competitionStealLimit;
+    private IntegerModelField competitionTargetRank;          // 爱心鸡结号 | 偷榜目标名次
     private IntegerModelField competitionDonateAmount;         // 爱心鸡结号 | 自动捐蛋数量
+    private BooleanModelField rankingDonation;
+    private BooleanModelField rankingStable;
+    private IntegerModelField rankingDailyBudget;
+    private IntegerModelField rankingWeeklyBudget;
+    private StringModelField rankingDonationTime;
+    private BooleanModelField rankingWatch;
+    private IntegerModelField rankingWatchInterval;
+    private String rankingWatchChildId;
     private BooleanModelField useBigEaterTool;
     //private ChoiceModelField getFeedType;
     private SelectModelField getFeedList;
     private BooleanModelField family;
     private SelectModelField familyOptions;
+    private ChoiceModelField familyAssignStrategy, familyShareMode;
+    private SelectModelField familyShareList;
     private SelectModelField notInviteList; // 新增：不邀请列表
 
     @Override
@@ -152,15 +182,26 @@ public class AntFarm extends ModelTask {
         modelFields.addField(AutoAntFarmDoFarmTaskList = new BooleanModelField("AutoAntFarmDoFarmTaskList", "庄园饲料 | 自动黑名单", true).setDependsOn("receiveFarmTaskAward"));
         modelFields.addField(AntFarmDoFarmTaskList = new SelectModelField("AntFarmDoFarmTaskList", "庄园饲料 | 黑名单列表", new LinkedHashSet<>(), AlipayAntFarmDoFarmTaskList::getList).setDependsOn("AutoAntFarmDoFarmTaskList"));
         modelFields.addField(useNewEggTool = new BooleanModelField("useNewEggTool", "新蛋卡 | 使用", false));
+        modelFields.addField(useFullRewardTool = new BooleanModelField("useFullRewardTool", "道具奖励 | 满仓先用一张再领", false).setDescription("按已开启工具策略腾一格；每次只用一张，库存或效果未确认时保留奖励。蹭饭/救济须开启下方缺粮策略，装扮须明确选择等级并允许服务端选择新套装"));
+        modelFields.addField(rewardStealTool = new BooleanModelField("rewardStealTool", "奖励腾位 | 自家缺粮使用蹭饭卡", false).setDependsOn("useFullRewardTool").setDescription("仅自家小鸡在家饥饿且库存与食槽合计不足一餐180g时提交一张；蹭饭去向由服务端选择，回查粮食增加或小鸡已到其他庄园蹭饭才确认"));
+        modelFields.addField(rewardShareTool = new BooleanModelField("rewardShareTool", "奖励腾位 | 自家缺粮使用救济卡", false).setDependsOn("useFullRewardTool").setDescription("仅自家小鸡在家饥饿且粮食不足180g时提交一张；回查粮食增加才确认"));
+        modelFields.addField(rewardOrnamentTools = new SelectModelField("rewardOrnamentTools", "奖励腾位 | 服务端选择新套装的卡等级", new LinkedHashSet<>(), () -> Arrays.asList(
+                new CustomOption("ORDINARY_ORNAMENT_TOOL", "普通装扮补签卡"), new CustomOption("ADVANCE_ORNAMENT_TOOL", "高级装扮补签卡"),
+                new CustomOption("RARE_ORNAMENT_TOOL", "稀有装扮补签卡"))).setDependsOn("useFullRewardTool").setDescription("默认不选；只在实时列表存在未拥有套装且所选卡有库存时尝试，等级资格及具体套装由服务端决定，不保证可用；库存减少一张且原未拥有套装转为已获得才确认"));
+        modelFields.addField(rewardExtraToolDailyLimit = new IntegerModelField("rewardExtraToolDailyLimit", "奖励腾位 | 蹭饭/救济/装扮每日总预算(0不用)", 0, 0, 5).setDependsOn("useFullRewardTool").setDescription("上述五类合计份数，包括未确认提交；每类每天最多尝试一张。未知结果持久冻结这些工具的自动腾位，跨重启及跨日保持"));
         modelFields.addField(useFenceTool = new BooleanModelField("useFenceTool", "篱笆卡 | 自动使用", false));
         modelFields.addField(useDollTool = new BooleanModelField("useDollTool", "数字公仔补签卡 | 自动补签", false));
         modelFields.addField(dollSupplementOrder = new ChoiceModelField("dollSupplementOrder", "数字公仔补签 | 顺序", 0, new String[]{"从早到晚", "从晚到早"}).setDependsOn("useDollTool"));
         modelFields.addField(collectChickenDiary = new ChoiceModelField("collectChickenDiary", "小鸡日记 | 点赞范围", 0, new String[]{"关闭", "今日", "当月", "全部历史"}));
         modelFields.addField(useAccelerateTool = new BooleanModelField("useAccelerateTool", "加速卡 | 使用", false));
+        modelFields.addField(accelerateToolDailyLimit = new IntegerModelField("accelerateToolDailyLimit", "加速卡 | 每日上限(-1不限,0不用)", 8, -1, 1000).setDependsOn("useAccelerateTool"));
         modelFields.addField(useAccelerateToolOptions = new SelectModelField("useAccelerateToolOptions", "加速卡 | 选项", new LinkedHashSet<>(), CustomOption::getUseAccelerateToolOptions).setDependsOn("useAccelerateTool"));
         modelFields.addField(useBigEaterTool = new BooleanModelField("useBigEaterTool", "加饭卡 | 使用", false));
         modelFields.addField(useSpecialFood = new BooleanModelField("useSpecialFood", "特殊食品 | 使用", false));
         modelFields.addField(useSpecialFoodCountLimit = new IntegerModelField("useSpecialFoodCountLimit", "特殊食品 | " + "使用上限(无限:0)", 0).setDependsOn("useSpecialFood"));
+        modelFields.addField(dynamicSpecialFood = new BooleanModelField("dynamicSpecialFood", "特殊食品 | 动态批量与收益学习", false).setDependsOn("useSpecialFood"));
+        modelFields.addField(dynamicFoodDailyLimit = new IntegerModelField("dynamicFoodDailyLimit", "动态美食 | 每日份数预算(0不用)", 0, 0, 1000).setDependsOn("dynamicSpecialFood"));
+        modelFields.addField(rankingFoodRefill = new BooleanModelField("rankingFoodRefill", "捐蛋排位 | 按缺蛋量补美食", false).setDependsOn("rankingDonation").setDescription("须同时开启特殊食品、动态批量并设置正数美食预算；先单份学习未知收益，再按目标缺额批量，扣减和产蛋收益均须回查确认；不新增自动用卡"));
         modelFields.addField(rewardFriend = new BooleanModelField("rewardFriend", "打赏好友", false));
         modelFields.addField(recallAnimalType = new ChoiceModelField("recallAnimalType", "召回小鸡", RecallAnimalType.ALWAYS, RecallAnimalType.nickNames));
         modelFields.addField(feedAnimal = new BooleanModelField("feedAnimal", "投喂小鸡", false));
@@ -168,6 +209,7 @@ public class AntFarm extends ModelTask {
         modelFields.addField(feedFriendAnimalList = new SelectAndCountModelField("feedFriendAnimalList", "帮喂小鸡 | " + "好友列表", new LinkedHashMap<>(), AlipayUser::getList, "请填写帮喂次数(每日)", 1, 100).setDependsOn("feedFriendAnimal"));
         modelFields.addField(hireAnimalType = new ChoiceModelField("hireAnimalType", "雇佣小鸡 | 动作", HireAnimalType.NONE, HireAnimalType.nickNames));
         modelFields.addField(hireAnimalList = new SelectModelField("hireAnimalList", "雇佣小鸡 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("hireAnimalType"));
+        modelFields.addField(farmNpcType = new ChoiceModelField("farmNpcType", "NPC小鸡 | 雇佣类型", 0, FARM_NPC_NAMES));
         modelFields.addField(sendBackAnimalWay = new ChoiceModelField("sendBackAnimalWay", "遣返小鸡 | 方式", SendBackAnimalWay.NORMAL, SendBackAnimalWay.nickNames));
         modelFields.addField(sendBackAnimalType = new ChoiceModelField("sendBackAnimalType", "遣返小鸡 | 动作", SendBackAnimalType.NONE, SendBackAnimalType.nickNames));
         modelFields.addField(sendBackAnimalList = new SelectModelField("sendFriendList", "遣返小鸡 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("sendBackAnimalType"));
@@ -189,9 +231,26 @@ public class AntFarm extends ModelTask {
         modelFields.addField(competitionStealRank = new BooleanModelField("competitionStealRank", "爱心鸡结号 | 偷榜", false).setDependsOn("competition"));
         modelFields.addField(competitionStealMinutes = new IntegerModelField("competitionStealMinutes", "爱心鸡结号 | 偷榜提前分钟数", 30, 0, 240).setDependsOn("competitionStealRank"));
         modelFields.addField(competitionStealLimit = new IntegerModelField("competitionStealLimit", "爱心鸡结号 | 偷榜捐献上限(0不限)", 0, 0, 1000).setDependsOn("competitionStealRank"));
+        modelFields.addField(competitionTargetRank = new IntegerModelField("competitionTargetRank", "爱心鸡结号 | 偷榜目标名次", 1, 1, 100)
+                .setDescription("默认第1名沿用原策略。已达到目标不捐；只按当前榜单真实目标行计算差额+1，目标行缺失不猜测。仍守原偷榜上限和开启的日周预算。")
+                .setDependsOn("competitionStealRank"));
+        modelFields.addField(rankingDonation = new BooleanModelField("rankingDonation", "捐蛋排位 | 持久预算与每日排位", false).setDescription("开启后每日排位与现有周赛自动捐蛋/偷榜共享预算；预算0不捐。未知捐赠保留额度与尝试记录，禁止重发；只处理可验证的本人排行"));
+        modelFields.addField(rankingDailyBudget = new IntegerModelField("rankingDailyBudget", "捐蛋排位 | 每日总预算", 0, 0, 1000).setDependsOn("rankingDonation"));
+        modelFields.addField(rankingWeeklyBudget = new IntegerModelField("rankingWeeklyBudget", "捐蛋排位 | 每周总预算", 0, 0, 10000).setDependsOn("rankingDonation"));
+        modelFields.addField(rankingStable = new BooleanModelField("rankingStable", "每日排位 | 稳定星数计划", true).setDependsOn("rankingDonation"));
+        modelFields.addField(rankingDonationTime = new StringModelField("rankingDonationTime", "每日排位 | 检查时间(HHmm，20点前)", "1958").setDependsOn("rankingDonation"));
+        modelFields.addField(rankingWatch = new BooleanModelField("rankingWatch", "每日排位 | 持续追榜", false).setDependsOn("rankingDonation").setDescription("从检查时间起按间隔回查，20点前2秒最后检查；预算内且上一笔已同轮次回查确认才允许新捐赠"));
+        modelFields.addField(rankingWatchInterval = new IntegerModelField("rankingWatchInterval", "每日排位 | 追榜间隔(秒)", 10, 1, 300).setDependsOn("rankingWatch"));
         modelFields.addField(family = new BooleanModelField("family", "亲密家庭 | 开启", false));
         modelFields.addField(familyOptions = new SelectModelField("familyOptions", "亲密家庭 | 选项", new LinkedHashSet<>(), CustomOption::getAntFarmFamilyOptions).setDependsOn("family"));
         modelFields.addField(notInviteList = new SelectModelField("notInviteList", "亲密家庭 | 不邀请列表", new LinkedHashSet<>(), AlipayUser::getList).setDependsOn("family"));
+        modelFields.addField(familyAssignStrategy = new ChoiceModelField("familyAssignStrategy", "亲密家庭 | 顶梁柱安排策略", 0,
+                new String[]{"随机安排", "优先今日亲密值最低"}).setDependsOn("family"));
+        modelFields.addField(familyShareMode = new ChoiceModelField("familyShareMode", "亲密家庭 | 好友分享动作", 1,
+                new String[]{"仅邀请选中好友", "不邀请选中好友"}).setDependsOn("family"));
+        modelFields.addField(familyShareList = new SelectModelField("familyShareList", "亲密家庭 | 好友分享名单", new LinkedHashSet<>(), AlipayUser::getList)
+                .setDescription("仍需家庭选项中的分享开关；仅邀请模式空名单不发送。不邀请模式沿用原行为，原不邀请列表始终优先；只选择当前好友且排除自己和家庭成员，每轮最多2人。")
+                .setDependsOn("family"));
         modelFields.addField(enableSleep = new BooleanModelField("enableSleep", "小鸡起床 | 自动起床（自动睡觉已禁用）", false));
         modelFields.addField(sleepTime = new StringModelField("sleepTime", "小鸡起床 | 入睡参考时间", "2001").setDependsOn("enableSleep"));
         modelFields.addField(sleepMinutes = new IntegerModelField("sleepMinutes", "小鸡起床 | 睡眠时长(分钟)", 10 * 59, 1, 10 * 60).setDependsOn("enableSleep"));
@@ -227,6 +286,102 @@ public class AntFarm extends ModelTask {
             return false;
         }
         return true;
+    }
+
+    @Override
+    protected boolean supportsManualAction(String action) {
+        return "sendBack".equals(action) || "game".equals(action) || "chouchoule".equals(action)
+                || "specialFood".equals(action) || "useTool".equals(action);
+    }
+
+    private boolean manualFarmOwner(String uid) {
+        if (Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
+        return uid != null && !uid.isEmpty() && uid.equals(UserIdMap.getCurrentUid()) && isEnable() && check();
+    }
+
+    /** Manual actions need fresh state without enterFarm's configured automatic gifts/food/manure. */
+    private JSONArray initManualFarm(String uid) throws JSONException {
+        if (!manualFarmOwner(uid)) return null;
+        JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.enterFarm("", uid));
+        JSONObject farm = response.optJSONObject("farmVO");
+        JSONObject master = farm == null ? null : farm.optJSONObject("masterUserInfoVO");
+        JSONObject sub = farm == null ? null : farm.optJSONObject("subFarmVO");
+        JSONArray rows = sub == null ? null : sub.optJSONArray("animals");
+        if (!MessageUtil.checkMemo(TAG, response) || !manualFarmOwner(uid) || master == null || !uid.equals(master.opt("userId"))
+                || sub == null || !(sub.opt("farmId") instanceof String) || sub.optString("farmId").isEmpty()
+                || rows == null || rows.length() > 1000) return null;
+        String farmId = sub.optString("farmId");
+        Animal[] fresh = new Animal[rows.length()];
+        Animal own = null;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            JSONObject status = row == null ? null : row.optJSONObject("animalStatusVO");
+            if (row == null || status == null || !(row.opt("masterFarmId") instanceof String)
+                    || row.optString("masterFarmId").isEmpty() || !(row.opt("animalId") instanceof String)
+                    || row.optString("animalId").isEmpty() || !(row.opt("currentFarmId") instanceof String)
+                    || row.optString("currentFarmId").isEmpty()) return null;
+            Animal animal = new Animal();
+            animal.animalId = row.optString("animalId"); animal.masterFarmId = row.optString("masterFarmId");
+            animal.currentFarmId = row.optString("currentFarmId"); animal.subAnimalType = row.optString("subAnimalType");
+            animal.animalBuff = row.optString("animalBuff"); animal.startEatTime = row.optLong("startEatTime");
+            animal.consumeSpeed = row.optDouble("consumeSpeed", Double.NaN);
+            animal.animalFeedStatus = status.optString("animalFeedStatus"); animal.animalInteractStatus = status.optString("animalInteractStatus");
+            fresh[i] = animal;
+            if (farmId.equals(animal.masterFarmId)) { if (own != null) return null; own = animal; }
+        }
+        if (own == null || !manualFarmOwner(uid)) return null;
+        ownerUserId = uid; ownerFarmId = farmId; ownerAnimal = own; animals = fresh;
+        foodStock = farm.optInt("foodStock"); foodStockLimit = farm.optInt("foodStockLimit");
+        foodInTrough = rankingInt(sub, "foodInTrough");
+        harvestBenevolenceScore = foodNumber(farm, "harvestBenevolenceScore");
+        benevolenceScore = foodNumber(sub.optJSONObject("farmProduce"), "benevolenceScore");
+        JSONArray cuisines = response.optJSONArray("cuisineList");
+        return cuisines == null ? new JSONArray() : cuisines;
+    }
+
+    @Override
+    protected void runManualAction(String action) {
+        if (!supportsManualAction(action)) return;
+        String uid = UserIdMap.getCurrentUid();
+        try {
+            JSONArray cuisines = initManualFarm(uid);
+            if (cuisines == null || !manualFarmOwner(uid)) return;
+            switch (action) {
+                case "sendBack":
+                    if (sendBackAnimalType.getValue() != SendBackAnimalType.NONE) sendBackAnimal();
+                    break;
+                case "game":
+                    if (recordFarmGame.getValue()) {
+                        for (GameType game : new GameType[]{GameType.starGame, GameType.jumpGame, GameType.flyGame, GameType.hitGame}) {
+                            if (!manualFarmOwner(uid) || !recordFarmGame.getValue()) return;
+                            recordFarmGame(game);
+                        }
+                    }
+                    break;
+                case "chouchoule":
+                    if (drawMachine.getValue()) drawMachineGroups();
+                    break;
+                case "specialFood":
+                    if (useSpecialFood.getValue() && AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)
+                            && (AnimalFeedStatus.EATING.name().equals(ownerAnimal.animalFeedStatus)
+                            || AnimalFeedStatus.HUNGRY.name().equals(ownerAnimal.animalFeedStatus))) {
+                        // Manual consumption also requires a finite existing count or dynamic daily budget.
+                        if (dynamicSpecialFood.getValue() || useSpecialFoodCountLimit.getValue() > 0) useFarmFood(cuisines);
+                        else Log.record("手动美食：请先配置正数使用上限或动态每日预算");
+                    }
+                    break;
+                case "useTool":
+                    if (useNewEggTool.getValue() && manualFarmOwner(uid)) useFarmTool(ownerFarmId, ToolType.NEWEGGTOOL);
+                    if (useFenceTool.getValue() && manualFarmOwner(uid)) useFenceTool();
+                    if (useDollTool.getValue() && manualFarmOwner(uid)) supplementDolls();
+                    if (useAccelerateTool.getValue() && manualFarmOwner(uid) && AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)
+                            && AnimalFeedStatus.EATING.name().equals(ownerAnimal.animalFeedStatus)) useAccelerateTool();
+                    if (useBigEaterTool.getValue() && manualFarmOwner(uid) && AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)
+                            && AnimalFeedStatus.EATING.name().equals(ownerAnimal.animalFeedStatus)) useFarmTool(ownerFarmId, ToolType.BIG_EATER_TOOL);
+                    break;
+            }
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable e) { Log.err(TAG, "runManualAction", e); }
     }
 
     @Override
@@ -384,6 +539,7 @@ public class AntFarm extends ModelTask {
             });
 
             step("捐蛋", () -> {
+                if (rankingDonation.getValue() && dailyRankingDonation(null)) return;
                 if (competition.getValue()) {
                     if (!competition()) {
                         // 仅「确认当天没有排位活动」才回退公益捐蛋；接口异常/数据缺失/20:01 后跳过都返回 true，
@@ -469,6 +625,8 @@ public class AntFarm extends ModelTask {
                 }
             });
 
+            step("NPC小鸡", this::manageFarmNpc);
+
             // 雇佣小鸡
             step("雇佣小鸡", () -> {
                 if (hireAnimalType.getValue() != HireAnimalType.NONE) {
@@ -513,15 +671,17 @@ public class AntFarm extends ModelTask {
                 animalSleepAndWake();
             });
 
+        } catch (TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "AntFarm.start.run err:", t);
         }
     }
 
-    // 单个子任务抛异常只跳过自己，不影响 run() 后面的其它庄园任务
+    // 普通业务异常只跳过当前步骤；代际取消必须交还 ModelTask 收尾。
     private void step(String name, Runnable action) {
         try {
             action.run();
+        } catch (TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "run[" + name + "] err:", t);
         }
@@ -1005,6 +1165,7 @@ public class AntFarm extends ModelTask {
         }
         try {
             for (Animal animal : animals) {
+                if (SubAnimalType.NPC.name().equals(animal.subAnimalType)) continue;
                 if (AnimalInteractStatus.STEALING.name().equals(animal.animalInteractStatus) && !SubAnimalType.GUEST.name().equals(animal.subAnimalType) && !SubAnimalType.WORK.name().equals(animal.subAnimalType)) {
                     // 赶鸡
                     String user = AntFarmRpcCall.farmId2UserId(animal.masterFarmId);
@@ -1017,6 +1178,7 @@ public class AntFarm extends ModelTask {
                     }
                     int sendTypeInt = sendBackAnimalWay.getValue();
                     user = UserIdMap.getMaskName(user);
+                    if (!manualFarmOwner(ownerUserId) || sendBackAnimalType.getValue() == SendBackAnimalType.NONE) return;
                     JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.sendBackAnimal(SendBackAnimalWay.nickNames[sendTypeInt], animal.animalId, animal.currentFarmId, animal.masterFarmId));
                     if (MessageUtil.checkMemo(TAG, jo)) {
                         String s;
@@ -1036,9 +1198,260 @@ public class AntFarm extends ModelTask {
                     }
                 }
             }
-        } catch (Throwable t) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "sendBackAnimal err:", t);
         }
+    }
+
+    private static ToolType rewardToolType(String award) {
+        String normalized = "DOLL_TOOL".equals(award) ? "DOLLTOOL"
+                : "ORNAMENT_ORDINARY_TOOL".equals(award) ? "ORDINARY_ORNAMENT_TOOL"
+                : "ORNAMENT_ADVANCE_TOOL".equals(award) ? "ADVANCE_ORNAMENT_TOOL"
+                : "ORNAMENT_RARE_TOOL".equals(award) ? "RARE_ORNAMENT_TOOL" : award;
+        try { return normalized == null ? null : ToolType.valueOf(normalized); }
+        catch (IllegalArgumentException e) { return null; }
+    }
+
+    private JSONObject rewardToolStock(ToolType type) throws JSONException {
+        TimeUtil.sleep(0);
+        JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.listFarmTool());
+        JSONArray rows = response.optJSONArray("toolList");
+        if (!farmFeatureOk(response) || rows == null) return null;
+        JSONObject result = null;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (row == null) return null;
+            if (!type.name().equals(row.opt("toolType"))) continue;
+            long count = npcTaskNumber(row, "toolCount"), limit = npcTaskNumber(row, "toolHoldLimit");
+            if (result != null || count < 0 || limit <= 0 || count > limit || !(row.opt("toolId") instanceof String) || row.optString("toolId").isEmpty()) return null;
+            result = row;
+        }
+        return result;
+    }
+
+    private static final String EXTRA_REWARD_TOOL_KEY = "farmExtraRewardTools";
+
+    private boolean extraRewardToolAllowed(ToolType type) {
+        if (!useFullRewardTool.getValue() || rewardExtraToolDailyLimit.getValue() <= 0) return false;
+        if (type == ToolType.STEALTOOL) return rewardStealTool.getValue();
+        if (type == ToolType.SHARETOOL) return rewardShareTool.getValue();
+        return (type == ToolType.ORDINARY_ORNAMENT_TOOL || type == ToolType.ADVANCE_ORNAMENT_TOOL || type == ToolType.RARE_ORNAMENT_TOOL)
+                && rewardOrnamentTools.getValue().contains(type.name());
+    }
+
+    private boolean extraRewardToolOwner(String uid, ToolType type) {
+        return manualFarmOwner(uid) && uid.equals(ownerUserId) && ownerFarmId != null && !ownerFarmId.isEmpty() && extraRewardToolAllowed(type);
+    }
+
+    private static final class RewardFoodState {
+        final String animal, currentFarm, home, feed;
+        final double food;
+        RewardFoodState(String animal, String currentFarm, String home, String feed, double food) {
+            this.animal = animal; this.currentFarm = currentFarm; this.home = home; this.feed = feed; this.food = food;
+        }
+    }
+
+    private RewardFoodState extraRewardFoodState(String uid, ToolType type) {
+        if (!extraRewardToolOwner(uid, type)) return null;
+        JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.enterFarm("", uid));
+        JSONObject farm = response.optJSONObject("farmVO");
+        JSONObject master = farm == null ? null : farm.optJSONObject("masterUserInfoVO");
+        JSONObject sub = farm == null ? null : farm.optJSONObject("subFarmVO");
+        JSONArray rows = sub == null ? null : sub.optJSONArray("animals");
+        if (!farmFeatureOk(response) || !extraRewardToolOwner(uid, type) || master == null || !uid.equals(master.opt("userId"))
+                || sub == null || !ownerFarmId.equals(sub.opt("farmId")) || rows == null || rows.length() > 1000) return null;
+        JSONObject own = null;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (row == null || !(row.opt("masterFarmId") instanceof String)) return null;
+            if (ownerFarmId.equals(row.opt("masterFarmId"))) { if (own != null) return null; own = row; }
+        }
+        JSONObject status = own == null ? null : own.optJSONObject("animalStatusVO");
+        double stock = foodNumber(farm, "foodStock"), trough = foodNumber(sub, "foodInTrough");
+        if (own == null || status == null || !(own.opt("animalId") instanceof String) || own.optString("animalId").isEmpty()
+                || !(own.opt("currentFarmId") instanceof String) || own.optString("currentFarmId").isEmpty()
+                || !(status.opt("animalInteractStatus") instanceof String) || !(status.opt("animalFeedStatus") instanceof String)
+                || !Double.isFinite(stock + trough)) return null;
+        return new RewardFoodState(own.optString("animalId"), own.optString("currentFarmId"), status.optString("animalInteractStatus"),
+                status.optString("animalFeedStatus"), stock + trough);
+    }
+
+    private Map<String, Boolean> extraRewardOrnaments(String uid, ToolType type) {
+        if (!extraRewardToolOwner(uid, type)) return null;
+        JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.listOrnaments());
+        JSONArray rows = response.optJSONArray("achievementOrnaments");
+        if (!farmFeatureOk(response) || !extraRewardToolOwner(uid, type) || rows == null || rows.length() > 1000) return null;
+        Map<String, Boolean> result = new LinkedHashMap<>();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (row == null || !(row.opt("resourceKey") instanceof String) || row.optString("resourceKey").isEmpty()
+                    || row.optString("resourceKey").length() > 256 || !(row.opt("acquired") instanceof Boolean)
+                    || result.put(row.optString("resourceKey"), row.optBoolean("acquired")) != null) return null;
+        }
+        return result;
+    }
+
+    private JSONObject extraRewardToolBudget(String uid) throws JSONException {
+        String raw = RuntimeInfo.getInstance().getString(EXTRA_REWARD_TOOL_KEY);
+        JSONObject budget = MyUtils.newJSONObject(raw);
+        String day = rankingDay(System.currentTimeMillis());
+        if (raw.isEmpty()) {
+            budget.put("owner", uid); budget.put("day", day); budget.put("used", 0); budget.put("pending", false); budget.put("attempts", MyUtils.newJSONObject());
+        } else if (!uid.equals(budget.opt("owner")) || !(budget.opt("day") instanceof String)
+                || npcTaskNumber(budget, "used") < 0 || npcTaskNumber(budget, "used") > 5 || !(budget.opt("pending") instanceof Boolean)
+                || budget.optJSONObject("attempts") == null || budget.optJSONObject("attempts").length() > 5) return null;
+        String savedDay = budget.optString("day");
+        if (!savedDay.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) return null;
+        try {
+            java.time.LocalDate saved = java.time.LocalDate.parse(savedDay);
+            if (saved.getYear() < 1 || saved.isAfter(java.time.LocalDate.parse(day))) return null;
+        } catch (java.time.format.DateTimeParseException e) { return null; }
+        JSONObject attempts = budget.optJSONObject("attempts");
+        if (npcTaskNumber(budget, "used") != attempts.length() || (budget.optBoolean("pending") && attempts.length() == 0)) return null;
+        Iterator<String> keys = attempts.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if ((!ToolType.STEALTOOL.name().equals(key) && !ToolType.SHARETOOL.name().equals(key)
+                    && !ToolType.ORDINARY_ORNAMENT_TOOL.name().equals(key) && !ToolType.ADVANCE_ORNAMENT_TOOL.name().equals(key)
+                    && !ToolType.RARE_ORNAMENT_TOOL.name().equals(key)) || !Boolean.TRUE.equals(attempts.opt(key))) return null;
+        }
+        if (!day.equals(savedDay) && !budget.optBoolean("pending")) {
+            budget.put("day", day); budget.put("used", 0); budget.put("attempts", MyUtils.newJSONObject());
+            // A lost result stays frozen across dates and restarts; resetting the daily quota is not proof of an effect.
+        }
+        return budget;
+    }
+
+    private boolean useExtraRewardTool(ToolType type) {
+        String uid = ownerUserId;
+        if (!extraRewardToolOwner(uid, type)) return false;
+        try {
+            boolean foodTool = type == ToolType.STEALTOOL || type == ToolType.SHARETOOL;
+            RewardFoodState before = extraRewardFoodState(uid, type);
+            if (before == null || !AnimalInteractStatus.HOME.name().equals(before.home) || !ownerFarmId.equals(before.currentFarm)) return false;
+            if (foodTool && (!AnimalFeedStatus.HUNGRY.name().equals(before.feed) || before.food >= 180)) return false;
+            Map<String, Boolean> ornaments = foodTool ? null : extraRewardOrnaments(uid, type);
+            if (!foodTool && (ornaments == null || !ornaments.containsValue(false))) return false;
+            JSONObject stock = rewardToolStock(type), budget = extraRewardToolBudget(uid);
+            if (stock == null || npcTaskNumber(stock, "toolCount") <= 0 || budget == null) return false;
+            if (budget.optBoolean("pending")) { Log.record("奖励腾位：之前提交结果未知，持久冻结蹭饭/救济/装扮自动消费"); return false; }
+            JSONObject attempts = budget.optJSONObject("attempts");
+            if (attempts.has(type.name()) || npcTaskNumber(budget, "used") >= rewardExtraToolDailyLimit.getValue()) return false;
+            before = extraRewardFoodState(uid, type);
+            if (before == null || !AnimalInteractStatus.HOME.name().equals(before.home) || !ownerFarmId.equals(before.currentFarm)
+                    || (foodTool && (!AnimalFeedStatus.HUNGRY.name().equals(before.feed) || before.food >= 180))) return false;
+            if (!foodTool) { ornaments = extraRewardOrnaments(uid, type); if (ornaments == null || !ornaments.containsValue(false)) return false; }
+            JSONObject freshStock = rewardToolStock(type);
+            if (freshStock == null || !stock.optString("toolId").equals(freshStock.optString("toolId"))
+                    || npcTaskNumber(stock, "toolCount") != npcTaskNumber(freshStock, "toolCount")
+                    || npcTaskNumber(stock, "toolHoldLimit") != npcTaskNumber(freshStock, "toolHoldLimit")) return false;
+            if (!extraRewardToolOwner(uid, type)) return false;
+            attempts.put(type.name(), true); budget.put("used", npcTaskNumber(budget, "used") + 1); budget.put("pending", true);
+            if (!RuntimeInfo.getInstance().putVerified(EXTRA_REWARD_TOOL_KEY, budget.toString()) || !extraRewardToolOwner(uid, type)) return false;
+            // Source AG uses only targetFarmId/toolId/toolType here. Ornament eligibility and the new set are decided by the server.
+            JSONObject accepted = MyUtils.newJSONObject(AntFarmRpcCall.useFarmTool(ownerFarmId, stock.optString("toolId"), type.name()));
+            if (!farmFeatureOk(accepted) || !extraRewardToolOwner(uid, type)) {
+                Log.record("奖励腾位：提交未确认，预算保留并冻结后续蹭饭/救济/装扮自动消费"); return false;
+            }
+            JSONObject afterStock = rewardToolStock(type);
+            if (afterStock == null || npcTaskNumber(afterStock, "toolCount") != npcTaskNumber(stock, "toolCount") - 1
+                    || npcTaskNumber(afterStock, "toolHoldLimit") != npcTaskNumber(stock, "toolHoldLimit")) {
+                Log.record("奖励腾位：库存未确认减少一张，保留原奖励并持久冻结后续自动消费"); return false;
+            }
+            boolean confirmed = false;
+            if (foodTool) {
+                RewardFoodState after = extraRewardFoodState(uid, type);
+                confirmed = after != null && before.animal.equals(after.animal) && (after.food > before.food
+                        || (type == ToolType.STEALTOOL && AnimalInteractStatus.STEALING.name().equals(after.home)
+                        && !ownerFarmId.equals(after.currentFarm)));
+            } else {
+                Map<String, Boolean> after = extraRewardOrnaments(uid, type);
+                if (after != null) for (Map.Entry<String, Boolean> target : ornaments.entrySet()) {
+                    if (!target.getValue() && Boolean.TRUE.equals(after.get(target.getKey()))) { confirmed = true; break; }
+                }
+            }
+            if (!confirmed || !extraRewardToolOwner(uid, type)) {
+                Log.record("奖励腾位：粮食/蹭饭去向/新套装未回查确认，原奖励保留，后续自动消费持久冻结"); return false;
+            }
+            budget.put("pending", false);
+            if (!RuntimeInfo.getInstance().putVerified(EXTRA_REWARD_TOOL_KEY, budget.toString())) return false;
+            Log.farm("奖励腾位🎭[" + type.nickName() + "]#已回查库存减少一张及实际效果，原奖励继续领取");
+            return true;
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable e) { Log.err(TAG, "useExtraRewardTool", e); }
+        return false;
+    }
+
+    private boolean toolRewardReady(String task, String award, int count) {
+        TimeUtil.sleep(0);
+        JSONObject root = MyUtils.newJSONObject(AntFarmRpcCall.listToolTaskDetails());
+        JSONArray rows = root.optJSONArray("list");
+        if (!farmFeatureOk(root) || rows == null || rows.length() > 200) return false;
+        int matches = 0;
+        boolean ready = false;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (row == null || !task.equals(row.opt("taskType"))) continue;
+            matches++;
+            Object raw = row.opt("bizInfo");
+            JSONObject info = raw instanceof JSONObject ? (JSONObject) raw : raw instanceof String ? MyUtils.newJSONObject((String) raw) : null;
+            ready = TaskStatus.FINISHED.name().equals(row.opt("taskStatus")) && info != null
+                    && award.equals(info.opt("awardType")) && npcTaskNumber(info, "awardCount") == count;
+        }
+        return matches == 1 && ready;
+    }
+
+    private void receiveToolRewardWithSpace(String award, ToolType type, int count, String task) throws JSONException {
+        if (count <= 0 || task == null || task.isEmpty()) return;
+        String claimKey = "farm::toolRewardAttempt::" + task, releaseKey = "farm::toolReleaseAttempt::" + type + ":" + task;
+        if (Status.hasFlagToday(claimKey) || !toolRewardReady(task, award, count)) return;
+        JSONObject before = rewardToolStock(type);
+        if (before == null) return;
+        long stock = npcTaskNumber(before, "toolCount"), limit = npcTaskNumber(before, "toolHoldLimit");
+        if (limit - stock < count) {
+            if (stock <= 0 || limit - stock + 1 < count || Status.hasFlagToday(releaseKey)) return;
+            boolean allowed = type == ToolType.NEWEGGTOOL && useNewEggTool.getValue()
+                    || type == ToolType.ACCELERATETOOL && useAccelerateTool.getValue() && Status.canUseAccelerateToolToday()
+                    || type == ToolType.FENCETOOL && useFenceTool.getValue()
+                    || type == ToolType.BIG_EATER_TOOL && useBigEaterTool.getValue()
+                    || type == ToolType.DOLLTOOL && useDollTool.getValue()
+                    || extraRewardToolAllowed(type);
+            if (!allowed || ownerAnimal == null || !AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)) return;
+            TimeUtil.sleep(0);
+            Status.flagToday(releaseKey);
+            if (type == ToolType.ACCELERATETOOL) useAccelerateTool(true);
+            else if (type == ToolType.FENCETOOL) useFenceTool();
+            else if (type == ToolType.BIG_EATER_TOOL) { if (!useFarmTool(ownerFarmId, type)) return; }
+            else if (type == ToolType.DOLLTOOL) supplementDolls(1);
+            else if (extraRewardToolAllowed(type)) { if (!useExtraRewardTool(type)) return; }
+            else useFarmTool(ownerFarmId, type);
+            JSONObject after = rewardToolStock(type);
+            if (after == null || npcTaskNumber(after, "toolHoldLimit") != limit || npcTaskNumber(after, "toolCount") != stock - 1
+                    || limit - npcTaskNumber(after, "toolCount") < count) {
+                Log.record("道具奖励腾位未确认，本日不重复尝试#" + task);
+                return;
+            }
+        }
+        TimeUtil.sleep(0);
+        if (!toolRewardReady(task, award, count)) return;
+        Status.flagToday(claimKey);
+        JSONObject accepted = MyUtils.newJSONObject(AntFarmRpcCall.receiveToolTaskReward(award, count, task));
+        TimeUtil.sleep(0);
+        JSONObject after = MyUtils.newJSONObject(AntFarmRpcCall.listToolTaskDetails());
+        JSONArray rows = after.optJSONArray("list");
+        if (!farmFeatureOk(accepted) || !farmFeatureOk(after) || rows == null) return;
+        int matches = 0;
+        boolean received = false;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (row != null && task.equals(row.opt("taskType"))) {
+                matches++;
+                received = TaskStatus.RECEIVED.name().equals(row.opt("taskStatus"));
+            }
+        }
+        if (matches == 1 && received) Log.farm("道具奖励🎖️领取回查成功#" + type.nickName() + " " + count + "张");
+        else Log.record("道具奖励领取未确认，本日不重复尝试#" + task);
     }
 
     private void receiveToolTaskReward() {
@@ -1062,12 +1475,8 @@ public class AntFarm extends ModelTask {
                 }
                 // 未知奖励类型只跳过“满了”判断，照样直接领：valueOf 抛异常会 abort 整个循环，
                 // 后面所有待领道具都领不了（对照 listFarmTask 对未知 taskStatus 的逐项跳过）
-                ToolType toolType = null;
-                try {
-                    toolType = ToolType.valueOf(awardType);
-                } catch (IllegalArgumentException e) {
-                    Log.record("领取道具🎖️未知类型[" + awardType + "]#直接领取");
-                }
+                ToolType toolType = rewardToolType(awardType);
+                if (toolType == null) Log.record("领取道具🎖️未知类型[" + awardType + "]#直接领取");
                 boolean isFull = false;
                 if (toolType != null && farmTools != null) {
                     for (FarmTool farmTool : farmTools) {
@@ -1079,6 +1488,18 @@ public class AntFarm extends ModelTask {
                         }
                     }
                 }
+                long parsedCount = npcTaskNumber(bizInfo, "awardCount");
+                String taskType = joItem.optString("taskType", "");
+                String taskTitle = bizInfo.optString("taskTitle", "");
+                if (parsedCount <= 0 || parsedCount > Integer.MAX_VALUE || !(joItem.opt("taskType") instanceof String) || taskType.isEmpty()) {
+                    Log.record("领取道具⏭️跳过[" + taskTitle + "]#数量或任务类型缺失[" + parsedCount + "/" + taskType + "]");
+                    continue;
+                }
+                int awardCount = (int) parsedCount;
+                if (useFullRewardTool.getValue()) {
+                    if (toolType != null) receiveToolRewardWithSpace(awardType, toolType, awardCount, taskType);
+                    continue;
+                }
                 if (isFull) {
                     if (ToolType.NEWEGGTOOL.equals(toolType)) {
                         useFarmTool(ownerFarmId, ToolType.NEWEGGTOOL);
@@ -1086,17 +1507,6 @@ public class AntFarm extends ModelTask {
                         Log.record("领取道具[" + toolType.nickName() + "]#已满，暂不领取");
                         continue;
                     }
-                }
-                if (!bizInfo.has("awardCount")) {
-                    continue;
-                }
-                int awardCount = bizInfo.optInt("awardCount", 0);
-                String taskType = joItem.optString("taskType", "");
-                String taskTitle = bizInfo.optString("taskTitle", "");
-                if (awardCount <= 0 || taskType.isEmpty()) {
-                    // 数量/任务类型缺失：这种领取请求发出去也必失败，直接跳过
-                    Log.record("领取道具⏭️跳过[" + taskTitle + "]#数量或任务类型缺失[" + awardCount + "/" + taskType + "]");
-                    continue;
                 }
                 jo = MyUtils.newJSONObject(AntFarmRpcCall.receiveToolTaskReward(awardType, awardCount, taskType));
                 if (MessageUtil.checkMemo(TAG, jo)) {
@@ -1107,6 +1517,7 @@ public class AntFarm extends ModelTask {
                 }
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "receiveToolTaskReward err:", t);
         }
     }
@@ -1120,7 +1531,8 @@ public class AntFarm extends ModelTask {
             double harvest = jo.optDouble("harvestBenevolenceScore", 0d);
             harvestBenevolenceScore = jo.optDouble("finalBenevolenceScore", harvestBenevolenceScore);
             Log.farm("收取鸡蛋🥚[" + harvest + "颗]#剩余" + harvestBenevolenceScore + "颗");
-        } catch (Throwable t) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "harvestProduce err:", t);
         }
     }
@@ -1322,7 +1734,8 @@ public class AntFarm extends ModelTask {
                 receiveCompetitionAward(jo);
                 receiveCompetitionTaskAwards();
             }
-        } catch (Throwable t) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "competition err:", t);
             return true;
         }
@@ -1441,6 +1854,18 @@ public class AntFarm extends ModelTask {
             if (amount <= 0) {
                 return false;
             }
+            if (rankingDonation.getValue() && rankingFoodRefill.getValue() && !rankingFoodRefillBusy && harvestBenevolenceScore < amount) {
+                JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.enterDonationCompetitionRank());
+                RankingSnapshot rank = MessageUtil.checkMemo(TAG, response) ? rankingSnapshot(response, ownerUserId, true) : null;
+                if (rank != null && rankingOwner(rank.owner) && rankingWindow(rank, System.currentTimeMillis())) {
+                    int target = Math.min(amount, rankingQuota(rank));
+                    if (target > harvestBenevolenceScore) {
+                        rankingFoodRefillBusy = true;
+                        try { useDynamicSpecialFood(target, rank); }
+                        finally { rankingFoodRefillBusy = false; }
+                    }
+                }
+            }
             int have = (int) harvestBenevolenceScore;
             if (have <= 0) {
                 Log.record("爱心鸡结号❤️当前无蛋可捐");
@@ -1463,8 +1888,9 @@ public class AntFarm extends ModelTask {
             }
             int n = Math.min(amount, have);
             Log.farm("爱心鸡结号❤️自动捐蛋" + n + "枚到项目[" + projectName + "]");
-            return donationCompetition(projectId, projectName, n);
-        } catch (Throwable t) {
+            return donationCompetition(projectId, projectName, n, "auto");
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "donateToCompetition err:", t);
         }
         return false;
@@ -1513,46 +1939,66 @@ public class AntFarm extends ModelTask {
                 return;
             }
             JSONArray list = home.optJSONArray("userDonationRankList");
-            if (list == null || list.length() == 0) {
+            if (list == null || list.length() == 0 || list.length() > 1000) {
                 Log.record("爱心鸡结号❤️偷榜：排行榜为空");
                 return;
             }
             String myId = UserIdMap.getCurrentUid();
-            int myDonation = 0, myRank = 0, rank1Donation = 0;
-            boolean hasLeader = false;
+            int targetRank = competitionTargetRank.getValue();
+            if (targetRank < 1 || targetRank > 100) return;
+            int myDonation = 0, myRank = 0, targetDonation = 0;
+            boolean hasTarget = false;
+            Set<Integer> positions = new HashSet<>();
+            Set<String> users = new HashSet<>();
             for (int i = 0; i < list.length(); i++) {
                 JSONObject u = list.optJSONObject(i);
                 if (u == null) return;
-                int rank = u.optInt("rankOrder", -1);
-                int dn = u.optInt("donationNum", -1);
-                if (rank <= 0 || dn < 0 || u.optString("userId").isEmpty()) return;
-                if (rank == 1) {
-                    rank1Donation = dn;
-                    hasLeader = true;
+                int rank = rankingInt(u, "rankOrder"), dn = rankingInt(u, "donationNum");
+                if (rank <= 0 || dn < 0 || !(u.opt("userId") instanceof String) || u.optString("userId").isEmpty()
+                        || !positions.add(rank) || !users.add(u.optString("userId"))) return;
+                if (rank == targetRank) {
+                    targetDonation = dn;
+                    hasTarget = true;
                 }
                 if (myId.equals(u.optString("userId"))) {
                     myDonation = dn;
                     myRank = rank;
                 }
             }
-            if (!hasLeader) return;
-            if (myRank == 1) {
-                Log.record("爱心鸡结号❤️偷榜：已第1名(捐" + myDonation + ")，无需操作");
+            if (myRank <= 0) return;
+            if (myRank <= targetRank) {
+                Log.record("爱心鸡结号❤️偷榜：已达到目标第" + targetRank + "名(捐" + myDonation + ")，无需操作");
                 return;
             }
-            int need = rank1Donation - myDonation + 1;
+            if (!hasTarget) return;
+            long missing = (long) targetDonation - myDonation + 1;
+            if (missing > Integer.MAX_VALUE) return;
+            int need = (int) missing;
             if (need <= 0) {
                 need = 1;
+            }
+            if (rankingDonation.getValue() && rankingFoodRefill.getValue() && !rankingFoodRefillBusy
+                    && harvestBenevolenceScore < need && (competitionStealLimit.getValue() <= 0 || need <= competitionStealLimit.getValue())) {
+                RankingSnapshot rank = rankingSnapshot(jo, ownerUserId, true);
+                if (rank != null && rankingOwner(rank.owner) && rankingWindow(rank, System.currentTimeMillis()) && rankingQuota(rank) >= need) {
+                    rankingFoodRefillBusy = true;
+                    try {
+                        useDynamicSpecialFood(need, rank);
+                        // Re-read the leading row after resource RPCs; one refill pass cannot recurse into another.
+                        stealRankS2();
+                    } finally { rankingFoodRefillBusy = false; }
+                    return;
+                }
             }
             int have = (int) harvestBenevolenceScore;
             if (have <= 0) {
                 Log.record("爱心鸡结号❤️偷榜：当前无蛋可捐");
                 return;
             }
-            // 蛋不够就不捐：捐了也超不过第1名
+            // 蛋不够就不捐：捐了也超不过目标第" + targetRank + "名
             if (have < need) {
-                Log.record("爱心鸡结号❤️偷榜⏭️跳过：手上的蛋不够超过第1名(有" + have + "需" + need
-                        + "，当前第" + myRank + "名捐" + myDonation + "，第1名捐" + rank1Donation + ")");
+                Log.record("爱心鸡结号❤️偷榜⏭️跳过：手上的蛋不够超过目标第" + targetRank + "名(有" + have + "需" + need
+                        + "，当前第" + myRank + "名捐" + myDonation + "，目标第" + targetRank + "名捐" + targetDonation + ")");
                 return;
             }
             int n = need;
@@ -1560,7 +2006,7 @@ public class AntFarm extends ModelTask {
             int stealLimit = competitionStealLimit.getValue();
             if (stealLimit > 0 && n > stealLimit) {
                 Log.record("爱心鸡结号❤️偷榜⏭️跳过：需捐" + n + "超过上限" + stealLimit
-                        + "(当前第" + myRank + "名捐" + myDonation + "，第1名捐" + rank1Donation + ")");
+                        + "(当前第" + myRank + "名捐" + myDonation + "，目标第" + targetRank + "名捐" + targetDonation + ")");
                 return;
             }
             // 定向捐到 S2 项目
@@ -1579,9 +2025,10 @@ public class AntFarm extends ModelTask {
                 Log.record("爱心鸡结号❤️偷榜：未获取到捐蛋项目，跳过（无法定向到 S2）");
                 return;
             }
-            Log.i("爱心鸡结号❤️偷榜：当前第" + myRank + "名捐" + myDonation + "，第1名捐" + rank1Donation + "，尝试再捐" + n);
-            donationCompetition(projectId, projectName, n);
-        } catch (Throwable t) {
+            Log.i("爱心鸡结号❤️偷榜：当前第" + myRank + "名捐" + myDonation + "，目标第" + targetRank + "名捐" + targetDonation + "，尝试再捐" + n);
+            donationCompetition(projectId, projectName, n, "steal");
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "stealRankS2 err:", t);
         }
     }
@@ -1589,15 +2036,23 @@ public class AntFarm extends ModelTask {
     /**
      * S2 定向捐蛋：使用 projectId（抓包确认字段），成功后刷新爱心蛋余额。
      */
-    private Boolean donationCompetition(String projectId, String projectName, int donationAmount) {
-        if (harvestBenevolenceScore < donationAmount) {
+    private Boolean donationCompetition(String projectId, String projectName, int donationAmount, String purpose) {
+        if (donationAmount <= 0 || harvestBenevolenceScore < donationAmount) {
             return false;
         }
         try {
+            RankingSnapshot before = null;
+            if (rankingDonation.getValue()) {
+                JSONObject rank = MyUtils.newJSONObject(AntFarmRpcCall.enterDonationCompetitionRank());
+                before = MessageUtil.checkMemo(TAG, rank) ? rankingSnapshot(rank, ownerUserId, true) : null;
+                if (before == null || !isCompetitionRoundActive() || !reserveRankingDonation(before, donationAmount, purpose)) return false;
+            }
+            if (before != null && (!rankingOwner(before.owner) || !rankingWindow(before, System.currentTimeMillis()))) return false;
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.donationCompetition(projectId, donationAmount));
             if (!MessageUtil.checkMemo(TAG, jo)) {
                 return false;
             }
+            if (before != null && !confirmRankingDonation(before, donationAmount)) return false;
             // 只用响应刷新余额；缺字段时保留原值，不做本地估算（估算会与服务端漂移叠加）
             try {
                 JSONObject d = jo.optJSONObject("donation");
@@ -1611,10 +2066,332 @@ public class AntFarm extends ModelTask {
             }
             Log.farm("爱心鸡结号❤️[捐爱心蛋:" + projectName + "]捐赠" + donationAmount + "颗爱心蛋");
             return true;
-        } catch (Throwable t) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "donationCompetition err:", t);
         }
         return false;
+    }
+
+    private static final String RANKING_BUDGET_KEY = "farmRankingBudget";
+
+    private static final class RankingSnapshot {
+        final String owner, activity, round;
+        final boolean weekly;
+        final JSONArray rows;
+        final int donated, rank, stars;
+        final long start, end;
+        RankingSnapshot(String owner, String activity, String round, boolean weekly, JSONArray rows,
+                        int donated, int rank, int stars, long start, long end) {
+            this.owner = owner; this.activity = activity; this.round = round; this.weekly = weekly;
+            this.rows = rows; this.donated = donated; this.rank = rank; this.stars = stars;
+            this.start = start; this.end = end;
+        }
+    }
+
+    private static int rankingInt(JSONObject object, String field) {
+        Object value = object.opt(field);
+        if (!(value instanceof Number)) return -1;
+        double number = ((Number) value).doubleValue();
+        return Double.isFinite(number) && number >= 0 && number <= Integer.MAX_VALUE && number == Math.rint(number) ? (int) number : -1;
+    }
+
+    private static long rankingTime(JSONObject object, String field) {
+        Object value = object == null ? null : object.opt(field);
+        if (!(value instanceof Number)) return -1;
+        double number = ((Number) value).doubleValue();
+        return Double.isFinite(number) && number > 0 && number < Long.MAX_VALUE && number == Math.rint(number) ? ((Number) value).longValue() : -1;
+    }
+
+    private static boolean weeklyRankingResponse(JSONObject response) {
+        JSONObject conf = response.optJSONObject("donationCompetitionActivityConf");
+        JSONObject level = response.optJSONObject("userDonationLevelInfo");
+        return (conf != null && conf.has("projectId")) || (level != null && level.has("userContributionNum"))
+                || response.has("competitionTaskInfo") || response.has("donationCompetitionLevelConfigs");
+    }
+
+    private static RankingSnapshot rankingSnapshot(JSONObject response, String owner, boolean weekly) {
+        if (owner == null || owner.isEmpty() || weeklyRankingResponse(response) != weekly) return null;
+        JSONObject home = response.optJSONObject("donationRankHomeInfo");
+        JSONArray rows = home == null ? null : home.optJSONArray("userDonationRankList");
+        if (rows == null || rows.length() == 0 || rows.length() > 1000) return null;
+        JSONObject conf = response.optJSONObject("donationCompetitionActivityConf");
+        if (weekly ? !(response.opt("rankRoundId") instanceof String) : conf == null || !(conf.opt("activityId") instanceof String)) return null;
+        String activity = weekly ? "S2" : conf.optString("activityId");
+        String round = weekly ? response.optString("rankRoundId") : rankingDay(System.currentTimeMillis());
+        long start = weekly ? 0 : rankingTime(conf, "startTime"), end = weekly ? Long.MAX_VALUE : rankingTime(conf, "endTime");
+        if (activity.isEmpty() || activity.length() > 128 || round.isEmpty() || round.length() > 128 || (!weekly && (start <= 0 || end <= start))) return null;
+        Set<String> users = new HashSet<>(); Set<Integer> ranks = new HashSet<>();
+        int donated = -1, rank = -1, stars = -1;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (row == null || !(row.opt("userId") instanceof String)) return null;
+            String uid = row.optString("userId");
+            int position = rankingInt(row, "rankOrder"), amount = rankingInt(row, "donationNum");
+            int reward = weekly ? 0 : rankingInt(row, "rewardStarNum");
+            if (uid.isEmpty() || !users.add(uid) || position <= 0 || !ranks.add(position) || amount < 0 || reward < 0) return null;
+            if (owner.equals(uid)) { donated = amount; rank = position; stars = reward; }
+        }
+        if (donated < 0 || !ranks.contains(1)) return null;
+        return new RankingSnapshot(owner, activity, round, weekly, rows, donated, rank, stars, start, end);
+    }
+
+    private static String rankingDay(long now) {
+        return java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.of("Asia/Shanghai")).toLocalDate().toString();
+    }
+
+    private static String rankingWeek(long now) {
+        return java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.of("Asia/Shanghai")).toLocalDate()
+                .with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)).toString();
+    }
+
+    private static int rankingRounds(long from, long until) {
+        if (from <= 0 || until <= from) return 0;
+        java.time.ZonedDateTime first = java.time.Instant.ofEpochMilli(from).atZone(java.time.ZoneId.of("Asia/Shanghai"));
+        java.time.ZonedDateTime last = java.time.Instant.ofEpochMilli(until).atZone(java.time.ZoneId.of("Asia/Shanghai"));
+        java.time.LocalDate start = first.toLocalDate().plusDays(first.getHour() >= 20 ? 1 : 0);
+        java.time.LocalDate end = last.toLocalDate().minusDays(last.getHour() < 20 ? 1 : 0);
+        long rounds = java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1;
+        return rounds < 0 || rounds > 10000 ? 0 : (int) rounds;
+    }
+
+    private static int stableRankingStars(JSONObject award, RankingSnapshot rank, long now) {
+        JSONObject conf = award.optJSONObject("donationCompetitionActivityConf"), level = award.optJSONObject("userDonationLevelInfo");
+        JSONArray awards = award.optJSONArray("levelAwardInfoList");
+        if (conf == null || level == null || awards == null || awards.length() == 0 || awards.length() > 1000
+                || weeklyRankingResponse(award) || !rank.activity.equals(conf.optString("activityId"))
+                || rankingTime(conf, "endTime") != rank.end) return -1;
+        int current = rankingInt(level, "levelId"), light = rankingInt(level, "levelLightStarNum");
+        if (current < 0 || light < 0) return -1;
+        long total = 0, left = 0; boolean found = false;
+        for (int i = 0; i < awards.length(); i++) {
+            JSONObject item = awards.optJSONObject(i);
+            if (item == null) return -1;
+            int id = rankingInt(item, "levelId"), up = rankingInt(item, "levelStarUpNum");
+            if (id < 0 || up < 0) return -1;
+            if (id == current) found = true;
+            if (up >= 10000) continue;
+            total += up; if (id >= current) left += up;
+        }
+        if (!found || left < light) return -1;
+        left -= light; if (left == 0) return 0;
+        int totalRounds = rankingRounds(rank.start, rank.end);
+        if (totalRounds <= 0) return -1;
+        int buffer = (double) total / totalRounds <= 2 ? 7 : 3;
+        int remaining = rankingRounds(now, rank.end - buffer * 86400000L), max = 0;
+        for (int i = 0; i < rank.rows.length(); i++) max = Math.max(max, rankingInt(rank.rows.optJSONObject(i), "rewardStarNum"));
+        if (max <= 0) return -1;
+        return remaining <= 0 ? max : (int) Math.min(max, (left + remaining - 1) / remaining);
+    }
+
+    private static int rankingDonationAmount(RankingSnapshot rank, int requiredStars, int quota) {
+        if (requiredStars < 0 || quota <= 0 || rank.stars >= requiredStars || rank.rank == 1) return 0;
+        int amount = 0;
+        for (int i = 0; i < rank.rows.length(); i++) {
+            JSONObject row = rank.rows.optJSONObject(i);
+            int stars = rankingInt(row, "rewardStarNum");
+            long need = (long) rankingInt(row, "donationNum") - rank.donated + 1;
+            if (rankingInt(row, "rankOrder") >= rank.rank || stars < requiredStars || need <= 0 || need > quota) continue;
+            if (amount == 0 || need < amount) amount = (int) need;
+        }
+        return amount;
+    }
+
+    private static int rankingAggressiveStars(RankingSnapshot rank, int quota) {
+        int stars = rank.stars;
+        for (int i = 0; i < rank.rows.length(); i++) {
+            JSONObject row = rank.rows.optJSONObject(i);
+            long need = (long) rankingInt(row, "donationNum") - rank.donated + 1;
+            if (rankingInt(row, "rankOrder") < rank.rank && need > 0 && need <= quota) stars = Math.max(stars, rankingInt(row, "rewardStarNum"));
+        }
+        return stars;
+    }
+
+    private boolean rankingOwner(String owner) {
+        if (Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
+        return rankingDonation.getValue() && owner != null && owner.equals(ownerUserId) && owner.equals(UserIdMap.getCurrentUid()) && check();
+    }
+
+    private static boolean rankingWindow(RankingSnapshot rank, long now) {
+        java.time.ZonedDateTime local = java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.of("Asia/Shanghai"));
+        return rank.weekly ? !(local.getDayOfWeek() == java.time.DayOfWeek.SUNDAY && local.getHour() >= 20)
+                : now >= rank.start && now < rank.end && local.getHour() < 20;
+    }
+
+    private JSONObject rankingBudget(RankingSnapshot rank, long now) throws JSONException {
+        String raw = RuntimeInfo.getInstance().getString(RANKING_BUDGET_KEY);
+        JSONObject state = MyUtils.newJSONObject(raw);
+        if (!raw.isEmpty() && (!(state.opt("day") instanceof String) || !(state.opt("week") instanceof String)
+                || rankingInt(state, "daily") < 0 || rankingInt(state, "weekly") < 0 || state.optJSONObject("attempts") == null)) return null;
+        String day = rankingDay(now), week = rankingWeek(now);
+        if (!week.equals(state.optString("week"))) {
+            state.put("weekly", 0); state.put("attempts", MyUtils.newJSONObject());
+        }
+        if (!day.equals(state.optString("day"))) state.put("daily", 0);
+        state.put("day", day); state.put("week", week);
+        if (state.has("pending")) {
+            JSONObject pending = state.optJSONObject("pending");
+            if (pending == null || !rank.owner.equals(pending.opt("owner")) || !(pending.opt("weekly") instanceof Boolean)
+                    || !(pending.opt("activity") instanceof String) || !(pending.opt("round") instanceof String)
+                    || rankingInt(pending, "before") < 0 || rankingInt(pending, "amount") <= 0) return null;
+            if (rank.weekly == pending.optBoolean("weekly") && rank.activity.equals(pending.optString("activity"))
+                    && rank.round.equals(pending.optString("round"))) {
+                if ((long) rank.donated < (long) rankingInt(pending, "before") + rankingInt(pending, "amount")) return null;
+            } else if (rank.weekly != pending.optBoolean("weekly")) return null;
+            state.remove("pending");
+            if (!rankingOwner(rank.owner) || !RuntimeInfo.getInstance().putVerified(RANKING_BUDGET_KEY, state.toString())) return null;
+        }
+        if (rank.weekly) state.put("weekly", Math.max(state.optInt("weekly"), rank.donated));
+        else state.put("daily", Math.max(state.optInt("daily"), rank.donated));
+        state.put("weekly", Math.max(state.optInt("weekly"), state.optInt("daily")));
+        return state;
+    }
+
+    private int rankingQuota(RankingSnapshot rank) throws JSONException {
+        JSONObject state = rankingBudget(rank, System.currentTimeMillis());
+        if (state == null) return 0;
+        return Math.max(0, Math.min(rankingDailyBudget.getValue() - state.optInt("daily"), rankingWeeklyBudget.getValue() - state.optInt("weekly")));
+    }
+
+    private synchronized boolean reserveRankingDonation(RankingSnapshot rank, int amount, String purpose) throws JSONException {
+        if (amount <= 0 || !rankingOwner(rank.owner) || !rankingWindow(rank, System.currentTimeMillis())) return false;
+        long now = System.currentTimeMillis();
+        JSONObject state = rankingBudget(rank, now);
+        if (state == null || amount > rankingDailyBudget.getValue() - state.optInt("daily")
+                || amount > rankingWeeklyBudget.getValue() - state.optInt("weekly")) return false;
+        JSONObject attempts = state.optJSONObject("attempts");
+        if (attempts == null || attempts.length() > 1000) return false;
+        String action = (rank.weekly ? "weekly" : "daily") + "|" + rank.activity + "|" + rank.round + "|" + purpose
+                + ("auto".equals(purpose) ? "" : "|" + rankingDay(now))
+                + (!rank.weekly && rankingWatch.getValue() ? "|" + rank.donated : "");
+        if (attempts.has(action)) return false;
+        attempts.put(action, amount);
+        state.put("daily", state.optInt("daily") + amount); state.put("weekly", state.optInt("weekly") + amount);
+        JSONObject pending = MyUtils.newJSONObject();
+        pending.put("owner", rank.owner); pending.put("weekly", rank.weekly); pending.put("activity", rank.activity);
+        pending.put("round", rank.round); pending.put("before", rank.donated); pending.put("amount", amount);
+        state.put("pending", pending);
+        // Reserve before RPC: uncertain failures spend this allowance and never repeat the same action.
+        return rankingOwner(rank.owner) && RuntimeInfo.getInstance().putVerified(RANKING_BUDGET_KEY, state.toString());
+    }
+
+    private boolean confirmRankingDonation(RankingSnapshot before, int amount) {
+        if (!rankingOwner(before.owner)) return false;
+        JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.enterDonationCompetitionRank());
+        RankingSnapshot after = MessageUtil.checkMemo(TAG, response) ? rankingSnapshot(response, before.owner, before.weekly) : null;
+        boolean confirmed = after != null && before.activity.equals(after.activity) && before.round.equals(after.round)
+                && (long) after.donated >= (long) before.donated + amount && rankingOwner(before.owner);
+        if (confirmed) {
+            try { confirmed = rankingBudget(after, System.currentTimeMillis()) != null; }
+            catch (JSONException e) { confirmed = false; }
+        }
+        if (!confirmed) Log.record("捐蛋排位🥚捐赠未获同账号同轮次回查确认，保留预算与尝试记录");
+        return confirmed;
+    }
+
+    private void scheduleRankingWatch(RankingSnapshot rank) {
+        try {
+            long now = System.currentTimeMillis();
+            if (!rankingWatch.getValue() || !rankingOwner(rank.owner) || !rankingWindow(rank, now)) return;
+            java.time.ZonedDateTime local = java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.of("Asia/Shanghai"));
+            String clock = rankingDonationTime.getValue();
+            if (clock == null || !clock.matches("(?:0[0-9]|1[0-9])[0-5][0-9]")) return;
+            long begin = local.toLocalDate().atTime(Integer.parseInt(clock.substring(0, 2)), Integer.parseInt(clock.substring(2)))
+                    .atZone(java.time.ZoneId.of("Asia/Shanghai")).toInstant().toEpochMilli();
+            long finalCheck = Math.min(rank.end, local.toLocalDate().atTime(20, 0).atZone(java.time.ZoneId.of("Asia/Shanghai")).toInstant().toEpochMilli()) - 2000;
+            if (now < begin || now >= finalCheck || (rankingWatchChildId != null && hasChildTask(rankingWatchChildId))) return;
+            boolean pending = MyUtils.newJSONObject(RuntimeInfo.getInstance().getString(RANKING_BUDGET_KEY)).optJSONObject("pending") != null;
+            if (!pending && rankingQuota(rank) <= 0) return;
+            long at = Math.min(finalCheck, now + Math.max(1, rankingWatchInterval.getValue()) * 1000L);
+            JSONObject plan = MyUtils.newJSONObject();
+            plan.put("owner", rank.owner); plan.put("activity", rank.activity); plan.put("day", rankingDay(now)); plan.put("at", at);
+            if (!RuntimeInfo.getInstance().putVerified("farmRankingPlan", plan.toString())) return;
+            String id = "farmRankingWatch_" + at;
+            long generation = io.github.aw1y2z.sesame.data.task.TaskLifecycle.generation();
+            rankingWatchChildId = id;
+            addChildTask(new ChildModelTask(id, "FARM_RANKING", () -> {
+                rankingWatchChildId = null;
+                try (io.github.aw1y2z.sesame.data.task.TaskLifecycle.Work work = io.github.aw1y2z.sesame.data.task.TaskLifecycle.enter(generation)) {
+                    if (work != null && rankingOwner(rank.owner)) dailyRankingDonation(rank.activity);
+                }
+            }, at));
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable e) { Log.err(TAG, "scheduleRankingWatch", e); }
+    }
+
+    private boolean dailyRankingDonation(String expectedActivity) {
+        RankingSnapshot observed = null;
+        try {
+            if (!rankingOwner(ownerUserId)) return true;
+            JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.enterDonationCompetitionRank());
+            if (!MessageUtil.checkMemo(TAG, response)) return true;
+            if (weeklyRankingResponse(response)) return false;
+            RankingSnapshot rank = rankingSnapshot(response, ownerUserId, false);
+            long now = System.currentTimeMillis();
+            if (rank == null || now < rank.start || now >= rank.end || (expectedActivity != null && !expectedActivity.equals(rank.activity))) return true;
+            observed = rank;
+            java.time.ZonedDateTime local = java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.of("Asia/Shanghai"));
+            if (local.getHour() >= 20 || rankingQuota(rank) <= 0) return true;
+            String clock = rankingDonationTime.getValue();
+            if (clock == null || !clock.matches("(?:0[0-9]|1[0-9])[0-5][0-9]")) return true;
+            long at = local.toLocalDate().atTime(Integer.parseInt(clock.substring(0, 2)), Integer.parseInt(clock.substring(2)))
+                    .atZone(java.time.ZoneId.of("Asia/Shanghai")).toInstant().toEpochMilli();
+            if (now < at) {
+                JSONObject plan = MyUtils.newJSONObject();
+                plan.put("owner", rank.owner); plan.put("activity", rank.activity); plan.put("day", rankingDay(now)); plan.put("at", at);
+                if (!RuntimeInfo.getInstance().putVerified("farmRankingPlan", plan.toString())) return true;
+                String id = "farmDailyRanking_" + rankingDay(now);
+                long generation = io.github.aw1y2z.sesame.data.task.TaskLifecycle.generation();
+                if (!hasChildTask(id)) addChildTask(new ChildModelTask(id, "FARM_RANKING", () -> {
+                    try (io.github.aw1y2z.sesame.data.task.TaskLifecycle.Work work = io.github.aw1y2z.sesame.data.task.TaskLifecycle.enter(generation)) {
+                        if (work != null && rankingOwner(rank.owner)) dailyRankingDonation(rank.activity);
+                    }
+                }, at));
+                return true;
+            }
+            int budgetQuota = rankingQuota(rank);
+            int quota = Math.min(budgetQuota, (int) Math.min(Integer.MAX_VALUE, harvestBenevolenceScore));
+            int required;
+            if (rankingStable.getValue()) {
+                JSONObject award = MyUtils.newJSONObject(AntFarmRpcCall.enterCompetitionAwardPage());
+                if (!MessageUtil.checkMemo(TAG, award)) return true;
+                required = stableRankingStars(award, rank, now);
+            } else required = rankingAggressiveStars(rank, rankingFoodRefill.getValue() ? budgetQuota : quota);
+            int target = rankingDonationAmount(rank, required, budgetQuota);
+            if (!rankingFoodRefillBusy && rankingFoodRefill.getValue() && target > harvestBenevolenceScore) {
+                rankingFoodRefillBusy = true;
+                try {
+                    useDynamicSpecialFood(target, rank);
+                    // The food loop may take several requests: refresh standings and rebuild the donation plan.
+                    return dailyRankingDonation(rank.activity);
+                } finally { rankingFoodRefillBusy = false; }
+            }
+            int amount = rankingDonationAmount(rank, required, quota);
+            if (amount == 0 && required > rank.stars) amount = rankingDonationAmount(rank, rankingAggressiveStars(rank, quota), quota);
+            if (amount <= 0) return true;
+            JSONObject activities = MyUtils.newJSONObject(AntFarmRpcCall.listActivityInfo());
+            if (!MessageUtil.checkMemo(TAG, activities)) return true;
+            JSONArray projects = activities.optJSONArray("activityInfos");
+            if (projects == null) return true;
+            for (int i = 0; i < projects.length(); i++) {
+                JSONObject project = projects.optJSONObject(i);
+                if (project == null || !(project.opt("activityId") instanceof String) || !project.optString("activityId").matches("[A-Za-z0-9_-]{1,128}")
+                        || "SOLDBY".equals(project.optString("projectType"))) continue;
+                int limit = rankingInt(project, "donationLimit"), donated = rankingInt(project, "donationTotal");
+                if (limit < 0 || donated < 0 || (long) limit - donated < amount) continue;
+                if (!reserveRankingDonation(rank, amount, "plan") || !rankingOwner(rank.owner) || !rankingWindow(rank, System.currentTimeMillis())) return true;
+                JSONObject result = MyUtils.newJSONObject(AntFarmRpcCall.donation(project.optString("activityId"), amount));
+                if (MessageUtil.checkMemo(TAG, result) && confirmRankingDonation(rank, amount)) {
+                    JSONObject balance = result.optJSONObject("donation");
+                    if (balance != null) harvestBenevolenceScore = balance.optDouble("harvestBenevolenceScore", harvestBenevolenceScore);
+                    Log.farm("每日排位🥚已回查确认捐赠" + amount + "枚，目标" + required + "星");
+                }
+                return true;
+            }
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable e) { Log.err(TAG, "dailyRankingDonation", e); }
+        finally { if (observed != null) scheduleRankingWatch(observed); }
+        return true;
     }
 
     private int getProjectDonationNum(String projectId) {
@@ -1662,6 +2439,7 @@ public class AntFarm extends ModelTask {
         try {
             do {
                 try {
+                    if (!manualFarmOwner(ownerUserId) || !recordFarmGame.getValue()) return;
                     JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.initFarmGame(gameType.name()));
                     if (!MessageUtil.checkMemo(TAG, jo)) {
                         return;
@@ -1673,6 +2451,7 @@ public class AntFarm extends ModelTask {
                     if (jo.optInt("remainingGameCount", 1) == 0) {
                         return;
                     }
+                    if (!manualFarmOwner(ownerUserId) || !recordFarmGame.getValue()) return;
                     jo = MyUtils.newJSONObject(AntFarmRpcCall.recordFarmGame(gameType.name()));
                     if (!MessageUtil.checkMemo(TAG, jo)) {
                         return;
@@ -1700,7 +2479,8 @@ public class AntFarm extends ModelTask {
                     TimeUtil.sleep(2000);
                 }
             } while (true);
-        } catch (Throwable t) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "recordFarmGame err:", t);
         }
     }
@@ -2172,10 +2952,16 @@ public class AntFarm extends ModelTask {
     }
 
     private void useAccelerateTool() {
+        useAccelerateTool(false);
+    }
+
+    private void useAccelerateTool(boolean releaseOneSlot) {
         if (!Status.canUseAccelerateToolToday()) {
             return;
         }
         syncAnimalStatus(ownerFarmId);
+        if (releaseOneSlot && (!AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)
+                || !AnimalFeedStatus.EATING.name().equals(ownerAnimal.animalFeedStatus))) return;
         if ((!useAccelerateToolOptions.getValue().contains("useAccelerateToolContinue") && AnimalBuff.ACCELERATING.name().equals(ownerAnimal.animalBuff)) || (useAccelerateToolOptions.getValue().contains("useAccelerateToolWhenMaxEmotion") && finalScore != 100)) {
             return;
         }
@@ -2183,21 +2969,22 @@ public class AntFarm extends ModelTask {
         double foodHaveEatten = 0d;
         long nowTime = System.currentTimeMillis() / 1000;
         for (Animal animal : animals) {
+            if (releaseOneSlot && (!Double.isFinite(animal.consumeSpeed) || animal.consumeSpeed < 0 || animal.startEatTime <= 0 || animal.startEatTime / 1000 > nowTime)) return;
             if (animal.masterFarmId.equals(ownerFarmId)) {
                 consumeSpeed = animal.consumeSpeed;
             }
             foodHaveEatten += animal.consumeSpeed * (nowTime - animal.startEatTime / 1000);
         }
+        if (!Double.isFinite(consumeSpeed) || consumeSpeed <= 0 || !Double.isFinite(foodHaveEatten) || !Double.isFinite(foodInTrough)) return;
         // consumeSpeed: g/s
         // AccelerateTool: -1h = -60m = -3600s
         while (foodInTrough - foodHaveEatten >= consumeSpeed * 3600 && useFarmTool(ownerFarmId, ToolType.ACCELERATETOOL)) {
             TimeUtil.sleep(1000);
             foodHaveEatten += consumeSpeed * 3600;
-            Status.useAccelerateToolToday();
             if (!Status.canUseAccelerateToolToday()) {
                 break;
             }
-            if (!useAccelerateToolOptions.getValue().contains("useAccelerateToolContinue")) {
+            if (releaseOneSlot || !useAccelerateToolOptions.getValue().contains("useAccelerateToolContinue")) {
                 break;
             }
         }
@@ -2251,6 +3038,10 @@ public class AntFarm extends ModelTask {
     }
 
     private void supplementDolls() {
+        supplementDolls(Integer.MAX_VALUE);
+    }
+
+    private void supplementDolls(int maxUses) {
         try {
             TimeUtil.sleep(0);
             JSONObject tool = findFeatureTool("DOLLTOOL");
@@ -2269,7 +3060,7 @@ public class AntFarm extends ModelTask {
             }
             if (dollSupplementOrder.getValue() == 1) Collections.reverse(missing);
             if (missing.isEmpty()) { Log.record("公仔补签：月度公仔已集齐，无须补签"); return; }
-            int count = tool.optInt("toolCount"), confirmed = 0;
+            int count = Math.min(tool.optInt("toolCount"), maxUses), confirmed = 0;
             for (String id : missing) {
                 TimeUtil.sleep(0);
                 if (confirmed >= count) break;
@@ -2352,6 +3143,11 @@ public class AntFarm extends ModelTask {
 
     private Boolean useFarmTool(String targetFarmId, ToolType toolType) {
         try {
+            TimeUtil.sleep(0);
+            if (toolType == ToolType.BIG_EATER_TOOL && useFullRewardTool.getValue()) {
+                return targetFarmId != null && targetFarmId.equals(ownerFarmId) && useBigEaterRewardTool();
+            }
+            if (toolType == ToolType.ACCELERATETOOL && !Status.canUseAccelerateToolToday()) return false;
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.listFarmTool());
             if (!MessageUtil.checkMemo(TAG, jo)) {
                 return false;
@@ -2372,6 +3168,7 @@ public class AntFarm extends ModelTask {
                 String toolId = jo.optString("toolId");
                 jo = MyUtils.newJSONObject(AntFarmRpcCall.useFarmTool(targetFarmId, toolId, toolType.name()));
                 if (MessageUtil.checkMemo(TAG, jo)) {
+                    if (toolType == ToolType.ACCELERATETOOL) Status.useAccelerateToolToday();
                     Log.farm("使用道具🎭[" + toolType.nickName() + "]#剩余" + (toolCount - 1) + "张");
                     return true;
                 } else if (Objects.equals("3D16", jo.optString("resultCode"))) {
@@ -2380,9 +3177,61 @@ public class AntFarm extends ModelTask {
                 break;
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "useFarmTool err:", t);
         }
         return false;
+    }
+
+    private JSONObject queryBigEaterState() throws JSONException {
+        TimeUtil.sleep(0);
+        JSONObject root = MyUtils.newJSONObject(AntFarmRpcCall.syncAnimalStatus(ownerFarmId));
+        JSONObject farm = root.optJSONObject("subFarmVO");
+        if (!farmFeatureOk(root) || farm == null || !(farm.opt("farmId") instanceof String)
+                || !ownerFarmId.equals(farm.optString("farmId")) || !(farm.opt("useBigEaterTool") instanceof Boolean)) return null;
+        JSONArray animals = farm.optJSONArray("animals");
+        if (animals == null || animals.length() > 50) return null;
+        int owners = 0;
+        for (int i = 0; i < animals.length(); i++) {
+            JSONObject animal = animals.optJSONObject(i);
+            if (animal == null || !(animal.opt("masterFarmId") instanceof String)) return null;
+            if (!ownerFarmId.equals(animal.optString("masterFarmId"))) continue;
+            owners++;
+            JSONObject state = animal.optJSONObject("animalStatusVO");
+            if (state == null || !AnimalInteractStatus.HOME.name().equals(state.opt("animalInteractStatus"))
+                    || !AnimalFeedStatus.EATING.name().equals(state.opt("animalFeedStatus"))) return null;
+        }
+        return owners == 1 ? farm : null;
+    }
+
+    /** 满仓策略启用时，普通用卡与腾位共用次数和未知结果保护。 */
+    private boolean useBigEaterRewardTool() {
+        TimeUtil.sleep(0);
+        if (!useFullRewardTool.getValue() || !useBigEaterTool.getValue() || ownerFarmId == null || ownerFarmId.isEmpty()
+                || ownerUserId == null || !ownerUserId.equals(UserIdMap.getCurrentUid())
+                || Status.getIntFlagToday("farm::bigEaterRewardAttempts") >= 2 || Status.hasFlagToday("farm::bigEaterRewardUnconfirmed")) return false;
+        try {
+            JSONObject state = queryBigEaterState();
+            if (state == null || !Boolean.FALSE.equals(state.opt("useBigEaterTool"))) return false;
+            JSONObject before = rewardToolStock(ToolType.BIG_EATER_TOOL);
+            if (before == null || npcTaskNumber(before, "toolCount") <= 0) return false;
+            state = queryBigEaterState();
+            if (state == null || !Boolean.FALSE.equals(state.opt("useBigEaterTool")) || !useFullRewardTool.getValue()
+                    || !useBigEaterTool.getValue() || !ownerUserId.equals(UserIdMap.getCurrentUid())) return false;
+            TimeUtil.sleep(0);
+            Status.setIntFlagToday("farm::bigEaterRewardAttempts", Status.getIntFlagToday("farm::bigEaterRewardAttempts") + 1);
+            Status.flagToday("farm::bigEaterRewardUnconfirmed");
+            JSONObject accepted = MyUtils.newJSONObject(AntFarmRpcCall.useFarmTool(ownerFarmId, before.optString("toolId"), ToolType.BIG_EATER_TOOL.name()));
+            JSONObject after = rewardToolStock(ToolType.BIG_EATER_TOOL);
+            state = queryBigEaterState();
+            if (!farmFeatureOk(accepted) || after == null || state == null || !Boolean.TRUE.equals(state.opt("useBigEaterTool"))
+                    || npcTaskNumber(after, "toolHoldLimit") != npcTaskNumber(before, "toolHoldLimit")
+                    || npcTaskNumber(after, "toolCount") != npcTaskNumber(before, "toolCount") - 1) return false;
+            Status.clearFlag("farm::bigEaterRewardUnconfirmed");
+            Log.farm("使用加饭卡🎭#库存扣减与生效确认");
+            return true;
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable e) { Log.err(TAG, "useBigEaterRewardTool", e); return false; }
     }
 
     private void feedFriend() {
@@ -2808,6 +3657,7 @@ public class AntFarm extends ModelTask {
     }
 
     private void useFarmFood(JSONArray cuisineList) {
+        if (dynamicSpecialFood.getValue()) { useDynamicSpecialFood(0, null); return; }
         try {
             List<JSONObject> list = getSortedCuisineList(cuisineList);
             for (int i = 0; i < list.size(); i++) {
@@ -2821,6 +3671,9 @@ public class AntFarm extends ModelTask {
     }
 
     private Boolean useFarmFood(JSONObject cuisine) {
+        if (Status.hasFlagToday(DYNAMIC_FOOD_PENDING)) return false;
+        JSONObject foodLedger = MyUtils.newJSONObject(RuntimeInfo.getInstance().getString(DYNAMIC_FOOD_KEY));
+        if (rankingDay(System.currentTimeMillis()).equals(foodLedger.optString("day")) && foodLedger.optBoolean("pending")) return false;
         if (!Status.canUseSpecialFoodToday()) {
             return false;
         }
@@ -2830,6 +3683,7 @@ public class AntFarm extends ModelTask {
             String name = cuisine.optString("name");
             int count = cuisine.optInt("count");
             for (int j = 0; j < count; j++) {
+                if (!manualFarmOwner(ownerUserId) || !useSpecialFood.getValue()) return false;
                 JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.useFarmFood(cookbookId, cuisineId));
                 if (!MessageUtil.checkMemo(TAG, jo)) {
                     return false;
@@ -2843,10 +3697,189 @@ public class AntFarm extends ModelTask {
                 }
             }
             return true;
-        } catch (Throwable t) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "useFarmFood err:", t);
         }
         return false;
+    }
+
+    private static final String DYNAMIC_FOOD_KEY = "farmDynamicFood";
+    private static final String DYNAMIC_FOOD_PENDING = "farm::dynamicFoodUnconfirmed";
+    private static final int SPECIAL_FOOD_BATCH_LIMIT = 10;
+
+    private static final class DynamicFoodState {
+        final JSONArray cuisines;
+        final double harvested, progress;
+        DynamicFoodState(JSONArray cuisines, double harvested, double progress) {
+            this.cuisines = cuisines; this.harvested = harvested; this.progress = progress;
+        }
+    }
+
+    private static double foodNumber(JSONObject object, String key) {
+        Object value = object == null ? null : object.opt(key);
+        if (!(value instanceof Number)) return Double.NaN;
+        double number = ((Number) value).doubleValue();
+        return Double.isFinite(number) && number >= 0 ? number : Double.NaN;
+    }
+
+    private boolean dynamicFoodOwner(String uid) {
+        if (Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
+        return uid != null && uid.equals(UserIdMap.getCurrentUid()) && uid.equals(ownerUserId)
+                && isEnable() && check() && useSpecialFood.getValue() && dynamicSpecialFood.getValue()
+                && dynamicFoodDailyLimit.getValue() > 0;
+    }
+
+    private DynamicFoodState queryDynamicFoodState(String uid) throws JSONException {
+        if (!dynamicFoodOwner(uid)) return null;
+        JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.enterFarm("", uid));
+        JSONObject farm = response.optJSONObject("farmVO");
+        JSONObject master = farm == null ? null : farm.optJSONObject("masterUserInfoVO");
+        JSONObject sub = farm == null ? null : farm.optJSONObject("subFarmVO");
+        if (!MessageUtil.checkMemo(TAG, response) || !dynamicFoodOwner(uid) || master == null
+                || !uid.equals(master.opt("userId")) || sub == null || ownerFarmId == null || !ownerFarmId.equals(sub.opt("farmId"))) return null;
+        JSONArray animalsNow = sub.optJSONArray("animals");
+        if (animalsNow == null || animalsNow.length() > 1000) return null;
+        JSONObject own = null;
+        for (int i = 0; i < animalsNow.length(); i++) {
+            JSONObject animal = animalsNow.optJSONObject(i);
+            if (animal != null && ownerFarmId.equals(animal.opt("masterFarmId"))) {
+                if (own != null) return null;
+                own = animal.optJSONObject("animalStatusVO");
+            }
+        }
+        if (own == null || !AnimalInteractStatus.HOME.name().equals(own.opt("animalInteractStatus"))
+                || !(AnimalFeedStatus.EATING.name().equals(own.opt("animalFeedStatus"))
+                || AnimalFeedStatus.HUNGRY.name().equals(own.opt("animalFeedStatus")))) return null;
+        double harvested = foodNumber(farm, "harvestBenevolenceScore");
+        double progress = foodNumber(sub.optJSONObject("farmProduce"), "benevolenceScore");
+        JSONArray cuisines = response.optJSONArray("cuisineList");
+        if (!Double.isFinite(harvested) || !Double.isFinite(progress) || cuisines == null || cuisines.length() > 1000) return null;
+        JSONArray normalized = new JSONArray();
+        Set<String> keys = new HashSet<>();
+        for (int i = 0; i < cuisines.length(); i++) {
+            JSONObject cuisine = cuisines.optJSONObject(i);
+            if (cuisine == null || !(cuisine.opt("cookbookId") instanceof String) || !(cuisine.opt("cuisineId") instanceof String)) return null;
+            String book = cuisine.optString("cookbookId"), id = cuisine.optString("cuisineId");
+            if (book.isEmpty() || id.isEmpty() || book.length() > 128 || id.length() > 128
+                    || book.contains("|") || id.contains("|") || !keys.add(book + "|" + id)) return null;
+            int count = rankingInt(cuisine, cuisine.has("count") ? "count" : "stock");
+            if (count < 0) return null;
+            JSONObject item = MyUtils.newJSONObject(cuisine.toString()); item.put("count", count); normalized.put(item);
+        }
+        return new DynamicFoodState(normalized, harvested, progress);
+    }
+
+    private JSONObject dynamicFoodBudget() throws JSONException {
+        String text = RuntimeInfo.getInstance().getString(DYNAMIC_FOOD_KEY);
+        JSONObject state = MyUtils.newJSONObject(text);
+        String today = rankingDay(System.currentTimeMillis());
+        if (!text.isEmpty() && (!(state.opt("day") instanceof String) || rankingInt(state, "used") < 0
+                || !(state.opt("pending") instanceof Boolean) || state.optJSONObject("benefits") == null)) return null;
+        if (text.isEmpty()) { state.put("benefits", MyUtils.newJSONObject()); state.put("pending", false); }
+        if (!today.equals(state.optString("day"))) { state.put("day", today); state.put("used", 0); state.put("pending", false); }
+        return state;
+    }
+
+    private int dynamicFoodQuota(JSONObject budget) {
+        if (budget == null || budget.optBoolean("pending") || Status.hasFlagToday(DYNAMIC_FOOD_PENDING)) return 0;
+        int remaining = Math.max(0, dynamicFoodDailyLimit.getValue() - rankingInt(budget, "used"));
+        int legacyLimit = useSpecialFoodCountLimit.getValue();
+        if (legacyLimit > 0) remaining = Math.min(remaining, Math.max(0, legacyLimit - Status.INSTANCE.getUseSpecialFoodCount()));
+        return remaining;
+    }
+
+    private static String foodKey(JSONObject cuisine) { return cuisine.optString("cookbookId") + "|" + cuisine.optString("cuisineId"); }
+
+    private static int foodStock(DynamicFoodState state, String key) {
+        for (int i = 0; i < state.cuisines.length(); i++) {
+            JSONObject item = state.cuisines.optJSONObject(i);
+            if (key.equals(foodKey(item))) return item.optInt("count");
+        }
+        return 0;
+    }
+
+    private JSONObject chooseDynamicFood(DynamicFoodState state, JSONObject benefits, double gap, int quota) {
+        JSONObject unknown = null, chosen = null;
+        double best = Double.POSITIVE_INFINITY;
+        for (JSONObject cuisine : getSortedCuisineList(state.cuisines)) {
+            if (cuisine.optInt("count") <= 0) continue;
+            double unit = foodNumber(benefits, foodKey(cuisine));
+            if (!Double.isFinite(unit) || unit <= 0) { if (unknown == null) unknown = cuisine; continue; }
+            if (gap <= 0) return cuisine;
+            int count = (int) Math.min(Math.min(SPECIAL_FOOD_BATCH_LIMIT, Math.min(quota, cuisine.optInt("count"))), Math.ceil(gap / unit));
+            // ponytail: homogeneous batches make yield learning unambiguous; replan after every readback.
+            double score = count * unit >= gap ? count * unit - gap : gap + (gap - count * unit);
+            if (count > 0 && score < best) { best = score; chosen = cuisine; }
+        }
+        return chosen == null ? unknown : chosen;
+    }
+
+    private void useDynamicSpecialFood(double targetEggs, RankingSnapshot ranking) {
+        boolean forRanking = ranking != null;
+        String uid = ownerUserId;
+        if (!dynamicFoodOwner(uid) || !Double.isFinite(targetEggs) || targetEggs < 0
+                || (forRanking && (!rankingDonation.getValue() || !rankingFoodRefill.getValue()))) return;
+        try {
+            DynamicFoodState current = queryDynamicFoodState(uid);
+            if (current == null) return;
+            for (int batch = 0; batch < 1000 && dynamicFoodOwner(uid); batch++) {
+                if (forRanking) {
+                    if (!rankingDonation.getValue() || !rankingFoodRefill.getValue() || !uid.equals(ranking.owner)
+                            || !rankingWindow(ranking, System.currentTimeMillis())) return;
+                    JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.enterDonationCompetitionRank());
+                    RankingSnapshot live = MessageUtil.checkMemo(TAG, response) ? rankingSnapshot(response, uid, ranking.weekly) : null;
+                    if (live == null || !ranking.activity.equals(live.activity) || !ranking.round.equals(live.round)
+                            || !rankingWindow(live, System.currentTimeMillis()) || targetEggs > rankingQuota(live)) return;
+                }
+                harvestBenevolenceScore = current.harvested; benevolenceScore = current.progress;
+                if (forRanking && current.progress >= 1) {
+                    double beforeHarvest = current.harvested;
+                    harvestProduce(ownerFarmId);
+                    current = queryDynamicFoodState(uid);
+                    if (current == null || current.harvested <= beforeHarvest) return;
+                    harvestBenevolenceScore = current.harvested; benevolenceScore = current.progress;
+                }
+                if (forRanking && current.harvested >= targetEggs) return;
+                double gap = forRanking ? targetEggs - current.harvested - current.progress : 0;
+                if (forRanking && gap <= 0) return;
+                JSONObject budget = dynamicFoodBudget();
+                int quota = dynamicFoodQuota(budget);
+                if (quota <= 0) return;
+                JSONObject benefits = budget.optJSONObject("benefits");
+                JSONObject cuisine = chooseDynamicFood(current, benefits, gap, quota);
+                if (cuisine == null) return;
+                String key = foodKey(cuisine);
+                double unit = foodNumber(benefits, key);
+                int count = Double.isFinite(unit) && unit > 0 ? Math.min(SPECIAL_FOOD_BATCH_LIMIT, Math.min(quota, cuisine.optInt("count"))) : 1;
+                if (forRanking && Double.isFinite(unit) && unit > 0) count = (int) Math.min(count, Math.ceil(gap / unit));
+                if (count <= 0 || !dynamicFoodOwner(uid) || (forRanking && (!rankingFoodRefill.getValue()
+                        || !rankingDonation.getValue() || !rankingWindow(ranking, System.currentTimeMillis())))) return;
+                budget.put("used", rankingInt(budget, "used") + count); budget.put("pending", true);
+                if (!RuntimeInfo.getInstance().putVerified(DYNAMIC_FOOD_KEY, budget.toString())) return;
+                Status.flagToday(DYNAMIC_FOOD_PENDING);
+                if (!dynamicFoodOwner(uid)) return;
+                JSONObject item = MyUtils.newJSONObject();
+                item.put("cookbookId", cuisine.optString("cookbookId")); item.put("cuisineId", cuisine.optString("cuisineId"));
+                item.put("count", count); item.put("useCuisine", true);
+                JSONObject result = MyUtils.newJSONObject(AntFarmRpcCall.useFarmFood(new JSONArray().put(item)));
+                if (!MessageUtil.checkMemo(TAG, result) || !dynamicFoodOwner(uid)) return;
+                JSONObject effect = result.optJSONObject("foodEffect");
+                double delta = foodNumber(effect, "deltaProduce"), target = foodNumber(effect, "targetProduce");
+                DynamicFoodState after = queryDynamicFoodState(uid);
+                if (after == null || !Double.isFinite(delta) || delta <= 0 || !Double.isFinite(target)
+                        || foodStock(current, key) - foodStock(after, key) != count
+                        || after.progress + 0.000001 < current.progress + delta || after.progress + 0.000001 < target) return;
+                benefits.put(key, delta / count); budget.put("pending", false);
+                if (!RuntimeInfo.getInstance().putVerified(DYNAMIC_FOOD_KEY, budget.toString())) return;
+                for (int i = 0; i < count; i++) Status.useSpecialFoodToday();
+                Status.clearFlag(DYNAMIC_FOOD_PENDING);
+                Log.farm("动态美食🍱[" + cuisine.optString("name") + "×" + count + "]#回查确认增加" + delta + "颗产蛋进度");
+                current = after;
+                TimeUtil.sleep(1000);
+            }
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable e) { Log.err(TAG, "useDynamicSpecialFood", e); }
     }
 
     private void drawLotteryPlus(JSONObject lotteryPlusInfo) {
@@ -3339,6 +4372,7 @@ public class AntFarm extends ModelTask {
 
     private void drawMachineGroupsInner() {
         try {
+            if (!manualFarmOwner(ownerUserId) || !drawMachine.getValue()) return;
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.queryLoveCabin(UserIdMap.getCurrentUid()));
             if (MessageUtil.checkMemo(TAG, jo)) {
                 drawMachine("ANTFARM_DAILY_DRAW_TASK", "dailyDrawMachine", "ipDrawMachine");
@@ -3374,7 +4408,8 @@ public class AntFarm extends ModelTask {
                                         }
                                     }
                                 }
-                            } catch (Throwable t) {
+                            } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
                                 Log.err(TAG, "drawMachine err:", t);
                             }
 
@@ -3382,7 +4417,8 @@ public class AntFarm extends ModelTask {
                     }
                 }
             }
-        } catch (Throwable t) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.i(TAG, "queryLoveCabin err:");
             Log.printStackTrace(t);
         }
@@ -3399,7 +4435,8 @@ public class AntFarm extends ModelTask {
                 }
                 TimeUtil.sleep(5000);
             }
-        } catch (Throwable t) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "drawMachine err:", t);
         }
     }
@@ -3417,6 +4454,7 @@ public class AntFarm extends ModelTask {
             int total = farmTaskList.length();
             int received = 0, finished = 0, todo = 0, todoDone = 0, todoSkipped = 0;
             for (int i = 0; i < farmTaskList.length(); i++) {
+                if (!manualFarmOwner(ownerUserId) || !drawMachine.getValue()) return;
                 jo = farmTaskList.optJSONObject(i);
                 if (jo == null) {
                     continue;
@@ -3450,6 +4488,7 @@ public class AntFarm extends ModelTask {
 
                     if (taskId.contains("EXCHANGE") || taskId.contains("FKDWChuodong") || taskId.contains("GYG2") || taskId.equals("jiatingdongrirongrongwu")) {
                         for (int j = 0; j < remain; j++) {
+                            if (!manualFarmOwner(ownerUserId) || !drawMachine.getValue()) return;
                             JSONObject jodoFarmTask = MyUtils.newJSONObject(AntFarmRpcCall.doFarmTask(jo.optString("bizKey"), taskSceneCode));
                             //检查并标记黑名单任务
                             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDrawMachineTaskList", title, jodoFarmTask);
@@ -3508,24 +4547,28 @@ public class AntFarm extends ModelTask {
             drawStatTodo += todo;
             drawStatDone += todoDone;
             drawStatSkipped += todoSkipped;
-        } catch (Throwable t) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "doFarmDrawActivityTimeTask err:", t);
         }
     }
 
     private void receiveFarmDrawTaskAward(String taskId, String title, String awardType, String taskSceneCode) {
         try {
+            if (!manualFarmOwner(ownerUserId) || !drawMachine.getValue()) return;
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.receiveFarmDrawTimesTaskAward(taskId, awardType, taskSceneCode));
             if (MessageUtil.checkMemo(TAG, jo)) {
                 Log.farm("装扮抽奖🎖️领取[" + title + "]奖励");
             }
-        } catch (Throwable t) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "receiveFarmDrawTimesTaskAward err:", t);
         }
     }
 
     private Boolean drawMachine(String scene) {
         try {
+            if (!manualFarmOwner(ownerUserId) || !drawMachine.getValue()) return false;
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.drawMachine(scene));
             if (MessageUtil.checkMemo(TAG, jo)) {
                 if (!jo.has("title")) {
@@ -3535,7 +4578,8 @@ public class AntFarm extends ModelTask {
                 Log.farm("装扮抽奖🎁抽中[" + title + "]");
                 return true;
             }
-        } catch (Throwable t) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
             Log.err(TAG, "drawMachine err:", t);
         }
         return false;
@@ -3648,6 +4692,7 @@ public class AntFarm extends ModelTask {
 
                     int sessionExchangedCount = 0;
                     while (sessionExchangedCount < limitCount) {
+                        if (!manualFarmOwner(ownerUserId) || !drawMachine.getValue() || !IPexchangeBenefit.getValue()) return false;
                         // 预检查当前余额
                         if (cent > 0 && totalCent < cent) {
                             break;
@@ -3676,7 +4721,8 @@ public class AntFarm extends ModelTask {
             } else {
                 return false;
             }
-        } catch (Exception e) {
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Exception e) {
             Log.printStackTrace("自动兑换异常", e);
         }
         return false;
@@ -3717,6 +4763,371 @@ public class AntFarm extends ModelTask {
             }
         }
         return false;
+    }
+
+    private JSONObject queryNpcFarm() throws JSONException {
+        TimeUtil.sleep(0);
+        JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.queryNpcFarm(ownerFarmId));
+        JSONObject farm = response.optJSONObject("subFarmVO");
+        JSONArray list = farm == null ? null : farm.optJSONArray("animals");
+        if (!farmFeatureOk(response) || farm == null || !ownerFarmId.equals(farm.optString("farmId")) || list == null) return null;
+        Set<String> ids = new HashSet<>();
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject animal = list.optJSONObject(i);
+            if (animal == null || !(animal.opt("animalId") instanceof String) || animal.optString("animalId").isEmpty()
+                    || !ids.add(animal.optString("animalId"))) return null;
+            switch (animal.optString("subAnimalType")) {
+                case "NORMAL": case "GUEST": case "PIRATE": break;
+                case "WORK": case "NPC":
+                    if (!ownerFarmId.equals(animal.optString("currentFarmId"))) return null;
+                    break;
+                default: return null;
+            }
+        }
+        return npcOccupiedSlots(list) <= 2 ? farm : null;
+    }
+
+    private static double npcRewardValue(JSONObject animal) {
+        Object raw = animal.opt("npcBizReward");
+        if (!(raw instanceof Number) && !(raw instanceof String)) return Double.NaN;
+        try {
+            java.math.BigDecimal parsed = new java.math.BigDecimal(raw.toString());
+            double value = parsed.doubleValue();
+            return parsed.signum() == 0 ? 0 : Double.isFinite(value) && value > 0 ? value : Double.NaN;
+        } catch (NumberFormatException e) { return Double.NaN; }
+    }
+
+    private static JSONObject findFarmNpc(JSONArray list, String id) {
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject animal = list.optJSONObject(i);
+            if (animal != null && "NPC".equals(animal.optString("subAnimalType")) && id.equals(animal.optString("animalId"))) return animal;
+        }
+        return null;
+    }
+
+    private static int npcOccupiedSlots(JSONArray list) {
+        int count = 0;
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject animal = list.optJSONObject(i);
+            if (animal != null && ("NPC".equals(animal.optString("subAnimalType")) || "WORK".equals(animal.optString("subAnimalType")))) count++;
+        }
+        return count;
+    }
+
+    private void manageFarmNpc() {
+        int type = farmNpcType.getValue();
+        if (type <= 0 || type >= FARM_NPC_IDS.length) return;
+        if (type == 3) { manageZhimaPigeon(); return; }
+        if (!RuntimeInfo.getInstance().getString(PIGEON_RECEIPT_KEY).isEmpty()) {
+            Log.record("NPC小鸡：大表鸽奖励仍待核验，保留当前NPC，暂缓切换"); return;
+        }
+        try {
+            TimeUtil.sleep(0);
+            if (ownerFarmId == null || ownerFarmId.isEmpty()) { Log.record("NPC小鸡：庄园尚未就绪，跳过"); return; }
+            String pending = "farm::npcActionUnconfirmed";
+            // ponytail: 未确认动作当日停止自动操作，次日或人工核验后再处理。
+            if (Status.hasFlagToday(pending)) { Log.record("NPC小鸡：本日操作结果未确认，停止重复雇佣/遣返"); return; }
+            JSONObject farm = queryNpcFarm();
+            if (farm == null) { Log.record("NPC小鸡：庄园/名额状态不明，跳过"); return; }
+            JSONArray list = farm.optJSONArray("animals");
+            String targetId = FARM_NPC_IDS[type], name = FARM_NPC_NAMES[type];
+            JSONObject current = findFarmNpc(list, targetId);
+            boolean full = current != null;
+            if (current != null) {
+                double reward = npcRewardValue(current);
+                if (!Double.isFinite(reward) || !(current.opt("reachNpcBizRewardLimit") instanceof Boolean)) {
+                    Log.record("NPC小鸡：产出状态不明，保留当前小鸡"); return;
+                }
+                if (!Boolean.TRUE.equals(current.opt("reachNpcBizRewardLimit"))) {
+                    Log.record("NPC小鸡：[" + name + "]工作中，当前产出=" + reward); return;
+                }
+            } else {
+                boolean hasNpc = false;
+                for (int i = 0; i < list.length(); i++) {
+                    JSONObject animal = list.optJSONObject(i);
+                    if (!"NPC".equals(animal.optString("subAnimalType"))) continue;
+                    hasNpc = true;
+                    String id = animal.optString("animalId");
+                    if ((FARM_NPC_IDS[1].equals(id) || FARM_NPC_IDS[2].equals(id)) && npcRewardValue(animal) == 0
+                            && Boolean.FALSE.equals(animal.opt("reachNpcBizRewardLimit"))) { current = animal; break; }
+                }
+                if (hasNpc && current == null) { Log.record("NPC小鸡：现有NPC有待领奖励或类型/状态不明，保留"); return; }
+            }
+            if (current != null) {
+                if (!(current.opt("masterFarmId") instanceof String) || current.optString("masterFarmId").isEmpty()) {
+                    Log.record("NPC小鸡：遣返所需庄园标识缺失，跳过"); return;
+                }
+                String currentId = current.optString("animalId");
+                TimeUtil.sleep(0);
+                Status.flagToday(pending);
+                JSONObject sent = MyUtils.newJSONObject(AntFarmRpcCall.sendBackNpcAnimal(currentId, ownerFarmId, current.optString("masterFarmId")));
+                farm = queryNpcFarm();
+                if (!farmFeatureOk(sent) || farm == null || findFarmNpc(farm.optJSONArray("animals"), currentId) != null) {
+                    Log.record("NPC小鸡：遣返/领奖未确认，保留当日保护标记，" + RpcRequestGuard.errorMessage(sent)); return;
+                }
+                Status.clearFlag(pending);
+                Log.farm("NPC小鸡🤖[" + (full ? name + "满产领取并离场已确认" : "切换离场已确认") + "]");
+                list = farm.optJSONArray("animals");
+            }
+            if (findFarmNpc(list, targetId) != null) return;
+            // 名额在动作后可能变化，不遣返好友工人，也不覆盖刚到场的其他NPC。
+            for (int i = 0; i < list.length(); i++) {
+                if ("NPC".equals(list.optJSONObject(i).optString("subAnimalType"))) { Log.record("NPC小鸡：仍有其他NPC，等待后续回查"); return; }
+            }
+            if (npcOccupiedSlots(list) >= 2) { Log.record("NPC小鸡：雇佣名额已满，保留好友工人"); return; }
+            TimeUtil.sleep(0);
+            Status.flagToday(pending);
+            JSONObject hired = MyUtils.newJSONObject(AntFarmRpcCall.hireNpcAnimal(targetId, FARM_NPC_SOURCES[type]));
+            JSONObject after = queryNpcFarm();
+            if (farmFeatureOk(hired) && after != null && findFarmNpc(after.optJSONArray("animals"), targetId) != null) {
+                Status.clearFlag(pending);
+                Log.farm("NPC小鸡🤖[成功雇佣" + name + "，已回查到场]");
+            } else Log.record("NPC小鸡：雇佣到场未确认，保留当日保护标记，" + RpcRequestGuard.errorMessage(hired));
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.err(TAG, "manageFarmNpc", t); }
+    }
+
+    private static long npcTaskNumber(JSONObject task, String key) {
+        Object raw = task.opt(key);
+        if (!(raw instanceof Number) && !(raw instanceof String)) return -1;
+        try {
+            long n = new java.math.BigDecimal(raw.toString()).longValueExact();
+            return n >= 0 ? n : -1;
+        } catch (NumberFormatException | ArithmeticException e) { return -1; }
+    }
+
+    private JSONObject queryPigeonAlchemyTask() throws JSONException {
+        TimeUtil.sleep(0);
+        JSONObject response = MyUtils.newJSONObject(AntMemberRpcCall.alchemyQueryTasks());
+        JSONObject payload = response.optJSONObject("resData");
+        if (payload == null) payload = response;
+        JSONObject data = payload.optJSONObject("data");
+        if ((!farmFeatureOk(response) && !farmFeatureOk(payload)) || RpcRequestGuard.isFailure(response) || data == null) return null;
+        JSONObject daily = data.optJSONObject("dailyTaskListVO");
+        JSONArray[] lists = {data.optJSONArray("toCompleteVOS"), daily == null ? null : daily.optJSONArray("waitJoinTaskVOS"), daily == null ? null : daily.optJSONArray("waitCompleteTaskVOS")};
+        JSONObject found = null;
+        for (JSONArray list : lists) {
+            if (list == null) continue;
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject task = list.optJSONObject(i);
+                if (task == null) return null;
+                if (!PIGEON_TEMPLATE.equals(task.optString("templateId"))) continue;
+                if (found != null && !found.toString().equals(task.toString())) return null;
+                found = task;
+            }
+        }
+        if (found == null || !(found.opt("finishFlag") instanceof Boolean) || found.optBoolean("finishFlag")
+                || !"LIFE_RECORD".equals(found.optString("bizType")) || npcTaskNumber(found, "completedNum") < 0
+                || npcTaskNumber(found, "needCompleteNum") <= npcTaskNumber(found, "completedNum")) return null;
+        return found;
+    }
+
+    private boolean authorizePigeonHire() throws JSONException {
+        JSONObject task = queryPigeonAlchemyTask();
+        if (task == null) { Log.record("大表鸽：炼金列表没有明确的可雇佣任务，等待后续资格"); return false; }
+        if (task.optString("recordId").isEmpty()) {
+            JSONObject joined = MyUtils.newJSONObject(AntMemberRpcCall.joinPigeonAlchemyTask(PIGEON_TEMPLATE));
+            if (!farmFeatureOk(joined)) return false;
+            task = queryPigeonAlchemyTask();
+            if (task == null || task.optString("recordId").isEmpty()) return false;
+        }
+        String record = task.optString("recordId");
+        String confirmed = "farm::pigeonAuthorized::" + record, attempt = "farm::pigeonFeedbackAttempt::" + record;
+        if (Status.hasFlagToday(confirmed)) return true;
+        if (Status.hasFlagToday(attempt)) return false;
+        TimeUtil.sleep(0); Status.flagToday(attempt);
+        JSONObject feedback = MyUtils.newJSONObject(AntMemberRpcCall.feedbackPigeonAlchemyTask(PIGEON_TEMPLATE, task.optString("bizType")));
+        if (!farmFeatureOk(feedback)) return false;
+        Status.flagToday(confirmed);
+        return true;
+    }
+
+    /** 通用收取前先绑定待收ID，防一键领取使奖励消失后无法判定闭环。 */
+    public static boolean bindPigeonFeedback(JSONArray items) throws JSONException {
+        RuntimeInfo runtime = RuntimeInfo.getInstance();
+        String saved = runtime.getString(PIGEON_RECEIPT_KEY);
+        if (saved.isEmpty()) return true;
+        JSONObject pending = MyUtils.newJSONObject(saved);
+        if (!(pending.opt("feedbackId") instanceof String) || items == null) return false;
+        if (!pending.optString("feedbackId").isEmpty()) return true;
+        String id = "";
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null || item.optString("status").isEmpty()) return false;
+            if (!"UNCLAIMED".equals(item.optString("status")) || !PIGEON_CATEGORY.equals(item.optString("cateId"))) continue;
+            if (!(item.opt("creditFeedbackId") instanceof String) || item.optString("creditFeedbackId").isEmpty() || !id.isEmpty()) return false;
+            id = item.optString("creditFeedbackId");
+        }
+        if (id.isEmpty()) { Log.record("大表鸽：奖励反馈尚未生成，暂缓通用收取以保留核验依据"); return false; }
+        pending.put("feedbackId", id);
+        return runtime.putVerified(PIGEON_RECEIPT_KEY, pending.toString());
+    }
+
+    private JSONArray queryPigeonFeedback() {
+        TimeUtil.sleep(0);
+        JSONObject response = MyUtils.newJSONObject(AntMemberRpcCall.queryCreditFeedback());
+        if (!farmFeatureOk(response)) return null;
+        JSONArray items = response.optJSONArray("creditFeedbackVOS");
+        if (items == null && response.optJSONObject("data") != null) items = response.optJSONObject("data").optJSONArray("creditFeedbackVOS");
+        if (items == null && response.optJSONObject("resData") != null) items = response.optJSONObject("resData").optJSONArray("creditFeedbackVOS");
+        // 原协议size=20；满页不能证明绑定反馈已消失，等待通用收取腾出窗口。
+        if (items == null || items.length() >= 20 || response.optBoolean("hasNext")) return null;
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null || !(item.opt("status") instanceof String) || item.optString("status").isEmpty()
+                    || !(item.opt("creditFeedbackId") instanceof String) || item.optString("creditFeedbackId").isEmpty()) return null;
+        }
+        return items;
+    }
+
+    private boolean collectPigeonReceipt() throws JSONException {
+        JSONArray items = queryPigeonFeedback();
+        if (items == null || !bindPigeonFeedback(items)) return false;
+        RuntimeInfo runtime = RuntimeInfo.getInstance();
+        JSONObject pending = MyUtils.newJSONObject(runtime.getString(PIGEON_RECEIPT_KEY));
+        String id = pending.optString("feedbackId");
+        if (id.isEmpty()) return false;
+        boolean waiting = false;
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (!id.equals(item.optString("creditFeedbackId"))) continue;
+            if (!"UNCLAIMED".equals(item.optString("status"))) return false;
+            waiting = true;
+        }
+        if (waiting) {
+            String attempt = "farm::pigeonCreditAttempt::" + id;
+            if (Status.hasFlagToday(attempt)) return false;
+            TimeUtil.sleep(0); Status.flagToday(attempt);
+            AntMemberRpcCall.collectCreditFeedback(id);
+            items = queryPigeonFeedback();
+            if (items == null) return false;
+            for (int i = 0; i < items.length(); i++) if (id.equals(items.optJSONObject(i).optString("creditFeedbackId"))) return false;
+        }
+        if (!runtime.putVerified(PIGEON_RECEIPT_KEY, null)) return false;
+        Status.clearFlag("farm::npcActionUnconfirmed");
+        Log.farm("大表鸽：绑定芝麻粒反馈已回查消失，奖励收取确认");
+        return true;
+    }
+
+    private JSONArray queryPigeonFarmTasks() throws JSONException {
+        TimeUtil.sleep(0);
+        JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.listPigeonFarmTasks());
+        return farmFeatureOk(response) ? response.optJSONArray("farmTaskList") : null;
+    }
+
+    private void runPigeonFarmTasks() throws JSONException {
+        JSONArray tasks = queryPigeonFarmTasks();
+        int actions = 0;
+        for (int i = 0; tasks != null && i < tasks.length() && actions < 20; i++) {
+            TimeUtil.sleep(0);
+            JSONObject task = tasks.optJSONObject(i);
+            if (task == null || task.optString("taskId").isEmpty()) continue;
+            String id = task.optString("taskId"), status = task.optString("taskStatus");
+            if ("TODO".equals(status) && "ZHIMA_NPC_VISIT_TASK".equals(id) && id.equals(task.optString("bizKey"))) {
+                String attempt = "farm::pigeonVisit::" + id;
+                if (Status.hasFlagToday(attempt)) continue;
+                Status.flagToday(attempt); actions++;
+                AntFarmRpcCall.doFarmTask(id, "ANTFARM_ZHIMA_NPC_TASK");
+                JSONArray fresh = queryPigeonFarmTasks();
+                task = null;
+                for (int j = 0; fresh != null && j < fresh.length(); j++) {
+                    JSONObject item = fresh.optJSONObject(j);
+                    if (item != null && id.equals(item.optString("taskId"))) { task = item; break; }
+                }
+                if (task == null) return;
+                status = task.optString("taskStatus");
+            }
+            if (!"FINISHED".equals(status) || !(task.opt("awardType") instanceof String) || task.optString("awardType").isEmpty()) continue;
+            if (actions >= 20) return;
+            String attempt = "farm::pigeonTaskAward::" + id;
+            if (Status.hasFlagToday(attempt)) continue;
+            Status.flagToday(attempt); actions++;
+            JSONObject awarded = MyUtils.newJSONObject(AntFarmRpcCall.receivePigeonFarmAward(id, task.optString("awardType")));
+            JSONArray fresh = queryPigeonFarmTasks();
+            boolean received = false;
+            for (int j = 0; fresh != null && j < fresh.length(); j++) {
+                JSONObject item = fresh.optJSONObject(j);
+                if (item != null && id.equals(item.optString("taskId")) && "RECEIVED".equals(item.optString("taskStatus"))) received = true;
+            }
+            if (!farmFeatureOk(awarded) || !received) { Log.record("大表鸽：庄园任务领奖未确认，停止本轮任务"); return; }
+            Log.farm("大表鸽：庄园任务奖励已回查确认");
+        }
+    }
+
+    private void manageZhimaPigeon() {
+        try {
+            TimeUtil.sleep(0);
+            if (ownerFarmId == null || ownerFarmId.isEmpty()) return;
+            RuntimeInfo runtime = RuntimeInfo.getInstance();
+            String pending = "farm::npcActionUnconfirmed";
+            String receipt = runtime.getString(PIGEON_RECEIPT_KEY);
+            if (!receipt.isEmpty() && !(MyUtils.newJSONObject(receipt).opt("feedbackId") instanceof String)) return;
+            if (Status.hasFlagToday(pending) && runtime.getString(PIGEON_RECEIPT_KEY).isEmpty()) return;
+            JSONObject farm = queryNpcFarm();
+            if (farm == null) return;
+            JSONArray list = farm.optJSONArray("animals");
+            JSONObject pigeon = findFarmNpc(list, FARM_NPC_IDS[3]);
+            if (!runtime.getString(PIGEON_RECEIPT_KEY).isEmpty() && pigeon == null) { collectPigeonReceipt(); return; }
+            if (pigeon != null) {
+                double reward = npcRewardValue(pigeon);
+                if (!Double.isFinite(reward)) return;
+                if (reward < 88 && !Boolean.TRUE.equals(pigeon.opt("reachNpcBizRewardLimit"))) {
+                    runPigeonFarmTasks();
+                    farm = queryNpcFarm();
+                    pigeon = farm == null ? null : findFarmNpc(farm.optJSONArray("animals"), FARM_NPC_IDS[3]);
+                    if (pigeon == null || !Double.isFinite(npcRewardValue(pigeon))) return;
+                    reward = npcRewardValue(pigeon);
+                }
+                if (reward < 88 && !Boolean.TRUE.equals(pigeon.opt("reachNpcBizRewardLimit"))) { Log.record("大表鸽：工作中，等待满产"); return; }
+                if (Status.hasFlagToday(pending) || !(pigeon.opt("masterFarmId") instanceof String) || pigeon.optString("masterFarmId").isEmpty()) return;
+                if (runtime.getString(PIGEON_RECEIPT_KEY).isEmpty() && !runtime.putVerified(PIGEON_RECEIPT_KEY, "{\"feedbackId\":\"\"}")) return;
+                TimeUtil.sleep(0); Status.flagToday(pending);
+                JSONObject sent = MyUtils.newJSONObject(AntFarmRpcCall.sendBackNpcAnimal(FARM_NPC_IDS[3], ownerFarmId, pigeon.optString("masterFarmId"), FARM_NPC_SOURCES[3]));
+                farm = queryNpcFarm();
+                if (farmFeatureOk(sent) && farm != null && findFarmNpc(farm.optJSONArray("animals"), FARM_NPC_IDS[3]) == null) {
+                    Status.clearFlag(pending);
+                    Log.farm("大表鸽：满产遣返已确认，等待芝麻粒反馈收取");
+                    collectPigeonReceipt();
+                }
+                return;
+            }
+            if (Status.hasFlagToday(pending)) return;
+            JSONObject replace = null;
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject other = list.optJSONObject(i);
+                if (!"NPC".equals(other.optString("subAnimalType"))) continue;
+                String id = other.optString("animalId");
+                if (!(FARM_NPC_IDS[1].equals(id) || FARM_NPC_IDS[2].equals(id)) || npcRewardValue(other) != 0
+                        || !Boolean.FALSE.equals(other.opt("reachNpcBizRewardLimit")) || !(other.opt("masterFarmId") instanceof String) || other.optString("masterFarmId").isEmpty()) return;
+                if (replace != null) return;
+                replace = other;
+            }
+            if (replace == null && npcOccupiedSlots(list) >= 2 || !authorizePigeonHire()) return;
+            // 授权请求期间名额也可能变化；重新读取，保留任何新到场NPC/好友工人。
+            farm = queryNpcFarm();
+            if (farm == null) return;
+            list = farm.optJSONArray("animals");
+            if (findFarmNpc(list, FARM_NPC_IDS[3]) != null) return;
+            if (replace != null) {
+                JSONObject fresh = findFarmNpc(list, replace.optString("animalId"));
+                if (fresh == null || npcRewardValue(fresh) != 0 || !Boolean.FALSE.equals(fresh.opt("reachNpcBizRewardLimit"))
+                        || !(fresh.opt("masterFarmId") instanceof String) || fresh.optString("masterFarmId").isEmpty()) return;
+                TimeUtil.sleep(0); Status.flagToday(pending);
+                JSONObject sent = MyUtils.newJSONObject(AntFarmRpcCall.sendBackNpcAnimal(fresh.optString("animalId"), ownerFarmId, fresh.optString("masterFarmId"), FARM_NPC_SOURCES[3]));
+                farm = queryNpcFarm();
+                if (!farmFeatureOk(sent) || farm == null || findFarmNpc(farm.optJSONArray("animals"), fresh.optString("animalId")) != null) return;
+                Status.clearFlag(pending); list = farm.optJSONArray("animals");
+            }
+            for (int i = 0; i < list.length(); i++) if ("NPC".equals(list.optJSONObject(i).optString("subAnimalType"))) return;
+            if (npcOccupiedSlots(list) >= 2) return;
+            TimeUtil.sleep(0); Status.flagToday(pending);
+            JSONObject hired = MyUtils.newJSONObject(AntFarmRpcCall.hireNpcAnimal(FARM_NPC_IDS[3], FARM_NPC_SOURCES[3]));
+            farm = queryNpcFarm();
+            if (farmFeatureOk(hired) && farm != null && findFarmNpc(farm.optJSONArray("animals"), FARM_NPC_IDS[3]) != null) {
+                Status.clearFlag(pending); Log.farm("大表鸽：炼金授权后雇佣已回查到场");
+            }
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.err(TAG, "manageZhimaPigeon", t); }
     }
 
     /* 雇佣好友小鸡 */
@@ -4224,6 +5635,7 @@ public class AntFarm extends ModelTask {
             if (familyOptions.getValue().contains("ExchangeFamilyDecoration")) {
                 autoExchangeFamilyDecoration();
             }
+        } catch (TaskCancelledException cancelled) { throw cancelled;
         } catch (Throwable t) {
             Log.err(TAG, "family err:", t);
         }
@@ -4322,12 +5734,23 @@ public class AntFarm extends ModelTask {
      */
     private void assignFamilyMember(JSONObject jsonObject, List<String> userIds) {
         try {
-            userIds.remove(UserIdMap.getCurrentUid());
-            if (userIds.isEmpty()) {
+            String uid = UserIdMap.getCurrentUid(), day = rankingDay(System.currentTimeMillis());
+            List<String> candidates = new ArrayList<>(new LinkedHashSet<>(userIds));
+            candidates.removeIf(id -> id == null || id.trim().isEmpty() || id.equals(uid));
+            if (candidates.isEmpty()) {
                 return;
             }
             // RandomUtil.nextInt 是右开区间 [min, max)，这里要传 size()/length() 才能取到最后一个
-            String beAssignUser = userIds.get(RandomUtil.nextInt(0, userIds.size()));
+            String beAssignUser = candidates.get(RandomUtil.nextInt(0, candidates.size()));
+            if (familyAssignStrategy.getValue() == 1) {
+                TimeUtil.sleep(0);
+                JSONObject contribution = MyUtils.newJSONObject(AntFarmRpcCall.familyTreadMill());
+                TimeUtil.sleep(0);
+                if (!uid.equals(UserIdMap.getCurrentUid()) || !day.equals(rankingDay(System.currentTimeMillis()))) return;
+                String lowest = MessageUtil.checkMemo(TAG, contribution) ? lowestFamilyContributor(contribution, candidates, uid) : null;
+                if (lowest != null) beAssignUser = lowest;
+                else Log.record("家庭顶梁柱🏠贡献资料不完整，按原随机策略安排");
+            } else if (familyAssignStrategy.getValue() != 0) return;
             JSONArray assignConfigList = jsonObject.optJSONArray("assignConfigList");
             if (assignConfigList == null || assignConfigList.length() == 0) {
                 Log.record("家庭任务🏡[使用顶梁柱特权] assignConfigList 为空，跳过");
@@ -4337,13 +5760,41 @@ public class AntFarm extends ModelTask {
             if (assignConfig == null) {
                 return;
             }
-            JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.assignFamilyMember(assignConfig.optString("assignAction"), beAssignUser));
+            String action = assignConfig.optString("assignAction"), flag = "antFarm::familyAssignAttempt";
+            if (!(assignConfig.opt("assignAction") instanceof String) || action.isEmpty() || Status.hasFlagToday(flag)) return;
+            TimeUtil.sleep(0);
+            if (!uid.equals(UserIdMap.getCurrentUid()) || !day.equals(rankingDay(System.currentTimeMillis()))) return;
+            Status.flagToday(flag);
+            JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.assignFamilyMember(action, beAssignUser));
+            TimeUtil.sleep(0);
+            if (!uid.equals(UserIdMap.getCurrentUid()) || !day.equals(rankingDay(System.currentTimeMillis()))) return;
             if (MessageUtil.checkMemo(TAG, jo)) {
                 Log.farm("家庭任务🏡[使用顶梁柱特权] " + assignConfig.optString("assignDesc"));
             }
+        } catch (TaskCancelledException cancelled) { throw cancelled;
         } catch (Throwable t) {
             Log.err(TAG, "assignFamilyMember err:", t);
         }
+    }
+
+    private static String lowestFamilyContributor(JSONObject state, List<String> candidates, String uid) {
+        JSONArray rows = state.optJSONArray("familyMemberInfoList");
+        if (rows == null || rows.length() > 100) return null;
+        Map<String, JSONObject> known = new HashMap<>();
+        Comparator<JSONObject> order = Comparator.comparingInt((JSONObject row) -> rankingInt(row, "todayIntimateNum"))
+                .thenComparingInt(row -> rankingInt(row, "totalIntimateNum")).thenComparingInt(row -> rankingInt(row, "userDonateCount"))
+                .thenComparing(row -> row.optString("userId"));
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (row == null || !(row.opt("userId") instanceof String) || row.optString("userId").isEmpty()
+                    || row.has("currentUser") && !(row.opt("currentUser") instanceof Boolean)) return null;
+            String id = row.optString("userId");
+            if (id.equals(uid) || Boolean.TRUE.equals(row.opt("currentUser")) || !candidates.contains(id)) continue;
+            if (rankingInt(row, "todayIntimateNum") < 0 || rankingInt(row, "totalIntimateNum") < 0 || rankingInt(row, "userDonateCount") < 0
+                    || known.put(id, row) != null) return null;
+        }
+        if (known.size() != candidates.size()) return null;
+        return known.values().stream().min(order).map(row -> row.optString("userId")).orElse(null);
     }
 
     private void familyEatTogether(String groupId, JSONArray EatTogetherUserIds) {
@@ -4595,6 +6046,10 @@ public class AntFarm extends ModelTask {
             }
 
             Set<String> notInviteSet = notInviteList.getValue();
+            String uid = UserIdMap.getCurrentUid(), day = rankingDay(System.currentTimeMillis());
+            Set<String> selected = familyShareList.getValue();
+            int mode = familyShareMode.getValue();
+            if (familyUserIds.size() >= 6 || mode < 0 || mode > 1 || mode == 0 && selected.isEmpty()) return;
             List<AlipayUser> allUser = AlipayUser.getList();
             if (allUser.isEmpty()) {
                 Log.record("allUser is empty");
@@ -4605,8 +6060,11 @@ public class AntFarm extends ModelTask {
             List<AlipayUser> shuffledUsers = new ArrayList<>(allUser);
             Collections.shuffle(shuffledUsers);
             JSONArray inviteList = new JSONArray();
+            Set<String> seen = new HashSet<>();
             for (AlipayUser user : shuffledUsers) {
-                if (!familyUserIds.contains(user.getId()) && !notInviteSet.contains(user.getId()) && (!user.getId().equals(UserIdMap.getCurrentUid()))) {
+                String id = user.getId();
+                if (id != null && !id.isEmpty() && seen.add(id) && !familyUserIds.contains(id) && !notInviteSet.contains(id) && !id.equals(uid)
+                        && (mode == 0 ? selected.contains(id) : !selected.contains(id)) && !Status.hasFlagToday("antFarm::familyInviteAttempt::" + id)) {
                     inviteList.put(user.getId());
                     if (inviteList.length() >= 2) {
                         break;
@@ -4624,7 +6082,12 @@ public class AntFarm extends ModelTask {
             int invitedCount = 0;
             for (int i = 0; i < inviteList.length(); i++) {
                 String inviteUID = inviteList.optString(i);
+                TimeUtil.sleep(0);
+                if (!uid.equals(UserIdMap.getCurrentUid()) || !day.equals(rankingDay(System.currentTimeMillis()))) return;
+                Status.flagToday("antFarm::familyInviteAttempt::" + inviteUID);
                 JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.batchInviteP2P(ownerGroupId, inviteUID));
+                TimeUtil.sleep(0);
+                if (!uid.equals(UserIdMap.getCurrentUid()) || !day.equals(rankingDay(System.currentTimeMillis()))) return;
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     Log.farm("家庭任务🏠分享给好友[" + UserIdMap.getShowName(inviteUID) + "]");
                     invitedCount++;
@@ -4643,6 +6106,7 @@ public class AntFarm extends ModelTask {
                     Log.farm("家庭分享🏠邀请全部失败(第" + failCount + "/" + MAX_FAMILY_SHARE_ATTEMPT + "次)，稍后重试");
                 }
             }
+        } catch (TaskCancelledException cancelled) { throw cancelled;
         } catch (Throwable t) {
             Log.err(TAG, "familyShareToFriends err:", t);
         }
@@ -4859,7 +6323,7 @@ public class AntFarm extends ModelTask {
     }
 
     public enum SubAnimalType {
-        NORMAL, GUEST, PIRATE, WORK
+        NORMAL, GUEST, PIRATE, WORK, NPC
     }
 
     public enum ToolType {

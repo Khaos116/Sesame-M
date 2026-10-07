@@ -9,6 +9,7 @@ import org.json.JSONObject;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
@@ -84,6 +85,7 @@ import io.github.aw1y2z.sesame.util.Statistics;
 import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.TimeUtil;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.idMap.AntForestHuntTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.AntForestVitalityTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.MonopolyTaskListMap;
@@ -194,6 +196,10 @@ public class AntForestV2 extends ModelTask {
     private IntegerModelField tryCount;
     private IntegerModelField retryInterval;
     private SelectModelField dontCollectList;
+    private BooleanModelField collectWhiteListMode;
+    private BooleanModelField onlyCollectRevivedSelfEnergy;
+    private IntegerModelField revivedSelfOrdinaryMaxEnergy;
+    private SelectModelField collectWhiteList;
 
     private BooleanModelField drawGameCenterAward;
     private BooleanModelField readForest;
@@ -224,6 +230,13 @@ public class AntForestV2 extends ModelTask {
     private IntegerModelField doubleCountLimit;
     private IntegerModelField CollectBombEnergyLimit;
     private BooleanModelField findEnergyCollect;
+    private BooleanModelField enableCycleTakeLook;
+    private StringModelField cycleTakeLookTime;
+    private IntegerModelField cycleTakeLookInterval;
+    private BooleanModelField enableCycleRankScan;
+    private StringModelField cycleRankScanTime;
+    private IntegerModelField cycleRankScanInterval;
+    private final String[] forestCycleIds = new String[2];
     private BooleanModelField useEnergyRainLimit;
     private BooleanModelField doubleCardConstant;
     private ChoiceModelField helpFriendCollectType;
@@ -305,6 +318,23 @@ public class AntForestV2 extends ModelTask {
     private SelectModelField ForestHuntHelpList;
 
     private SelectModelField continuousUseCardOptions;
+    private IntegerModelField robExpandCardReplaceRemainDays;
+    private IntegerModelField robExpandCardForceReplaceExpireDays;
+    private BooleanModelField autoMakeUpSign;
+    private ChoiceModelField bubbleBoostCard;
+    private IntegerModelField bubbleBoostDailyLimit;
+    private StringModelField bubbleBoostTime;
+    private String bubbleBoostCheckId;
+    private BooleanModelField smartDoubleCard;
+    private IntegerModelField smartDoubleCardThreshold;
+    private IntegerModelField smartDoubleCardDailyLimit;
+    private BooleanModelField smartDoublePermanent, smartDouble31Days, smartDoubleRenew31;
+    private BooleanModelField forestPropRefill;
+    private IntegerModelField forestPropRefillBudget;
+    private BooleanModelField expiringForestProps;
+    private SelectModelField expiringForestPropTypes;
+    private IntegerModelField expiringForestPropHours, expiringForestPropDailyLimit;
+    private String smartDoubleCheckId;
 
     private BooleanModelField autoUseShieldCard;
     private IntegerModelField continuousUseShieldHour;
@@ -318,7 +348,21 @@ public class AntForestV2 extends ModelTask {
         ModelFields modelFields = new ModelFields();
         modelFields.addField(collectEnergy = new BooleanModelField("collectEnergy", "收集能量", false));
         modelFields.addField(findEnergyCollect = new BooleanModelField("findEnergyCollect", "找能量", false).setDependsOn("collectEnergy"));
+        modelFields.addField(enableCycleTakeLook = new BooleanModelField("enableCycleTakeLook", "周期找能量 | 开关", false).setDependsOn("collectEnergy"));
+        modelFields.addField(cycleTakeLookTime = new StringModelField("cycleTakeLookTime", "周期找能量 | GMT+8时间窗口", "0700-0730")
+                .setDescription("HHmm-HHmm，多个窗口逗号分隔，支持跨午夜；周期与主森林任务互斥。"));
+        modelFields.addField(cycleTakeLookInterval = new IntegerModelField("cycleTakeLookInterval", "周期找能量 | 间隔秒数", 300, 30, 3600));
+        modelFields.addField(enableCycleRankScan = new BooleanModelField("enableCycleRankScan", "周期全量扫榜 | 开关", false).setDependsOn("collectEnergy"));
+        modelFields.addField(cycleRankScanTime = new StringModelField("cycleRankScanTime", "周期全量扫榜 | GMT+8时间窗口", "0700-0730")
+                .setDescription("HHmm-HHmm，多个窗口逗号分隔，支持跨午夜；PK榜遵守原PK开关。"));
+        modelFields.addField(cycleRankScanInterval = new IntegerModelField("cycleRankScanInterval", "周期全量扫榜 | 间隔分钟", 10, 5, 60));
         modelFields.addField(dontCollectList = new SelectModelField("dontCollectList", "不收取能量列表", new LinkedHashSet<>(), AlipayUser::getList));
+        modelFields.addField(collectWhiteListMode = new BooleanModelField("collectWhiteListMode", "好友收能量 | 只收白名单", false));
+        modelFields.addField(onlyCollectRevivedSelfEnergy = new BooleanModelField("onlyCollectRevivedSelfEnergy", "自己能量 | 只收被复活能量", false)
+                .setDescription("小号保留普通能量等待复活，不蹲点大球；GMT+8周一07:00至08:00暂停森林任务。"));
+        modelFields.addField(revivedSelfOrdinaryMaxEnergy = new IntegerModelField("revivedSelfOrdinaryMaxEnergy", "自己能量 | 复活模式小球例外上限", 0, 0, 1000000)
+                .setDescription("0不收普通球；正数允许收取/蹲点不超过该克数的小球，仍遵守原单球规则。"));
+        modelFields.addField(collectWhiteList = new SelectModelField("collectWhiteList", "好友收能量 | 白名单", new LinkedHashSet<>(), AlipayUser::getList));
         modelFields.addField(batchRobEnergy = new BooleanModelField("batchRobEnergy", "一键收取", false));
         modelFields.addField(CollectSelfEnergyType = new ChoiceModelField("CollectSelfEnergyType", "收单个能量球 | " + "方式", CollectSelfType.ALL, CollectSelfType.nickNames));
         modelFields.addField(CollectSelfEnergyThreshold = new IntegerModelField("CollectSelfEnergyThreshold", "收单个能量球阈值(0不限制)", 0, 0, 10000));
@@ -340,6 +384,27 @@ public class AntForestV2 extends ModelTask {
         modelFields.addField(readForest = new BooleanModelField("readForest", "无纸阅读", true));
         modelFields.addField(CollectBombEnergyLimit = new IntegerModelField("CollectBombEnergyLimit", "单个炸弹能量大于该值收取", 0, 0, 100000));
         modelFields.addField(continuousUseCardOptions = new SelectModelField("continuousUseCardOptions", "连续兑换使用道具卡片 | 选项", new LinkedHashSet<>(), CustomOption::getContinuousUseCardOptions));
+        modelFields.addField(robExpandCardReplaceRemainDays = new IntegerModelField("robExpandCardReplaceRemainDays", "收好友N倍卡 | 高倍率替换剩余天数(0关闭)", 0, 0, 365));
+        modelFields.addField(robExpandCardForceReplaceExpireDays = new IntegerModelField("robExpandCardForceReplaceExpireDays", "收好友N倍卡 | 临期强制替换天数(0关闭)", 0, 0, 365));
+        modelFields.addField(autoMakeUpSign = new BooleanModelField("autoMakeUpSign", "连续收能量 | 自动补签", false).setDescription("使用现有补签卡，优先补最近30天最早漏签；不兑换补签卡"));
+        modelFields.addField(bubbleBoostCard = new ChoiceModelField("bubbleBoostCard", "时光加速器 | 消耗类型", UsePropType.CLOSE, UsePropType.nickNames));
+        modelFields.addField(bubbleBoostDailyLimit = new IntegerModelField("bubbleBoostDailyLimit", "时光加速器 | 每日尝试上限（0不用）", 1, 0, 100));
+        modelFields.addField(bubbleBoostTime = new StringModelField("bubbleBoostTime", "时光加速器 | GMT+8时间点/禁止时段", "-1")
+                .setDescription("-1沿用每轮尝试；HHmm时间点逗号分隔，可附加!HHmm-HHmm禁止窗口。默认只用库存；缺货补兑需独立开启及预算，每个时间点每天最多一次消费尝试。"));
+        modelFields.addField(smartDoubleCard = new BooleanModelField("smartDoubleCard", "双击卡 | 按未来蹲点数量使用", false)
+                .setDescription("需勾选连续道具中的双击卡；按未来约5分钟明确可双击的好友球数量触发。默认只用限时库存；永久/31天/续用及指定补兑需分别开启，补兑还需设置预算。"));
+        modelFields.addField(smartDoubleCardThreshold = new IntegerModelField("smartDoubleCardThreshold", "双击卡 | 未来5分钟蹲点球阈值", 10, 1, 100).setDependsOn("smartDoubleCard"));
+        modelFields.addField(smartDoubleCardDailyLimit = new IntegerModelField("smartDoubleCardDailyLimit", "双击卡 | 智能使用每日尝试上限（0不用）", 6, 0, 100).setDependsOn("smartDoubleCard"));
+        modelFields.addField(smartDoublePermanent = new BooleanModelField("smartDoublePermanent", "双击卡 | 智能策略允许永久库存", false).setDependsOn("smartDoubleCard"));
+        modelFields.addField(smartDouble31Days = new BooleanModelField("smartDouble31Days", "双击卡 | 智能策略允许31天库存", false).setDependsOn("smartDoubleCard"));
+        modelFields.addField(smartDoubleRenew31 = new BooleanModelField("smartDoubleRenew31", "双击卡 | 31天卡允许确认续用", false).setDependsOn("smartDouble31Days"));
+        modelFields.addField(forestPropRefill = new BooleanModelField("forestPropRefill", "森林道具 | 缺货时按勾选目录补兑", false));
+        modelFields.addField(forestPropRefillBudget = new IntegerModelField("forestPropRefillBudget", "森林道具 | 补兑每日活力值预算（0不兑换）", 0, 0, 1000000).setDependsOn("forestPropRefill"));
+        forestPropRefill.setDescription("沿用活力值兑换列表及商品次数；仅当前道具缺货且实时权益明确对应类型才兑换，最多一份/调用，库存、次数和活力值扣减回查。未知结果保留预算。");
+        modelFields.addField(expiringForestProps = new BooleanModelField("expiringForestProps", "森林道具 | 集中使用临期库存", false));
+        modelFields.addField(expiringForestPropTypes = new SelectModelField("expiringForestPropTypes", "临期道具 | 允许使用类别", new LinkedHashSet<>(), ForestExpiringProps::getOptions).setDependsOn("expiringForestProps"));
+        modelFields.addField(expiringForestPropHours = new IntegerModelField("expiringForestPropHours", "临期道具 | 剩余有效小时", 24, 1, 24).setDependsOn("expiringForestProps"));
+        modelFields.addField(expiringForestPropDailyLimit = new IntegerModelField("expiringForestPropDailyLimit", "临期道具 | 每日尝试上限（0不用）", 0, 0, 10).setDependsOn("expiringForestProps"));
         modelFields.addField(autoUseShieldCard = new BooleanModelField("autoUseShieldCard", "自动续用保护罩", false));
         modelFields.addField(continuousUseShieldHour = new IntegerModelField("continuousUseShieldHour", "自动续用保护罩(小时)", 24, 1, 168).setDependsOn("autoUseShieldCard"));
         //modelFields.addField(doubleClickType = new ChoiceModelField("doubleClickType", "双击卡 | " + "自动使用", UsePropType.CLOSE, UsePropType.nickNames));
@@ -452,6 +517,10 @@ public class AntForestV2 extends ModelTask {
             taskCount.set(0);
             selfId = UserIdMap.getCurrentUid();
             hasErrorWait = false;
+            if (isRevivedSelfQuietTime()) {
+                Log.record("小号复活模式：GMT+8周一07:00至08:00暂停森林任务");
+                return;
+            }
 
             // 组队合种浇水异常中断后，把账号从组队模式恢复回个人模式
             fixTeamModeIfNeeded();
@@ -479,6 +548,23 @@ public class AntForestV2 extends ModelTask {
                 //Privilege.studentSignInRedEnvelope();
             }
             //连续兑换使用道具卡片
+            synchronized (usePropLockObj) {
+                if (!TaskCommon.IS_ENERGY_TIME && !onlyCollectRevivedSelfEnergy.getValue()) {
+                    int used = ForestExpiringProps.consume(expiringForestProps.getValue(), expiringForestPropTypes.getValue(),
+                            expiringForestPropHours.getValue(), expiringForestPropDailyLimit.getValue());
+                    if (used > 0) {
+                        JSONObject refreshed = forestSignPayload(querySelfHome());
+                        JSONArray bubbles = refreshed == null ? null : refreshed.optJSONArray("bubbles");
+                        if (expiringForestPropTypes.getValue().contains("boost")) {
+                            for (int i = 0; bubbles != null && i < bubbles.length(); i++) {
+                                JSONObject bubble = bubbles.optJSONObject(i);
+                                long id = bubble == null ? -1 : forestFeatureLong(bubble, "id");
+                                if (id > 0) removeChildTask(getBubbleTimerTid(selfId, id));
+                            }
+                        }
+                    }
+                }
+            }
             continuousUseCardOptions();
 
             if (receiveForestTaskAward.getValue()) {
@@ -486,36 +572,23 @@ public class AntForestV2 extends ModelTask {
             }
 
             JSONObject selfHomeObject = collectSelfEnergy();
+            JSONObject boostedHome = useBubbleBoostCard();
+            if (boostedHome != null) selfHomeObject = boostedHome;
+            if (!TaskCommon.IS_ENERGY_TIME && autoMakeUpSign.getValue()) autoMakeUpSign();
             try {
-                JSONObject friendsObject = MyUtils.newJSONObject(AntForestRpcCall.queryEnergyRanking());
-                if (MessageUtil.checkResultCode(TAG, friendsObject)) {
-                    collectFriendsEnergy(friendsObject, "ordinary");
-                    int pos = 20;
-                    List<String> idList = new ArrayList<>();
-                    JSONArray totalDatas = friendsObject.optJSONArray("totalDatas");
-                    while (totalDatas != null && pos < totalDatas.length()) {
-                        JSONObject friend = totalDatas.optJSONObject(pos);
-                        if (friend != null) {
-                            idList.add(friend.optString("userId"));
-                        }
-                        pos++;
-                        if (pos % 20 == 0) {
-                            collectFriendsEnergy(idList, "ordinary");
-                            idList.clear();
-                        }
-                    }
-                    if (!idList.isEmpty()) {
-                        collectFriendsEnergy(idList, "ordinary");
-                    }
-                }
+                scanForestRankings();
                 selfHomeObject = collectSelfEnergy();
             } catch (Throwable t) {
+                if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
                 Log.err(TAG, "queryEnergyRanking err:", t);
             }
 
             if (findEnergyCollect.getValue() && collectEnergy.getValue()) {
                 findAndCollectEnergy();
             }
+
+            useSmartDoubleCard();
+            scheduleSmartDoubleCheck();
 
             if (!TaskCommon.IS_ENERGY_TIME && selfHomeObject != null) {
                 String whackMoleStatus = selfHomeObject.optString("whackMoleStatus");
@@ -528,7 +601,7 @@ public class AntForestV2 extends ModelTask {
                         hasMore = false;
                         selfHomeObject = querySelfHome();
                     }
-                    if (collectWateringBubble.getValue()) {
+                    if (collectWateringBubble.getValue() || onlyCollectRevivedSelfEnergy.getValue() && collectEnergy.getValue()) {
                         JSONArray wateringBubbles = selfHomeObject.optJSONArray("wateringBubbles");
                         if (wateringBubbles == null) {
                             wateringBubbles = new JSONArray();
@@ -541,6 +614,7 @@ public class AntForestV2 extends ModelTask {
                                     continue;
                                 }
                                 String bizType = wateringBubble.optString("bizType");
+                                if (onlyCollectRevivedSelfEnergy.getValue() && !"fuhuo".equals(bizType)) continue;
                                 String friendShowName = UserIdMap.getShowName(wateringBubble.optString("userId"));
                                 switch (bizType) {
                                     case "jiaoshui": {
@@ -819,8 +893,12 @@ public class AntForestV2 extends ModelTask {
                 Log.record("无纸阅读：跳过，" + (TaskCommon.IS_ENERGY_TIME ? "当前为只收能量时段" : "未取得森林首页数据"));
             }
         } catch (Throwable t) {
+            if (t instanceof io.github.aw1y2z.sesame.util.TaskCancelledException) throw (io.github.aw1y2z.sesame.util.TaskCancelledException) t;
             Log.err(TAG, "AntForestV2.run err:", t);
         } finally {
+            scheduleForestCycles(0, 0);
+            scheduleForestCycles(1, 0);
+            scheduleBubbleBoost(0);
             try {
                 synchronized (AntForestV2.this) {
                     int count = taskCount.get();
@@ -1017,6 +1095,7 @@ public class AntForestV2 extends ModelTask {
     }
 
     private JSONObject querySelfHome() {
+        if (isRevivedSelfQuietTime()) return null;
         JSONObject userHomeObject = null;
         try {
             long start = System.currentTimeMillis();
@@ -1034,7 +1113,7 @@ public class AntForestV2 extends ModelTask {
                     Iterator<String> keyIterator = mainMember.keys();
                     while (keyIterator.hasNext()) {
                         String key = keyIterator.next();
-                        Object value = mainMember.get(key);
+                        Object value = mainMember.opt(key);
                         //将道具卡详情存为一般森林主页格式，以便统一解析
                         if (key.equals("usingUserProps")) {
                             key = "usingUserPropsNew";
@@ -1047,6 +1126,7 @@ public class AntForestV2 extends ModelTask {
                 //userHomeObject = teamHomeResult != null ? teamHomeResult.optJSONObject("mainMember") : null;
             }
         } catch (Throwable t) {
+            if (t instanceof io.github.aw1y2z.sesame.util.TaskCancelledException) throw (io.github.aw1y2z.sesame.util.TaskCancelledException) t;
             Log.printStackTrace(t);
         }
         return userHomeObject;
@@ -1062,6 +1142,7 @@ public class AntForestV2 extends ModelTask {
             int offsetTime = offsetTimeMath.nextInteger((int) ((start + end) / 2 - serverTime));
             Log.i("服务器时间：" + serverTime + "，本地与服务器时间差：" + offsetTime);
         } catch (Throwable t) {
+            if (t instanceof io.github.aw1y2z.sesame.util.TaskCancelledException) throw (io.github.aw1y2z.sesame.util.TaskCancelledException) t;
             Log.printStackTrace(t);
         }
         return userHomeObject;
@@ -1086,25 +1167,28 @@ public class AntForestV2 extends ModelTask {
     /**
      * 找能量：反复请求服务端推荐的好友，进主页交给 collectUserEnergy 收取。
      * 对照 AG AntForest.collectEnergyByTakeLook 与 GR 朋友版 findAndCollectEnergy；
-     * 未移植 AG 的 queryCombineBiz 预曝光、takeLookEnd 结束上报及结束后任务列表。
+     * 先查询推荐预曝光，扫描结束后上报并领取服务端提示的已完成奖励。
      */
     private void findAndCollectEnergy() {
+        boolean started = false, cancelled = false;
         try {
             Log.record("找能量：开始");
             JSONObject skipUsers = MyUtils.newJSONObject();
             for (String userId : dontCollectMap) {
                 skipUsers.put(userId, "baohuzhao");
             }
+            String exposed = findEnergyExposedFriend(skipUsers);
             Set<String> visited = new HashSet<>();
             int repeat = 0;
             int browsed = 0;
             for (int i = 0; i < 50 && !hasErrorWait; i++) {
-                JSONObject result = MyUtils.newJSONObject(AntForestRpcCall.takeLook(skipUsers, i == 0));
-                // AG 的 ResChecker 把 success==true 也算成功；M 的 checkResultCode 只认 resultCode，这里两者都放行
-                if (!result.optBoolean("success") && !MessageUtil.checkResultCode(TAG, result)) {
+                TimeUtil.sleep(0);
+                started = true;
+                JSONObject result = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.takeLook(skipUsers, i == 0, exposed)));
+                if (result == null) {
                     break;
                 }
-                String friendId = result.optString("friendId");
+                String friendId = result.opt("friendId") instanceof String ? result.optString("friendId") : "";
                 String actionType = result.optString("actionType");
                 boolean ended = result.optBoolean("takeLookEnd");
                 if (friendId.isEmpty() || (!actionType.isEmpty() && !"FRIEND".equals(actionType))) {
@@ -1114,6 +1198,12 @@ public class AntForestV2 extends ModelTask {
                     if (ended || ++repeat >= 3) {
                         break;
                     }
+                    TimeUtil.sleep(300);
+                    continue;
+                }
+                if (!allowCollectByWhiteList(friendId)) {
+                    skipUsers.put(friendId, "baohuzhao");
+                    if (ended) break;
                     TimeUtil.sleep(300);
                     continue;
                 }
@@ -1134,9 +1224,204 @@ public class AntForestV2 extends ModelTask {
                 TimeUtil.sleep(500);
             }
             Log.record("找能量：完成，共浏览 " + browsed + " 个好友");
+        } catch (TaskCancelledException e) {
+            cancelled = true;
+            throw e;
         } catch (Throwable t) {
             Log.printStackTrace(TAG, t);
+        } finally {
+            if (started && !cancelled && !hasErrorWait) finishFindEnergy();
         }
+    }
+
+    private void scanForestRankings() {
+        TimeUtil.sleep(0);
+        JSONObject friends = MyUtils.newJSONObject(AntForestRpcCall.queryEnergyRanking());
+        if (!MessageUtil.checkResultCode(TAG, friends)) return;
+        collectFriendsEnergy(friends, "ordinary");
+        JSONArray rows = friends.optJSONArray("totalDatas");
+        List<String> ids = new ArrayList<>();
+        for (int i = 20; rows != null && i < rows.length(); i++) {
+            TimeUtil.sleep(0);
+            JSONObject friend = rows.optJSONObject(i);
+            if (friend != null && friend.opt("userId") instanceof String && !friend.optString("userId").isEmpty()) ids.add(friend.optString("userId"));
+            if ((i + 1) % 20 == 0) { collectFriendsEnergy(ids, "ordinary"); ids.clear(); }
+        }
+        if (!ids.isEmpty()) collectFriendsEnergy(ids, "ordinary");
+    }
+
+    private boolean forestCycleEnabled(int kind, String uid) {
+        return isEnable() && collectEnergy.getValue() && !hasErrorWait && !isRevivedSelfQuietTime()
+                && uid != null && !uid.isEmpty() && uid.equals(UserIdMap.getCurrentUid())
+                && (kind == 0 ? enableCycleTakeLook.getValue() : enableCycleRankScan.getValue());
+    }
+
+    private synchronized void scheduleForestCycles(int kind, long earliest) {
+        if (io.github.aw1y2z.sesame.util.RunGeneration.isStale()) return;
+        String uid = UserIdMap.getCurrentUid();
+        String oldId = forestCycleIds[kind];
+        if (!forestCycleEnabled(kind, uid)) {
+            if (oldId != null) removeChildTask(oldId);
+            forestCycleIds[kind] = null;
+            return;
+        }
+        long now = System.currentTimeMillis();
+        String window = kind == 0 ? cycleTakeLookTime.getValue() : cycleRankScanTime.getValue();
+        long at = ForestSchedule.nextWindow(window, Math.max(now + 1000, earliest));
+        if (at < 0) {
+            if (oldId != null) removeChildTask(oldId);
+            forestCycleIds[kind] = null;
+            Log.record("森林周期配置无效，本轮不排期");
+            return;
+        }
+        ChildModelTask existing = oldId == null ? null : getChildTask(oldId);
+        if (existing != null && Boolean.FALSE.equals(existing.getIsCancel())) return;
+        long generation = taskGeneration();
+        String id = "FOREST_CYCLE|" + kind + "|" + uid + "|" + System.nanoTime();
+        if (addChildTask(new ChildModelTask(id, "antForest", () -> {
+            synchronized (this) {
+                if (!id.equals(forestCycleIds[kind])) return;
+                forestCycleIds[kind] = null;
+            }
+            boolean cancelled = false;
+            try {
+                runExclusiveChild(generation, () -> {
+                    TimeUtil.sleep(0);
+                    if (!forestCycleEnabled(kind, uid) || !check()) return;
+                    String currentWindow = kind == 0 ? cycleTakeLookTime.getValue() : cycleRankScanTime.getValue();
+                    long started = System.currentTimeMillis();
+                    if (ForestSchedule.nextWindow(currentWindow, started) != started) return;
+                    selfId = uid;
+                    if (kind == 0) findAndCollectEnergy();
+                    else { if (pkEnergy.getValue()) collectPKEnergy(); scanForestRankings(); }
+                    useSmartDoubleCard(); scheduleSmartDoubleCheck();
+                });
+            } catch (TaskCancelledException e) {
+                cancelled = true;
+                throw e;
+            } catch (Exception e) {
+                Log.record("森林周期执行失败，本轮停止：" + e.getClass().getSimpleName());
+            } finally {
+                if (!cancelled && taskGeneration() == generation && forestCycleEnabled(kind, uid)) {
+                    int value = kind == 0 ? cycleTakeLookInterval.getValue() : cycleRankScanInterval.getValue();
+                    long delay = kind == 0 ? Math.max(30, Math.min(3600, value)) * 1000L : Math.max(5, Math.min(60, value)) * 60000L;
+                    scheduleForestCycles(kind, System.currentTimeMillis() + delay);
+                }
+            }
+        }, at))) forestCycleIds[kind] = id;
+    }
+
+    private String findEnergyExposedFriend(JSONObject skipUsers) {
+        if (hasErrorWait) return "";
+        try {
+            TimeUtil.sleep(0);
+            JSONObject payload = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.queryTakeLookCombineBiz(skipUsers)));
+            JSONObject handlers = payload == null ? null : payload.optJSONObject("combineHandlerVOMap");
+            JSONObject expose = handlers == null ? null : handlers.optJSONObject("takeLookExpose");
+            Object value = expose == null ? null : expose.opt("friendUserId");
+            if (!(value instanceof String)) return "";
+            String id = (String) value;
+            if (id.isEmpty() || id.length() > 64 || !id.equals(id.trim()) || id.chars().anyMatch(Character::isISOControl)) return "";
+            if (selfId.equals(id) || dontCollectMap.contains(id) || !allowCollectByWhiteList(id)) return "";
+            return id;
+        } catch (TaskCancelledException e) {
+            throw e;
+        } catch (Exception e) {
+            Log.record("找能量预曝光未取得有效目标，继续普通推荐");
+            return "";
+        }
+    }
+
+    private static Map<String, JSONObject> takeLookRewardTasks(JSONObject payload) {
+        if (payload == null) return null;
+        Map<String, JSONObject> result = new LinkedHashMap<>();
+        java.util.ArrayDeque<JSONObject> queue = new java.util.ArrayDeque<>();
+        queue.add(payload);
+        // ponytail: cap the whole grouped/child tree at 200 nodes; unknown or oversized trees stop.
+        int count = 0;
+        while (!queue.isEmpty()) {
+            if (++count > 200) return null;
+            JSONObject node = queue.remove();
+            for (String list : new String[]{"forestTasksNew", "taskGroupInfoList", "taskInfoList", "childTaskTypeList"}) {
+                if (!node.has(list)) continue;
+                JSONArray rows = node.optJSONArray(list);
+                if (rows == null || rows.length() > 200 || queue.size() + rows.length() > 200) return null;
+                for (int i = 0; i < rows.length(); i++) {
+                    JSONObject row = rows.optJSONObject(i);
+                    if (row == null) return null;
+                    queue.add(row);
+                }
+            }
+            if (!node.has("taskBaseInfo")) continue;
+            JSONObject base = node.optJSONObject("taskBaseInfo");
+            if (base == null || !(base.opt("sceneCode") instanceof String) || !(base.opt("taskType") instanceof String)
+                    || !(base.opt("taskStatus") instanceof String)) return null;
+            String scene = base.optString("sceneCode"), type = base.optString("taskType");
+            if (scene.isEmpty() || type.isEmpty() || base.optString("taskStatus").isEmpty()
+                    || result.put(scene + "#" + type, base) != null) return null;
+        }
+        if (!payload.has("forestTasksNew") && !payload.has("taskGroupInfoList") && !payload.has("taskInfoList")) return null;
+        return result;
+    }
+
+    private void finishFindEnergy() {
+        try {
+            TimeUtil.sleep(0);
+            JSONObject end = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.takeLookEnd()));
+            receiveFindEnergyRewards(end, "chInfo_ch_appid-60000002");
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.printStackTrace(TAG, t); }
+    }
+
+    private void finishEnergyRainFlow() {
+        try {
+            TimeUtil.sleep(0);
+            if (!energyRain.getValue() || hasErrorWait) return;
+            JSONObject end = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.takeLookEnd("backFromEnergyRain")));
+            JSONObject ext = end == null ? null : end.optJSONObject("extInfoInTakeLookEnd");
+            boolean hint = false;
+            for (String name : new String[]{"energyGrant", "energyPlay"}) {
+                JSONObject item = ext == null ? null : ext.optJSONObject(name);
+                Object title = item == null ? null : item.opt("title");
+                if (title instanceof String && (((String) title).contains("还能收取") || ((String) title).contains("还可收取"))) hint = true;
+            }
+            if (hint && collectEnergy.getValue() && !isRevivedSelfQuietTime()) findAndCollectEnergy();
+            receiveFindEnergyRewards(end, "backFromEnergyRain");
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.printStackTrace(TAG, t); }
+    }
+
+    private void receiveFindEnergyRewards(JSONObject end, String source) {
+        try {
+            if (end == null || !receiveForestTaskAward.getValue() || !Boolean.TRUE.equals(end.opt("showTaskList"))) return;
+            TimeUtil.sleep(0);
+            Map<String, JSONObject> tasks = takeLookRewardTasks(forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.queryTakeLookEndTaskList(source))));
+            if (tasks == null) return;
+            int attempts = 0;
+            for (String key : new ArrayList<>(tasks.keySet())) {
+                JSONObject task = tasks.get(key);
+                if (task == null || !("FINISHED".equals(task.optString("taskStatus")) || "COMPLETE".equals(task.optString("taskStatus")))) continue;
+                String flag = "forest::findRewardAttempt::" + key;
+                if (Status.hasFlagToday(flag)) continue;
+                if (++attempts > 50) return;
+                TimeUtil.sleep(0);
+                if (!receiveForestTaskAward.getValue() || hasErrorWait) return;
+                Status.flagToday(flag);
+                JSONObject accepted = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.receiveTaskAward(task.optString("sceneCode"), task.optString("taskType"))));
+                TimeUtil.sleep(0);
+                tasks = takeLookRewardTasks(forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.queryTakeLookEndTaskList(source))));
+                JSONObject fresh = tasks == null ? null : tasks.get(key);
+                if (accepted == null || fresh == null || !"RECEIVED".equals(fresh.optString("taskStatus"))) {
+                    Log.record("找能量奖励：领取未确认，当天不重复[" + task.optString("taskType") + "]");
+                    return;
+                }
+                Log.forest("找能量奖励🎖️领取状态回查成功[" + task.optString("taskType") + "]");
+                long energy = forestFeatureLong(accepted, "incAwardCount");
+                if (accepted.opt("returnData") instanceof String && accepted.optString("returnData").contains("Energy")
+                        && energy > 0 && energy <= Integer.MAX_VALUE) Statistics.addData(Statistics.DataType.COLLECTED, (int) energy);
+            }
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.printStackTrace(TAG, t); }
     }
 
     private JSONObject collectSelfEnergy() {
@@ -1198,10 +1483,10 @@ public class AntForestV2 extends ModelTask {
             if (getType.equals("PK")) {
                 JSONObject userBaseInfo = userHomeObject.optJSONObject("userBaseInfo");
                 userName = (userBaseInfo != null ? userBaseInfo.optString("displayName") : "") + "(PK森友)";
-                isCollectEnergy = true;
+                isCollectEnergy = allowCollectByWhiteList(userId);
             } else {
                 userName = UserIdMap.getMaskName(userId);
-                isCollectEnergy = collectEnergy.getValue() && !dontCollectMap.contains(userId);
+                isCollectEnergy = collectEnergy.getValue() && !dontCollectMap.contains(userId) && allowCollectByWhiteList(userId);
             }
 
             if (isSelf) {
@@ -1239,7 +1524,7 @@ public class AntForestV2 extends ModelTask {
                                                 if (hasChildTask(AntForestV2.getBubbleTimerTid(userId, bubbleId))) {
                                                     break;
                                                 }
-                                                addChildTask(new BubbleTimerTask(userId, bubbleId, produceTime, userName));
+                                                addChildTask(new BubbleTimerTask(userId, bubbleId, produceTime, userName, Boolean.TRUE.equals(canbubble.opt("canBeRobbedTwice"))));
                                                 Log.record("[" + userName + "]能量保护罩时间[" + TimeUtil.getCommonDate(joProp.optLong("endTime")) + "]#未覆盖能量球成熟时间[" + TimeUtil.getCommonDate(produceTime) + "]");
                                                 Log.record("添加蹲点收取🪂[" + userName + "]在[" + TimeUtil.getCommonDate(produceTime) + "]执行");
                                             } else {
@@ -1289,6 +1574,10 @@ public class AntForestV2 extends ModelTask {
                     if (bubble == null) {
                         continue;
                     }
+                    if (isSelf && !allowRevivedSelfBubble(bubble, "WAITING".equals(bubble.optString("collectStatus")))) {
+                        removeChildTask(getBubbleTimerTid(userId, bubble.optLong("id")));
+                        continue;
+                    }
                     int remainEnergy = bubble.optInt("remainEnergy");
                     long bubbleId = bubble.optLong("id");
                     switch (CollectStatus.valueOf(bubble.optString("collectStatus"))) {
@@ -1309,13 +1598,13 @@ public class AntForestV2 extends ModelTask {
                                     break;
                                 }
                                 if (CollectSelfEnergyType.getValue() == CollectSelfType.ALL) {
-                                    addChildTask(new BubbleTimerTask(userId, bubbleId, produceTime, userName));
+                                    addChildTask(new BubbleTimerTask(userId, bubbleId, produceTime, userName, Boolean.TRUE.equals(bubble.opt("canBeRobbedTwice"))));
                                     Log.record("添加蹲点收取🪂[" + userName + "]在[" + TimeUtil.getCommonDate(produceTime) + "]执行");
                                 } else if ((CollectSelfEnergyType.getValue() == CollectSelfType.OVER_THRESHOLD) && (remainEnergy >= CollectSelfEnergyThreshold.getValue())) {
-                                    addChildTask(new BubbleTimerTask(userId, bubbleId, produceTime, userName));
+                                    addChildTask(new BubbleTimerTask(userId, bubbleId, produceTime, userName, Boolean.TRUE.equals(bubble.opt("canBeRobbedTwice"))));
                                     Log.record("添加蹲点收取🪂[" + userName + "]在[" + TimeUtil.getCommonDate(produceTime) + "]执行");
                                 } else if (((CollectSelfEnergyType.getValue() == CollectSelfType.BELOW_THRESHOLD) && (remainEnergy <= CollectSelfEnergyThreshold.getValue()))) {
-                                    addChildTask(new BubbleTimerTask(userId, bubbleId, produceTime, userName));
+                                    addChildTask(new BubbleTimerTask(userId, bubbleId, produceTime, userName, Boolean.TRUE.equals(bubble.opt("canBeRobbedTwice"))));
                                     Log.record("添加蹲点收取🪂[" + userName + "]在[" + TimeUtil.getCommonDate(produceTime) + "]执行");
                                 }
                             } else {
@@ -1401,7 +1690,7 @@ public class AntForestV2 extends ModelTask {
                             userHomeObject = collectFriendEnergy(userId, getType);
                         }
                     } else {
-                        if (collectEnergy.getValue() && !dontCollectMap.contains(userId)) {
+                        if (collectEnergy.getValue() && !dontCollectMap.contains(userId) && allowCollectByWhiteList(userId)) {
                             boolean collectEnergy = true;
                             if (!friendObject.optBoolean("canCollectEnergy")) {
                                 long canCollectLaterTime = friendObject.optLong("canCollectLaterTime");
@@ -1536,17 +1825,80 @@ public class AntForestV2 extends ModelTask {
         }
     }
 
+    private boolean allowCollectByWhiteList(String userId) {
+        if (userId == null || userId.isEmpty()) return false;
+        if (!collectWhiteListMode.getValue() || Objects.equals(userId, selfId)) return true;
+        Set<String> allowed = collectWhiteList.getValue();
+        return allowed != null && allowed.contains(userId) && !dontCollectMap.contains(userId);
+    }
+
+    private boolean isRevivedSelfQuietTime() {
+        if (!onlyCollectRevivedSelfEnergy.getValue()) return false;
+        java.util.Calendar now = MyUtils.getInstance();
+        return now.get(java.util.Calendar.DAY_OF_WEEK) == java.util.Calendar.MONDAY
+                && now.get(java.util.Calendar.HOUR_OF_DAY) == 7;
+    }
+
+    private boolean allowRevivedSelfBubble(JSONObject bubble, boolean waiting) {
+        if (!onlyCollectRevivedSelfEnergy.getValue()) return true;
+        if (bubble == null) return false;
+        long energy = forestFeatureLong(bubble, "fullEnergy");
+        if (energy <= 0) return false;
+        JSONObject business = bubble.optJSONObject("business");
+        if (!waiting && business != null && "fuhuonengliang".equals(business.optString("secondScene"))) return true;
+        int max = revivedSelfOrdinaryMaxEnergy.getValue();
+        return max > 0 && energy <= max;
+    }
+
+    private boolean allowRevivedSelfRequest(CollectEnergyEntity entity) {
+        if (!onlyCollectRevivedSelfEnergy.getValue()) return true;
+        if (isRevivedSelfQuietTime()) return false;
+        if (!Objects.equals(entity.getUserId(), selfId)) return true;
+        try {
+            TimeUtil.sleep(0);
+            RpcEntity rpc = entity.getRpcEntity();
+            JSONArray args = rpc == null ? null : new JSONArray(rpc.getRequestData());
+            JSONObject request = args == null || args.length() != 1 ? null : args.optJSONObject(0);
+            JSONArray ids = request == null ? null : request.optJSONArray("bubbleIds");
+            if (request == null || !selfId.equals(request.optString("userId")) || ids == null || ids.length() == 0 || ids.length() > 6) return false;
+            JSONObject raw = querySelfHome();
+            JSONObject home = raw == null ? null : forestSignPayload(raw);
+            JSONArray rows = home == null ? null : home.optJSONArray("bubbles");
+            if (rows == null) return false;
+            Map<Long, JSONObject> current = new HashMap<>();
+            for (int i = 0; i < rows.length(); i++) {
+                JSONObject row = rows.optJSONObject(i);
+                long id = row == null ? -1 : forestFeatureLong(row, "id");
+                if (id <= 0 || current.put(id, row) != null) return false;
+            }
+            Set<Long> seen = new HashSet<>();
+            for (int i = 0; i < ids.length(); i++) {
+                Object value = ids.opt(i);
+                if (!(value instanceof Number)) return false;
+                long id = new java.math.BigDecimal(value.toString()).longValueExact();
+                JSONObject bubble = current.get(id);
+                if (id <= 0 || !seen.add(id) || bubble == null
+                        || !("AVAILABLE".equals(bubble.optString("collectStatus")) || "WAITING".equals(bubble.optString("collectStatus")))
+                        || !allowRevivedSelfBubble(bubble, "WAITING".equals(bubble.optString("collectStatus")))) return false;
+            }
+            TimeUtil.sleep(0);
+            return !isRevivedSelfQuietTime();
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { return false; }
+    }
+
     private void collectEnergy(CollectEnergyEntity collectEnergyEntity, String username) {
         collectEnergy(collectEnergyEntity, false, username);
     }
 
     private void collectEnergy(CollectEnergyEntity collectEnergyEntity, Boolean joinThread, String username) {
-        if (hasErrorWait) {
+        if (hasErrorWait || !allowCollectByWhiteList(collectEnergyEntity.getUserId())) {
             return;
         }
         Runnable runnable = () -> {
             try {
                 String userId = collectEnergyEntity.getUserId();
+                if (!allowCollectByWhiteList(userId)) return;
                 //usePropBeforeCollectEnergy(userId);
                 RpcEntity rpcEntity = collectEnergyEntity.getRpcEntity();
                 boolean needDouble = collectEnergyEntity.getNeedDouble();
@@ -1571,6 +1923,8 @@ public class AntForestV2 extends ModelTask {
                     startTime = System.currentTimeMillis();
                     collectEnergyLockLimit.setForce(startTime);
                 }
+                if (!allowCollectByWhiteList(userId)) return;
+                if (!allowRevivedSelfRequest(collectEnergyEntity)) return;
                 ApplicationHook.requestObject(rpcEntity, 0, 0);
                 long spendTime = System.currentTimeMillis() - startTime;
                 if (balanceNetworkDelay.getValue()) {
@@ -1719,6 +2073,8 @@ public class AntForestV2 extends ModelTask {
                         }
                     }
                 }
+            } catch (TaskCancelledException e) {
+                throw e;
             } catch (Exception e) {
                 Log.i("collectEnergy err:");
                 Log.printStackTrace(e);
@@ -2467,6 +2823,320 @@ public class AntForestV2 extends ModelTask {
         }
     }
 
+    static JSONObject forestSignPayload(JSONObject root) {
+        if (root == null) return null;
+        if (RpcRequestGuard.isFailure(root)) return null;
+        JSONObject data = root.optJSONObject("resData");
+        if (data == null) data = root;
+        if (RpcRequestGuard.isFailure(data)) return null;
+        if (Boolean.TRUE.equals(data.opt("success")) || "SUCCESS".equals(data.optString("resultCode"))
+                || "100".equals(data.optString("resultCode"))) return data;
+        if (data != root && (Boolean.TRUE.equals(root.opt("success")) || "SUCCESS".equals(root.optString("resultCode")))) return data;
+        return null;
+    }
+
+    private static java.util.SortedSet<java.time.LocalDate> missingForestSignDates(JSONArray rows, java.time.LocalDate today) {
+        if (rows == null) return null;
+        java.util.SortedSet<java.time.LocalDate> missing = new java.util.TreeSet<>();
+        Map<String, String> states = new HashMap<>();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (row == null || !(row.opt("signKey") instanceof String)) continue;
+            String key = row.optString("signKey");
+            java.time.LocalDate date;
+            try { date = java.time.LocalDate.parse(key); } catch (java.time.DateTimeException e) { continue; }
+            if (!date.toString().equals(key) || !date.isBefore(today) || date.isBefore(today.minusDays(30))) continue;
+            String state = String.valueOf(row.opt("signed")) + "/" + row.opt("makeUpSigned") + "/" + row.opt("canMakeUpSign");
+            String previous = states.put(key, state);
+            if (previous != null && !previous.equals(state)) return null;
+            if (Boolean.FALSE.equals(row.opt("signed")) && Boolean.FALSE.equals(row.opt("makeUpSigned"))
+                    && (!row.has("canMakeUpSign") || Boolean.TRUE.equals(row.opt("canMakeUpSign")))) missing.add(date);
+        }
+        return missing;
+    }
+
+    private JSONArray queryForestSignMonth(java.time.YearMonth month) throws JSONException {
+        TimeUtil.sleep(0);
+        java.time.LocalDate first = month.atDay(1);
+        java.time.LocalDate begin = first.minusDays(first.getDayOfWeek().getValue() - 1);
+        JSONObject data = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.queryForestSignMonth(month.toString(), begin.toString(), begin.plusDays(41).toString())));
+        return data == null ? null : data.optJSONArray("signModelList");
+    }
+
+    private int forestMakeupCardCount() throws JSONException {
+        TimeUtil.sleep(0);
+        JSONObject data = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.listForestMakeupCards()));
+        JSONObject stock = data == null ? null : data.optJSONObject("userSCAssetsVO");
+        JSONArray ids = stock == null ? null : stock.optJSONArray("canUseSCAssetsIdList");
+        if (ids == null) return -1;
+        Set<String> unique = new HashSet<>();
+        for (int i = 0; i < ids.length(); i++) {
+            Object id = ids.opt(i);
+            if (!(id instanceof String) || ((String) id).isEmpty() || !unique.add((String) id)) return -1;
+        }
+        return unique.size();
+    }
+
+    private Map<Long, Long> waitingBoostBubbles(JSONObject home) {
+        long now = forestFeatureLong(home, "now");
+        JSONArray rows = home.optJSONArray("bubbles");
+        if (now <= 0 || rows == null) return null;
+        Map<Long, Long> result = new LinkedHashMap<>();
+        Set<Long> seen = new HashSet<>();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            long id = row == null ? -1 : forestFeatureLong(row, "id");
+            if (id <= 0 || !seen.add(id)) return null;
+            if (!"WAITING".equals(row.optString("collectStatus"))) continue;
+            long energy = forestFeatureLong(row, "fullEnergy"), at = forestFeatureLong(row, "produceTime");
+            if (energy <= 0 || at <= now) continue;
+            int type = CollectSelfEnergyType.getValue(), threshold = CollectSelfEnergyThreshold.getValue();
+            if (type != CollectSelfType.ALL && !(type == CollectSelfType.OVER_THRESHOLD && energy >= threshold)
+                    && !(type == CollectSelfType.BELOW_THRESHOLD && energy <= threshold)) continue;
+            result.put(id, at);
+        }
+        return result;
+    }
+
+    private static JSONObject selectBoostProp(JSONObject bag, int mode, long now) throws JSONException {
+        JSONArray rows = bag == null ? null : bag.optJSONArray("forestPropVOList");
+        if (rows == null) return null;
+        JSONObject best = null;
+        int bestRank = Integer.MAX_VALUE;
+        long bestExpiry = Long.MAX_VALUE;
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject prop = rows.optJSONObject(i);
+            if (prop == null) return null;
+            if (!"boost".equals(prop.optString("propGroup"))) continue;
+            long count = forestFeatureLong(prop, "holdsNum");
+            JSONArray ids = prop.optJSONArray("propIdList");
+            if (count < 0 || ids == null) return null;
+            for (int j = 0; j < ids.length(); j++) {
+                Object id = ids.opt(j);
+                if (!(id instanceof String) || ((String) id).isEmpty() || !seen.add((String) id)) return null;
+            }
+            if (count == 0 || ids.length() == 0) continue;
+            JSONObject config = prop.optJSONObject("propConfigVO");
+            Object rawType = prop.has("propType") ? prop.opt("propType") : config == null ? null : config.opt("propType");
+            if (!(rawType instanceof String)) continue;
+            String type = (String) rawType;
+            boolean limited = "LIMIT_TIME_ENERGY_BUBBLE_BOOST".equals(type);
+            if (!limited && !"BUBBLE_BOOST".equals(type)) continue;
+            if (mode == UsePropType.ONLY_LIMIT_TIME && !limited) continue;
+            long expiry = prop.has("recentExpireTime") ? forestFeatureLong(prop, "recentExpireTime") : 0;
+            if (expiry < 0 || limited && expiry <= now || !limited && expiry > 0 && expiry <= now) continue;
+            if (expiry == 0) expiry = Long.MAX_VALUE;
+            int rank = limited ? 0 : 1;
+            if (rank < bestRank || rank == bestRank && expiry < bestExpiry) {
+                best = MyUtils.newJSONObject(prop.toString()).put("propType", type);
+                bestRank = rank; bestExpiry = expiry;
+            }
+        }
+        return best;
+    }
+
+    private static long boostStockForId(JSONObject bag, String id) {
+        JSONArray rows = bag == null ? null : bag.optJSONArray("forestPropVOList");
+        if (rows == null) return -1;
+        long result = 0;
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject prop = rows.optJSONObject(i);
+            if (prop == null) return -1;
+            if (!"boost".equals(prop.optString("propGroup"))) continue;
+            long count = forestFeatureLong(prop, "holdsNum");
+            JSONArray ids = prop.optJSONArray("propIdList");
+            if (count < 0 || ids == null) return -1;
+            for (int j = 0; j < ids.length(); j++) {
+                Object value = ids.opt(j);
+                if (!(value instanceof String) || ((String) value).isEmpty() || !seen.add((String) value)) return -1;
+                if (id.equals(value)) result = count;
+            }
+        }
+        return result;
+    }
+
+    private JSONObject useBubbleBoostCard() {
+        synchronized (usePropLockObj) {
+            if (!boostTimeAllowed(System.currentTimeMillis())) return null;
+            return useBubbleBoostCardLocked();
+        }
+    }
+
+    private String boostPointFlag(long now) {
+        String point = ForestSchedule.pointKey(bubbleBoostTime.getValue(), now);
+        return point.isEmpty() ? "" : "forest::boostTimePoint::" + point;
+    }
+
+    private boolean boostTimeAllowed(long now) {
+        String flag = boostPointFlag(now);
+        return ForestSchedule.nextTrigger(bubbleBoostTime.getValue(), now) == now
+                && (flag.isEmpty() || !Status.hasFlagToday(flag));
+    }
+
+    private synchronized void scheduleBubbleBoost(long earliest) {
+        if (io.github.aw1y2z.sesame.util.RunGeneration.isStale()) return;
+        String uid = UserIdMap.getCurrentUid(), old = bubbleBoostCheckId;
+        int mode = bubbleBoostCard.getValue();
+        long now = System.currentTimeMillis();
+        boolean enabled = isEnable() && collectEnergy.getValue() && !onlyCollectRevivedSelfEnergy.getValue()
+                && !hasErrorWait && !isRevivedSelfQuietTime() && uid != null && !uid.isEmpty()
+                && (mode == UsePropType.ALL || mode == UsePropType.ONLY_LIMIT_TIME)
+                && Status.getIntFlagToday("forest::boostAttempts") < bubbleBoostDailyLimit.getValue();
+        long from = Math.max(now + 1000, earliest);
+        String rules = bubbleBoostTime.getValue();
+        long at = enabled ? ForestSchedule.nextTrigger(rules, from) : -1;
+        if (at >= 0 && !boostPointFlag(at).isEmpty() && Status.hasFlagToday(boostPointFlag(at)))
+            at = ForestSchedule.nextTrigger(rules, at - at % 60000L + 60000L);
+        if (at < 0 || !ForestSchedule.hasPoints(rules) && at == from) {
+            if (old != null) removeChildTask(old);
+            bubbleBoostCheckId = null;
+            return;
+        }
+        ChildModelTask current = old == null ? null : getChildTask(old);
+        if (current != null && Boolean.FALSE.equals(current.getIsCancel())) return;
+        long generation = taskGeneration();
+        String id = "FOREST_BOOST|" + uid + "|" + System.nanoTime();
+        if (addChildTask(new ChildModelTask(id, "antForest", () -> {
+            synchronized (this) {
+                if (!id.equals(bubbleBoostCheckId)) return;
+                bubbleBoostCheckId = null;
+            }
+            boolean cancelled = false;
+            try {
+                runExclusiveChild(generation, () -> {
+                    TimeUtil.sleep(0);
+                    if (!uid.equals(UserIdMap.getCurrentUid()) || !isEnable() || hasErrorWait || !check() || isRevivedSelfQuietTime()) return;
+                    selfId = uid;
+                    useBubbleBoostCard();
+                });
+            } catch (TaskCancelledException e) {
+                cancelled = true;
+                throw e;
+            } finally {
+                if (!cancelled && generation == taskGeneration() && uid.equals(UserIdMap.getCurrentUid())) scheduleBubbleBoost(System.currentTimeMillis() + 30000);
+            }
+        }, at))) bubbleBoostCheckId = id;
+    }
+
+    private JSONObject useBubbleBoostCardLocked() {
+        if (ForestExpiringProps.hasUnconfirmed("boost")) return null;
+        if (onlyCollectRevivedSelfEnergy.getValue()) return null;
+        int mode = bubbleBoostCard.getValue(), limit = bubbleBoostDailyLimit.getValue();
+        if ((mode != UsePropType.ALL && mode != UsePropType.ONLY_LIMIT_TIME) || limit <= 0 || !collectEnergy.getValue()
+                || Status.getIntFlagToday("forest::boostAttempts") >= limit) return null;
+        try {
+            TimeUtil.sleep(0);
+            JSONObject rawHome = querySelfHome();
+            JSONObject home = rawHome == null ? null : forestSignPayload(rawHome);
+            if (home == null) return null;
+            Map<Long, Long> waiting = waitingBoostBubbles(home);
+            if (waiting == null || waiting.isEmpty()) return null;
+            JSONObject bag = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.queryPropList(false)));
+            JSONObject prop = selectBoostProp(bag, mode, forestFeatureLong(home, "now"));
+            if (prop == null) {
+                JSONArray refilled = refillForestProp("boost");
+                if (refilled != null) { bag = MyUtils.newJSONObject().put("forestPropVOList", refilled);prop = selectBoostProp(bag, mode, forestFeatureLong(home, "now")); }
+            }
+            if (prop == null) return null;
+            TimeUtil.sleep(0);
+            rawHome = querySelfHome();
+            home = rawHome == null ? null : forestSignPayload(rawHome);
+            if (home == null) return null;
+            waiting = waitingBoostBubbles(home);
+            if (waiting == null || waiting.isEmpty()) return null;
+            prop = selectBoostProp(bag, mode, forestFeatureLong(home, "now"));
+            if (prop == null) return null;
+            String id = prop.optJSONArray("propIdList").optString(0);
+            String flag = "forest::boostAttempt::" + id;
+            if (Status.hasFlagToday(flag)) return null;
+            TimeUtil.sleep(0);
+            if (bubbleBoostCard.getValue() != mode || !collectEnergy.getValue() || onlyCollectRevivedSelfEnergy.getValue()
+                    || !boostTimeAllowed(System.currentTimeMillis())
+                    || Status.getIntFlagToday("forest::boostAttempts") >= bubbleBoostDailyLimit.getValue()) return null;
+            String pointFlag = boostPointFlag(System.currentTimeMillis());
+            if (!pointFlag.isEmpty()) Status.flagToday(pointFlag);
+            Status.flagToday(flag);
+            Status.setIntFlagToday("forest::boostAttempts", Status.getIntFlagToday("forest::boostAttempts") + 1);
+            JSONObject accepted = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.consumeProp("boost", id, prop.optString("propType"), false)));
+            TimeUtil.sleep(0);
+            JSONObject afterRaw = querySelfHome();
+            JSONObject after = afterRaw == null ? null : forestSignPayload(afterRaw);
+            JSONObject afterBag = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.queryPropList(false)));
+            long stock = boostStockForId(afterBag, id);
+            if (accepted == null || after == null || stock < 0 || stock >= forestFeatureLong(prop, "holdsNum")) return null;
+            long now = forestFeatureLong(after, "now");
+            JSONArray rows = after.optJSONArray("bubbles");
+            if (rows == null || now < forestFeatureLong(home, "now")) return null;
+            Set<Long> seen = new HashSet<>(), changed = new HashSet<>();
+            for (int i = 0; i < rows.length(); i++) {
+                JSONObject row = rows.optJSONObject(i);
+                long bubble = row == null ? -1 : forestFeatureLong(row, "id");
+                if (bubble <= 0 || !seen.add(bubble)) return null;
+                Long original = waiting.get(bubble);
+                if (original == null) continue;
+                long at = forestFeatureLong(row, "produceTime");
+                if ("WAITING".equals(row.optString("collectStatus")) && at > 0 && at < original
+                        || "AVAILABLE".equals(row.optString("collectStatus")) && now < original && forestFeatureLong(row, "remainEnergy") > 0) changed.add(bubble);
+            }
+            if (changed.isEmpty()) {
+            Log.record("时光加速器效果未确认，本日不重复尝试此卡");
+                return null;
+            }
+            TimeUtil.sleep(0);
+            for (Long bubble : changed) removeChildTask(getBubbleTimerTid(selfId, bubble));
+            Log.forest("时光加速器🌪库存及加速效果回查成功#" + changed.size() + "个能量球");
+            return collectUserEnergy(selfId, afterRaw, "ordinary");
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e; }
+        catch (Exception e) { Log.err(TAG, "useBubbleBoostCard", e); }
+        return null;
+    }
+
+    private void autoMakeUpSign() {
+        if (!autoMakeUpSign.getValue()) return;
+        try {
+            if (forestMakeupCardCount() <= 0) return;
+            Calendar day = MyUtils.getInstance();
+            java.time.LocalDate today = java.time.LocalDate.of(day.get(Calendar.YEAR), day.get(Calendar.MONTH) + 1, day.get(Calendar.DAY_OF_MONTH));
+            java.util.SortedSet<java.time.LocalDate> missing = new java.util.TreeSet<>();
+            java.time.YearMonth last = java.time.YearMonth.from(today);
+            // A 30-day window can span three months (March 1 in a non-leap year).
+            for (java.time.YearMonth month = java.time.YearMonth.from(today.minusDays(30)); !month.isAfter(last); month = month.plusMonths(1)) {
+                java.util.SortedSet<java.time.LocalDate> dates = missingForestSignDates(queryForestSignMonth(month), today);
+                if (dates == null) { Log.record("森林补签：日历状态未知，停止"); return; }
+                missing.addAll(dates);
+            }
+            for (java.time.LocalDate date : missing) {
+                TimeUtil.sleep(0);
+                String flag = "forest::makeupAttempt::" + date;
+                if (Status.hasFlagToday(flag)) continue;
+                java.util.SortedSet<java.time.LocalDate> fresh = missingForestSignDates(queryForestSignMonth(java.time.YearMonth.from(date)), today);
+                if (fresh == null) return;
+                if (!fresh.contains(date)) continue;
+                if (forestMakeupCardCount() <= 0) return;
+                Calendar current = MyUtils.getInstance();
+                if (!today.equals(java.time.LocalDate.of(current.get(Calendar.YEAR), current.get(Calendar.MONTH) + 1, current.get(Calendar.DAY_OF_MONTH)))) return;
+                Status.flagToday(flag);
+                JSONObject response = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.manualMakeUpSign(date.toString())));
+                JSONArray after = queryForestSignMonth(java.time.YearMonth.from(date));
+                if (response == null || after == null) return;
+                int matches = 0;
+                boolean confirmed = false;
+                for (int i = 0; i < after.length(); i++) {
+                    JSONObject row = after.optJSONObject(i);
+                    if (row != null && date.toString().equals(row.opt("signKey"))) {
+                        matches++;
+                        confirmed = Boolean.TRUE.equals(row.opt("signed")) || Boolean.TRUE.equals(row.opt("makeUpSigned"));
+                    }
+                }
+                if (matches != 1 || !confirmed) { Log.record("森林补签：结果未确认，当天不重复提交[" + date + "]"); return; }
+                Log.forest("森林补签📅[" + date + "]回查成功");
+            }
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.err(TAG, "autoMakeUpSign", t); }
+    }
+
     private void vantiepSign() {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryTaskList());
@@ -2899,6 +3569,7 @@ public class AntForestV2 extends ModelTask {
                 Statistics.addData(Statistics.DataType.COLLECTED, sum);
             }
             TimeUtil.sleep(500);
+        } catch (TaskCancelledException e) { throw e;
         } catch (Throwable th) {
             Log.err(TAG, "startEnergyRain err:", th);
         }
@@ -2932,10 +3603,12 @@ public class AntForestV2 extends ModelTask {
 
     private void energyRain() {
         try {
+            boolean started = false;
             JSONObject joEnergyRainHome = MyUtils.newJSONObject(AntForestRpcCall.queryEnergyRainHome());
             TimeUtil.sleep(500);
             if (MessageUtil.checkResultCode(TAG, joEnergyRainHome)) {
                 if (joEnergyRainHome.optBoolean("canPlayToday")) {
+                    started = true;
                     startEnergyRain();
                 }
                 if (joEnergyRainHome.optBoolean("canGrantStatus")) {
@@ -2958,6 +3631,7 @@ public class AntForestV2 extends ModelTask {
                                 // 20230724能量雨调整为列表中没有可赠送的好友则不赠送
                                 if (MessageUtil.checkResultCode(TAG, joEnergyRainChance)) {
                                     Log.forest("送能量雨🌧️[" + UserIdMap.getMaskName(userId) + "]");
+                                    started = true;
                                     startEnergyRain();
                                 }
                                 break;
@@ -2983,8 +3657,11 @@ public class AntForestV2 extends ModelTask {
             joEnergyRainHome = MyUtils.newJSONObject(AntForestRpcCall.queryEnergyRainHome());
             TimeUtil.sleep(500);
             if (MessageUtil.checkResultCode(TAG, joEnergyRainHome) && joEnergyRainHome.optBoolean("canPlayToday")) {
+                started = true;
                 startEnergyRain();
             }
+            if (started) finishEnergyRainFlow();
+        } catch (TaskCancelledException e) { throw e;
         } catch (Throwable th) {
             Log.err(TAG, "energyRain err:", th);
         }
@@ -3227,14 +3904,27 @@ public class AntForestV2 extends ModelTask {
     }
 
     private void continuousUseAndExchangeCard(String propGroupType, String exchangeProp) {
+        if (ForestExpiringProps.hasUnconfirmed(propGroupType)) return;
         try {
+            if ("doubleClick".equals(propGroupType) && smartDoubleCard.getValue()) {
+                useSmartDoubleCard();
+                return;
+            }
             if (propGroupType.equals("shield") || continuousUseCardOptions.getValue().contains(propGroupType)) {
+                if ("robExpandCard".equals(propGroupType) && (robExpandCardReplaceRemainDays.getValue() > 0
+                        || robExpandCardForceReplaceExpireDays.getValue() > 0)) {
+                    refillForestProp(propGroupType);
+                    usePreferredRobExpandCard();
+                    return;
+                }
                 long continuousUseCardSecond = continuousUseCardCheak(propGroupType);
                 if (continuousUseCardSecond >= 0) {
                     TimeUtil.sleep(500);
                     JSONObject rightCard = chooseContinuousLIMITTIMECard(propGroupType);
                     if (rightCard == null) {
-                        if (exchangeProp != null) {
+                        if (forestPropRefill.getValue()) {
+                            refillForestProp(propGroupType);
+                        } else if (exchangeProp != null) {
                             exchangeBenefit(exchangeProp);
                             TimeUtil.sleep(500);
                         }
@@ -3311,9 +4001,399 @@ public class AntForestV2 extends ModelTask {
                     } while (holdsNum > 0 && ++loopCount < MAX_LOOP);
                 }
             }
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
         } catch (Throwable th) {
             Log.err(TAG, "continuousUseAndExchangeCard err:", th);
         }
+    }
+
+    private boolean smartDoubleEnabled() {
+        return smartDoubleCard.getValue() && collectEnergy.getValue() && !hasErrorWait
+                && continuousUseCardOptions.getValue().contains("doubleClick") && !isRevivedSelfQuietTime()
+                && smartDoubleCardDailyLimit.getValue() > 0;
+    }
+
+    private List<BubbleTimerTask> smartDoubleTargets(long now) {
+        List<BubbleTimerTask> targets = new ArrayList<>();
+        List<ChildModelTask> queued = getChildTaskSnapshot();
+        if (queued.size() > 2000) return targets;
+        for (ChildModelTask child : queued) {
+            if (!(child instanceof BubbleTimerTask) || !Boolean.FALSE.equals(child.getIsCancel())) continue;
+            BubbleTimerTask task = (BubbleTimerTask) child;
+            if (task.canDouble && !selfId.equals(task.userId) && !dontCollectMap.contains(task.userId)
+                    && allowCollectByWhiteList(task.userId) && task.produceTime >= now + 10000
+                    && task.produceTime <= now + 290000) targets.add(task);
+        }
+        return targets;
+    }
+
+    private List<BubbleTimerTask> confirmSmartDoubleTargets(List<BubbleTimerTask> queued) {
+        Map<String, List<BubbleTimerTask>> friends = new LinkedHashMap<>();
+        for (BubbleTimerTask task : queued) friends.computeIfAbsent(task.userId, ignored -> new ArrayList<>()).add(task);
+        if (friends.size() > 50) return null;
+        List<BubbleTimerTask> targets = new ArrayList<>();
+        for (Map.Entry<String, List<BubbleTimerTask>> friend : friends.entrySet()) {
+            TimeUtil.sleep(0);
+            JSONObject raw = queryFriendHome(friend.getKey());
+            JSONObject home = raw == null ? null : forestSignPayload(raw);
+            if (home == null) return null;
+            for (String key : new String[]{"userInfo", "userBaseInfo"}) {
+                if (!home.has(key)) continue;
+                JSONObject identity = home.optJSONObject(key);
+                if (identity == null || identity.has("userId") && (!(identity.opt("userId") instanceof String)
+                        || !friend.getKey().equals(identity.optString("userId")))) return null;
+            }
+            if (home.has("usingUserPropsNew")) {
+                JSONArray props = home.optJSONArray("usingUserPropsNew");
+                if (props == null || props.length() > 100) return null;
+                for (int i = 0; i < props.length(); i++) {
+                    JSONObject prop = props.optJSONObject(i);
+                    if (prop == null || !(prop.opt("propGroup") instanceof String) || forestFeatureLong(prop, "endTime") < 0) return null;
+                }
+            }
+            if (hasActiveProp(home, "shield") || hasActiveProp(home, "energyBombCard")) continue;
+            JSONArray rows = home.optJSONArray("bubbles");
+            if (rows == null || rows.length() > 200) return null;
+            Map<Long, JSONObject> bubbles = new HashMap<>();
+            for (int i = 0; i < rows.length(); i++) {
+                JSONObject row = rows.optJSONObject(i);
+                long id = row == null ? -1 : forestFeatureLong(row, "id");
+                if (id <= 0 || bubbles.put(id, row) != null) return null;
+            }
+            long now = System.currentTimeMillis();
+            for (BubbleTimerTask task : friend.getValue()) {
+                JSONObject bubble = bubbles.get(task.bubbleId);
+                if (bubble != null && "WAITING".equals(bubble.optString("collectStatus"))
+                        && Boolean.TRUE.equals(bubble.opt("canBeRobbedTwice")) && forestFeatureLong(bubble, "fullEnergy") > 0
+                        && forestFeatureLong(bubble, "produceTime") == task.produceTime && task.produceTime >= now + 10000
+                        && task.produceTime <= now + 290000 && Boolean.FALSE.equals(task.getIsCancel())
+                        && !dontCollectMap.contains(task.userId) && allowCollectByWhiteList(task.userId)) targets.add(task);
+            }
+        }
+        return targets;
+    }
+
+    private long querySmartDoubleEnd() {
+        TimeUtil.sleep(0);
+        JSONObject data = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.queryMiscInfo()));
+        JSONObject map = data == null ? null : data.optJSONObject("combineHandlerVOMap");
+        JSONObject using = map == null ? null : map.optJSONObject("usingProp");
+        JSONArray rows = using == null ? null : using.optJSONArray("userPropVOS");
+        if (rows == null || rows.length() > 100) return -1;
+        long active = 0, now = System.currentTimeMillis();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (row == null || !(row.opt("propGroup") instanceof String)) return -1;
+            if (!"doubleClick".equals(row.optString("propGroup"))) continue;
+            long end = forestFeatureLong(row, "endTime");
+            if (end < 0 || end > now && active > 0) return -1;
+            if (end > now) active = end;
+        }
+        return active;
+    }
+
+    private JSONArray querySmartDoubleInventory() {
+        TimeUtil.sleep(0);
+        JSONObject data = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.queryPropList(false)));
+        JSONArray rows = data == null ? null : data.optJSONArray("forestPropVOList");
+        if (rows == null || rows.length() > 100) return null;
+        Set<String> ids = new HashSet<>();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (row == null || !(row.opt("propGroup") instanceof String)) return null;
+            if (!"doubleClick".equals(row.optString("propGroup"))) continue;
+            long count = forestFeatureLong(row, "holdsNum");
+            JSONArray list = row.optJSONArray("propIdList");
+            if (!(row.opt("propType") instanceof String) || row.optString("propType").isEmpty() || count < 0 || count > 1000
+                    || list == null && count > 0 || list != null && list.length() != count
+                    || row.has("recentExpireTime") && forestFeatureLong(row, "recentExpireTime") < 0) return null;
+            for (int j = 0; list != null && j < list.length(); j++) {
+                Object id = list.opt(j);
+                if (!(id instanceof String) || ((String) id).isEmpty() || ((String) id).length() > 256 || !ids.add((String) id)) return null;
+            }
+        }
+        return rows;
+    }
+
+    private JSONObject chooseSmartDoubleCard(JSONArray rows) {
+        JSONObject chosen = null;
+        long expiry = Long.MAX_VALUE, now = System.currentTimeMillis();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if (!"doubleClick".equals(row.optString("propGroup")) || !"LIMIT_TIME_ENERGY_DOUBLE_CLICK".equals(row.optString("propType"))
+                    || forestFeatureLong(row, "holdsNum") <= 0) continue;
+            long until = row.has("recentExpireTime") ? forestFeatureLong(row, "recentExpireTime") : 0;
+            if (until > 0 && until <= now + 10000 || until < 0) continue;
+            JSONArray ids = row.optJSONArray("propIdList");
+            if (ids == null || ids.length() == 0 || Status.hasFlagToday("forest::smartDoubleCard::" + ids.optString(0))) continue;
+            long priority = until == 0 ? Long.MAX_VALUE : until;
+            if (chosen == null || priority < expiry) { chosen = row; expiry = priority; }
+        }
+        return chosen;
+    }
+
+    private static long smartDoubleStock(JSONArray rows, String type) {
+        if (rows == null) return -1;
+        long count = 0;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            if ("doubleClick".equals(row.optString("propGroup")) && type.equals(row.optString("propType"))) count += forestFeatureLong(row, "holdsNum");
+        }
+        return count;
+    }
+
+    private static boolean smartDoubleHasId(JSONArray rows, String id) {
+        for (int i = 0; i < rows.length(); i++) {
+            JSONArray ids = rows.optJSONObject(i).optJSONArray("propIdList");
+            for (int j = 0; ids != null && j < ids.length(); j++) if (id.equals(ids.opt(j))) return true;
+        }
+        return false;
+    }
+
+    private void useSmartDoubleCard() {
+        if (ForestExpiringProps.hasUnconfirmed("doubleClick")) return;
+        TimeUtil.sleep(0);
+        if (!smartDoubleEnabled()) return;
+        synchronized (usePropLockObj) {
+            if (!smartDoubleEnabled() || !selfId.equals(UserIdMap.getCurrentUid()) || Status.hasFlagToday("forest::smartDoubleUnconfirmed")
+                    || Status.getIntFlagToday("forest::smartDoubleAttempts") >= smartDoubleCardDailyLimit.getValue()) return;
+            List<BubbleTimerTask> targets = smartDoubleTargets(System.currentTimeMillis());
+            if (targets.size() < smartDoubleCardThreshold.getValue()) return;
+            if (smartDoublePermanent.getValue() || smartDouble31Days.getValue() || forestPropRefill.getValue()) {
+                useAdvancedSmartDouble(targets);
+                return;
+            }
+            try {
+                if (querySmartDoubleEnd() != 0) return;
+                targets = confirmSmartDoubleTargets(targets);
+                if (targets == null || targets.size() < smartDoubleCardThreshold.getValue()) return;
+                JSONArray before = querySmartDoubleInventory();
+                JSONObject prop = before == null ? null : chooseSmartDoubleCard(before);
+                if (prop == null || querySmartDoubleEnd() != 0) return;
+                long now = System.currentTimeMillis();
+                long expiry = prop.has("recentExpireTime") ? forestFeatureLong(prop, "recentExpireTime") : 0;
+                if (expiry > 0 && expiry <= now + 10000) return;
+                targets.removeIf(task -> task.produceTime < now + 10000 || task.produceTime > now + 290000
+                        || !Boolean.FALSE.equals(task.getIsCancel()) || !allowCollectByWhiteList(task.userId) || dontCollectMap.contains(task.userId));
+                if (!smartDoubleEnabled() || !selfId.equals(UserIdMap.getCurrentUid()) || targets.size() < smartDoubleCardThreshold.getValue()) return;
+                String type = prop.optString("propType"), id = prop.optJSONArray("propIdList").optString(0);
+                long stock = smartDoubleStock(before, type);
+                TimeUtil.sleep(0);
+                Status.flagToday("forest::smartDoubleCard::" + id);
+                Status.setIntFlagToday("forest::smartDoubleAttempts", Status.getIntFlagToday("forest::smartDoubleAttempts") + 1);
+                Status.flagToday("forest::smartDoubleUnconfirmed");
+                JSONObject ack = forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.consumeProp("doubleClick", id, type, false)));
+                JSONArray after = querySmartDoubleInventory();
+                long end = querySmartDoubleEnd();
+                if (ack != null && after != null && stock > 0 && smartDoubleStock(after, type) == stock - 1
+                        && !smartDoubleHasId(after, id) && end > System.currentTimeMillis()) {
+                    Status.clearFlag("forest::smartDoubleUnconfirmed");
+                    Log.forest("智能双击卡🎭[未来5分钟" + targets.size() + "个可双击好友球]#库存扣减及生效确认");
+                }
+            } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
+            } catch (Throwable e) { Log.err(TAG, "smartDoubleCard err:", e); }
+        }
+    }
+
+    private void scheduleSmartDoubleCheck() {
+        TimeUtil.sleep(0);
+        synchronized (usePropLockObj) {
+            long now = System.currentTimeMillis(), earliest = Long.MAX_VALUE;
+            if (smartDoubleEnabled() && selfId.equals(UserIdMap.getCurrentUid()) && !Status.hasFlagToday("forest::smartDoubleUnconfirmed")
+                    && Status.getIntFlagToday("forest::smartDoubleAttempts") < smartDoubleCardDailyLimit.getValue()) {
+                List<ChildModelTask> queued = getChildTaskSnapshot();
+                if (queued.size() <= 2000) for (ChildModelTask child : queued) {
+                    if (!(child instanceof BubbleTimerTask) || !Boolean.FALSE.equals(child.getIsCancel())) continue;
+                    BubbleTimerTask task = (BubbleTimerTask) child;
+                    if (task.canDouble && !selfId.equals(task.userId) && task.produceTime > now + 10000
+                            && allowCollectByWhiteList(task.userId) && !dontCollectMap.contains(task.userId)) earliest = Math.min(earliest, task.produceTime);
+                }
+            }
+            long at = earliest == Long.MAX_VALUE ? 0 : Math.max(now + 30000, earliest - 290000);
+            ChildModelTask current = smartDoubleCheckId == null ? null : getChildTask(smartDoubleCheckId);
+            if (at > 0 && current != null && Boolean.FALSE.equals(current.getIsCancel()) && current.getExecTime() > now && current.getExecTime() <= at) return;
+            if (smartDoubleCheckId != null) { removeChildTask(smartDoubleCheckId); smartDoubleCheckId = null; }
+            if (at == 0) return;
+            String uid = selfId, id = "SMART_DOUBLE|" + uid + "|" + System.nanoTime();
+            if (addChildTask(new ChildModelTask(id, "antForest", () -> {
+                TimeUtil.sleep(0);
+                synchronized (usePropLockObj) {
+                    if (!id.equals(smartDoubleCheckId) || !uid.equals(UserIdMap.getCurrentUid())) return;
+                    smartDoubleCheckId = null;
+                    useSmartDoubleCard();
+                    scheduleSmartDoubleCheck();
+                }
+            }, at))) smartDoubleCheckId = id;
+        }
+    }
+
+    @Override protected boolean supportsManualAction(String action) { return "energyRain".equals(action) || "whackMole".equals(action); }
+    @Override protected void runManualAction(String action) {
+        TimeUtil.sleep(0);
+        if (!isEnable() || !check()) return;
+        selfId = UserIdMap.getCurrentUid();
+        if (selfId == null || selfId.isEmpty()) return;
+        if ("energyRain".equals(action)) energyRain();
+        else if ("whackMole".equals(action)) checkAndHandleWhackMole();
+    }
+
+    private JSONArray refillForestProp(String group) {
+        if (!forestPropRefill.getValue() || forestPropRefillBudget.getValue() <= 0 || hasErrorWait
+                || !selfId.equals(UserIdMap.getCurrentUid())) return null;
+        TimeUtil.sleep(0);
+        getAllSkuInfo();
+        return ForestPropSupport.replenish(group, true, vitality_ExchangeBenefitList.getValue(), skuInfo, forestPropRefillBudget.getValue());
+    }
+
+    private void useAdvancedSmartDouble(List<BubbleTimerTask> targets) {
+        if (ForestExpiringProps.hasUnconfirmed("doubleClick")) return;
+        try {
+            long end = querySmartDoubleEnd();
+            if (!ForestPropSupport.doubleRenewAllowed(end, smartDouble31Days.getValue() && smartDoubleRenew31.getValue(), System.currentTimeMillis())) return;
+            targets = confirmSmartDoubleTargets(targets);
+            if (targets == null || targets.size() < smartDoubleCardThreshold.getValue()) return;
+            JSONArray rows = querySmartDoubleInventory();
+            JSONObject prop = ForestPropSupport.chooseDouble(rows, smartDoublePermanent.getValue(), smartDouble31Days.getValue(), System.currentTimeMillis(), end);
+            if (prop == null && end == 0) {
+                rows = refillForestProp("doubleClick");
+                prop = ForestPropSupport.chooseDouble(rows, smartDoublePermanent.getValue(), smartDouble31Days.getValue(), System.currentTimeMillis(), end);
+            }
+            long now = System.currentTimeMillis();
+            targets.removeIf(t -> t.produceTime < now + 10000 || t.produceTime > now + 290000 || !Boolean.FALSE.equals(t.getIsCancel())
+                    || !allowCollectByWhiteList(t.userId) || dontCollectMap.contains(t.userId));
+            if (prop == null || !smartDoubleEnabled() || !selfId.equals(UserIdMap.getCurrentUid()) || targets.size() < smartDoubleCardThreshold.getValue()) return;
+            if (ForestPropSupport.consumeDouble(prop, end, smartDouble31Days.getValue() && smartDoubleRenew31.getValue(), smartDoubleCardDailyLimit.getValue()))
+                Log.forest("智能双击卡🎭[未来5分钟" + targets.size() + "个可双击好友球]#库存及生效回查成功");
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Exception e) { Log.err(TAG, "advancedSmartDouble", e); }
+    }
+
+    /** null 表示查询失败/状态不明；空对象表示确认没有生效中的 N 倍卡。 */
+    private JSONObject queryRobExpandCardState() {
+        JSONObject response = MyUtils.newJSONObject(AntForestRpcCall.queryMiscInfo());
+        if (!"SUCCESS".equals(response.optString("resultCode")) || RpcRequestGuard.isFailure(response)) return null;
+        JSONObject map = response.optJSONObject("combineHandlerVOMap");
+        JSONObject using = map == null ? null : map.optJSONObject("usingProp");
+        JSONArray props = using == null ? null : using.optJSONArray("userPropVOS");
+        if (props == null) return null;
+        JSONObject active = null;
+        long now = System.currentTimeMillis();
+        for (int i = 0; i < props.length(); i++) {
+            JSONObject prop = props.optJSONObject(i);
+            if (prop == null || prop.optString("propGroup").isEmpty()) return null;
+            if (!"robExpandCard".equals(prop.optString("propGroup"))) continue;
+            long end = forestFeatureLong(prop, "endTime");
+            if (end < 0) return null;
+            if (end <= now) continue;
+            if (active != null || robExpandCardFactor(prop.optJSONObject("detail")) <= 0) return null;
+            active = prop;
+        }
+        return active == null ? MyUtils.newJSONObject("{}") : active;
+    }
+
+    private static double robExpandCardFactor(JSONObject detail) {
+        Object value = detail == null ? null : detail.opt("factor");
+        if (!(value instanceof Number) && !(value instanceof String)) return 0;
+        try {
+            double factor = new java.math.BigDecimal(value.toString()).doubleValue();
+            return Double.isFinite(factor) && factor > 0 ? factor : 0;
+        } catch (NumberFormatException e) { return 0; }
+    }
+
+    /** 复用 AG 策略：临期高倍率优先；普通替换不缩短有效期；否则仅同倍率续用。 */
+    private static JSONObject choosePreferredRobExpandCard(JSONArray props, JSONObject active, long now,
+                                                          int replaceDays, int urgentDays) {
+        if (props == null || active == null) return null;
+        long remaining = active.length() == 0 ? 0 : forestFeatureLong(active, "endTime") - now;
+        double current = robExpandCardFactor(active.optJSONObject("detail"));
+        if (active.length() > 0 && (remaining <= 0 || current <= 0)) return null;
+        JSONObject best = null;
+        int bestRank = -1;
+        double bestFactor = 0;
+        long bestExpiry = Long.MAX_VALUE, bestDuration = Long.MAX_VALUE;
+        for (int i = 0; i < props.length(); i++) {
+            JSONObject prop = props.optJSONObject(i);
+            if (prop == null || !"robExpandCard".equals(prop.optString("propGroup"))
+                    || forestFeatureLong(prop, "holdsNum") <= 0) continue;
+            JSONArray ids = prop.optJSONArray("propIdList");
+            JSONObject config = prop.optJSONObject("propConfigVO");
+            if (ids == null || !(ids.opt(0) instanceof String) || ids.optString(0).isEmpty() || config == null
+                    || !(prop.opt("propType") instanceof String || !prop.has("propType") && config.opt("propType") instanceof String)
+                    || prop.optString("propType", config.optString("propType")).isEmpty()) continue;
+            double factor = robExpandCardFactor(config.optJSONObject("detail"));
+            long expiry = forestFeatureLong(prop, "recentExpireTime");
+            long seconds = forestFeatureLong(config, "durationTime");
+            long duration = seconds > 0 && seconds <= Long.MAX_VALUE / 1000 ? seconds * 1000 : 0;
+            if (factor <= 0 || expiry <= now) continue;
+            int rank;
+            if (active.length() == 0) rank = 1;
+            else if (factor > current + 0.0001) {
+                if (urgentDays > 0 && expiry - now <= TimeUnit.DAYS.toMillis(urgentDays)) rank = 2;
+                else if (replaceDays > 0 && remaining <= TimeUnit.DAYS.toMillis(replaceDays)
+                        && duration >= remaining) rank = 1;
+                else continue;
+            } else if (Math.abs(factor - current) <= 0.0001 && remaining < TimeUnit.DAYS.toMillis(30)) rank = 0;
+            else continue;
+            // 临期/同倍率先到期先用，普通替换先倍率；相同条件用较短有效期。
+            boolean better = rank > bestRank || rank == bestRank && (rank == 1
+                    ? factor > bestFactor + 0.0001 || Math.abs(factor - bestFactor) <= 0.0001 && expiry < bestExpiry
+                    : expiry < bestExpiry || expiry == bestExpiry && factor > bestFactor + 0.0001);
+            if (!better && rank == bestRank && Math.abs(factor - bestFactor) <= 0.0001 && expiry == bestExpiry)
+                better = (duration == 0 ? Long.MAX_VALUE : duration) < bestDuration;
+            if (better) {
+                best = prop; bestRank = rank; bestFactor = factor; bestExpiry = expiry;
+                bestDuration = duration == 0 ? Long.MAX_VALUE : duration;
+            }
+        }
+        return best;
+    }
+
+    private void usePreferredRobExpandCard() {
+        if (ForestExpiringProps.hasUnconfirmed("robExpandCard")) return;
+        try {
+            TimeUtil.sleep(0);
+            JSONObject before = queryRobExpandCardState();
+            if (before == null) { Log.record("N倍卡：生效状态不明，跳过替换"); return; }
+            JSONArray props = getForestPropVOList();
+            JSONObject card = choosePreferredRobExpandCard(props, before, System.currentTimeMillis(),
+                    robExpandCardReplaceRemainDays.getValue(), robExpandCardForceReplaceExpireDays.getValue());
+            if (card == null) { Log.record("N倍卡：没有符合替换/续用条件的限时卡"); return; }
+            String id = card.optJSONArray("propIdList").optString(0);
+            JSONObject config = card.optJSONObject("propConfigVO");
+            String type = card.optString("propType", config.optString("propType"));
+            String flag = "forest::robExpandCardAttempt::" + id;
+            // ponytail: 同一道具编号每天最多提交一次；不确定结果留待次日或人工核验。
+            if (Status.hasFlagToday(flag)) { Log.record("N倍卡：本日已提交该道具，避免重复消耗"); return; }
+            TimeUtil.sleep(0);
+            Status.flagToday(flag);
+            JSONObject result = MyUtils.newJSONObject(AntForestRpcCall.consumeProp("robExpandCard", id, type, false));
+            JSONObject data = result.optJSONObject("resData");
+            String status = (data == null ? result : data).optString("usePropStatus");
+            if ("SUCCESS".equals(result.optString("resultCode")) && !RpcRequestGuard.isFailure(result)
+                    && (status.startsWith("NEED_CONFIRM") || "REPLACE".equals(status))) {
+                // 仅在二次确认协议明确要求且状态未变时覆盖，防止手动用卡/并行任务竞态。
+                JSONObject fresh = queryRobExpandCardState();
+                if (fresh == null || fresh.length() == 0 || before.length() == 0
+                        || forestFeatureLong(fresh, "endTime") != forestFeatureLong(before, "endTime")
+                        || Math.abs(robExpandCardFactor(fresh.optJSONObject("detail"))
+                        - robExpandCardFactor(before.optJSONObject("detail"))) > 0.0001
+                        || choosePreferredRobExpandCard(new JSONArray().put(card), fresh, System.currentTimeMillis(),
+                        robExpandCardReplaceRemainDays.getValue(), robExpandCardForceReplaceExpireDays.getValue()) == null) {
+                    Log.record("N倍卡：确认前状态改变，停止替换"); return;
+                }
+                TimeUtil.sleep(0);
+                result = MyUtils.newJSONObject(AntForestRpcCall.consumeProp("robExpandCard", id, type, true));
+            }
+            JSONObject after = queryRobExpandCardState();
+            double expected = robExpandCardFactor(config.optJSONObject("detail"));
+            if (after != null && after.length() > 0 && Math.abs(robExpandCardFactor(after.optJSONObject("detail")) - expected) <= 0.0001
+                    && (before.length() == 0 || robExpandCardFactor(after.optJSONObject("detail"))
+                    > robExpandCardFactor(before.optJSONObject("detail")) + 0.0001
+                    || forestFeatureLong(after, "endTime") > forestFeatureLong(before, "endTime"))) {
+                Log.forest("使用道具🎭[" + config.optString("propName", "N倍卡") + "]，已回查生效");
+            } else Log.record("N倍卡：使用结果未确认，本日不重复提交该道具，code=" + result.optString("resultCode", "缺失"));
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.err(TAG, "usePreferredRobExpandCard", t); }
     }
 
     /**
@@ -4351,7 +5431,7 @@ public class AntForestV2 extends ModelTask {
         return 0;
     }
 
-    private static long forestFeatureLong(JSONObject object, String key) {
+    static long forestFeatureLong(JSONObject object, String key) {
         Object value = object.opt(key);
         if (!(value instanceof Number) && !(value instanceof String)) return -1;
         try {
@@ -4765,6 +5845,7 @@ public class AntForestV2 extends ModelTask {
     }
 
     private static Boolean consumeProp(String propGroup, String propId, String propType, String propName) {
+        if (ForestExpiringProps.hasUnconfirmed(propGroup)) return false;
         try {
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.consumeProp(propGroup, propId, propType));
             if (MessageUtil.checkResultCode(TAG, jo)) {
@@ -4896,6 +5977,7 @@ public class AntForestV2 extends ModelTask {
      * exchangedCount == 0......
      */
     private Boolean exchangeBenefit(String skuId) {
+        if (skuId == null || ForestPropSupport.hasUnconfirmedRefill(skuId)) return false;
         if (skuInfo.isEmpty()) {
             getAllSkuInfo();
         }
@@ -5540,16 +6622,18 @@ public class AntForestV2 extends ModelTask {
          */
         private final long produceTime;
         private final String userName;
+        private final boolean canDouble;
 
         /**
          * Instantiates a new Bubble timer task.
          */
-        BubbleTimerTask(String ui, long bi, long pt, String un) {
+        BubbleTimerTask(String ui, long bi, long pt, String un, boolean doubled) {
             super(AntForestV2.getBubbleTimerTid(ui, bi), pt - advanceTimeInt);
             userId = ui;
             bubbleId = bi;
             produceTime = pt;
             userName = un;
+            canDouble = doubled;
         }
 
         @Override

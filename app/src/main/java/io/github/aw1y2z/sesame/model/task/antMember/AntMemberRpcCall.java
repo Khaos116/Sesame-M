@@ -1,6 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.antMember;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import io.github.aw1y2z.sesame.entity.RpcEntity;
@@ -10,6 +11,164 @@ import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.MyUtils;
 
 public class AntMemberRpcCall {
+
+    public static String querySesameGiftList(int page, String tab) throws JSONException {
+        JSONArray tabs = new JSONArray();
+        if (tab != null && !tab.isEmpty()) tabs.put(tab);
+        JSONObject body = MyUtils.newJSONObject().put("currentPage", page).put("formDelivery", "false").put("pageSize", 20)
+                .put("privilegeSource", "").put("privilegeTab", "").put("tabList", tabs);
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.award.AwardRpcManager.queryListV2", new JSONArray().put(body).toString());
+    }
+
+    public static String querySesameGiftDetail(String id) throws JSONException {
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.award.AwardRpcManager.queryDetail", new JSONArray().put(MyUtils.newJSONObject().put("awardTemplateId", id)).toString());
+    }
+
+    public static String obtainSesameGift(String id) throws JSONException {
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.award.AwardRpcManager.obtainAward", new JSONArray().put(MyUtils.newJSONObject().put("awardTemplateId", id)).toString());
+    }
+
+    public static String queryMySesameGift(String recordId) throws JSONException {
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.award.AwardRpcManager.queryMyAwardDetail", new JSONArray().put(MyUtils.newJSONObject().put("awardId", recordId)).toString());
+    }
+
+    public static String queryYebExpGoldMain(String taskId) throws JSONException {
+        JSONObject task = MyUtils.newJSONObject().put("downgrade", false).put("queryComplete", taskId != null)
+                .put("strategyCode", "YEB_TRIAL_ASSET_TASK_BLOCK_REC");
+        if (taskId != null) task.put("taskId", taskId).put("startTime", System.currentTimeMillis());
+        JSONArray text = new JSONArray();
+        for (String value : new String[]{"持", "续", "签", "到", "可", "领", ""}) text.put(MyUtils.newJSONObject().put("value", value));
+        JSONObject sign = MyUtils.newJSONObject().put("daysOfQuerySignInData", 21).put("displaySignInTextList", text)
+                .put("downgrade", false).put("todayRedDotText", "戳这里").put("tomorrowRedDotText", "");
+        return ApplicationHook.requestString("com.alipay.yebscenebff.needle.yebExpGold.queryMain", new JSONArray().put(MyUtils.newJSONObject()
+                .put("chInfo", "ch_url-https://render.alipay.com/p/yuyan/180020010001282160/index.html").put("signIn", sign).put("task", task)).toString());
+    }
+
+    public static String signInYebExpGold() throws JSONException {
+        return ApplicationHook.requestString("com.alipay.yebscenebff.needle.yebExpGold.signIn", new JSONArray().put(MyUtils.newJSONObject().put("signInPlayId", "PLAY102253251")).toString(), 1, 0);
+    }
+
+    public static String triggerYebExpGoldReward(String taskId) throws JSONException {
+        JSONObject params = MyUtils.newJSONObject().put("appletId", "AP12183159").put("taskId", taskId).put("version", 2);
+        return ApplicationHook.requestString("com.alipay.yebscenebff.promosdk.index.forward", new JSONArray().put(MyUtils.newJSONObject().put("params", params).put("path", "task.trigger")).toString(), 1, 0);
+    }
+
+    public static String queryAccomplishmentHome(String tab) throws JSONException {
+        JSONObject body = MyUtils.newJSONObject();
+        if (tab != null && !tab.isEmpty()) body.put("tabCode", tab);
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmcustprod.biz.rpc.creditidentity.api.CreditIdentityAchievementRpcManager.queryAccomplishmentHomeV2", new JSONArray().put(body).toString());
+    }
+
+    public static String queryAccomplishmentDetail(String series) throws JSONException {
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmcustprod.biz.rpc.creditidentity.api.CreditIdentityAchievementRpcManager.enterAccomplishmentDetailV2", new JSONArray().put(MyUtils.newJSONObject().put("medalSeriesCode", series)).toString());
+    }
+
+    public static String claimAccomplishment(String series) throws JSONException {
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmcustprod.biz.rpc.creditidentity.api.CreditIdentityAchievementRpcManager.claimAccomplishmentV2", new JSONArray().put(MyUtils.newJSONObject().put("medalSeriesCode", series)).toString());
+    }
+
+    public static String merchantTranscodeCheck() {
+        return ApplicationHook.requestString("alipay.mrchservbase.mrchbusiness.sign.transcode.check", "[{}]");
+    }
+
+    public static String merchantHomePage() throws JSONException {
+        JSONObject context = MyUtils.newJSONObject().put("dispenseTaskItemCode", "ZDH_CONTINUE_QY_ZJ").put("isGuide", "true")
+                .put("miniAppVersion", 20260601).put("underTakeTrace", "NULL");
+        return ApplicationHook.requestString("alipay.mrchservbase.mrchpoint.sqyj.homepage.v5", new JSONArray().put(MyUtils.newJSONObject().put("context", context)).toString());
+    }
+
+    public static String merchantSign() {
+        return ApplicationHook.requestString("alipay.mrchservbase.mrchpoint.sqyj.homepage.signin.v1", "[{\"signScene\":\"TASK_LIST_SIGN\"}]");
+    }
+
+    public static String merchantZcj(boolean execute) throws JSONException {
+        return ApplicationHook.requestString("alipay.mrchservbase.zcj.view.invoke", new JSONArray().put(MyUtils.newJSONObject().put("compId", execute ? "ZCJ_SIGN_IN_EXECUTE" : "ZCJ_SIGN_IN_QUERY")).toString());
+    }
+
+    public static String merchantActivity() {
+        return ApplicationHook.requestString("alipay.merchant.kmdk.query.activity", "[{\"scene\":\"activityCenter\"}]");
+    }
+
+    public static String merchantKmdkAction(String id, boolean signIn) throws JSONException {
+        return ApplicationHook.requestString(signIn ? "alipay.merchant.kmdk.signIn" : "alipay.merchant.kmdk.signUp", new JSONArray().put(MyUtils.newJSONObject().put("activityNo", id)).toString());
+    }
+
+    public static String merchantBallQuery() throws JSONException {
+        JSONObject context = MyUtils.newJSONObject().put("dispenseTaskItemCode", "ZDH_CONTINUE_QY_ZJ").put("isGuide", "true")
+                .put("underTakeTrace", "NULL").put("userPath", "undertakeVisit");
+        return ApplicationHook.requestString("alipay.mrchservbase.mrchpoint.ball.query.v1", new JSONArray().put(MyUtils.newJSONObject().put("context", context)).toString());
+    }
+
+    public static String merchantBallReceive(String id) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("ballIds", new JSONArray().put(id)).put("channel", "MRCH_SELF").put("outBizNo", java.util.UUID.randomUUID().toString());
+        return ApplicationHook.requestString("alipay.mrchservbase.mrchpoint.ball.receive", new JSONArray().put(args).toString());
+    }
+
+    public static String merchantTaskQuery(boolean service, String orderTaskCode) throws JSONException {
+        JSONObject params = MyUtils.newJSONObject().put("orderTaskCode", orderTaskCode).put("platform", "Android").put("version", "2.0");
+        if (service) params.put("showFinishStageTask", "true");
+        JSONObject args = MyUtils.newJSONObject().put("paramMap", params).put("taskItemCode", "");
+        return ApplicationHook.requestString(service ? "alipay.mrchservbase.task.service.query" : "alipay.mrchservbase.task.more.query", new JSONArray().put(args).toString());
+    }
+
+    public static String merchantTaskReceive(String code) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("compId", "ZTS_TASK_RECEIVE").put("extInfo", MyUtils.newJSONObject().put("taskCode", code));
+        return ApplicationHook.requestString("alipay.mrchservbase.sqyj.task.receive", new JSONArray().put(args).toString());
+    }
+
+    public static String merchantActionQuery(String code) throws JSONException {
+        return ApplicationHook.requestString("alipay.mrchservbase.task.query.by.actioncode", new JSONArray().put(MyUtils.newJSONObject().put("actionCode", code)).toString());
+    }
+
+    public static String merchantActionProduce(String code, String channel) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("actionCode", code);
+        if (!channel.isEmpty()) args.put("channel", channel);
+        return ApplicationHook.requestString("alipay.mrchservbase.biz.task.action.produce", new JSONArray().put(args).toString());
+    }
+
+    public static String merchantExamPage(String code) throws JSONException {
+        return ApplicationHook.requestString("alipay.mrchservbase.business.exam.page", new JSONArray().put(MyUtils.newJSONObject().put("taskCode", code)).toString());
+    }
+
+    public static String merchantTaskFinish(String bizId) throws JSONException {
+        return ApplicationHook.requestString("com.alipay.adtask.biz.mobilegw.service.task.finish", new JSONArray().put(MyUtils.newJSONObject().put("bizId", bizId)).toString());
+    }
+
+    public static String queryStickerCanReceiveList(String year, String month) throws JSONException {
+        return ApplicationHook.requestString("alipay.memberasset.sticker.queryStickerCanReceive", new JSONArray().put(MyUtils.newJSONObject().put("year", year).put("month", month)).toString());
+    }
+
+    public static String receiveSticker(String year, String month, JSONArray ids, JSONArray configs) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("year", year).put("month", month).put("stickerIds", ids).put("stickerCfgIds", configs);
+        return ApplicationHook.requestString("alipay.memberasset.sticker.receiveSticker", new JSONArray().put(args).toString());
+    }
+
+    public static String queryStickerHomePage(String year, String month, String day) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("year", year).put("month", month).put("day", day).put("gmtBiz", "")
+                .put("scene", "").put("source", "").put("stickerConfigId", "");
+        return ApplicationHook.requestString("alipay.memberasset.sticker.queryHomePage", new JSONArray().put(args).toString());
+    }
+
+    public static String upgradeStickerBatch(JSONArray requests) throws JSONException {
+        return ApplicationHook.requestString("alipay.memberasset.sticker.upgradeStickerBatch", new JSONArray().put(MyUtils.newJSONObject().put("upgradeReqList", requests)).toString());
+    }
+
+    public static String queryStickerDetailPage(String year, String month, String id) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("year", year).put("month", month).put("stickerConfigId", id).put("stickerStatus", "received");
+        return ApplicationHook.requestString("alipay.memberasset.sticker.queryDetailPage", new JSONArray().put(args).toString());
+    }
+
+    public static String triggerStickerUpgradePrize(String id) throws JSONException {
+        return ApplicationHook.requestString("alipay.memberasset.sticker.triggerUpgradePrize", new JSONArray().put(MyUtils.newJSONObject().put("levelCode", "").put("stickerCfgId", id)).toString());
+    }
+
+    public static String queryStickerPrizeHomePage() throws JSONException {
+        return ApplicationHook.requestString("alipay.memberasset.sticker.prize.home.page", new JSONArray().put(MyUtils.newJSONObject().put("externParams", MyUtils.newJSONObject())).toString());
+    }
+
+    public static String triggerStickerDrawing(String id) throws JSONException {
+        return ApplicationHook.requestString("alipay.memberasset.prize.trigger", new JSONArray().put(MyUtils.newJSONObject().put("prizeQuotaRecordId", id).put("type", "Drawing")).toString());
+    }
 
     private static String getUniqueId() {
         return String.valueOf(System.currentTimeMillis()) + RandomUtil.nextLong();
@@ -363,8 +522,10 @@ public class AntMemberRpcCall {
                 "\"searchAddToHomeTask\":true,\"searchGuidePopFlag\":true,\"searchShareAssistTask\":true,\"searchSubscribeTask\":true,\"version\":\"new\"}]");
     }
 
-    public static String collectCreditFeedback(String creditFeedbackId) {
-        return ApplicationHook.requestString("com.antgroup.zmxy.zmcustprod.biz.rpc.home.creditaccumulate.api.CreditAccumulateRpcManager.collectCreditFeedback", "[{\"collectAll\":false,\"creditFeedbackId\":\"" + creditFeedbackId + "\",\"status\":\"UNCLAIMED\"}]");
+    public static String collectCreditFeedback(String creditFeedbackId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject("{}");
+        args.put("collectAll", false).put("creditFeedbackId", creditFeedbackId).put("status", "UNCLAIMED");
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmcustprod.biz.rpc.home.creditaccumulate.api.CreditAccumulateRpcManager.collectCreditFeedback", new JSONArray().put(args).toString());
     }
 
     /**
@@ -438,12 +599,32 @@ public class AntMemberRpcCall {
      * @param itemId    itemId
      * @return 结果
      */
-    public static String exchangeBenefit(String benefitId, String itemId) {
+    public static String searchMemberBenefit(String keyword) throws JSONException {
+        String stamp = Long.toString(System.currentTimeMillis());
+        JSONObject source = MyUtils.newJSONObject().put("innerSource", "").put("source", "").put("unid", "");
+        JSONObject args = MyUtils.newJSONObject().put("cityCode", "").put("clientOs", "Android")
+                .put("clientVersion", ApplicationHook.getAlipayVersion().getVersionString()).put("pageNum", 1).put("pageSize", 20)
+                .put("paramsMap", MyUtils.newJSONObject()).put("prePageAllZeroStock", false).put("previewCopyDbId", "")
+                .put("query", keyword).put("recommend", false).put("searchId", stamp).put("sessionId", "session_" + stamp).put("sourcePassMap", source);
+        return ApplicationHook.requestString("com.alipay.alipaymember.biz.rpc.config.h5.benefitSearchV2", new JSONArray().put(args).toString());
+    }
+
+    public static String querySingleBenefitDetail(String id) throws JSONException {
+        JSONObject source = MyUtils.newJSONObject().put("innerSource", "a159.b52659").put("source", "").put("unid", java.util.UUID.randomUUID().toString());
+        JSONObject args = MyUtils.newJSONObject().put("benefitId", id).put("cityCode", "").put("miniAppId", "")
+                .put("requestSourceInfo", "SID:|5").put("sourcePassMap", source);
+        return ApplicationHook.requestString("com.alipay.alipaymember.biz.rpc.config.h5.querySingleBenefitDetail", new JSONArray().put(args).toString());
+    }
+
+    public static String exchangeBenefit(String benefitId, String itemId) throws JSONException {
         String requestId = "requestId" + System.currentTimeMillis();
         String alipayClientVersion = ApplicationHook.getAlipayVersion().getVersionString();
-        String args =
-                "[{\"benefitId\":\"" + benefitId + "\",\"cityCode\":\"\",\"exchangeType\":\"POINT_PAY\",\"itemId\":\"" + itemId + "\",\"miniAppId\":\"\",\"orderSource\":\"\",\"requestId\":\"" + requestId + "\",\"requestSourceInfo\":\"\",\"sourcePassMap\":{\"alipayClientVersion\":\"" + alipayClientVersion + "\",\"innerSource\":\"\",\"mobileOsType\":\"Android\",\"source\":\"\",\"unid\":\"\"},\"userOutAccount\":\"\"}]";
-        return ApplicationHook.requestString("com.alipay.alipaymember.biz.rpc.exchange.h5.exchangeBenefit", args);
+        JSONObject source = MyUtils.newJSONObject().put("alipayClientVersion", alipayClientVersion).put("innerSource", "")
+                .put("mobileOsType", "Android").put("source", "").put("unid", "");
+        JSONObject args = MyUtils.newJSONObject().put("benefitId", benefitId).put("cityCode", "").put("exchangeType", "POINT_PAY")
+                .put("itemId", itemId).put("miniAppId", "").put("orderSource", "").put("requestId", requestId)
+                .put("requestSourceInfo", "").put("sourcePassMap", source).put("userOutAccount", "");
+        return ApplicationHook.requestString("com.alipay.alipaymember.biz.rpc.exchange.h5.exchangeBenefit", new JSONArray().put(args).toString());
     }
 
     // 我的快递任务
@@ -646,6 +827,19 @@ public class AntMemberRpcCall {
                 "[{\"chInfo\":\"\",\"deliverStatus\":\"\",\"deliveryTemplateId\":\"\",\"searchSubscribeTask\":true,\"version\":\"alchemy\"}]");
     }
 
+    public static String joinPigeonAlchemyTask(String templateId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject("{}");
+        args.put("chInfo", "seasameList").put("joinFromOuter", false).put("sceneCode", "alchemy").put("templateId", templateId);
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.promise.PromiseRpcManager.joinActivity", new JSONArray().put(args).toString());
+    }
+
+    public static String feedbackPigeonAlchemyTask(String templateId, String bizType) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject("{}");
+        args.put("actionType", "TO_COMPLETE").put("bizType", bizType).put("sceneCode", "alchemy")
+                .put("templateId", templateId).put("version", "alchemy");
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.creditaccumulate.CreditAccumulateStrategyRpcManager.taskFeedback", new JSONArray().put(args).toString());
+    }
+
     /**
      * 芝麻炼金 - 查询签到任务状态
      */
@@ -764,17 +958,65 @@ public class AntMemberRpcCall {
     /**
      * 获取所有可领取的保障金
      */
-    public static String queryAvailableCollectInsuredGold() {
-        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftMain.queryMultiSceneWaitToGainList",
-                "[{\"entrance\":\"wealth_entry\",\"eventToWaitParamDTO\":{\"giftProdCode\":\"GIFT_UNIVERSAL_COVERAGE\",\"rightNoList\":[\"UNIVERSAL_ACCIDENT\",\"UNIVERSAL_HOSPITAL\",\"UNIVERSAL_OUTPATIENT\",\"UNIVERSAL_SERIOUSNESS\",\"UNIVERSAL_WEALTH\",\"UNIVERSAL_TRANS\",\"UNIVERSAL_FRAUD_LIABILITY\"]},\"helpChildParamDTO\":{\"giftProdCode\":\"GIFT_HEALTH_GOLD_CHILD\",\"rightNoList\":[\"UNIVERSAL_ACCIDENT\",\"UNIVERSAL_HOSPITAL\",\"UNIVERSAL_OUTPATIENT\",\"UNIVERSAL_SERIOUSNESS\",\"UNIVERSAL_WEALTH\",\"UNIVERSAL_TRANS\",\"UNIVERSAL_FRAUD_LIABILITY\"]},\"priorityChannelParamDTO\":{\"giftProdCode\":\"GIFT_UNIVERSAL_COVERAGE\",\"rightNoList\":[\"UNIVERSAL_ACCIDENT\",\"UNIVERSAL_HOSPITAL\",\"UNIVERSAL_OUTPATIENT\",\"UNIVERSAL_SERIOUSNESS\",\"UNIVERSAL_WEALTH\",\"UNIVERSAL_TRANS\",\"UNIVERSAL_FRAUD_LIABILITY\"]},\"signInParamDTO\":{\"giftProdCode\":\"GIFT_UNIVERSAL_COVERAGE\",\"rightNoList\":[\"UNIVERSAL_ACCIDENT\",\"UNIVERSAL_HOSPITAL\",\"UNIVERSAL_OUTPATIENT\",\"UNIVERSAL_SERIOUSNESS\",\"UNIVERSAL_WEALTH\",\"UNIVERSAL_TRANS\",\"UNIVERSAL_FRAUD_LIABILITY\"]}}]");
+    private static JSONArray insuredGoldRights() {
+        return new JSONArray().put("UNIVERSAL_ACCIDENT").put("UNIVERSAL_HOSPITAL").put("UNIVERSAL_OUTPATIENT")
+                .put("UNIVERSAL_SERIOUSNESS").put("UNIVERSAL_WEALTH").put("UNIVERSAL_TRANS").put("UNIVERSAL_FRAUD_LIABILITY");
     }
 
-    /**
-     * 领取保障金
-     */
+    private static JSONObject insuredGoldWaitParams(String product) throws JSONException {
+        return MyUtils.newJSONObject().put("giftProdCode", product).put("rightNoList", insuredGoldRights());
+    }
+
+    public static String queryAvailableCollectInsuredGold(String entrance) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("entrance", entrance)
+                .put("eventToWaitParamDTO", insuredGoldWaitParams("GIFT_UNIVERSAL_COVERAGE"))
+                .put("helpChildParamDTO", insuredGoldWaitParams("GIFT_HEALTH_GOLD_CHILD"))
+                .put("priorityChannelParamDTO", insuredGoldWaitParams("GIFT_UNIVERSAL_COVERAGE"))
+                .put("signInParamDTO", insuredGoldWaitParams("GIFT_UNIVERSAL_COVERAGE"));
+        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftMain.queryMultiSceneWaitToGainList", new JSONArray().put(args).toString());
+    }
+
     public static String collectInsuredGold(JSONObject goldBallObj) {
-        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftMain.gainMyAndFamilySumInsured",
-                goldBallObj.toString());
+        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftMain.gainMyAndFamilySumInsured", new JSONArray().put(goldBallObj).toString());
+    }
+
+    public static String queryInsuredOpenAndAllowAndUpgrade(String entrance) throws JSONException {
+        JSONObject args = insuredGoldWaitParams("GIFT_UNIVERSAL_COVERAGE").put("entrance", entrance)
+                .put("pageRenderRequest", MyUtils.newJSONObject().put("channelType", entrance).put("contentKey", "couponId")
+                        .put("sceneCode", "INSGIFT_APP").put("templateCode", "INSGIFT_APP_NEW_OPEN"));
+        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftMain.queryOpenAndAllowAndUpgrade", new JSONArray().put(args).toString());
+    }
+
+    public static String queryInsuredOpenAndAllow(String entrance) throws JSONException {
+        JSONObject args = insuredGoldWaitParams("GIFT_UNIVERSAL_COVERAGE").put("entrance", entrance);
+        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftMain.queryOpenAndAllow", new JSONArray().put(args).toString());
+    }
+
+    public static String queryInsuredGiftHomeRender(String entrance) throws JSONException {
+        JSONObject options = MyUtils.newJSONObject().put("channelType", entrance).put("greatPromoPrefetchRPCFlag", true);
+        JSONObject args = MyUtils.newJSONObject()
+                .put("configPageRenderParam", MyUtils.newJSONObject().put("pageOptions", options).put("sceneCode", "INSGIFT_APP_CONFIG"))
+                .put("pageRenderParam", MyUtils.newJSONObject().put("pageOptions", options).put("sceneCode", "INSGIFT_APP"))
+                .put("trackCardParam", MyUtils.newJSONObject().put("pageOptions", options))
+                .put("vicePageRenderParam", MyUtils.newJSONObject().put("pageOptions", options).put("sceneCode", "INSGIFT_APP_VICE"))
+                .put("voucherQuery", MyUtils.newJSONObject().put("entrance", entrance).put("mktPrizeType", "VOUCHER_QUERY").put("voucherQueryDTO", MyUtils.newJSONObject()));
+        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftMain.giftHomeRender", new JSONArray().put(args).toString());
+    }
+
+    public static String queryInsuredTaskList(String center, String scene, String control) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("bizData", MyUtils.newJSONObject()).put("entrance", "cfsy").put("sceneCode", scene).put("taskCenterId", center);
+        if (!control.isEmpty()) args.put("controlSolutionSceneCode", control).put("displayTaskCount", 30);
+        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftTask.queryTaskListv2", new JSONArray().put(args).toString());
+    }
+
+    public static String triggerInsuredTask(String applet, String center, String scene, String stage) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("appletId", applet).put("taskCenId", center).put("sceneCode", scene).put("stageCode", stage);
+        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftTask.taskTriggerv2", new JSONArray().put(args).toString());
+    }
+
+    public static String consultInsuredTask(String center, String task) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("taskCenterId", center).put("taskId", task);
+        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftTask.taskCenterConsultById", new JSONArray().put(args).toString());
     }
 
     // ================= 安心豆相关RPC方法 =================
@@ -782,17 +1024,114 @@ public class AntMemberRpcCall {
     /**
      * 安心豆签到查询
      */
-    public static String querySignInProcess(String appletId, String scene) {
-        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.querySignInProcess",
-                "[{\"appletId\":\"" + appletId + "\",\"scene\":\"" + scene + "\"}]");
+    public static String querySignInProcess(String appletId, String scene) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("appletId", appletId).put("scene", scene)
+                .put("bizData", MyUtils.newJSONObject().put("checkMultiAccountFrequency", "true"));
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.querySignInProcess", new JSONArray().put(args).toString());
     }
 
     /**
      * 安心豆签到触发
      */
-    public static String signInTrigger(String appletId, String scene) {
-        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.signInTrigger",
-                "[{\"appletId\":\"" + appletId + "\",\"scene\":\"" + scene + "\"}]");
+    public static String signInTrigger(String appletId, String scene) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("appletId", appletId).put("scene", scene);
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.signInTrigger", new JSONArray().put(args).toString());
+    }
+
+    public static String queryGuardianGradeAwards() throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("entrance", "insplatform_mine_anxindou").put("queryAwardStatus", true).put("sceneCode", "POSITION");
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.guardian.queryGradeAwards", new JSONArray().put(args).toString());
+    }
+
+    public static String guardianAwardSend(String skuId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("entrance", "insplatform_mine_anxindou").put("sceneCode", "POSITION").put("skuId", skuId);
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.guardian.awardSend", new JSONArray().put(args).toString());
+    }
+
+    private static JSONObject beanPositionFactors() throws JSONException {
+        return MyUtils.newJSONObject().put("entrance", "insplatform_mine_anxindou");
+    }
+
+    public static String filterValidBizProperty() throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("userAccountFilter", false);
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.filterValidBizProperty", new JSONArray().put(args).toString());
+    }
+
+    public static String rightsRecommend(int offset, String category) throws JSONException {
+        boolean first = offset == 0 && category.isEmpty();
+        JSONObject args = MyUtils.newJSONObject().put("bizScene", "BLUE_BEAN_POSITION").put("factors", beanPositionFactors())
+                .put("pageSize", 6).put("pageStartIndex", offset).put("riskScore", 0).put("strategyId", "feeds1209")
+                .put("userAccountConsult", first ? 1 : 0).put("userAccountFilter", first ? 1 : 0);
+        if (!category.isEmpty()) args.put("bizProperty", category);
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.rightsRecommend", new JSONArray().put(args).toString());
+    }
+
+    public static String queryRightsPreExchangeFlows(int offset) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("bizScene", "BLUE_BEAN_POSITION").put("factors", beanPositionFactors()).put("pageSize", 99).put("pageStartIndex", offset);
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.queryRightsPreExchangeFlows", new JSONArray().put(args).toString());
+    }
+
+    public static String queryRightsExchangeFlows(int offset) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("exchangeType", "ONLY_BLUE_BEAN").put("pageSize", 20).put("pageStartIndex", offset);
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.queryRightsExchangeFlows", new JSONArray().put(args).toString());
+    }
+
+    public static String queryRightsDetail(String id) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("factors", beanPositionFactors()).put("rightsCode", id);
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.queryRightsDetail", new JSONArray().put(args).toString());
+    }
+
+    public static String rightsExchange(String id, int amount) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("assetAmount", amount).put("bizScene", "BLUE_BEAN_POSITION")
+                .put("factors", beanPositionFactors()).put("needOrder", 0).put("rightsId", id);
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.rightsExchange", new JSONArray().put(args).toString(), 1, 0);
+    }
+
+    public static String guardianAnswerConsult() throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("consultScene", "ANXINDOU");
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.guardian.answerConsult", new JSONArray().put(args).toString());
+    }
+
+    public static String queryUserQuestionDrama(String userId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("channel", "ANXINDOU").put("userId", userId);
+        return ApplicationHook.requestString("com.alipay.inscontentplatform.question.queryUserQuestionDrama", new JSONArray().put(args).toString());
+    }
+
+    public static String addAskAnswerRecord(String askAnswerId, String userId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("answerResult", "rightAnswer").put("askAnswerId", askAnswerId).put("userId", userId);
+        return ApplicationHook.requestString("com.alipay.mfinsnsprod.biz.service.gw.qa.api.AskAnswerGwManager.addAskAnswerRecord", new JSONArray().put(args).toString());
+    }
+
+    public static String answerQuestionDrama(String dramaId, String scriptId, String userDramaId, String userId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("answerResult", "SUCCESS").put("channel", "ANXINDOU")
+                .put("dramaId", dramaId).put("scriptId", scriptId).put("userDramaId", userDramaId).put("userId", userId);
+        return ApplicationHook.requestString("com.alipay.inscontentplatform.question.answerQuestionDrama", new JSONArray().put(args).toString());
+    }
+
+    public static String beanCampConsult(String planId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("planId", planId);
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.campConsult", new JSONArray().put(args).toString());
+    }
+
+    public static String beanTriggerDrawPrize(String campId, String planId, long lastDrawTime) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("campId", campId).put("planId", planId).put("lastDrawTime", lastDrawTime);
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.triggerDrawPrize", new JSONArray().put(args).toString());
+    }
+
+    public static String queryAccountSummaryPoint() throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("bizScene", "POSITION").put("entrance", "insplatform_mine_anxindou");
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.queryAccountSummaryPoint", new JSONArray().put(args).toString());
+    }
+
+    public static String beanTaskCenterConsult() throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("bizData", MyUtils.newJSONObject()).put("bizTaskSortParams", MyUtils.newJSONObject())
+                .put("displayTaskCount", 30).put("entrance", "insplatform_mine_anxindou").put("sceneCode", "AXD_TAK_LIST").put("taskCenterId", "AP15241780");
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.taskCenterConsult", new JSONArray().put(args).toString());
+    }
+
+    public static String beanTaskTrigger(String applet, String stage) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("appletId", applet).put("sceneCode", "AXD_TAK_LIST").put("taskCenId", "AP15241780").put("stageCode", stage);
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.taskTrigger", new JSONArray().put(args).toString());
     }
 
     /**

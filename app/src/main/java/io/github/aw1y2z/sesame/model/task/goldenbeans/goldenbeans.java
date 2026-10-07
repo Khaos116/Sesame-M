@@ -14,6 +14,7 @@ import io.github.aw1y2z.sesame.entity.AlipayGoldenBeansTaskList;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 
 /**
  * 金豆夺宝任务模块。
@@ -43,6 +44,11 @@ public class goldenbeans extends ModelTask {
     private BooleanModelField goldenBeansAutoSesameExchange;
     private IntegerModelField goldenBeansSesameExchangeLimit;
     private IntegerModelField executeInterval;
+    private BooleanModelField sesameTreeTasks;
+    private BooleanModelField sesameTreePurification;
+    private BooleanModelField sesameAlchemyExtraTasks;
+    private BooleanModelField sesameAlchemyTimeReward;
+    private BooleanModelField sesameAlchemyNextDayReward;
 
     @Override
     public String getName() {
@@ -70,6 +76,11 @@ public class goldenbeans extends ModelTask {
         modelFields.addField(goldenBeansAutoSesameExchange = new BooleanModelField("goldenBeansAutoSesameExchange", "金豆夺宝 | 自动芝麻粒换豆", false));
         modelFields.addField(goldenBeansSesameExchangeLimit = new IntegerModelField("goldenBeansSesameExchangeLimit", "金豆夺宝 | 芝麻粒换豆单日上限(0不限)", 0, 0, null).setDependsOn("goldenBeansAutoSesameExchange"));
         modelFields.addField(executeInterval = new IntegerModelField("executeInterval", "操作间隔(毫秒)", 500, 500, null));
+        modelFields.addField(sesameTreeTasks = new BooleanModelField("sesameTreeTasks", "芝麻信用 | 芝麻树报名、浏览与领奖", false));
+        modelFields.addField(sesameTreePurification = new BooleanModelField("sesameTreePurification", "芝麻信用 | 芝麻树净化(消耗净化值)", false));
+        modelFields.addField(sesameAlchemyExtraTasks = new BooleanModelField("sesameAlchemyExtraTasks", "芝麻信用 | 炼金额外浏览与广告任务", false));
+        modelFields.addField(sesameAlchemyTimeReward = new BooleanModelField("sesameAlchemyTimeReward", "芝麻信用 | 炼金时段奖励", false));
+        modelFields.addField(sesameAlchemyNextDayReward = new BooleanModelField("sesameAlchemyNextDayReward", "芝麻信用 | 炼金次日奖励", false));
         return modelFields;
     }
 
@@ -85,6 +96,9 @@ public class goldenbeans extends ModelTask {
     @Override
     public void run() {
         try {
+            SesameCreditExtras.run(GoldenBeansSupport.enabled(sesameTreeTasks), GoldenBeansSupport.enabled(sesameTreePurification),
+                    GoldenBeansSupport.enabled(sesameAlchemyExtraTasks), GoldenBeansSupport.enabled(sesameAlchemyTimeReward),
+                    GoldenBeansSupport.enabled(sesameAlchemyNextDayReward));
             int interval = Math.max(executeInterval.getValue() != null ? executeInterval.getValue() : 500, 500);
 
             boolean signEnabled = GoldenBeansSupport.enabled(goldenBeansSign);
@@ -143,6 +157,8 @@ public class goldenbeans extends ModelTask {
 
             // 任务、矿工与兑换进度会在日内变化，各业务按服务端状态和兑换额度自行去重。
             Log.goldenBeans("金豆夺宝" + (taskResolved && gameResolved ? "✅本轮任务已全部处理" : "⏳仍有待完成或待领取任务"));
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "run err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);

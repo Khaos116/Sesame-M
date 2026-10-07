@@ -8,6 +8,8 @@ import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.AuthCodeHelper;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
+import io.github.aw1y2z.sesame.util.TimeUtil;
 
 import org.json.JSONObject;
 import java.io.BufferedReader;
@@ -80,8 +82,15 @@ public enum GameTask {
      * 第一步：登录获取 Token 并缓存
      */
     private String login() {
+        return login(() -> { });
+    }
+
+    private String login(Runnable checkpoint) {
         try {
+            checkpoint.run();
             String authCode = AuthCodeHelper.getAuthCode(appId);
+            checkpoint.run();
+            if (authCode == null || authCode.isEmpty()) return null;
             // 小程序标记（紧邻的 alipayMiniMark 请求头）在当前支付宝版本上必然为空：
             // 承载它的宿主类 H5HttpUtils 已不存在（AlipayMiniMarkHelper 探测两个候选类名都找不到，
             // 并会在日志里说明一次）。这里直接用空串，省掉逐游戏的反射调用；
@@ -89,7 +98,7 @@ public enum GameTask {
             String mark = "";
             String reqId = System.currentTimeMillis() + "_" + new Random().nextInt(350) + 1;
 
-            JSONObject bodyJson = new JSONObject();
+            JSONObject bodyJson = MyUtils.newJSONObject();
             bodyJson.put("v", version);
             // 授权助手复用宿主代理服务；尚未就绪时可能返回 null，保留游戏服原有登录行为。
             bodyJson.put("code", authCode);
@@ -103,8 +112,11 @@ public enum GameTask {
 
             // 建立HTTP连接
             URL url = new URL("https://gamesapi2.aslk2018.com/v2/game/login");
+            checkpoint.run();
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            try {
             conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(false);
             // 防止外部游戏服连接挂起导致当前线程无限阻塞（主任务线程会因此冻结，只能重启恢复）
             conn.setConnectTimeout(10_000);
             conn.setReadTimeout(15_000);
@@ -115,25 +127,31 @@ public enum GameTask {
             conn.setRequestProperty("x-release-type", "ONLINE");
 
             // 写入请求体
+            checkpoint.run();
             try (OutputStreamWriter writer = new OutputStreamWriter(conn.getOutputStream(), StandardCharsets.UTF_8)) {
+                checkpoint.run();
                 writer.write(body);
             }
 
             // 处理响应（包含错误流）
             int respCode = conn.getResponseCode();
+            if (respCode < 200 || respCode >= 300) return null;
             StringBuilder responseText = new StringBuilder();
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                     respCode >= 200 && respCode <= 299 ? conn.getInputStream() : conn.getErrorStream(),
                     StandardCharsets.UTF_8
             ))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    responseText.append(line);
+                char[] buffer = new char[2048];
+                for (;;) {
+                    checkpoint.run();
+                    int count = reader.read(buffer);
+                    checkpoint.run();
+                    if (count < 0) break;
+                    if (responseText.length() + count > 65_536) throw new IOException("SDK response exceeds limit");
+                    responseText.append(buffer, 0, count);
                 }
-            } finally {
-                // HttpURLConnection 没有 close()，异常路径也必须 disconnect 才能释放连接
-                conn.disconnect();
             }
+            checkpoint.run();
 
             //Log.other("login 响应 -> HTTP " + respCode + " " + responseText);
 
@@ -142,15 +160,19 @@ public enum GameTask {
             if (resJson.optInt("code") == 1) {
                 JSONObject data = resJson.optJSONObject("data");
                 if (data != null) {
-                    this.cachedToken = data.optString("token");
+                    Object value = data.opt("token");
+                    if (!(value instanceof String) || ((String) value).trim().isEmpty()) return null;
                     Log.other("登录成功✅Token已获取");
-                    return this.cachedToken;
+                    return (String) value;
                 }
             } else {
-                Log.error("登录接口❌报错(Code" + respCode + "):" + responseText);
+                Log.error("游戏SDK登录未接受#HTTP[" + respCode + "]#code[" + resJson.optInt("code", 0) + "]");
             }
+            } finally { conn.disconnect(); }
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
         } catch (Exception e) {
-            Log.error("登录过程🚨抛出异常:" + e.getMessage());
+            Log.error("游戏SDK登录异常#" + e.getClass().getSimpleName());
         }
         return null;
     }
@@ -226,32 +248,42 @@ public enum GameTask {
      * @param channelOverride 非空时覆盖 action_finish_channel；为空用枚举默认渠道
      */
     public int reportSync(String gameType, int eggCount, String channelOverride) {
-        if (eggCount <= 0) {
+        if (eggCount <= 0 || eggCount > 1000) {
             return 0;
         }
+        final String reportUid = UserIdMap.getCurrentUid();
+        final long generation = TaskLifecycle.generation();
+        if (reportUid == null || reportUid.isEmpty()) return 0;
+        Runnable checkpoint = () -> {
+            TimeUtil.sleep(0);
+            if (Thread.currentThread().isInterrupted() || !reportUid.equals(UserIdMap.getCurrentUid())
+                    || generation != TaskLifecycle.generation() || !TaskLifecycle.isOpen()) throw new TaskCancelledException();
+        };
+        checkpoint.run();
+        TaskLifecycle.Work work = TaskLifecycle.enter(generation);
+        if (work == null) throw new TaskCancelledException();
+        try (TaskLifecycle.Work admitted = work) {
         int requiredSuccesses = eggCount * this.requestsPerEgg;
-        this.cachedToken = login();
-        if (this.cachedToken == null || this.cachedToken.isEmpty()) {
+        final String token = login(checkpoint);
+        if (token == null || token.isEmpty()) {
             Log.error("无法获取⚠️有效的Token，放弃上报任务");
             return 0;
         }
 
         int successfulReports = 0;
         for (int i = 1; i <= requiredSuccesses; i++) {
-            if (!executeSingleReport(gameType, i, requiredSuccesses, channelOverride)) {
+            checkpoint.run();
+            if (!executeSingleReport(gameType, i, requiredSuccesses, channelOverride, checkpoint, token)) {
                 break;
             }
             successfulReports++;
             if (i < requiredSuccesses) {
-                try {
-                    Thread.sleep(new Random().nextInt(2001) + 1000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
+                TimeUtil.sleep(new Random().nextInt(2001) + 1000);
+                checkpoint.run();
             }
         }
         return successfulReports;
+        }
     }
 
     /**
@@ -265,13 +297,18 @@ public enum GameTask {
     }
 
     private boolean executeSingleReport(String gameType, int current, int total, String channelOverride) {
+        return executeSingleReport(gameType, current, total, channelOverride, () -> { }, this.cachedToken);
+    }
+
+    private boolean executeSingleReport(String gameType, int current, int total, String channelOverride, Runnable checkpoint, String token) {
         try {
+            checkpoint.run();
             // 同 login()：当前宿主没有 H5HttpUtils，标记必然为空，直接用空串（header 值不变）
             String mark = "";
             String reqId = System.currentTimeMillis() + "_" + (new Random().nextInt(90) + 10); // 10-99随机数
 
             // 构建请求体
-            JSONObject bodyJson = new JSONObject();
+            JSONObject bodyJson = MyUtils.newJSONObject();
             bodyJson.put("v", version);
             bodyJson.put("version", version);
             bodyJson.put("reqId", reqId);
@@ -285,13 +322,16 @@ public enum GameTask {
 
             // 建立HTTP连接
             URL url = new URL("https://gamesapi2.aslk2018.com/v2/zfb/taskReport");
+            checkpoint.run();
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            try {
             conn.setRequestMethod("POST");
+            conn.setInstanceFollowRedirects(false);
             // 防止外部游戏服连接挂起导致当前线程无限阻塞（reportSync 在主任务线程同步执行）
             conn.setConnectTimeout(10_000);
             conn.setReadTimeout(15_000);
             conn.setDoOutput(true);
-            conn.setRequestProperty("authorization", this.cachedToken);
+            conn.setRequestProperty("authorization", token);
             conn.setRequestProperty("alipayMiniMark", mark);
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("User-Agent", getDynamicUA());
@@ -299,25 +339,31 @@ public enum GameTask {
             conn.setRequestProperty("referer", "https://" + appId + ".hybrid.alipay-eco.com/" + appId + "/" + version + "/index.html");
 
             // 写入请求体
+            checkpoint.run();
             try (OutputStreamWriter writer = new OutputStreamWriter(conn.getOutputStream(), StandardCharsets.UTF_8)) {
+                checkpoint.run();
                 writer.write(body);
             }
 
             // 处理响应
             int respCode = conn.getResponseCode();
+            if (respCode < 200 || respCode >= 300) return false;
             StringBuilder responseText = new StringBuilder();
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                     respCode >= 200 && respCode <= 299 ? conn.getInputStream() : conn.getErrorStream(),
                     StandardCharsets.UTF_8
             ))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    responseText.append(line);
+                char[] buffer = new char[2048];
+                for (;;) {
+                    checkpoint.run();
+                    int count = reader.read(buffer);
+                    checkpoint.run();
+                    if (count < 0) break;
+                    if (responseText.length() + count > 65_536) throw new IOException("SDK response exceeds limit");
+                    responseText.append(buffer, 0, count);
                 }
-            } finally {
-                // HttpURLConnection 没有 close()，异常路径也必须 disconnect 才能释放连接
-                conn.disconnect();
             }
+            checkpoint.run();
 
             //Log.other("taskReport 响应 -> HTTP " + respCode + " " + responseText);
 
@@ -325,18 +371,21 @@ public enum GameTask {
             JSONObject resJson = MyUtils.newJSONObject(responseText.toString());
             if (resJson.optInt("code") == 1) {
                 if (current % this.requestsPerEgg == 0) {
-                    Log.i("游戏进度📈"+ gameType +"[" + current + "/" + total + "](达成" + (current/this.requestsPerEgg) + "个)");
+                    Log.i("游戏上报进度#" + gameType + "[" + current + "/" + total + "]#SDK已接受");
                 }
                 return true;
             } else {
-                Log.error("⚠️ 第 " + current + " 次上报业务失败 (HTTP " + respCode + "): " + responseText);
+                Log.error("游戏SDK未接受上报#次数[" + current + "]#HTTP[" + respCode + "]#code[" + resJson.optInt("code", 0) + "]");
                 return false;
             }
+            } finally { conn.disconnect(); }
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
         } catch (IOException e) {
-            Log.error("🚨 第 " + current + " 次请求发生网络崩溃:"+ e);
+            Log.error("游戏SDK网络异常#次数[" + current + "]#" + e.getClass().getSimpleName());
             return false;
         } catch (Exception e) {
-            Log.error("🚨 第 " + current + " 次请求发生异常:"+ e);
+            Log.error("游戏SDK上报异常#次数[" + current + "]#" + e.getClass().getSimpleName());
             return false;
         }
     }

@@ -12,6 +12,7 @@ import java.util.Set;
 import io.github.aw1y2z.sesame.model.task.antGame.GameTask;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 
 /**
  * 金豆乐园奖励处理：有抽奖次数时优先抽奖，次数用尽后按游戏权益做上报。
@@ -152,6 +153,8 @@ public final class GoldenBeansGameCenter {
             }
             Log.record("金豆乐园⚠️达到收敛轮次上限[" + MAX_ROUND + "]");
             return false;
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "runGameCenterFlow err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);

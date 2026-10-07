@@ -117,13 +117,26 @@ class MiuixGroupFieldsActivity : MiuixBaseActivity() {
      * 先用 hasFieldChanges() 判断是否有字段级改动（无改动直接短路，不写盘、不提示），
      * 确认有改动后走 force=true，避免 ConfigV2.save() 内部再做一次全量序列化比较。
      */
-    fun save() {
-        if (userId == null) return
-        if (!ConfigV2.hasFieldChanges()) return
+    fun save(restart: Boolean = true): Boolean {
+        if (userId == null) return false
+        if (!ConfigV2.hasFieldChanges()) return true
         if (ConfigV2.save(userId, true)) {
             ToastUtil.show(this, "保存成功！")
-            sendRestartIfNeeded()
+            if (restart) sendRestartIfNeeded()
+            return true
         }
+        ToastUtil.show(this, "保存失败，未执行任务")
+        return false
+    }
+
+    fun executeModule(modelCode: String, action: String = "") {
+        if (userId.isNullOrBlank()) { ToastUtil.show(this, "请在具体账号配置中执行");return }
+        if (!save(false)) return
+        sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.execute")
+            .setPackage("com.eg.android.AlipayGphone")
+            .putExtra("model", modelCode).putExtra("taskAction", action)
+            .putExtra("userId", userId).putExtra("reloadConfig", true))
+        ToastUtil.show(this, "已发送执行请求")
     }
 
     private fun sendRestartIfNeeded() {
@@ -299,7 +312,21 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                 }
                 items(sections.size, key = { sections[it].second.first().modelCode }) { index ->
                     val (title, fields) = sections[index]
-                    title?.let { SmallTitle(text = it) }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) { title?.let { SmallTitle(text = it) } }
+                        TextButton(text = "立即执行", onClick = {
+                            activity.executeModule(fields.first().modelCode, if (fields.first().modelCode == "FishTask") "all" else "")
+                        })
+                    }
+                    val actions = when (fields.first().modelCode) {
+                        "AntForestV2" -> listOf("能量雨" to "energyRain", "打地鼠" to "whackMole")
+                        "AntFarm" -> listOf("遣返小鸡" to "sendBack", "庄园游戏" to "game", "抽抽乐" to "chouchoule", "特殊美食" to "specialFood", "使用道具" to "useTool")
+                        "FishTask" -> listOf("仅钓鱼" to "angle", "仅兑换" to "exchange")
+                        else -> emptyList()
+                    }
+                    actions.forEach { (name, action) ->
+                        TextButton(text = name, onClick = { activity.executeModule(fields.first().modelCode, action) })
+                    }
                     CardColumn {
                         fields.forEach { fieldRow ->
                             // 搜索/依赖过滤会改变行位置，remember 状态必须跟随字段身份。

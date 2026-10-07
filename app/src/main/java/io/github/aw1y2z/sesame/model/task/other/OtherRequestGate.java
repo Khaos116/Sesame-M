@@ -6,6 +6,8 @@ import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RequestBudgetPolicy;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcFailurePolicy;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.util.TimeUtil;
 
 /**
  * OtherTask（信用2101/好家无忧卡）专用的请求预算+风控冷却闸门。
@@ -34,12 +36,14 @@ final class OtherRequestGate {
 
     /** 预算耗尽/命中风控都会抛异常，调用方按现有的 try/catch(Throwable) 结构自然结束本轮。 */
     String call(String label, RpcCall rpc) throws Exception {
+        TimeUtil.sleep(0);
+        if (isCoolingDown()) throw new Denied();
         if (!RequestBudgetPolicy.mayRequest(requests, MAX_REQUESTS_PER_RUN)) {
             Log.record("其他任务：" + label + "触发本轮请求上限，停止本轮");
             throw new BudgetExhausted();
         }
         long pause = RequestBudgetPolicy.pacingMs(lastCallNanos, System.nanoTime());
-        if (pause > 0) Thread.sleep(pause);
+        if (pause > 0) TimeUtil.sleep(pause);
         requests++;
         String raw;
         try {
@@ -50,11 +54,13 @@ final class OtherRequestGate {
         if (raw == null || raw.isEmpty()) return raw;
         JSONObject probe;
         try {
-            probe = new JSONObject(raw);
+            probe = MyUtils.newJSONObject(raw);
         } catch (Exception malformed) {
             return raw;
         }
-        boolean denied = RpcFailurePolicy.isRiskDenied(probe.optString("error", ""), probe.optString("errorMessage", ""));
+        boolean denied = RpcFailurePolicy.isRiskDenied(probe.optString("error", ""), probe.optString("errorMessage", ""))
+                || RpcFailurePolicy.isRiskDenied(probe.optString("resultCode", ""), "")
+                || RpcFailurePolicy.isRiskDenied(probe.optString("retCode", ""), "");
         if (denied) {
             RuntimeInfo.getInstance().put(COOLDOWN_KEY, RequestBudgetPolicy.cooldownUntil(
                     System.currentTimeMillis(), RpcFailurePolicy.RISK_DENIED_MS));

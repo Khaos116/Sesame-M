@@ -129,8 +129,19 @@ public class FishTask extends ModelTask {
 
     @Override
     public void run() {
+        runFish("all", false);
+    }
+
+    @Override protected boolean supportsManualAction(String action) {
+        return "angle".equals(action) || "exchange".equals(action) || "all".equals(action);
+    }
+
+    @Override protected void runManualAction(String action) { runFish(action, true); }
+    @Override protected Boolean checkManualAction(String action) { return !TaskCommon.IS_ENERGY_TIME && isAllowedTime(); }
+
+    private void runFish(String mode, boolean manual) {
         String taskUid = UserIdMap.getCurrentUid();
-        if (taskUid == null || taskUid.isEmpty() || !check()) return;
+        if (taskUid == null || taskUid.isEmpty() || !(manual ? checkManualAction(mode) : check())) return;
         runningUid = taskUid;
         if (!isAllowedTime()) {
             Log.other("鱼塘⏰不在运行时段（05:00-23:00）");
@@ -140,7 +151,7 @@ public class FishTask extends ModelTask {
         long now = System.currentTimeMillis();
         long fishInterval = FishConfig.getFishCheckInterval();
         long lastExecTime = Status.INSTANCE.getFishLastExecTime();
-        if (lastExecTime > 0 && now - lastExecTime < fishInterval) {
+        if (!manual && lastExecTime > 0 && now - lastExecTime < fishInterval) {
             long remainingMinutes = (fishInterval - (now - lastExecTime)) / 60_000;
             Log.other("鱼塘⏰独立间隔未到，还需等待约" + remainingMinutes + "分钟");
             return;
@@ -162,7 +173,9 @@ public class FishTask extends ModelTask {
 
             enterFishpond();
 
-            if (FishConfig.isEnableFishTaskAuto()) {
+            if ("exchange".equals(mode)) { checkExchangeReward();return; }
+
+            if (!"angle".equals(mode) && (manual || FishConfig.isEnableFishTaskAuto())) {
                 if (!checkExchangeReward()) {
                     return;
                 }
@@ -171,7 +184,7 @@ public class FishTask extends ModelTask {
                 executeTasks();
             }
 
-            if (FishConfig.isEnableFishAuto()) {
+            if (manual || FishConfig.isEnableFishAuto()) {
                 if (!checkExchangeReward()) {
                     Log.other("鱼塘⚠️钓竿兑换失败，跳过钓鱼");
                     return;
@@ -179,6 +192,7 @@ public class FishTask extends ModelTask {
 
                 startFishing(validToken);
             }
+        } catch (TaskCancelledException e) { throw e;
         } catch (Throwable th) {
             Log.printStackTrace("鱼塘🪝执行异常", th);
         } finally {

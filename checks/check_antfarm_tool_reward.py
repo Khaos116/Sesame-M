@@ -47,6 +47,7 @@ class Status {
 class TimeUtil {
     static void sleep(int ms) {}
 }
+class TaskCancelledException extends RuntimeException {}
 public class ToolRewardCheck {
     static final String CUISINE_AWARD_TYPE = "CUISINE";
     static class MyUtils {
@@ -104,10 +105,15 @@ public class ToolRewardCheck {
         @@TASKSTATUS@@
         @@FARMTOOL@@
         FarmTool[] farmTools;
-        private Boolean useFarmTool(String targetFarmId, ToolType toolType) { return true; }
+        int toolsUsed;
+        private Boolean useFarmTool(String targetFarmId, ToolType toolType) { toolsUsed++;return true; }
+        static class Field {boolean getValue(){return false;}} Field useFullRewardTool=new Field();
+        private void receiveToolRewardWithSpace(String award,ToolType type,int count,String task){throw new AssertionError("disabled full-stock feature called");}
+        @@NUMBER@@
         @@PENDING@@
         @@ADD2FOOD@@
         @@TOOLMETHOD@@
+        @@TOOLMAP@@
         @@FARMMETHOD@@
         int[] listFarmTask(TaskStatus mode) { farmTaskListCalls++; return new int[]{0, 0}; }
         @@FARMROUNDS@@
@@ -189,6 +195,11 @@ public class ToolRewardCheck {
         assert logged("已满，暂不领取");
         assert Log.errors == 0;
         System.out.println("PASS full tool inventory defers the claim");
+        reset();full.toolType=Farm.ToolType.NEWEGGTOOL;farm.toolsUsed=0;
+        AntFarmRpcCall.listResponse="{\"memo\":\"SUCCESS\",\"list\":["+item("FINISHED","DAILY_TOOL",biz("NEWEGGTOOL",null,"bad"))+"]}";
+        farm.receiveToolTaskReward();assert farm.toolsUsed==0:"missing reward count must not consume a full-stock card";
+        AntFarmRpcCall.listResponse="{\"memo\":\"SUCCESS\",\"list\":["+item("FINISHED","DAILY_TOOL",new JSONObject(biz("NEWEGGTOOL",1,"bad")).put("awardCount",1.5).toString())+"]}";
+        farm.receiveToolTaskReward();assert farm.toolsUsed==0&&AntFarmRpcCall.received.isEmpty():"fractional tool count must not consume/claim";
         // A failed claim is logged with context and does not stop later items.
         reset();
         farm.farmTools = null;
@@ -296,8 +307,10 @@ public class ToolRewardCheck {
 }
 '''
 for token, path, signature in (
+    ("@@NUMBER@@", "model/task/antFarm/AntFarm.java", "    private static long npcTaskNumber("),
     ("@@FARMRPC@@", "model/task/antFarm/AntFarmRpcCall.java", "    public static String receiveFarmTaskAward(String taskId, String awardType)"),
     ("@@TOOLMETHOD@@", "model/task/antFarm/AntFarm.java", "    private void receiveToolTaskReward()"),
+    ("@@TOOLMAP@@", "model/task/antFarm/AntFarm.java", "    private static ToolType rewardToolType("),
     ("@@FARMMETHOD@@", "model/task/antFarm/AntFarm.java", "    private Boolean receiveFarmTaskAward(JSONObject task)"),
     ("@@FARMROUNDS@@", "model/task/antFarm/AntFarm.java", "    private void runFarmTaskRounds()"),
     ("@@PENDING@@", "model/task/antFarm/AntFarm.java", "    private static int pendingAward(JSONObject task)"),
