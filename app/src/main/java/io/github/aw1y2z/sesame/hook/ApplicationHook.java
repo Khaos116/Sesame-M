@@ -239,7 +239,14 @@ public class ApplicationHook extends XposedModule {
                         String currentUid = UserIdMap.getCurrentUid();
                         if (!targetUid.equals(currentUid)) {
                             if (currentUid != null) {
-                                ApplicationHook.getMainHandler().postDelayed(() -> {
+                                Handler handler = ApplicationHook.getMainHandler();
+                                if (handler == null) {
+                                    // Service onCreate hook 尚未跑完（此时 service/context 也未就绪），
+                                    // 丢给下一次 onResume 或加载完成后的流程，不在这里 NPE
+                                    Log.record("跳过用户切换处理：mainHandler 尚未就绪");
+                                    return;
+                                }
+                                handler.postDelayed(() -> {
                                     Log.record("用户已切换");
                                     Toast.show("用户已切换");
                                     initHandler(true);
@@ -326,13 +333,15 @@ public class ApplicationHook extends XposedModule {
                                         reLogin();
                                         return;
                                     }
-                                    lastExecTime = System.currentTimeMillis();
+                                    // 本轮 check 的起点单独留一份：waitTime 只依赖它，不再依赖会被后续重写的 lastExecTime
+                                    long checkStartTimestamp = System.currentTimeMillis();
+                                    lastExecTime = checkStartTimestamp;
                                     try {
                                         FutureTask<Boolean> checkTask = new FutureTask<>(AntMemberRpcCall::check);
                                         Thread checkThread = new Thread(checkTask);
                                         checkThread.start();
-                                        if (!checkTask.get(10, TimeUnit.SECONDS)) {
-                                            long waitTime = 10000 - System.currentTimeMillis() + lastExecTime;
+                                        if (!checkTask.get(CHECK_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                                            long waitTime = CHECK_TIMEOUT_MS - (System.currentTimeMillis() - checkStartTimestamp);
                                             if (waitTime > 0) {
                                                 Thread.sleep(waitTime);
                                             }
@@ -798,6 +807,9 @@ public class ApplicationHook extends XposedModule {
     /** 起跳失败或取不到间隔时的兜底排期间隔（下限 1 分钟，避免自旋） */
     private static final long FALLBACK_INTERVAL = 60_000;
 
+    /** 单轮 check 的超时窗口：既是 FutureTask.get 的上限，也是失败后补齐到整轮网格的基准 */
+    private static final long CHECK_TIMEOUT_MS = 10_000;
+
     /** 起跳的公共实现：线程起不来等异常不能逃到宿主主线程（执行槽已由 BaseTask 归还） */
     private static void startMainTask() {
         try {
@@ -1041,7 +1053,14 @@ public class ApplicationHook extends XposedModule {
     }
 
     public static void reLogin() {
-        mainHandler.post(() -> {
+        // mainHandler / context 只在 Service onCreate hook 内赋值；先取局部快照，避免读到半初始化状态或 NPE
+        Handler handler = mainHandler;
+        Context ctx = context;
+        if (handler == null || ctx == null) {
+            Log.record("跳过重登录：mainHandler/context 尚未就绪");
+            return;
+        }
+        handler.post(() -> {
             if (reLoginCount.get() < 5) {
                 execDelayedHandler(reLoginCount.getAndIncrement() * 5000L);
             } else {
@@ -1051,7 +1070,7 @@ public class ApplicationHook extends XposedModule {
             intent.setClassName(ClassUtil.PACKAGE_NAME, ClassUtil.CURRENT_USING_ACTIVITY);
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             offline = true;
-            context.startActivity(intent);
+            ctx.startActivity(intent);
         });
     }
 
