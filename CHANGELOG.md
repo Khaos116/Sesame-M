@@ -8,6 +8,8 @@
 
 ## 2026-10-07
 
+- fix（本次）：按用户要求完整移除WebDAV设置入口、页面注册和上传/恢复客户端；负向检查防止恢复，保留原有本地配置备份。
+
 - release（构建源码`250ce69d`）：按要求先clean再完整重编1.2.11正式包`180747`，versionCode 1932；R8/Lint、签名及16KB页对齐通过。
 
 - release（构建源码`170fd264`）：重编1.2.11正式包`180351`，versionCode 1931；包含上游合并，R8/Lint、签名及16KB页对齐通过，更新发布说明。
@@ -1736,3 +1738,12 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 - 按用户补充要求执行`clean :app:assembleNormalRelease`，根项目与app清理任务先执行，Java/Kotlin、资源、R8和打包重新运行；55项任务中53项执行，NormalRelease及Release关键Lint通过。
 - 最新归档`APK/Release/Sesame-M-Normal-arm64-v8a-1.2.11_20261007_180747.apk`，版本1.2.11、versionCode 1932、arm64-v8a、3,160,787字节；生产代码与此前上游合并一致。
 - 签名校验、原证书比对及16KB页对齐通过。核对包内本次编译时间、合并接口/每日标记及归档一致性，SHA-256为`6943dd16bdfa0813eac9e606f7ffffda280596854f141d4da476a6caa92cafa9`；发布说明指向本次clean后的产物。
+
+
+### 2026-10-07：完整移除WebDAV
+
+- 纠正此前仅停止后续扩展、保留手动实现的范围理解。删除设置页WebDAV入口、Manifest注册、MiuixWebDavActivity及WebDavBackup客户端；没有专用第三方依赖需要删除。AtomicConfigFile仍被账号轮询、日志发布及异常记录使用，保留共享工具和M原有本地备份/导入。
+- 原WebDAV功能检查改为App源码/资源/Manifest无WebDAV的负向检查：改动前确实失败，移除后通过；《MyFix》记录整个功能排除、以后不得恢复，使用说明、来源记录及1.2.11更新说明同步修正。旧阶段/版本记录保留历史语义。
+- GMT+8/JSON创建/JSON读取：本次删除独立功能，没有新增业务日期或JSON解析；设置页剩余入口及共享配置工具沿用现有实现。
+
+- 移除后的70项全量隔离回归及clean后的NormalDebug Java/Kotlin编译通过；源码、资源及Manifest无WebDAV检查通过，原有本地配置共享工具回归保持通过。

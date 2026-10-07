@@ -14,6 +14,8 @@
 
 4. **独立 App 进程（`MiuixMainActivity`/`MiuixSettingsActivity` 等 `ui/` 包下的代码，以及它们能直接调用到的 `util/` 工具方法）绝对不能引用 `ApplicationHook`（或任何继承 `io.github.libxposed.api.XposedModule` 的类）**。背景：`XposedModule` 是 `compileOnly` 依赖，运行时类只有真被 LSPosed 注入进支付宝进程后宿主框架才提供；独立 App 自己的进程里这个类根本不存在，一碰就在类校验阶段抛 `NoClassDefFoundError`——这是 `Error` 不是 `Exception`，`catch(Exception e)` 包不住，直接崩溃闪退（见 CHANGELOG.md 2026-09-15 `PermissionUtil.checkBatteryPermissions()` 那次踩坑记录）。独立 App 需要的任何数据/状态，走 `AppConfig`（跨进程共享配置）、直接读账号目录下的文件，或者广播/`Handler`，不要图省事直接调 `ApplicationHook.getXxx()`。
 
+6. **WebDAV功能明确排除**：用户不需要整个WebDAV功能，包括已有手动备份/恢复。App不得保留设置入口、Activity注册或WebDAV客户端；后续合并、移植不得恢复。M原有本地配置备份/导入机制独立保留。
+
 ## 附录：GR2026 MyUtils.java 逐项说明（背景参考，非本次改动记录）
 
 `MyUtils.java` 混合三类内容：① GMT+8 日历、null 安全 JSON 构造、版本隔离的异常标记存储等通用工具；② 作者账号上观察到的"已知会失败/已知会触发风控"硬编码开关（`_关闭XX` 系列、`_访问被拒绝*`/`_系统出错正在排查*` key、`_不是有效的入参` 任务 ID 黑名单）；③ GR 品牌相关（`getAppTitleExt`）。GR2026 内 44 个文件引用 `MyUtils.*`，覆盖 `hook/ApplicationHook.java`、几乎所有 `model/task/*` 模块等——任何整段照搬 GR 的 task/model 代码都会连带引入这个依赖。
