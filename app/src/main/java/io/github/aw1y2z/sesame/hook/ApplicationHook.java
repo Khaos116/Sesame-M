@@ -762,6 +762,11 @@ public class ApplicationHook extends XposedModule {
             }
             rpcRequestUnhook = null;
         }
+        // 卸载后 map 里的残留 entry 会继续强引用 BridgeCallback / 请求体 / 响应体，
+        // 而此后已无人 remove，必须在这里清空
+        if (!rpcHookMap.isEmpty()) {
+            rpcHookMap.clear();
+        }
     }
 
     private synchronized static void destroyHandler(Boolean force) {
