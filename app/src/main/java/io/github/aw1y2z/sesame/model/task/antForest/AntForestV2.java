@@ -2422,8 +2422,7 @@ public class AntForestV2 extends ModelTask {
                 }
             }
             //可能是触发限时挑战奖励的
-            String touchResp = AntForestRpcCall.batchQueryAndTouchopengreen();
-            Log.other("批量领取活力值能量响应#" + (touchResp.length() > 800 ? touchResp.substring(0, 800) : touchResp));
+            AntForestRpcCall.batchQueryAndTouchopengreen();
         } catch (Throwable t) {
             Log.err(TAG, "doForsetTaskList err:", t);
         }
