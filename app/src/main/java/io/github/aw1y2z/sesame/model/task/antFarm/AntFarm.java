@@ -2697,7 +2697,11 @@ public class AntFarm extends ModelTask {
 
     private void gameCenterBuyMallItem() {
         try {
-            getAllSkuInfo();
+            // 清单当日拉一次即可：一次商城首页 + 每个 SPU 一次详情，且它同时是配置页兑奖选项的来源，
+            // 不能完全不拉；拉不到 SKU 就不打标记，留给下一轮重试
+            if (!Status.hasFlagToday("farm::mallSkuList") && getAllSkuInfo()) {
+                Status.flagToday("farm::mallSkuList");
+            }
             Map<String, Integer> buyList = gameCenterBuyMallItemList.getValue();
             for (Map.Entry<String, Integer> entry : buyList.entrySet()) {
                 String skuId = entry.getKey();
@@ -2729,19 +2733,26 @@ public class AntFarm extends ModelTask {
         return mallItemSimpleList;
     }
 
-    // 获取乐园商店所有商品信息
-    private void getAllSkuInfo() {
+    /**
+     * 获取乐园商店所有商品信息。
+     *
+     * @return 是否真的取到 SKU（调用方据此决定要不要打当日标记，取不到时留给下一轮重试）
+     */
+    private boolean getAllSkuInfo() {
         try {
+            int before = skuInfo.size();
             JSONArray mallItemSimpleList = getGameCenterMallItemList("ANTFARM_GAME_CENTER");
             if (mallItemSimpleList == null) {
-                return;
+                return false;
             }
             for (int i = 0; i < mallItemSimpleList.length(); i++) {
                 JSONObject itemInfoVO = mallItemSimpleList.getJSONObject(i);
                 getSkuInfoByItemInfoVO(itemInfoVO);
             }
+            return skuInfo.size() > before;
         } catch (Throwable th) {
             Log.err(TAG, "getAllSkuInfo err:", th);
+            return false;
         }
     }
 
