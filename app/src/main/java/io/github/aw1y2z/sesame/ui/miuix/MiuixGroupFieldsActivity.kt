@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -324,8 +325,16 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                         "FishTask" -> listOf("仅钓鱼" to "angle", "仅兑换" to "exchange")
                         else -> emptyList()
                     }
-                    actions.forEach { (name, action) ->
-                        TextButton(text = name, onClick = { activity.executeModule(fields.first().modelCode, action) })
+                    if (actions.isNotEmpty()) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            actions.forEach { (name, action) ->
+                                TextButton(text = name, onClick = { activity.executeModule(fields.first().modelCode, action) })
+                            }
+                        }
                     }
                     CardColumn {
                         fields.forEach { fieldRow ->
