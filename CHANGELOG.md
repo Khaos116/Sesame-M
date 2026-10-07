@@ -8,6 +8,8 @@
 
 ## 2026-10-07
 
+- release（构建源码`170fd264`）：重编1.2.11正式包`180351`，versionCode 1931；包含上游合并，R8/Lint、签名及16KB页对齐通过，更新发布说明。
+
 - merge `35e0a8c6`：合入MIUIX-api102至`1763096c`共12个提交，补森林统计/通用游戏任务、会员宝箱、每日状态和场景施肥；保留M预算、账号保护及Gemini。
 
 - fix `fe2e796b`：各类别“立即执行”标题行上下各8dp；仅兑换/仅钓鱼等快捷按钮区下方间距增加至16dp，隔开白色配置卡片。
@@ -1717,3 +1719,11 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 - JSON创建审查：新增业务解析统一MyUtils并检查成功状态、必要对象/字段；保留两处既有严格解析例外：`TaskAlternative.doFarmTask`直接构造以抛解析异常、阻止把损坏响应当成功；`AntMemberRpcCall.check`直接构造并捕获异常返回失败。没有新增严格构造例外。
 - JSON读取审查：14个文件可执行org.json读取使用opt系列并检查嵌套结构；新增会员/签到/回读判据补必要类型检查。RuntimeInfo的getString/getLong不属于JSON，原注释内旧get代码不参与运行。
 - 验证：扩展现有检查，回放数字交易关键词边界、通用游戏映射、会员损坏列表/待领宝箱、重复SKU刷新/失败旧缓存、合种未知响应/离线/取消、S2未知回读/每日预算/切号。70项隔离回归与NormalDebug Java/Kotlin编译通过，无真实账号RPC。版本继续1.2.11；本次未修改打包/签名、未构建新APK，既有171441包不包含本次合并。发布说明与使用说明同步更新。
+
+
+### 2026-10-07：重新编译1.2.11正式包（源码170fd264）
+
+- 按用户要求执行`:app:assembleNormalRelease`，NormalRelease构建成功，R8及Release关键Lint检查通过；生产代码、构建配置、版本名称及签名配置没有修改，沿用已完成上游合并的源码。
+- 自动按GMT+8归档到`APK/Release/Sesame-M-Normal-arm64-v8a-1.2.11_20261007_180351.apk`，版本1.2.11、versionCode 1931、包名io.github.aw1y2z.sesame，仅arm64-v8a，3,160,800字节。
+- apksigner验证通过，证书SHA-256与1.2.10正式包一致；zipalign检查16KB页对齐通过。核对DEX内本次编译时间、会员宝箱RPC及每日标记，归档与输出APK内容一致，SHA-256为`ad3c95bd9134fb6438e8354d00c5e8ec2dfa44ef81184182bfd205a6e3ec14c2`。
+- 《版本更新说明》改为最新正式包已包含本次合并，保留历史版本。APK按既有.gitignore仅本地归档，不加入Git、不创建GitHub Release；未调用真实账号接口。
