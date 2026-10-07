@@ -1,158 +1,64 @@
-# Sesame-M ProGuard Rules（修正版）
+# Sesame-M R8 规则
+#
+# 只保留「名字有语义」的三类，其余交给 R8 收缩/优化/改名：
+#   1) 按字符串加载：META-INF/xposed/java_init.list、Class.forName + getMethod
+#   2) 磁盘键：ModelConfig.code = 模型类 getSimpleName()，即 config_v2.json 的键
+#   3) 泛型签名与 JSON 属性名：R8 只在「签名里引用的类未被改名」时才保留泛型签名，
+#      而属性名（无 @JsonProperty）完全由 getter/setter 名推导，改名即旧数据读不回来
+#
+# 以下能力 AGP 已提供，无需在本文件重复声明：
+#   - proguard-common.txt：Signature/注解等 attributes、View 的 get*/set*、
+#     Activity 的 *(View) 回调、enum values()/valueOf()、Parcelable.CREATOR、@Keep
+#   - aapt_rules.txt：manifest 里的 Application / Activity / Provider / activity-alias
+#     以及布局中出现的 View（故 ui 包与 SesameApplication 不需要整包 keep）
+# 第三方库自带 consumer 规则的也不要手写整包 keep：okhttp3 自带 okhttp3.pro；
+# nanohttpd 全库 0 处引用 java/lang/reflect（org.nanohttpd 包在 2.x 中并不存在）。
 
-# ============================================================
-# 1. Xposed / libxposed
-# ============================================================
+# ---------- 1. Xposed 入口：java_init.list 按字符串指名本类，框架还反射调用其生命周期方法 ----------
+-keep class io.github.aw1y2z.sesame.hook.ApplicationHook { *; }
 -keep class io.github.libxposed.** { *; }
 -dontwarn io.github.libxposed.**
--keep class io.github.aw1y2z.sesame.hook.ApplicationHook { *; }
--keepclassmembers class io.github.aw1y2z.sesame.hook.ApplicationHook {
-    public <init>(...);
-}
--keep class * implements io.github.libxposed.api.XposedModule { *; }
 
-# ============================================================
-# 2. Model 系统
-# ============================================================
--keep class io.github.aw1y2z.sesame.data.Model { *; }
--keep class io.github.aw1y2z.sesame.data.ModelType { *; }
--keep class io.github.aw1y2z.sesame.data.ModelGroup { *; }
--keep class io.github.aw1y2z.sesame.data.ModelFields { *; }
--keep class io.github.aw1y2z.sesame.data.ModelConfig { *; }
+# ---------- 2. 扩展钩子：AntFarm 与 ExtensionsHandle 用 Class.forName + getMethod 按名调用 ----------
+-keep class io.github.aw1y2z.sesame.model.extensions.** { *; }
+
+# ---------- 3. Model 子类：类名即 config_v2 的键；实例由 Model.initAllModel 反射构造 ----------
+-keepnames class io.github.aw1y2z.sesame.model.**
+-keepclassmembers class io.github.aw1y2z.sesame.model.** {
+    public <init>();
+}
+
+# ---------- 4. ModelField 家族：valueType 由 getClass().getGenericSuperclass() 解析，
+#            基类或子类被改名会让泛型签名降级成裸签名 → valueType = null → Model 体系崩 ----------
 -keep class io.github.aw1y2z.sesame.data.ModelField { *; }
 -keep class io.github.aw1y2z.sesame.data.modelFieldExt.** { *; }
--keepclassmembers class io.github.aw1y2z.sesame.data.Model {
-    public <init>(...);
-}
--keepclassmembers class io.github.aw1y2z.sesame.data.modelFieldExt.** {
-    public <init>(...);
-}
--keep class io.github.aw1y2z.sesame.data.**$* { *; }
 
-# ============================================================
-# 3. data.task 包（反射实例化）
-# ============================================================
--keep class io.github.aw1y2z.sesame.data.task.** { *; }
-
-# ============================================================
-# 4. 配置类（Jackson 序列化）
-# ============================================================
--keep class io.github.aw1y2z.sesame.data.ConfigV2 { *; }
--keep class io.github.aw1y2z.sesame.data.ConfigPreload { *; }
--keep class io.github.aw1y2z.sesame.data.AppConfig { *; }
--keep class io.github.aw1y2z.sesame.data.TokenConfig { *; }
--keepclassmembers class io.github.aw1y2z.sesame.data.ConfigV2 {
-    public <init>(...);
-}
--keepclassmembers class io.github.aw1y2z.sesame.data.AppConfig {
-    public <init>(...);
-}
--keepclassmembers class io.github.aw1y2z.sesame.data.TokenConfig {
-    public <init>(...);
+# ---------- 5. Jackson 持久化状态：类名同样决定泛型签名能否保留（ConfigV2 的
+#            Map<String,ModelFields> 降级后 Jackson 只能造出 LinkedHashMap），
+#            属性名即 JSON 键，故类名 + 构造器 + 访问器都要保留 ----------
+-keep class io.github.aw1y2z.sesame.util.Status,
+           io.github.aw1y2z.sesame.util.Status$*,
+           io.github.aw1y2z.sesame.util.Statistics,
+           io.github.aw1y2z.sesame.util.Statistics$*,
+           io.github.aw1y2z.sesame.data.ConfigV2,
+           io.github.aw1y2z.sesame.data.ConfigPreload,
+           io.github.aw1y2z.sesame.data.AppConfig,
+           io.github.aw1y2z.sesame.data.TokenConfig,
+           io.github.aw1y2z.sesame.data.ModelFields,
+           io.github.aw1y2z.sesame.entity.**,
+           io.github.aw1y2z.sesame.hook.RpcRequest,
+           io.github.aw1y2z.sesame.hook.ServerCommon {
+    <init>(...);
+    <fields>;
+    public *** get*();
+    public void set*(***);
+    public boolean is*();
 }
 
-# ============================================================
-# 5. 状态与统计
-# ============================================================
--keep class io.github.aw1y2z.sesame.util.Status { *; }
--keep class io.github.aw1y2z.sesame.util.Statistics { *; }
--keepclassmembers class io.github.aw1y2z.sesame.util.Status {
-    public static ** INSTANCE;
-}
--keepclassmembers class io.github.aw1y2z.sesame.util.Statistics {
-    public static ** INSTANCE;
-}
+# ---------- 6. Jackson TypeReference 匿名子类：泛型实参只存在于子类签名里，
+#            被收缩后即抛 TypeReference constructed without actual type information ----------
+-keep class io.github.aw1y2z.sesame.** extends com.fasterxml.jackson.core.type.TypeReference
 
-# ============================================================
-# 6. RPC
-# ============================================================
--keep class io.github.aw1y2z.sesame.hook.RpcRequest { *; }
--keep class io.github.aw1y2z.sesame.hook.ServerCommon { *; }
--keep class io.github.aw1y2z.sesame.hook.BaseHandler { *; }
--keep class io.github.aw1y2z.sesame.rpc.bridge.* { *; }
--keepclassmembers class io.github.aw1y2z.sesame.hook.RpcRequest {
-    public <init>(...);
-}
-
-# ============================================================
-# 7. idMap
-# ============================================================
--keep class io.github.aw1y2z.sesame.util.idMap.** { *; }
-
-# ============================================================
-# 8. Entity
-# ============================================================
--keep class io.github.aw1y2z.sesame.entity.** { *; }
-
-# ============================================================
-# 9. 扩展模块
-# ============================================================
--keep class io.github.aw1y2z.sesame.model.extensions.** { *; }
--keepclassmembers class io.github.aw1y2z.sesame.model.extensions.ExtensionsHandle {
-    public static java.lang.Object handleAlphaRequest(java.lang.String, java.lang.String, java.lang.Object);
-}
-
-# ============================================================
-# 10. Hook 包（保持原有整包保留，避免反射调用崩溃）
-# ============================================================
--keep class io.github.aw1y2z.sesame.hook.** { *; }
-
-# ============================================================
-# 11. 工具类
-# ============================================================
--keep class io.github.aw1y2z.sesame.util.XHelpers { *; }
--keep class io.github.aw1y2z.sesame.util.compat.** { *; }
--keep class io.github.aw1y2z.sesame.util.ClassUtil { *; }
--keep class io.github.aw1y2z.sesame.util.FileUtil { *; }
--keep class io.github.aw1y2z.sesame.util.Log { *; }
--keep class io.github.aw1y2z.sesame.util.JsonUtil { *; }
--keep class io.github.aw1y2z.sesame.util.TimeUtil { *; }
--keep class io.github.aw1y2z.sesame.util.NotificationUtil { *; }
--keep class io.github.aw1y2z.sesame.util.PermissionUtil { *; }
--keep class io.github.aw1y2z.sesame.util.StringUtil { *; }
--keep class io.github.aw1y2z.sesame.util.ThreadUtil { *; }
--keep class io.github.aw1y2z.sesame.util.ToastUtil { *; }
--keep class io.github.aw1y2z.sesame.util.TypeUtil { *; }
-
-# ============================================================
-# 12. Model 实现类 / UI
-# ============================================================
--keep class io.github.aw1y2z.sesame.model.** { *; }
--keep class io.github.aw1y2z.sesame.ui.** { *; }
--keep class io.github.aw1y2z.sesame.SesameApplication { *; }
-
-# ============================================================
-# 13. 通用：保留 Lombok 生成的 getter/setter（R8 可能误删）
-# ============================================================
--keepclassmembers class ** {
-    public * get*();
-    public void set*(...);
-}
-
-# ============================================================
-# 14. Jackson 注解字段/方法保留（防 R8 重命名 Jackson 注解字段）
-# ============================================================
--keepclassmembers class * {
-    @com.fasterxml.jackson.annotation.* <fields>;
-    @com.fasterxml.jackson.annotation.* <methods>;
-}
--dontwarn java.beans.**
-
-# ============================================================
-# 15. 第三方库
-# ============================================================
+# ---------- 7. Jackson 本体：未随 jar 提供 consumer 规则且大量反射，暂整包保留 ----------
 -keep class com.fasterxml.jackson.** { *; }
--keep class fi.iki.elonen.** { *; }
--dontwarn fi.iki.elonen.**
--keep class org.nanohttpd.** { *; }
--dontwarn org.nanohttpd.**
--keep class okhttp3.** { *; }
--keep class okio.** { *; }
-
-# ============================================================
-# 16. AppCompat Tab 组件（如遇 TabAdapter 崩溃再启用）
-# ============================================================
-# -keep class androidx.appcompat.widget.ScrollingTabContainerView { *; }
-# -keep class androidx.appcompat.widget.ScrollingTabContainerView$* { *; }
-# -keep class androidx.appcompat.widget.AbsActionBarView { *; }
-# -keep class androidx.appcompat.widget.AbsActionBarView$* { *; }
+-dontwarn java.beans.**
