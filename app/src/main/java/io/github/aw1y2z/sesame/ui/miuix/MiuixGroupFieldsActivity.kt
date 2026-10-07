@@ -313,11 +313,17 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                 }
                 items(sections.size, key = { sections[it].second.first().modelCode }) { index ->
                     val (title, fields) = sections[index]
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f)) { title?.let { SmallTitle(text = it) } }
-                        TextButton(text = "立即执行", onClick = {
-                            activity.executeModule(fields.first().modelCode, if (fields.first().modelCode == "FishTask") "all" else "")
-                        })
+                        TextButton(
+                            text = "立即执行",
+                            minHeight = 48.dp,
+                            insideMargin = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            textStyle = MiuixTheme.textStyles.button.copy(fontSize = 14.sp),
+                            onClick = {
+                                activity.executeModule(fields.first().modelCode, if (fields.first().modelCode == "FishTask") "all" else "")
+                            }
+                        )
                     }
                     val actions = when (fields.first().modelCode) {
                         "AntForestV2" -> listOf("能量雨" to "energyRain", "打地鼠" to "whackMole")
