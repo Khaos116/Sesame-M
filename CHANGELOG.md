@@ -8,6 +8,8 @@
 
 ## 2026-10-07
 
+- release（构建源码`250ce69d`）：按要求先clean再完整重编1.2.11正式包`180747`，versionCode 1932；R8/Lint、签名及16KB页对齐通过。
+
 - release（构建源码`170fd264`）：重编1.2.11正式包`180351`，versionCode 1931；包含上游合并，R8/Lint、签名及16KB页对齐通过，更新发布说明。
 
 - merge `35e0a8c6`：合入MIUIX-api102至`1763096c`共12个提交，补森林统计/通用游戏任务、会员宝箱、每日状态和场景施肥；保留M预算、账号保护及Gemini。
@@ -1727,3 +1729,10 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 - 自动按GMT+8归档到`APK/Release/Sesame-M-Normal-arm64-v8a-1.2.11_20261007_180351.apk`，版本1.2.11、versionCode 1931、包名io.github.aw1y2z.sesame，仅arm64-v8a，3,160,800字节。
 - apksigner验证通过，证书SHA-256与1.2.10正式包一致；zipalign检查16KB页对齐通过。核对DEX内本次编译时间、会员宝箱RPC及每日标记，归档与输出APK内容一致，SHA-256为`ad3c95bd9134fb6438e8354d00c5e8ec2dfa44ef81184182bfd205a6e3ec14c2`。
 - 《版本更新说明》改为最新正式包已包含本次合并，保留历史版本。APK按既有.gitignore仅本地归档，不加入Git、不创建GitHub Release；未调用真实账号接口。
+
+
+### 2026-10-07：先clean再完整重编1.2.11（源码250ce69d）
+
+- 按用户补充要求执行`clean :app:assembleNormalRelease`，根项目与app清理任务先执行，Java/Kotlin、资源、R8和打包重新运行；55项任务中53项执行，NormalRelease及Release关键Lint通过。
+- 最新归档`APK/Release/Sesame-M-Normal-arm64-v8a-1.2.11_20261007_180747.apk`，版本1.2.11、versionCode 1932、arm64-v8a、3,160,787字节；生产代码与此前上游合并一致。
+- 签名校验、原证书比对及16KB页对齐通过。核对包内本次编译时间、合并接口/每日标记及归档一致性，SHA-256为`6943dd16bdfa0813eac9e606f7ffffda280596854f141d4da476a6caa92cafa9`；发布说明指向本次clean后的产物。
