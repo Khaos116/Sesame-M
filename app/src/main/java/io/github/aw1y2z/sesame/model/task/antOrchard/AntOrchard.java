@@ -52,6 +52,8 @@ import android.content.Context;
 import android.content.Intent;
 
 public class AntOrchard extends ModelTask {
+    private BooleanModelField orchardFloatBallTask, orchardManualVisitAward;
+    private IntegerModelField orchardVisitDailyBudget;
     private static final String TAG = "AntOrchard";
     private static final String NAME = "农场";
     private static final ModelGroup GROUP = ModelGroup.ORCHARD;
@@ -125,6 +127,10 @@ public class AntOrchard extends ModelTask {
         ModelFields modelFields = new ModelFields();
         modelFields.addField(executeInterval = new IntegerModelField("executeInterval", "执行间隔(毫秒)", 500, 500, null));
         modelFields.addField(orchardListTask = new BooleanModelField("orchardListTask", "农场任务", false));
+        modelFields.addField(orchardFloatBallTask = new BooleanModelField("orchardFloatBallTask", "农场任务 | 当前任务列表浮球时长", false).setDependsOn("orchardListTask")
+                .setDescription("补充VISIT+floatBallConfig协议，按实际时长分段完整等待后上报并回查；不代表真实打开页面游玩。"));
+        modelFields.addField(orchardManualVisitAward = new BooleanModelField("orchardManualVisitAward", "农场访问奖励 | 领取需手动确认的奖励", false));
+        modelFields.addField(orchardVisitDailyBudget = new IntegerModelField("orchardVisitDailyBudget", "农场访问扩展 | 每日操作尝试预算（0不执行）", 0, 0, 30));
         modelFields.addField(AutoAntOrchardTaskList = new BooleanModelField("AutoAntOrchardTaskList", "农场任务 | 自动黑名单", true).setDependsOn("orchardListTask"));
         modelFields.addField(AntOrchardTaskList = new SelectModelField("AntOrchardTaskList", "农场任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntOrchardTaskList::getList).setDependsOn("AutoAntOrchardTaskList"));
         modelFields.addField(orchardSpreadManure = new BooleanModelField("orchardSpreadManure", "农场施肥 | 开启", false));
@@ -206,6 +212,8 @@ public class AntOrchard extends ModelTask {
                 orchardChouChouLe();
             }
 
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
         } catch (Throwable t) {
             Log.err(TAG, "start.run err:", t);
         }
@@ -534,6 +542,8 @@ public class AntOrchard extends ModelTask {
             receiveOrchardVisitAward();
 
             return true;
+        } catch (TaskCancelledException e) {
+            throw e;
         } catch (Throwable t) {
             Log.err(TAG, "orchardIndex err:", t);
             return false;
@@ -1367,6 +1377,8 @@ public class AntOrchard extends ModelTask {
 
             // 触发已完成任务的奖励
             triggerTbTask();
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
         } catch (Throwable t) {
             Log.err(TAG, "orchardListTask err:", t);
         }
@@ -1431,6 +1443,11 @@ public class AntOrchard extends ModelTask {
                 JSONObject displayConfig = jo.optJSONObject("taskDisplayConfig");
                 String title = displayConfig != null ? displayConfig.optString("title", "未知任务") : "未知任务";
                 if (AntOrchardTaskList.getValue().contains(title) || AntOrchardTaskList.getValue().contains(taskId) || AntOrchardTaskList.getValue().contains(groupId)) continue;
+                if (orchardFloatBallTask.getValue() && displayConfig != null && displayConfig.optJSONObject("floatBallConfig") != null) {
+                    if (!ORCHARD_TASK_BLACKLIST.contains(title) && !ORCHARD_TASK_BLACKLIST.contains(groupId) && !ORCHARD_TASK_BLACKLIST.contains(taskId))
+                        AntOrchardVisitTask.floatBall(jo, orchardVisitDailyBudget.getValue());
+                    continue;
+                }
                 if (isExtraOrchardBrowse(jo)) {
                     runExtraOrchardTask(jo, false);
                     continue;
@@ -2004,12 +2021,18 @@ public class AntOrchard extends ModelTask {
             int manureCount = jo.optInt("manureCount", 0);
             boolean canCollect = jo.optBoolean("canCollect", false);
             boolean needManualReceive = jo.optBoolean("needManualReceive", false);
+            if (orchardManualVisitAward.getValue() && canCollect && needManualReceive) {
+                AntOrchardVisitTask.manualAward(jo, orchardVisitDailyBudget.getValue());
+                return;
+            }
             if (manureCount > 0) {
                 Log.farm("回访奖励🎖️领取肥料*" + manureCount);
             } else if (canCollect || needManualReceive) {
                 Log.i("回访奖励🎖️有待领奖励[canCollect=" + canCollect + "#需手动领取=" + needManualReceive + "]");
             }
             // 无奖励时不打日志：官方每次进农场都会调一次，属正常空返回
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
         } catch (Throwable t) {
             Log.err(TAG, "receiveOrchardVisitAward err:", t);
         }

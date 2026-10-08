@@ -6,6 +6,10 @@
 写作约定：每天一节，每次改动一条（`- 类型 commit：一句话`），单条约一行、尽量不超 150 字，只写改了什么加关键取舍；
 推理过程、日志证据、被否掉的方案不写入（要查时看 `git log` / 当次对话记录）。已写超的由整理人直接压缩，原文在 git 历史里可找回。
 
+## 2026-10-08
+
+- feat（本次提交）：补SJ 3.6.67神券、三款金豆小游戏、里程、花呗亲密度、乐游记、玩赚签到及农场访问扩展；默认关闭/预算0，按用户要求保留泸州固定定位。
+
 ## 2026-10-07
 
 - fix `733c40f0`：按用户要求完整移除WebDAV设置入口、页面注册和上传/恢复客户端；负向检查防止恢复，保留原有本地配置备份。
@@ -1749,3 +1753,15 @@ Lint 已重新运行，日志页 API 错误已消除；全库仍有 **2 errors /
 - 移除后的70项全量隔离回归及clean后的NormalDebug Java/Kotlin编译通过；源码、资源及Manifest无WebDAV检查通过，原有本地配置共享工具回归保持通过。
 
 - 移除后按用户要求执行`clean :app:assembleNormalRelease --no-build-cache`，R8与Release关键Lint通过，归档`APK/Release/Sesame-M-Normal-arm64-v8a-1.2.11_20261007_190728.apk`。版本1.2.11、versionCode 1934、arm64-v8a、3,160,754字节；签名证书保持一致、16KB页对齐通过。APK条目、Manifest、DEX及资源无WebDAV残留，SHA-256为`d0c70924131014b7e82758678f6b341ee8b97ca7df401dcf876c68b7e3133601`。
+
+
+### 2026-10-08：SJ 3.6.67 补充移植审查
+
+- 阶段66～72按反编译请求合同接入现有OtherTask、goldenbeans、AntOrchard；复用M的账号状态、RPC Bridge/失败退避、配置和TaskLifecycle，没有新依赖。除固定定位用户明确保留外，里程参数默认空；金融、开通、转账、付款、订阅任务继续排除，WebDAV不恢复。
+- GMT+8：新worker与农场辅助通过MyUtils.getInstance计算业务日期，等待/写调用/前台操作/异步回调均核对账号与日期；P2E校验当前服务端日期。手机在海外不采用当地时区。
+- JSON创建：新JSONObject全部通过MyUtils工厂；必要字段、类型及显式成功标志验证，无效空对象拒绝继续。JSONArray空构造用于请求封装；前台JS返回数组解析被上层异常边界保护，保留原数组构造，无新增例外。
+- JSON读取：新增JSON仅opt*及判空，额度精确整数/非负、重复ID/日期记录、元数据漂移拒绝；Map/Future/RuntimeInfo等非JSON get不作机械替换。GeminiAI与原配置ID完整保留。
+- UI：重用SimplePageManager的前台窗口/Handler，无新权限；回调用TaskLifecycle.enter(generation)，取消半次触摸发送ACTION_CANCEL，身份不明/锁屏停止，不伪造完成。乐游记只记页面操作结束，奖品以页面为准。
+- 未移植：设备指纹替换、抓包/任意JS-RPC桥、对方后台、离屏外部App归因和未确认会话的MTOP；这属于用户授权跳过的范围。海外资格和真实账号结果仍需实机，不冒充已验证。
+
+- 最终检查：72/72全量隔离回归通过；新增两项在最终代码修改后再通过，禁用P2E签到/移除完整等待的负向对照均检出断言失败。495项配置重生成，110项外部总对照与CSV逐行一致；Debug Java/Kotlin先clean、禁用构建缓存后编译通过。未生成新正式包、未调用真实账号。

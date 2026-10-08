@@ -96,6 +96,8 @@ python checks/check_yeb_vouchers.py
 python checks/check_legacy_card_rewards.py
 python checks/check_farm_extra_reward_tools.py
 python checks/check_three_hours_donate.py
+python checks/check_sj_activities.py
+python checks/check_sj_native_tasks.py
 java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin --console=plain
 ```
 

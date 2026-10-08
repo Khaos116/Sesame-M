@@ -27,6 +27,8 @@ import io.github.aw1y2z.sesame.util.TaskCancelledException;
  * bizType / source / sceneCode，不可混用。
  */
 public class goldenbeans extends ModelTask {
+    private BooleanModelField goldenBeansGamePlay;
+    private IntegerModelField goldenBeansGamePlayLimit;
 
     /** 任务黑白名单初始化标记 */
     private static final String FLAG_BLACKLIST_INIT = "BlackList::initGoldenBeans";
@@ -81,6 +83,9 @@ public class goldenbeans extends ModelTask {
         modelFields.addField(sesameAlchemyExtraTasks = new BooleanModelField("sesameAlchemyExtraTasks", "芝麻信用 | 炼金额外浏览与广告任务", false));
         modelFields.addField(sesameAlchemyTimeReward = new BooleanModelField("sesameAlchemyTimeReward", "芝麻信用 | 炼金时段奖励", false));
         modelFields.addField(sesameAlchemyNextDayReward = new BooleanModelField("sesameAlchemyNextDayReward", "芝麻信用 | 炼金次日奖励", false));
+        modelFields.addField(goldenBeansGamePlay = new BooleanModelField("goldenBeansGamePlay", "金豆夺宝 | 前台小游戏自动操作", false)
+                .setDescription("仅向日葵、这关我很行、三国冰河；实际操作，需要亮屏解锁。窗口身份无法确认、失焦、切号或锁屏立即停止；由服务端任务回查确认，不伪造完成。"));
+        modelFields.addField(goldenBeansGamePlayLimit = new IntegerModelField("goldenBeansGamePlayLimit", "金豆夺宝 | 小游戏每日尝试上限（0不执行）", 0, 0, 3).setDependsOn("goldenBeansGamePlay"));
         return modelFields;
     }
 
@@ -96,6 +101,7 @@ public class goldenbeans extends ModelTask {
     @Override
     public void run() {
         try {
+            io.github.aw1y2z.sesame.model.task.other.SjGamePlay.goldenBeans(GoldenBeansSupport.enabled(goldenBeansGamePlay), goldenBeansGamePlayLimit.getValue(), GoldenBeansTaskList.getValue());
             SesameCreditExtras.run(GoldenBeansSupport.enabled(sesameTreeTasks), GoldenBeansSupport.enabled(sesameTreePurification),
                     GoldenBeansSupport.enabled(sesameAlchemyExtraTasks), GoldenBeansSupport.enabled(sesameAlchemyTimeReward),
                     GoldenBeansSupport.enabled(sesameAlchemyNextDayReward));

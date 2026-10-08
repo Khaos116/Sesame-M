@@ -35,6 +35,9 @@ public class OtherTask extends ModelTask {
     private BooleanModelField hundredCardSelectedTasks, hundredCardSelectedSignup, hundredCardAutoTasks;
     private StringModelField hundredCardTaskTargets;
     private IntegerModelField legacyCardDailyBudget;
+    private BooleanModelField shenQuanSign, shenQuanTasks, shenQuanDraw, mileageExchange, huaBeiIntimacy, gameCenterP2E, leiYouJiTasks, leiYouJiRide;
+    private StringModelField shenQuanLocation, mileageExchangeCodes, mileageCityCode;
+    private IntegerModelField sjActivityDailyBudget;
 
     private OtherRequestGate gate;
 
@@ -73,6 +76,23 @@ public class OtherTask extends ModelTask {
                 .setDescription("按原活动queryV2→signup/send→award流程处理当前账号任务，跳过SCENE_TASK及付款、开通等任务；每次请求各占一次旧卡每日预算。接口受理后本轮继续，保留回执且不自动重发；奖励到账以活动页面为准。"));
         fields.addField(legacyCardDailyBudget = new IntegerModelField("legacyCardDailyBudget", "旧卡活动 | 每日操作尝试预算（0不用）", 0, 0, 20)
                 .setDescription("每次签到上报、选定任务报名、发送、领取、翻卡或合卡各计一次；只使用当前查询资格，不开通产品，不购买次数，未知回执跨日停止。"));
+        fields.addField(shenQuanSign = new BooleanModelField("shenQuanSign", "神券团购 | 签到", false));
+        fields.addField(shenQuanTasks = new BooleanModelField("shenQuanTasks", "神券团购 | 浏览/搜索任务与抽奖机会", false));
+        fields.addField(shenQuanDraw = new BooleanModelField("shenQuanDraw", "神券团购 | 使用已有免费次数抽奖", false));
+        fields.addField(shenQuanLocation = new StringModelField("shenQuanLocation", "神券团购 | 抽奖定位JSON（默认沿用SJ）", "{\"city\":\"泸州市\",\"cityAdcode\":\"510500\",\"district\":\"龙马潭区\",\"province\":\"四川省\",\"provinceAdcode\":\"510000\",\"latitude\":\"28.893704\",\"longitude\":\"105.421453\",\"poiNameForTitle\":\"金诺·御景山居\",\"walletVersion\":\"12.12.20\"}")
+                .setDescription("按用户要求默认保持SJ的泸州固定定位，不读取设备GPS。需要调整时填写city/cityAdcode/district/province/provinceAdcode/latitude/longitude字符串；签到和任务不使用定位，海外接口效果尚待实际验证。")
+                .setDependsOn("shenQuanDraw"));
+        fields.addField(mileageExchange = new BooleanModelField("mileageExchange", "里程兑换 | 出行券", false));
+        fields.addField(mileageExchangeCodes = new StringModelField("mileageExchangeCodes", "里程兑换 | 商品编码（逗号分隔）", "").setDependsOn("mileageExchange"));
+        fields.addField(mileageCityCode = new StringModelField("mileageCityCode", "里程兑换 | 本人城市编码（6位）", "").setDependsOn("mileageExchange"));
+        fields.addField(huaBeiIntimacy = new BooleanModelField("huaBeiIntimacy", "花呗亲密度 | 明确浏览任务", false)
+                .setDescription("仅当前APPLET浏览/搜索任务，要求服务端提供1～300秒时长；完整等待后上报并回查。开通、借款、支付、外部App真实交互等任务不执行。"));
+        fields.addField(gameCenterP2E = new BooleanModelField("gameCenterP2E", "游戏中心玩赚 | 每日签到", false));
+        fields.addField(leiYouJiTasks = new BooleanModelField("leiYouJiTasks", "芝麻粒乐游记 | 明确浏览任务", false));
+        fields.addField(leiYouJiRide = new BooleanModelField("leiYouJiRide", "芝麻粒乐游记 | 前台自动骑行", false)
+                .setDescription("会打开乐游记页面，通过实际页面DOM骑行；仅亮屏解锁且游戏窗口处于前台时操作，每轮最多30步。关卡外跳/终点领奖需人工处理；不伪造页面会话或设备指纹。"));
+        fields.addField(sjActivityDailyBudget = new IntegerModelField("sjActivityDailyBudget", "SJ新增活动 | 每日操作尝试预算（0不执行）", 0, 0, 50)
+                .setDescription("签到、报名、上报、领奖、抽奖、兑换及骑行会话共用预算；写请求单次发送，账号/跨日/取消停止。未确认回执保留并停止该活动重发。"));
         return fields;
     }
 
@@ -88,9 +108,20 @@ public class OtherTask extends ModelTask {
         try {
             HaoJiaPaymentCoin.run(gate, haojiaCoinSign.getValue(), haojiaCoinBrowse.getValue(), haojiaCoinRewards.getValue(), haojiaCoinBudget.getValue());
             LegacyCardRewards.run(gate, hundredCardSign.getValue(), hundredCardRewards.getValue(), huaHuaCardFlip.getValue(), huaHuaCardMerge.getValue(), legacyCardDailyBudget.getValue(), hundredCardSelectedTasks.getValue(), hundredCardTaskTargets.getValue(), hundredCardSelectedSignup.getValue(), huaHuaCardTasks.getValue(), hundredCardAutoTasks.getValue());
+            if (sjActivityDailyBudget.getValue() > 0) {
+                SjActivityTasks sj = new SjActivityTasks(gate, sjActivityDailyBudget.getValue());
+                if (shenQuanSign.getValue() || shenQuanTasks.getValue() || shenQuanDraw.getValue()) sj.shenQuan(shenQuanSign.getValue(), shenQuanTasks.getValue(), shenQuanDraw.getValue(), shenQuanLocation.getValue());
+                if (mileageExchange.getValue()) sj.mileage(mileageExchangeCodes.getValue(), mileageCityCode.getValue());
+                if (huaBeiIntimacy.getValue()) sj.intimacy();
+                if (gameCenterP2E.getValue()) sj.p2eSign();
+                if (leiYouJiTasks.getValue()) sj.leiYouJiTasks();
+                if (leiYouJiRide.getValue()) SjGamePlay.ride(sj);
+            }
             if (haojiaWuyou.getValue()) {
                 runHaoJia();
             }
+        } catch (OtherRequestGate.BudgetExhausted | OtherRequestGate.Denied stopped) {
+            // All activities share the existing request gate.
         } catch (TaskCancelledException cancelled) {
             throw cancelled;
         } catch (Throwable t) {
