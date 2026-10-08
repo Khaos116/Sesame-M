@@ -380,7 +380,7 @@ public class ApplicationHook extends XposedModule {
                                         });
                                         try { checkThread.start(); }
                                         catch (Throwable failed) { checkWork.close(); throw failed; }
-                                        if (!checkTask.get(30, TimeUnit.SECONDS)) {
+                                        if (!checkTask.get(CHECK_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
                                             Log.record("执行暂停：检查未通过，等待下次执行");
                                             execDelayedHandler(checkInterval);
                                             return;
@@ -869,6 +869,11 @@ public class ApplicationHook extends XposedModule {
             }
             rpcRequestUnhook = null;
         }
+        // 卸载后 map 里的残留 entry 会继续强引用 BridgeCallback / 请求体 / 响应体，
+        // 而此后已无人 remove，必须在这里清空
+        if (!rpcHookMap.isEmpty()) {
+            rpcHookMap.clear();
+        }
     }
 
     private synchronized static void destroyHandler(Boolean force) {
@@ -934,6 +939,9 @@ public class ApplicationHook extends XposedModule {
 
     /** 起跳失败或取不到间隔时的兜底排期间隔（下限 1 分钟，避免自旋） */
     private static final long FALLBACK_INTERVAL = 60_000;
+
+    /** M保留30秒检查窗口；失败沿用重排期，不因慢响应反复重登录。 */
+    private static final long CHECK_TIMEOUT_MS = 30_000;
 
     /** 起跳的公共实现：线程起不来等异常不能逃到宿主主线程（执行槽已由 BaseTask 归还） */
     private static void startMainTask() {
@@ -1246,9 +1254,14 @@ public class ApplicationHook extends XposedModule {
     }
 
     public static void reLogin() {
-        if (mainHandler == null) return;
+        Handler handler = mainHandler;
+        Context ctx = context;
+        if (handler == null || ctx == null) {
+            Log.record("跳过重登录：mainHandler/context 尚未就绪");
+            return;
+        }
         long generation = TaskLifecycle.generation();
-        mainHandler.post(() -> {
+        handler.post(() -> {
             try (TaskLifecycle.Work work = TaskLifecycle.enter(generation)) {
             if (work == null || AccountSwitchController.isBusy()) return;
             if (reLoginCount.get() < 5) {
@@ -1260,7 +1273,7 @@ public class ApplicationHook extends XposedModule {
             intent.setClassName(ClassUtil.PACKAGE_NAME, ClassUtil.CURRENT_USING_ACTIVITY);
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             offline = true;
-            context.startActivity(intent);
+            ctx.startActivity(intent);
             }
         });
     }

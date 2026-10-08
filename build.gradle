@@ -10,9 +10,8 @@ buildscript {
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
     }
     ext {
-        kotlinVersion = '2.4.0'
+        kotlinVersion = '2.4.20'
         agpVersion = '9.2.1'
-        composeVersion = '1.11.1'
     }
     dependencies {
         classpath "com.android.tools.build:gradle:${agpVersion}"

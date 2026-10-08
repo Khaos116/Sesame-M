@@ -170,7 +170,6 @@ public class AntOrchard extends ModelTask {
     @Override
     public void run() {
         try {
-            super.startTask();
             userId = UserIdMap.getCurrentUid();
             if (!checkOrchardOpen()) {
                 return;
@@ -948,12 +947,14 @@ public class AntOrchard extends ModelTask {
     /**
      * M 按场景配置操作次数；批量时一次操作算 5 次，达到每日上限时保留上游 199+5 边界。
      */
+    private static final int MAIN_SPREAD_BURST_LIMIT = MAIN_SPREAD_DAILY_LIMIT - 1 + BATCH_SPREAD_SIZE;
+
     private int targetSpreadTimes(Integer configuredTimes) {
         int times = configuredTimes == null ? 0 : Math.max(configuredTimes, 0);
         if (Boolean.TRUE.equals(useBatchSpread.getValue())) {
             times *= BATCH_SPREAD_SIZE;
         }
-        return Math.min(times, Boolean.TRUE.equals(useBatchSpread.getValue()) ? MAIN_SPREAD_DAILY_LIMIT + BATCH_SPREAD_SIZE : MAIN_SPREAD_DAILY_LIMIT);
+        return Math.min(times, Boolean.TRUE.equals(useBatchSpread.getValue()) ? MAIN_SPREAD_BURST_LIMIT : MAIN_SPREAD_DAILY_LIMIT);
     }
 
     private static boolean shouldBatchSpread(int usedTimes, int limit) {

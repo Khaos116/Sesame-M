@@ -50,7 +50,8 @@ public class AntMemberRpcCall {
     end = hook.index("                                    TaskCommon.update();")
     start = hook.rindex("                                    lastExecTime = System.currentTimeMillis();", 0, end)
     # Only shorten the production wait constants; execute the real branches and lifecycle accounting.
-    preflight = hook[start:end].replace("get(30, TimeUnit.SECONDS)", "get(50, TimeUnit.MILLISECONDS)")
+    assert "private static final long CHECK_TIMEOUT_MS = 30_000;" in hook
+    preflight = hook[start:end].replace("get(CHECK_TIMEOUT_MS, TimeUnit.MILLISECONDS)", "get(50, TimeUnit.MILLISECONDS)")
     preflight = preflight.replace("10000 - System.currentTimeMillis()", "0 - System.currentTimeMillis()")
     write("hook/PreflightCheck.java", """
 package io.github.aw1y2z.sesame.hook;

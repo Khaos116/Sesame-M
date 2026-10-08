@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.util.idMap;
 
+import android.os.Handler;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.github.aw1y2z.sesame.util.XHelpers;
 import lombok.Getter;
@@ -110,7 +112,14 @@ public class UserIdMap {
     public synchronized static void initUser(String currentUserId) {
         setCurrentUserId(currentUserId);
         FileUtil.publishCurrentLogUser(currentUserId);
-        ApplicationHook.getMainHandler().post(() -> {
+        // mainHandler 只在 Service onCreate hook 内赋值：未就绪说明模块还没起来，
+        // 此时加载用户数据必然失败，安静跳过并等下一次触发，不再让 NPE 冒泡成「加载失败」
+        Handler handler = ApplicationHook.getMainHandler();
+        if (handler == null) {
+            Log.record("跳过用户数据加载：mainHandler 尚未就绪");
+            return;
+        }
+        handler.post(() -> {
             ClassLoader loader;
             try {
                 loader = ApplicationHook.getClassLoader();

@@ -16,8 +16,11 @@ assert "Status.unload();" in rollover
 assert "competitionDonatedRound" not in (SOURCE / "util/Status.java").read_text(encoding="utf-8")
 
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches/modules-2/files-2.1"
-jars = [str(next((cache / "com.fasterxml.jackson.core" / name / "2.18.2").glob(f"*/{name}-2.18.2.jar")))
-        for name in ("jackson-databind", "jackson-core", "jackson-annotations")]
+dependencies = (ROOT / "app/build.gradle").read_text(encoding="utf-8")
+jars = []
+for name in ("jackson-databind", "jackson-core", "jackson-annotations"):
+    version = re.search(r"name: '" + name + r"', version: '([^']+)'", dependencies).group(1)
+    jars.append(str(next((cache / "com.fasterxml.jackson.core" / name / version).glob(f"*/{name}-{version}.jar"))))
 sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
 if not sdk:
     for line in (ROOT / "local.properties").read_text().splitlines():

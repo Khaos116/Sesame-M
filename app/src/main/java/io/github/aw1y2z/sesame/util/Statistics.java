@@ -32,7 +32,11 @@ public class Statistics {
         return roundCollected;
     }
 
-    /** 新一轮开始时清零本轮收取计数 */
+    /**
+     * 新一轮开始时清零本轮收取计数。
+     * <p>synchronized：与 addData 的 {@code roundCollected += i} 互斥，
+     * 否则清零点正好落在累加中间会丢掉这一次累加（表现为通知里「本轮收取能量」偏小）。
+     */
     public static synchronized void resetRoundCollected() {
         roundCollected = 0;
     }

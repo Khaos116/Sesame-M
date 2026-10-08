@@ -384,8 +384,55 @@ for placeholder, path, signatures in (
 game_source=(SOURCE / "model/task/antGame/GameTask.java").read_text(encoding="utf-8")
 flows=flows.replace("@@GAMES@@",game_source.split("public enum GameTask {",1)[1].split(";",1)[0]+";")
 
+
+# New upstream fixes run production save/target/claim code, not a copy of their formulas.
+fixes = r"""
+import java.util.*;import java.io.File;import java.util.regex.*;
+public class UpstreamFixCheck {
+ static class System {static long now=java.time.Instant.parse("2026-10-08T02:00:00Z").toEpochMilli();static long currentTimeMillis(){return now;}static final java.io.PrintStream out=java.lang.System.out;}
+ static class TimeUtil {static Calendar getNow(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.setTimeInMillis(System.now);return c;}static boolean isLessThanSecondOfDays(long a,long b){return java.time.Instant.ofEpochMilli(a).atZone(java.time.ZoneOffset.ofHours(8)).toLocalDate().isBefore(java.time.Instant.ofEpochMilli(b).atZone(java.time.ZoneOffset.ofHours(8)).toLocalDate());}}
+ static class UserIdMap {static String getCurrentUid(){return "self";}}
+ static class StringUtil {static boolean isEmpty(String s){return s==null||s.isEmpty();}}
+ static class Log {static int failures,recovered;static void record(String s){}static void debug(String s){}static void system(String t,String s){if(s.contains("恢复正常"))recovered++;if(s.contains("当日进度可能"))failures++;}static void printStackTrace(String t,Throwable e){}}
+ static class Toast {static int shown;static void show(String s,boolean longTime){shown++;}}
+ static class FileUtil {static boolean success;static int writes;static File getStatusFile(String s){return new File("never-created-status.json");}static boolean write2File(String s,File f){writes++;return success;}}
+ static class JsonUtil {static boolean fail;static String toFormatJsonString(Object o){if(fail)throw new IllegalStateException("serialization");return "{}";}}
+ static class MessageUtil {static void sweepExpiredBlackList(){}static void sweepReleasedDefaults(){}}
+ static class Status {static final String TAG="check";static final Status INSTANCE=new Status();static boolean saveFailureNotified;static int unloads;long saveTime;Set<String> flags=new HashSet<>();static void unload(){unloads++;INSTANCE.flags.clear();}
+ @@STATUS@@
+ }
+ static class Statistics {enum DataType{COLLECTED}static int collected;static void addData(DataType type,int amount){collected+=amount;}}
+ static final Pattern ENERGY_PRIZE_PATTERN=Pattern.compile("(\\d+)g能量");
+ static int claim(String prizeName,int prizeNum){Statistics.collected=0;@@CLAIM@@ return Statistics.collected;}
+ static class Looper{static final Looper main=new Looper();static Looper getMainLooper(){return main;}}
+ static class Handler{final Looper looper;Handler(Looper l){looper=l;}}
+ static class ApplicationHook{static Handler main;static Handler getMainHandler(){return main;}}
+ static class SystemChildTaskExecutor{Handler handler;@@CONSTRUCTOR@@}
+ static class Field {boolean value;Boolean getValue(){return value;}}
+ static final int MAIN_SPREAD_DAILY_LIMIT=200,BATCH_SPREAD_SIZE=5,MAIN_SPREAD_BURST_LIMIT=MAIN_SPREAD_DAILY_LIMIT-1+BATCH_SPREAD_SIZE;
+ Field useBatchSpread=new Field();@@TARGET@@
+ public static void main(String[] args){
+  Status.INSTANCE.saveTime=System.now-86400000L;Status.save();assert Status.unloads==1&&Log.failures==1&&Toast.shown==1;
+  Status.INSTANCE.flags.add("already-sent");Status.save();assert Status.unloads==1&&Status.INSTANCE.flags.contains("already-sent")&&Log.failures==1;
+  FileUtil.success=true;Status.save();assert Log.recovered==1&&!Status.saveFailureNotified;
+  FileUtil.success=false;Status.save();assert Log.failures==2&&Toast.shown==2&&Status.INSTANCE.flags.contains("already-sent");
+  JsonUtil.fail=true;try{Status.save();throw new AssertionError("serialization hidden");}catch(IllegalStateException expected){}assert Status.INSTANCE.saveTime==System.now&&Status.INSTANCE.flags.contains("already-sent");
+  assert claim("188g能量",2)==376&&claim("5g能量",1)==5&&claim("200g能量",3)==600&&claim("能量体验卡",1)==0&&claim("g能量",3)==0;
+  assert new SystemChildTaskExecutor().handler.looper==Looper.getMainLooper();ApplicationHook.main=new Handler(new Looper());assert new SystemChildTaskExecutor().handler==ApplicationHook.main;
+  UpstreamFixCheck c=new UpstreamFixCheck();assert c.targetSpreadTimes(null)==0&&c.targetSpreadTimes(-1)==0&&c.targetSpreadTimes(250)==200;
+  c.useBatchSpread.value=true;assert c.targetSpreadTimes(1)==5&&c.targetSpreadTimes(40)==200&&c.targetSpreadTimes(41)==204&&c.targetSpreadTimes(100)==204;
+  assert shouldBatchSpread(199,204)&&!shouldBatchSpread(200,204)&&!shouldBatchSpread(204,204)&&!shouldBatchSpread(198,204);
+  System.out.println("PASS upstream production fixes: status write failure/recovery/flags, actual energy grams and 204 cap with M per-scene operation counts");
+ }
+}
+"""
+fixes=fixes.replace("@@STATUS@@","\n".join(method("util/Status.java",m) for m in ("public static synchronized void save()", "public static synchronized void save(Calendar", "private static void notifySaveFailure(", "public static synchronized Boolean updateDay(")))
+fixes=fixes.replace("@@CLAIM@@",method("model/task/antForest/ForestChouChouLe.java", 'if (prizeName.contains("g能量"))'))
+fixes=fixes.replace("@@CONSTRUCTOR@@",method("data/task/SystemChildTaskExecutor.java","public SystemChildTaskExecutor()"))
+fixes=fixes.replace("@@TARGET@@","\n".join(method("model/task/antOrchard/AntOrchard.java",m) for m in ("private int targetSpreadTimes(","private static boolean shouldBatchSpread(")))
+
 with tempfile.TemporaryDirectory(prefix="sesame-merge-") as tmp:
-    for name, source in (("MergeCheck", code), ("FlowCheck", flows)):
+    for name, source in (("MergeCheck", code), ("FlowCheck", flows), ("UpstreamFixCheck", fixes)):
         java = Path(tmp) / (name + ".java")
         java.write_text(source, encoding="utf-8")
         subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(json_jar), "-d", tmp, str(java)], check=True)

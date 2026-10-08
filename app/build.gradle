@@ -132,25 +132,26 @@ tasks.matching { it.name == 'assembleNormalRelease' }.configureEach {
 }
 
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.appcompat:appcompat:1.8.0'
     compileOnly 'io.github.libxposed:api:102.0.0'
     implementation 'io.github.libxposed:service:102.0.0'
-    compileOnly group: 'org.projectlombok', name: 'lombok', version: '1.18.32'
-    annotationProcessor group: 'org.projectlombok', name: 'lombok', version: '1.18.32'
-    implementation 'com.elvishew:xlog:1.11.0'
+    compileOnly group: 'org.projectlombok', name: 'lombok', version: '1.18.48'
+    annotationProcessor group: 'org.projectlombok', name: 'lombok', version: '1.18.48'
+    implementation 'com.elvishew:xlog:1.11.1'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 
-    implementation group: 'com.fasterxml.jackson.core', name: 'jackson-core', version: '2.18.2'
-    implementation group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.18.2'
-    implementation group: 'com.fasterxml.jackson.core', name: 'jackson-annotations', version: '2.18.2'
+    implementation group: 'com.fasterxml.jackson.core', name: 'jackson-core', version: '2.22.3'
+    implementation group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.22.3'
+    // annotations 走独立版本线：只有 2.22，没有 2.22.3，勿与 core/databind 对齐
+    implementation group: 'com.fasterxml.jackson.core', name: 'jackson-annotations', version: '2.22'
 
     // NanoHTTPD 核心依赖（最新稳定版）
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
     // Kotlin + Compose（miuix UI 重构基础）
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.4.0"
-    implementation "androidx.activity:activity-compose:1.9.3"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.4.20"
+    implementation "androidx.activity:activity-compose:1.13.0"
     implementation "top.yukonga.miuix.kmp:miuix-ui:0.9.4"
     implementation "top.yukonga.miuix.kmp:miuix-preference:0.9.4"
-    implementation "androidx.compose.material:material-icons-extended:1.7.6"
+    implementation "androidx.compose.material:material-icons-extended:1.7.8"
 }

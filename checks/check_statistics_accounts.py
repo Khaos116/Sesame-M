@@ -1,6 +1,7 @@
 """Compile real account-state stores with isolated files; switches must not mix users."""
 from pathlib import Path
 import os
+import re
 import subprocess
 import tempfile
 
@@ -9,8 +10,11 @@ SOURCE = ROOT / "app/src/main/java/io/github/aw1y2z/sesame"
 CACHE = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches/modules-2/files-2.1"
 LOMBOK = next((CACHE / "org.projectlombok/lombok").glob("*/*/lombok-*.jar"))
 JSON = next((CACHE / "org.json/json").glob("*/*/json-*.jar"))
-JACKSON = [next((CACHE / "com.fasterxml.jackson.core" / name / "2.18.2").glob(f"*/{name}-2.18.2.jar"))
-           for name in ("jackson-databind", "jackson-core", "jackson-annotations")]
+dependencies = (ROOT / "app/build.gradle").read_text(encoding="utf-8")
+JACKSON = []
+for name in ("jackson-databind", "jackson-core", "jackson-annotations"):
+    version = re.search(r"name: '" + name + r"', version: '([^']+)'", dependencies).group(1)
+    JACKSON.append(next((CACHE / "com.fasterxml.jackson.core" / name / version).glob(f"*/{name}-{version}.jar")))
 
 with tempfile.TemporaryDirectory(prefix="sesame-statistics-") as directory:
     base = Path(directory)

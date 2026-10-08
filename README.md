@@ -40,15 +40,15 @@
 2. **迁移至 libxposed API 102**；
 3. **整体重写 UI**：全面迁移至 Jetpack Compose + [Miuix](https://github.com/compose-miuix-ui/miuix)（Xiaomi HyperOS 风格），界面由 Android Support/XML 旧实现重构；
 4. **修复若干历史问题**：native 库解压、日志分项开关失效、Android 15+ 目录写入兼容等；
-5. **升级构建与依赖链**：compileSdk 34→37、minSdk 21→26，AGP 9.2 / Gradle 9.4.1 / Kotlin 2.4，AndroidX 化；
+5. **升级构建与依赖链**：compileSdk 34→37、minSdk 21→26，AGP 9.2.1 / Gradle 9.4.1 / Kotlin 2.4.20，AndroidX 化；
 6. **重整日志体系**：结果类记录只写分类文件（森林 / 庄园 / 金豆 / 其他），运行日志只留流程并按模块打 tag（可按模块筛流程），失败应答按模块归入对应分类文件。
 
 ## 技术栈 / 使用的框架
 - **模块运行框架**: [libxposed](https://github.com/libxposed/api) API 102,由 [LSPosed](https://github.com/LSPosed/LSPosed) 等兼容框架加载
-- **UI**: Jetpack Compose + [Miuix](https://github.com/compose-miuix-ui/miuix)(Xiaomi HyperOS 设计风格组件库)
-- **网络**: OkHttp、NanoHTTPD
-- **JSON / 日志 / 注解**: Jackson、XLog、Lombok
-- **构建**: Gradle 9.4 / AGP 9.2 / Kotlin 2.4 / JDK 17
+- **UI**: Jetpack Compose + [Miuix](https://github.com/compose-miuix-ui/miuix) 0.9.4(Xiaomi HyperOS 设计风格组件库)；activity-compose 1.13.0、appcompat 1.8.0、material-icons-extended 1.7.8
+- **网络**: OkHttp 4.12.0、NanoHTTPD 2.3.1
+- **JSON / 日志 / 注解**: Jackson 2.22（databind 2.22.3、annotations 2.22）、XLog 1.11.1、Lombok 1.18.48
+- **构建**: Gradle 9.4.1 / AGP 9.2.1 / Kotlin 2.4.20 / JDK 17
 
 ## 文档
 
