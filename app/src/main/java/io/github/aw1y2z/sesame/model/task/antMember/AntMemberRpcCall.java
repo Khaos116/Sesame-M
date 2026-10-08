@@ -440,13 +440,7 @@ public class AntMemberRpcCall {
         return ApplicationHook.requestString("com.alipay.alipaymember.biz.rpc.config.h5.queryIndexNaviBenefitFlowV2", args);
     }
 
-    /**
-     * 会员积分兑换福利
-     *
-     * @param benefitId benefitId
-     * @param itemId    itemId
-     * @return 结果
-     */
+    /** 会员积分兑换福利 */
     public static String exchangeBenefit(String benefitId, String itemId) {
         String requestId = "requestId" + System.currentTimeMillis();
         String alipayClientVersion = ApplicationHook.getAlipayVersion().getVersionString();

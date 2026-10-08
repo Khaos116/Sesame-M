@@ -13,6 +13,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
 import io.github.aw1y2z.sesame.entity.AlipayAntMemberTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayMemberCreditSesameTaskList;
+import io.github.aw1y2z.sesame.entity.AlipayWelfareFundTaskList;
 import io.github.aw1y2z.sesame.entity.MemberBenefit;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
@@ -81,6 +82,13 @@ public class AntMember extends ModelTask {
     private BooleanModelField enableGoldTicketConsume;
     private BooleanModelField KuaiDiFuLiJia;
 
+    /** 网商银行福利金 */
+    private BooleanModelField welfareFund;
+    private BooleanModelField welfareFundSign;
+    private BooleanModelField welfareFundTask;
+    private BooleanModelField AutoWelfareFundTaskList;
+    private SelectModelField WelfareFundTaskList;
+
     @Override
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();
@@ -100,6 +108,11 @@ public class AntMember extends ModelTask {
         modelFields.addField(KuaiDiFuLiJia = new BooleanModelField("KuaiDiFuLiJia", "我的快递 | 福利加", false));
         modelFields.addField(enableGoldTicket = new BooleanModelField("enableGoldTicket", "黄金票 | 签到与收取", false));
         modelFields.addField(enableGoldTicketConsume = new BooleanModelField("enableGoldTicketConsume", "黄金票 | 提取/兑换黄金", false));
+        modelFields.addField(welfareFund = new BooleanModelField("welfareFund", "福利金 | 开启", false));
+        modelFields.addField(welfareFundSign = new BooleanModelField("welfareFundSign", "福利金 | 签到", true).setDependsOn("welfareFund"));
+        modelFields.addField(welfareFundTask = new BooleanModelField("welfareFundTask", "福利金 | 任务", true).setDependsOn("welfareFund"));
+        modelFields.addField(AutoWelfareFundTaskList = new BooleanModelField("AutoWelfareFundTaskList", "福利金任务 | 自动黑名单", true).setDependsOn("welfareFundTask"));
+        modelFields.addField(WelfareFundTaskList = new SelectModelField("WelfareFundTaskList", "福利金任务 | 黑名单列表", new LinkedHashSet<>(), AlipayWelfareFundTaskList::getList).setDependsOn("AutoWelfareFundTaskList"));
         return modelFields;
     }
     
@@ -161,6 +174,11 @@ public class AntMember extends ModelTask {
                 //查询玩乐豆小球列表，有则领取
                 queryPointBallList();
                 
+            }
+            // 网商银行福利金（余额/签到/任务）
+            if (welfareFund.getValue()) {
+                WelfareFund.run(welfareFundSign.getValue(), welfareFundTask.getValue(),
+                        AutoWelfareFundTaskList.getValue(), WelfareFundTaskList.getValue());
             }
         }
         catch (Throwable t) {

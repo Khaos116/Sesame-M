@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.data;
 
+import io.github.aw1y2z.sesame.entity.AlipayWelfareFundTaskList;
 import io.github.aw1y2z.sesame.util.FileUtil;
 import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.idMap.AnimalIdMap;
@@ -32,6 +33,7 @@ import io.github.aw1y2z.sesame.util.idMap.ReserveIdMap;
 import io.github.aw1y2z.sesame.util.idMap.TreeIdMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 import io.github.aw1y2z.sesame.util.idMap.VitalityBenefitIdMap;
+import io.github.aw1y2z.sesame.util.idMap.WelfareFundTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.ForestHuntIdMap;
 import io.github.aw1y2z.sesame.util.idMap.rpcRequestMap;
 
@@ -78,6 +80,8 @@ public final class ConfigPreload {
         PathThemeMapListMap.load();
         AntMemberTaskListMap.load();
         GoldenBeansTaskListMap.load();
+        WelfareFundTaskListMap.load();
+        AlipayWelfareFundTaskList.clear();
         MonopolyTaskListMap.load();
         ConfigV2.load(userId);
     }

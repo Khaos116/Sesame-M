@@ -321,6 +321,7 @@ public class MessageUtil {
         BLACKLIST_LIST_TARGETS.put("AntOceanFishBlackList", new String[]{"AntOcean", "神奇海洋去摸鱼任务"});
         BLACKLIST_LIST_TARGETS.put("AntOrchardTaskList", new String[]{"AntOrchard", "农场肥料任务"});
         BLACKLIST_LIST_TARGETS.put("OrchardChouChouLeTaskList", new String[]{"AntOrchard", "农场抽抽乐任务"});
+        BLACKLIST_LIST_TARGETS.put("WelfareFundTaskList", new String[]{"WelfareFund", "福利金任务"});
         BLACKLIST_LIST_TARGETS.put("GoldenBeansTaskList", new String[]{"goldenbeans", "金豆夺宝任务"});
         BLACKLIST_LIST_TARGETS.put("AntStallTaskList", new String[]{"AntStall", "新村任务"});
         BLACKLIST_LIST_TARGETS.put("AntSportsTaskList", new String[]{"AntSports", "运动任务"});
@@ -414,6 +415,14 @@ public class MessageUtil {
                             || anyFieldContains(jo, "不是有效的入参")
                             || anyFieldContains(jo, "存在进行中的生活记录")
                             || anyFieldContains(jo, "生活记录模板不存在");
+                    break;
+
+                // 福利金任务：事件规则任务被 10000005「不允许完成事件规则任务」拒绝，文案里没有
+                // 「不支持rpc调用」关键字，须按错误码单独接入连续确认，不能靠 strongHit
+                case "WelfareFundTaskList":
+                    needConfirm = weakHit
+                            || "10000005".equals(jo.optString("errorCode", "").trim())
+                            || anyFieldContains(jo, "不允许完成事件规则任务");
                     break;
 
                 // 金豆夺宝任务：错误码/文案（code 或 resultCode 或 errorCode + desc/resultDesc/memo）

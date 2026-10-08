@@ -529,6 +529,10 @@ public class FileUtil {
         return getFile(MAIN_DIRECTORY_FILE, "OrchardChouChouLeTask.json");
     }
 
+    public static File getWelfareFundTaskListMapFile() {
+        return getFile(MAIN_DIRECTORY_FILE, "WelfareFundTask.json");
+    }
+
     public static File getGoldenBeansTaskListMapFile() {
         return getFile(MAIN_DIRECTORY_FILE, "GoldenBeansTask.json");
     }
