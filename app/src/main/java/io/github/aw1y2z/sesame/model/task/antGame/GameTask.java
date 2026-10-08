@@ -41,7 +41,6 @@ public enum GameTask {
     private final String channel;
     private final String version;
     private final int requestsPerEgg; // 完成1个🥚要多少次 为了防止网络崩溃 多加1次
-    private String cachedToken; // 缓存登录Token
 
     /**
      * 根据小程序 appId 匹配游戏任务（金豆乐园游戏权益上报使用）
@@ -116,7 +115,7 @@ public enum GameTask {
     }
 
     /**
-     * 第一步：登录获取 Token 并缓存
+     * 第一步：登录获取 Token
      */
     private String login() {
         return login(() -> { });
@@ -231,8 +230,8 @@ public enum GameTask {
                         Log.record("任务流程🛑账号已切换，停止上报");
                         return;
                     }
-                    this.cachedToken = login();
-                    if (this.cachedToken == null || this.cachedToken.isEmpty()) {
+                    final String token = login();
+                    if (token == null || token.isEmpty()) {
                          Log.error("无法获取⚠️有效的Token，放弃上报任务");
                         return;
                     }
@@ -243,7 +242,7 @@ public enum GameTask {
                             Log.record("任务流程🛑账号已切换，停止上报");
                             break;
                         }
-                        if (!executeSingleReport(gameType,i, totalNeeded)) {
+                        if (!executeSingleReport(gameType, i, totalNeeded, null, () -> { }, token)) {
                             // 具体的错误原因已在 executeSingleReport 中详细输出
                             break;
                         }
@@ -329,14 +328,6 @@ public enum GameTask {
      * @param total 总请求次数
      * @return 是否上报成功
      */
-    private boolean executeSingleReport(String gameType, int current, int total) {
-        return executeSingleReport(gameType, current, total, null);
-    }
-
-    private boolean executeSingleReport(String gameType, int current, int total, String channelOverride) {
-        return executeSingleReport(gameType, current, total, channelOverride, () -> { }, this.cachedToken);
-    }
-
     private boolean executeSingleReport(String gameType, int current, int total, String channelOverride, Runnable checkpoint, String token) {
         try {
             checkpoint.run();

@@ -88,3 +88,30 @@ with tempfile.TemporaryDirectory(prefix="sesame-account-check-") as directory:
     subprocess.run(["java", "-cp", str(out), "io.github.aw1y2z.sesame.data.task.AccountLifecycleCheck"], check=True, timeout=30)
     subprocess.run(["java", "-cp", str(out), "io.github.aw1y2z.sesame.data.task.TaskCompletionCheck"], check=True, timeout=30)
     subprocess.run(["java", "-cp", str(out), "io.github.aw1y2z.sesame.data.task.AsyncGameCheck"], check=True, timeout=30)
+    # Exercise real executor completion paths with deterministic inline/queued submissions.
+    child_out = out / "children"
+    child_out.mkdir()
+    for name in ("TaskLifecycle", "ModelTask", "ChildTaskExecutor"):
+        shutil.copy(out / f"{name}.java", child_out)
+    child_stubs = STUBS[:STUBS.index("class ProgramChildTaskExecutor")]
+    child_stubs = child_stubs.replace("class ThreadUtil {", """class ThreadUtil {
+ static void shutdownNow(java.util.concurrent.ExecutorService pool) { pool.shutdownNow(); }
+ static void shutdownAndAwaitTermination(java.util.concurrent.ExecutorService pool, long n,
+ java.util.concurrent.TimeUnit unit) { pool.shutdownNow(); }
+""")
+    child_stubs += """
+class Looper { static Looper getMainLooper() { return new Looper(); } }
+class Handler { Handler(Looper looper) {} boolean post(Runnable action) { return true; }
+ boolean postDelayed(Runnable action, long delay) { return true; } void removeCallbacks(Runnable action) {} }
+class ApplicationHook { static Handler getMainHandler() { return null; } }
+"""
+    (child_out / "Stubs.java").write_text(child_stubs, encoding="utf-8")
+    for name in ("ProgramChildTaskExecutor", "SystemChildTaskExecutor"):
+        source = (SOURCE / f"{name}.java").read_text(encoding="utf-8")
+        source = re.sub(r"^import (?:android|io\.github)\..*;\n", "", source, flags=re.M)
+        (child_out / f"{name}.java").write_text(source, encoding="utf-8")
+    shutil.copy(Path(__file__).with_name("ChildTaskCheck.java"), child_out)
+    subprocess.run(["javac", "-encoding", "UTF-8", "-d", str(child_out),
+                    *map(str, child_out.glob("*.java"))], check=True)
+    subprocess.run(["java", "-cp", str(child_out),
+                    "io.github.aw1y2z.sesame.data.task.ChildTaskCheck"], check=True, timeout=30)

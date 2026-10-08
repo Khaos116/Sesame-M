@@ -217,10 +217,9 @@ public final class RpcRequestGuard {
     public static boolean isFailure(JSONObject result) {
         String error = result.optString("error");
         if (!error.isEmpty() && !"0".equals(error)) return true;
-        if (result.has("success") || result.has("isSuccess")) {
-            return !result.optBoolean("success") && !result.optBoolean("isSuccess");
-        }
-        if (result.has("retCode")) return !"0".equals(result.optString("retCode"));
+        if (result.has("success") && !result.optBoolean("success")) return true;
+        if (result.has("isSuccess") && !result.optBoolean("isSuccess")) return true;
+        if (result.has("retCode") && !"0".equals(result.optString("retCode"))) return true;
         if (result.has("resultCode")) {
             String code = result.optString("resultCode");
             return !"SUCCESS".equalsIgnoreCase(code) && !"100".equals(code) && !"200".equals(code);

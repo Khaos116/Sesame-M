@@ -184,23 +184,13 @@ public class AppConfig {
 
     public static boolean shouldRequestBatteryPermission() {
         if (INSTANCE.batteryPerm != null) return INSTANCE.batteryPerm;
-        try {
-            String userId = FileUtil.getRuntimeLogFile().getParentFile().getName();
-            File config = "default".equals(userId) ? FileUtil.getDefaultConfigV2File() : FileUtil.getConfigV2File(userId);
-            if (config.isFile()) {
-                return JsonUtil.copyMapper().readTree(FileUtil.readFromFile(config))
-                        .path("modelFieldsMap").path("BaseModel").path("batteryPerm").path("value").asBoolean(true);
-            }
-        } catch (Exception e) {
-            Log.printStackTrace(e);
-        }
-        return true;
+        return legacyModelBoolean("batteryPerm", true);
     }
 
     private static boolean legacyModelBoolean(String field, boolean defaultValue) {
         try {
-            String userId = FileUtil.getRuntimeLogFile().getParentFile().getName();
-            File config = "default".equals(userId) ? FileUtil.getDefaultConfigV2File() : FileUtil.getConfigV2File(userId);
+            String userId = FileUtil.getPublishedUserId();
+            File config = userId == null ? FileUtil.getDefaultConfigV2File() : FileUtil.getConfigV2File(userId);
             if (config.isFile()) {
                 return JsonUtil.copyMapper().readTree(FileUtil.readFromFile(config))
                         .path("modelFieldsMap").path("BaseModel").path(field).path("value").asBoolean(defaultValue);

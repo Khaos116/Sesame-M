@@ -37,6 +37,7 @@ package io.github.aw1y2z.sesame.model.task.antMember;
 import org.json.*;
 import io.github.aw1y2z.sesame.entity.RpcEntity;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
+import io.github.aw1y2z.sesame.util.MyUtils;
 public class AntMemberRpcCall {
 """ + method("model/task/antMember/AntMemberRpcCall.java", "    public static Boolean check()") + "\n}")
     write("util/MessageUtil.java", "package io.github.aw1y2z.sesame.util; import org.json.JSONObject; public class MessageUtil {"
@@ -281,6 +282,14 @@ public class GuardCheck {
         field(bridge, "parseObjectMethod", GuardCheck.class.getMethod("parse", String.class));
         field(bridge, "newRpcCallMethod", GuardCheck.class.getMethod("rpc", types));
         for (boolean async : new boolean[]{false, true}) {
+            reset(); calls = 0; payload = "{\"success\":true}";
+            Thread.currentThread().interrupt();
+            try {
+                if (async) bridge.newAsyncRequest(new RpcEntity("cancelled.entry", "[{}]"), 3, 0);
+                else bridge.requestObject(new RpcEntity("cancelled.entry", "[{}]"), 3, 0);
+                assert false : "interrupted child without generation token still sent RPC";
+            } catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 0; }
+            finally { assert Thread.interrupted() : "cancellation cleared interrupt"; }
             var previous = io.github.aw1y2z.sesame.util.RunGeneration.bind(0, generation::get);
             generation.set(1);
             calls = 0;
@@ -357,6 +366,10 @@ public class GuardCheck {
         OldRpcBridge old = new OldRpcBridge();
         field(old, "rpcCallMethod", GuardCheck.class.getMethod("oldRpc", java.util.Arrays.copyOf(types, 12)));
         field(old, "getResponseMethod", GuardCheck.class.getMethod("getResponse"));
+        Thread.currentThread().interrupt();
+        try { old.requestObject(new RpcEntity("cancelled.old.entry", "[{}]"), 3, 0); assert false : "interrupted child still sent old RPC"; }
+        catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 0; }
+        finally { assert Thread.interrupted(); }
         var previous = io.github.aw1y2z.sesame.util.RunGeneration.bind(0, generation::get);
         generation.set(1);
         calls = 0;
@@ -487,6 +500,17 @@ public class GuardCheck {
         System.out.println("PASS C158 exact primary routes, preserved fallback/awards, local journal exclusion and task/account busy cooldowns");
     }
     public static void main(String[] ignored) throws Exception {
+        for (String response : new String[]{"{\"success\":true,\"isSuccess\":false}",
+                "{\"success\":true,\"resultCode\":\"FAIL\"}",
+                "{\"isSuccess\":true,\"retCode\":\"1\"}",
+                "{\"retCode\":\"0\",\"resultCode\":\"DENIED\"}"}) {
+            assert RpcRequestGuard.isFailure(json(response)) : "explicit failure masked by success: " + response;
+        }
+        for (String response : new String[]{"{\"success\":true}", "{\"isSuccess\":true}",
+                "{\"success\":true,\"isSuccess\":true,\"retCode\":\"0\",\"resultCode\":\"SUCCESS\"}",
+                "{\"retCode\":\"0\"}", "{\"resultCode\":\"100\"}", "{\"resultCode\":\"200\"}"}) {
+            assert !RpcRequestGuard.isFailure(json(response)) : response;
+        }
         dailyReportRules();
         bridges();
         // Device report: only farm reward 102 + busy message gets task-local transient backoff.

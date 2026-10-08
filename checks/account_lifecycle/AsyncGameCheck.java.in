@@ -4,8 +4,9 @@ import java.util.Random;
 
 public class AsyncGameCheck {
     static Runnable queued;
-    static boolean reject, fail;
-    static int reports;
+    static boolean reject, fail, overlap;
+    static int reports, logins;
+    static Game shared;
 
     // Hold submitted work without starting it, making the admission race deterministic.
     static class Thread {
@@ -23,9 +24,18 @@ public class AsyncGameCheck {
     }
     static class Game {
         int requestsPerEgg = 1;
-        String cachedToken;
-        String login() { if (fail) throw new IllegalStateException("login failed"); return "token"; }
-        boolean executeSingleReport(String type, int index, int total) { reports++; return true; }
+        String login() { if (fail) throw new IllegalStateException("login failed"); return overlap ? "token" + (++logins) : "token"; }
+        boolean executeSingleReport(String type,int index,int total,String channel,Runnable checkpoint,String token) {
+            checkpoint.run();
+            if (overlap) {
+                require(type.equals(token), "concurrent report replaced another worker's token");
+                if (type.equals("token1") && index == 1) {
+                    shared.report("token2", 1);
+                    queued.run();
+                }
+            }
+            reports++; return true;
+        }
         /*REPORT*/
     }
     static class Mole {
@@ -67,6 +77,9 @@ public class AsyncGameCheck {
             TaskLifecycle.thaw(freeze);
         }
         require(reports == 3, "games did not execute");
+        overlap = true; shared = new Game(); shared.report("token1", 1); queued.run(); overlap = false;
+        require(TaskLifecycle.isIdle(), "concurrent game leaked admission");
         System.out.println("PASS: game admission covers queue, execution, rejection, failure and freeze");
+        System.out.println("PASS: overlapping async games retain their own login tokens");
     }
 }

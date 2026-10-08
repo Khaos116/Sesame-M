@@ -79,7 +79,7 @@ public class OldRpcBridge implements RpcBridge {
     public RpcEntity requestObject(RpcEntity rpcEntity, int tryCount, int retryInterval) {
         rpcEntity.resetResponse();
         // 本代已作废就不再发请求，避免旧代继续消耗资产
-        if (RunGeneration.isStale()) {
+        if (RunGeneration.isStale() || Thread.currentThread().isInterrupted()) {
             throw new TaskCancelledException();
         }
         if (ApplicationHook.isOffline()) {
@@ -93,12 +93,12 @@ public class OldRpcBridge implements RpcBridge {
         try {
             int count = 0;
             do {
-                if (RunGeneration.isStale()) throw new TaskCancelledException();
+                if (RunGeneration.isStale() || Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
                 count++;
                 Object resp;
                 try {
                     RpcIntervalLimit.enterIntervalLimit(method);
-                    if (RunGeneration.isStale()) throw new TaskCancelledException();
+                    if (RunGeneration.isStale() || Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
                     if (guard.shouldSkip()) return rpcEntity;
                     if (rpcCallMethod.getParameterTypes().length == 12) {
                         resp = rpcCallMethod.invoke(
@@ -109,7 +109,7 @@ public class OldRpcBridge implements RpcBridge {
                     }
                 } catch (Throwable t) {
                     if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
-                    if (RunGeneration.isStale()) throw new TaskCancelledException();
+                    if (RunGeneration.isStale() || Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
                     guard.recordTransportFailure(t);
                     rpcEntity.setError();
                     Log.error("old rpc request | id: " + id + " | method: " + method + " err:");

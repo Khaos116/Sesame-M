@@ -30,7 +30,9 @@ public class MergeConfigCheck {
     static class FileUtil {
         static Path root;
         static String uid = "active";
-        static File getRuntimeLogFile() { return root.resolve(uid).resolve("runtime.log").toFile(); }
+        static String folder;
+        static File getRuntimeLogFile() { return root.resolve(folder == null ? uid : folder).resolve("runtime.log").toFile(); }
+        static String getPublishedUserId() { return "default".equals(uid) ? null : uid; }
         static File getDefaultConfigV2File() { return root.resolve("default.json").toFile(); }
         static File getConfigV2File(String uid) { return root.resolve(uid + ".json").toFile(); }
         static String readFromFile(File file) throws IOException { return Files.readString(file.toPath()); }
@@ -121,8 +123,10 @@ public class MergeConfigCheck {
         try {
             Files.writeString(FileUtil.getConfigV2File("active").toPath(),
                     "{\"modelFieldsMap\":{\"BaseModel\":{\"batteryPerm\":{\"value\":false},\"autoPuzzleSlider\":{\"value\":false}}}}");
-            assert !shouldRequestBatteryPermission();
+            FileUtil.folder = "C176";
+            assert !shouldRequestBatteryPermission() : "account-name log folder lost legacy battery preference";
             assert !shouldAutoPuzzleSlider() && Boolean.FALSE.equals(INSTANCE.autoPuzzleSlider);
+            FileUtil.folder = null;
             FileUtil.uid = "new-account";
             assert !shouldAutoPuzzleSlider() : "migrated global switch must not follow account changes";
             INSTANCE.batteryPerm = true; assert shouldRequestBatteryPermission();

@@ -165,15 +165,26 @@ public abstract class ModelTask extends Model {
     public Boolean addChildTask(ChildModelTask childTask) {
         String childId = childTask.getId();
         childTask.modelTask = this;
-        // 提交放锁外：池满时 CallerRunsPolicy 会让提交线程就地跑完整段子任务，放进 compute 会卡住整桶
-        if (!childTaskExecutor.addChildTask(childTask)) {
-            return false;
-        }
+        // 先登记再提交：CallerRunsPolicy/快速完成的任务可能在提交返回前收尾。
         ChildModelTask oldTask = childTaskMap.put(childId, childTask);
         if (oldTask != null) {
             oldTask.cancel();
         }
-        return true;
+        boolean submitted = false;
+        try {
+            // 提交放锁外，避免 CallerRunsPolicy 在 CHM 桶锁内执行整个子任务。
+            submitted = childTaskExecutor.addChildTask(childTask);
+            return submitted;
+        } finally {
+            if (!submitted) removeChildTask(childTask);
+        }
+    }
+
+    void removeChildTask(ChildModelTask childTask) {
+        // 旧任务收尾不能删除同 ID 的新排期。
+        if (childTaskMap.remove(childTask.getId(), childTask)) {
+            childTaskExecutor.removeChildTask(childTask);
+        }
     }
 
     public void removeChildTask(String childId) {

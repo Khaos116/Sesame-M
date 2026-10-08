@@ -41,7 +41,7 @@ public class ProgramChildTaskExecutor implements ChildTaskExecutor {
                     Log.printStackTrace(e);
                     //Log.record("任务模块:" + modelTaskId + " 异常子任务:" + id);
                 } finally {
-                    childTask.getModelTask().removeChildTask(childTask.getId());
+                    childTask.getModelTask().removeChildTask(childTask);
                     //Log.i("任务模块:" + modelTaskId + " 移除子任务:" + id);
                 }
             });
@@ -54,7 +54,7 @@ public class ProgramChildTaskExecutor implements ChildTaskExecutor {
                     Log.printStackTrace(e);
                     //Log.record("任务模块:" + getName() + " 异常子任务:" + childTask.getId());
                 } finally {
-                    childTask.getModelTask().removeChildTask(childTask.getId());
+                    childTask.getModelTask().removeChildTask(childTask);
                     //Log.i("任务模块:" + modelTaskId + " 移除子任务:" + id);
                 }
             });
