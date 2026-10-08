@@ -8,12 +8,7 @@ import java.util.Iterator;
 import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.util.Log;
 
-/**
- * 金豆夺宝的通用解析与辅助方法。
- * <p>
- * 这里只放与具体玩法无关的部分：布尔配置判定、响应解析、失败原因与奖励文案提取、
- * 递归查找、操作间隔休眠。各业务处理器（任务 / 兑换 / 乐园 / 矿工）共用这些方法。
- */
+/** 金豆夺宝的通用解析与辅助方法：响应判定、失败文案、奖励数量、递归查找、间隔休眠 */
 public final class GoldenBeansSupport {
 
     /** 模块日志标签 */

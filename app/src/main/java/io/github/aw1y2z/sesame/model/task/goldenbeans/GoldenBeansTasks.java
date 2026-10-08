@@ -21,7 +21,6 @@ import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 /**
  * 金豆夺宝的入口日常与任务列表处理。
  * <p>
- * 每个入口独立执行：主页查询 → 每日签到 → 营销弹窗 → 任务列表。
  * 任务列表只处理 sceneCode 与本入口一致的任务；需真实付款、换豆承接类任务直接跳过；
  * 其余 TODO 任务走服务端完成契约，失败且命中不可重试错误时自动加入黑名单。
  */
@@ -62,7 +61,7 @@ public final class GoldenBeansTasks {
     /**
      * 处理单个入口。
      *
-     * @return 该入口的任务列表是否已无待推进项
+     * @return 该入口是否已无待推进任务
      */
     public boolean processEntry(GoldenBeansEntry entry, int interval,
                                 boolean signEnabled, boolean popupEnabled, boolean taskEnabled) {
@@ -425,8 +424,7 @@ public final class GoldenBeansTasks {
 
     /**
      * 核对「已触发但响应不可信」的任务：等几秒后重拉本入口任务列表，**仍未完成**的才计入自动拉黑。
-     * <p>为什么以列表为准：{@code doFarmTask} 会回 102「服务器正在开小差」但任务其实已生效，
-     * 服务端是异步推进状态的，只有列表里的 {@code taskStatus} 才是最终判据。
+     * 以列表为准的原因：{@code doFarmTask} 会回 102 但任务其实已生效，服务端异步推进状态。
      *
      * @return 是否有任务确认完成（用于决定是否再同步一次列表）
      */
@@ -485,12 +483,7 @@ public final class GoldenBeansTasks {
         return false;
     }
 
-    /**
-     * 初始化任务黑白名单。
-     * <p>
-     * 先把两个入口的任务列表同步到本地 idMap（供配置界面选择），
-     * 再把默认黑名单任务写入模块黑名单配置。
-     */
+    /** 把两个入口的任务列表同步到本地 idMap（供配置界面选择），并写入默认黑名单 */
     public void initTaskListMap() {
         try {
             GoldenBeansTaskListMap.load();

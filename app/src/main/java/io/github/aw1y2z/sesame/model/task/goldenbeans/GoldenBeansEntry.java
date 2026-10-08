@@ -3,9 +3,8 @@ package io.github.aw1y2z.sesame.model.task.goldenbeans;
 /**
  * 金豆夺宝的入口定义。
  * <p>
- * 芭芭农场与芝麻炼金是两个互相独立的入口：除奖励共用外并不互通，
- * 请求必须使用各自配套的 bizType、source 与 sceneCode，混用会被服务端拒绝。
- * 两者的任务列表也按 sceneCode 区分，因此不能把入口信息散落在各处。
+ * 芭芭农场与芝麻炼金互相独立：请求必须用各自配套的 bizType / source / sceneCode，混用会被服务端拒绝，
+ * 任务列表也按 sceneCode 区分，故入口信息集中在此处。
  */
 public final class GoldenBeansEntry {
 

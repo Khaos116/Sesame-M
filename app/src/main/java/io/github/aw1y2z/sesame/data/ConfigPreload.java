@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.data;
 
+import io.github.aw1y2z.sesame.entity.AlipayGoldenBeansMallItem;
 import io.github.aw1y2z.sesame.entity.AlipayWelfareFundTaskList;
 import io.github.aw1y2z.sesame.util.FileUtil;
 import io.github.aw1y2z.sesame.util.StringUtil;
@@ -20,6 +21,7 @@ import io.github.aw1y2z.sesame.util.idMap.CooperationIdMap;
 import io.github.aw1y2z.sesame.util.idMap.FarmOrnamentsIdMap;
 import io.github.aw1y2z.sesame.util.idMap.GameCenterMallItemMap;
 import io.github.aw1y2z.sesame.util.idMap.GoldenBeansTaskListMap;
+import io.github.aw1y2z.sesame.util.idMap.GoldenBeansMallItemMap;
 import io.github.aw1y2z.sesame.util.idMap.MarathonIdMap;
 import io.github.aw1y2z.sesame.util.idMap.MemberBenefitIdMap;
 import io.github.aw1y2z.sesame.util.idMap.MemberCreditSesameTaskListMap;
@@ -80,6 +82,9 @@ public final class ConfigPreload {
         PathThemeMapListMap.load();
         AntMemberTaskListMap.load();
         GoldenBeansTaskListMap.load();
+        GoldenBeansMallItemMap.load();
+        // 候选实体的静态缓存是注入进程写的，App 进程必须清一次才会重建
+        AlipayGoldenBeansMallItem.clear();
         WelfareFundTaskListMap.load();
         AlipayWelfareFundTaskList.clear();
         MonopolyTaskListMap.load();
