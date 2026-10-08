@@ -2,6 +2,7 @@ package io.github.aw1y2z.sesame.data.task;
 
 import android.os.Build;
 import android.os.Handler;
+import android.os.Looper;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.ThreadUtil;
@@ -19,7 +20,11 @@ public class SystemChildTaskExecutor implements ChildTaskExecutor {
     private static final int MAX_CHILD_TASK_THREADS = 16;
 
     public SystemChildTaskExecutor() {
-        handler = ApplicationHook.getMainHandler();
+        // mainHandler 仅在 Service onCreate hook 内赋值，构造期可能还没就绪；
+        // Handler 只绑定 Looper，主 Looper 在 App 进程内必然存在，故兜底现建一个，
+        // 避免把 null 固定进字段后延迟子任务被静默丢弃
+        Handler initHandler = ApplicationHook.getMainHandler();
+        handler = initHandler != null ? initHandler : new Handler(Looper.getMainLooper());
     }
 
     @Override

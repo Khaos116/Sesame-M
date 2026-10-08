@@ -161,7 +161,6 @@ public class AntOrchard extends ModelTask {
     @Override
     public void run() {
         try {
-            super.startTask();
             userId = UserIdMap.getCurrentUid();
             if (!checkOrchardOpen()) {
                 return;
@@ -804,7 +803,7 @@ public class AntOrchard extends ModelTask {
      * 再用一次「一键5次」批量，服务端允许该批量 5 次全部生效，总次数 = 199 + 5 = 204。
      * 主场景与余额宝(yeb)场景通用。
      */
-    private static final int MAIN_SPREAD_BURST_LIMIT = MAIN_SPREAD_DAILY_LIMIT + BATCH_SPREAD_SIZE; // 204
+    private static final int MAIN_SPREAD_BURST_LIMIT = MAIN_SPREAD_DAILY_LIMIT - 1 + BATCH_SPREAD_SIZE; // 199 + 5 = 204
 
     /**
      * 「每日次数」折算成服务端的单次施肥次数目标，封顶漏洞可达上限 204。
