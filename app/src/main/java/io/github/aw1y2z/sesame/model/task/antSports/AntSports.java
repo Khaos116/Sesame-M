@@ -882,16 +882,16 @@ public class AntSports extends ModelTask {
             }
             TimeUtil.sleep(1000);
             if (isNeedJoinNewPath(goingPathId)) {
-                if (walkMinimumCompleteCount.getValue()) {
-                    goingPathId = getWalkPathMinCompleteCount();
-                } else {
-                    String joinPathId = queryJoinPathId();
-                    if (checkJoinPathId(joinPathId)) {
-                        if (!joinPath(joinPathId)) {
-                            return;
-                        }
-                        goingPathId = joinPathId;
+                String joinPathId = walkMinimumCompleteCount.getValue()
+                        ? getWalkPathMinCompleteCount() : queryJoinPathId();
+                if (joinPathId == null || joinPathId.isEmpty()) {
+                    return;
+                }
+                if (checkJoinPathId(joinPathId)) {
+                    if (!joinPath(joinPathId)) {
+                        return;
                     }
+                    goingPathId = joinPathId;
                 }
             }
         } while (walkGo(queryPath(goingPathId), syncStepCount));

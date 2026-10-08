@@ -25,6 +25,7 @@ import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.TimeUtil;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.idMap.AntDodoTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.AntOceanFishBlackListMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -132,6 +133,7 @@ public class AntDodo extends ModelTask {
                 giftToFriend();
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "AntoDodo.start.run err:", t);
         }
     }
@@ -196,6 +198,7 @@ public class AntDodo extends ModelTask {
                 }
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "initAntDodoTaskListMap err:", t);
         }
     }
@@ -215,16 +218,19 @@ public class AntDodo extends ModelTask {
             if (jo == null) {
                 return 0;
             }
-            String endDate = jo.optString("endDate") + " 23:59:59";
-            return Log.timeToStamp(endDate);
+            return java.time.LocalDate.parse(jo.optString("endDate"), java.time.format.DateTimeFormatter.ofPattern("uuuu.MM.dd")
+                    .withResolverStyle(java.time.format.ResolverStyle.STRICT)).atTime(23, 59, 59)
+                    .atZone(java.time.ZoneId.of("GMT+8")).toInstant().toEpochMilli();
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "getEndDateTime err:", t);
         }
         return 0;
     }
 
     private boolean isLastDay() {
-        return getEndDateTime() - TimeUnit.DAYS.toMillis(1) < System.currentTimeMillis();
+        long end = getEndDateTime(), now = System.currentTimeMillis();
+        return end > 0 && now <= end && end - TimeUnit.DAYS.toMillis(1) < now;
     }
 
     private void collect() {
@@ -235,14 +241,18 @@ public class AntDodo extends ModelTask {
             JSONObject jo = MyUtils.newJSONObject(AntDodoRpcCall.queryAnimalStatus());
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 JSONObject data = jo.optJSONObject("data");
-                if (data != null && data.optBoolean("collect")) {
-                    Log.forest("神奇物种卡片今日收集完成！");
-                } else {
+                if (data == null || !(data.opt("collect") instanceof Boolean)) return;
+                if (!data.optBoolean("collect")) {
                     collectAnimalCard();
+                    jo = MyUtils.newJSONObject(AntDodoRpcCall.queryAnimalStatus());
+                    data = jo.optJSONObject("data");
+                    if (!MessageUtil.checkResultCode(TAG, jo) || data == null || !Boolean.TRUE.equals(data.opt("collect"))) return;
                 }
                 Status.flagToday("dodo::collect");
+                Log.forest("神奇物种卡片今日收集完成！");
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "collect err:", t);
         }
     }
@@ -265,19 +275,19 @@ public class AntDodo extends ModelTask {
                     int leftFreeQuota = jo.optInt("leftFreeQuota");
                     for (int j = 0; j < leftFreeQuota; j++) {
                         jo = MyUtils.newJSONObject(AntDodoRpcCall.collect());
-                        if (MessageUtil.checkResultCode(TAG, jo)) {
-                            data = jo.optJSONObject("data");
-                            JSONObject animal = data != null ? data.optJSONObject("animal") : null;
-                            if (animal == null) {
-                                continue;
-                            }
-                            Log.forest("神奇物种🦕每日抽卡" + getAnimalInfo(animal));
-                            checkAnimalAndGiftToFriend(animal);
+                        if (!MessageUtil.checkResultCode(TAG, jo)) break;
+                        data = jo.optJSONObject("data");
+                        JSONObject animal = data != null ? data.optJSONObject("animal") : null;
+                        if (animal == null) {
+                            break;
                         }
+                        Log.forest("神奇物种🦕每日抽卡" + getAnimalInfo(animal));
+                        checkAnimalAndGiftToFriend(animal);
                     }
                 }
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "collectAnimalCard err:", t);
         }
     }
@@ -326,6 +336,7 @@ public class AntDodo extends ModelTask {
                 }
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "taskList err:", t);
         }
     }
@@ -349,6 +360,7 @@ public class AntDodo extends ModelTask {
                 return false;
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "finishTask err:", t);
         }
         return false;
@@ -362,12 +374,14 @@ public class AntDodo extends ModelTask {
                 Log.forest("神奇物种🦕领取[" + taskTitle + "]奖励");
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "receiveTaskAward err:", t);
         }
     }
 
     private void propList() {
         try {
+            Set<String> consumed = new HashSet<>();
             th:
             do {
                 JSONObject jo = MyUtils.newJSONObject(AntDodoRpcCall.propList());
@@ -389,8 +403,10 @@ public class AntDodo extends ModelTask {
                         continue;
                     }
                     String propId = propIdList.optString(0);
+                    if (propId.isEmpty() || consumed.contains(propId)) continue;
                     long recentExpireTime = prop.optLong("recentExpireTime");
-                    boolean willExpireSoon = recentExpireTime - TimeUnit.DAYS.toMillis(1) < System.currentTimeMillis();
+                    long now = System.currentTimeMillis();
+                    boolean willExpireSoon = recentExpireTime > now && recentExpireTime - TimeUnit.DAYS.toMillis(1) < now;
                     boolean isUseProp = usePropList.getValue().contains(propType);
                     if (!isUseProp && !willExpireSoon) {
                         continue;
@@ -407,6 +423,7 @@ public class AntDodo extends ModelTask {
                             continue;
                         }
                     }
+                    consumed.add(propId);
                     if (prop.optInt("holdsNum", 1) > 1) {
                         continue th;
                     }
@@ -414,6 +431,7 @@ public class AntDodo extends ModelTask {
                 break;
             } while (true);
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "propList err:", th);
         }
     }
@@ -451,6 +469,7 @@ public class AntDodo extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "usePropUniversalCard err:", t);
         }
         return false;
@@ -535,6 +554,7 @@ public class AntDodo extends ModelTask {
                 }
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "queryUniversalAnimal err:", t);
         }
         return animal;
@@ -557,6 +577,7 @@ public class AntDodo extends ModelTask {
             checkAnimalAndGiftToFriend(animal);
             return true;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "consumeProp err:", t);
         }
         return false;
@@ -577,6 +598,7 @@ public class AntDodo extends ModelTask {
             checkAnimalAndGiftToFriend(animal);
             return true;
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "consumeProp err:", th);
         }
         return false;
@@ -627,6 +649,7 @@ public class AntDodo extends ModelTask {
 
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "collectHelpFriend err:", t);
         }
     }
@@ -685,6 +708,7 @@ public class AntDodo extends ModelTask {
                 }
             } while (hasMore);
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "generateBookMedal err:", t);
         }
     }
@@ -723,6 +747,7 @@ public class AntDodo extends ModelTask {
             }
             giftToFriend(animal, targetUserId);
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "checkAnimalAndGiftToFriend err:", t);
         }
     }
@@ -783,6 +808,7 @@ public class AntDodo extends ModelTask {
                 }
             } while (hasMore);
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "giftToFriend err:", t);
         }
     }
@@ -821,6 +847,7 @@ public class AntDodo extends ModelTask {
                 }
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "giftToFriend err:", th);
         }
     }
@@ -838,6 +865,7 @@ public class AntDodo extends ModelTask {
                 return true;
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "giftToFriend err:", th);
         }
         return false;

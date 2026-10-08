@@ -18,6 +18,7 @@ import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
+import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 
 /**
  * 其他任务（好家无忧卡）。移植自 GR 分支，见 docs/MyFix.md。
@@ -175,8 +176,11 @@ public class OtherTask extends ModelTask {
     }
 
     private static JSONObject component(JSONObject root, String key) {
-        JSONObject components = root == null ? null : root.optJSONObject("components");
-        return components == null ? null : components.optJSONObject(key);
+        if (!ok(root)) return null;
+        JSONObject components = root.optJSONObject("components");
+        JSONObject value = components == null ? null : components.optJSONObject(key);
+        if (value != null && RpcRequestGuard.isFailure(value)) return null;
+        return value;
     }
 
     private static boolean containsRisk(String name) {
@@ -197,7 +201,8 @@ public class OtherTask extends ModelTask {
     }
 
     private static boolean ok(JSONObject jo) {
-        return jo != null && (jo.optBoolean("success") || jo.optBoolean("isSuccess") || "SUCCESS".equalsIgnoreCase(jo.optString("resultCode")) || "200".equals(jo.optString("resultCode")) || "处理成功".equals(jo.optString("desc")));
+        if (jo == null || RpcRequestGuard.isFailure(jo)) return false;
+        return jo.optBoolean("success") || jo.optBoolean("isSuccess") || "SUCCESS".equalsIgnoreCase(jo.optString("resultCode")) || "200".equals(jo.optString("resultCode")) || "处理成功".equals(jo.optString("desc"));
     }
 
     private static void sleep(long millis) {

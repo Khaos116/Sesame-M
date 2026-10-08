@@ -72,6 +72,8 @@ def main():
         shutil.copytree(HERE / "exchange", folder)
         relative = "io/github/aw1y2z/sesame/model/task/goldenbeans/GoldenBeansExchange.java"
         shutil.copyfile(SOURCE / "model/task/goldenbeans/GoldenBeansExchange.java", folder / relative)
+        relative = "io/github/aw1y2z/sesame/model/task/goldenbeans/goldenbeansRpcCall.java"
+        shutil.copyfile(SOURCE / "model/task/goldenbeans/goldenbeansRpcCall.java", folder / relative)
         compile_run(folder, "Review")
         run("logs", "LogCheck.java", "Logs.java.in", {"@@LOGS@@": "\n".join(
             method("util/FileUtil.java", signature) for signature in (

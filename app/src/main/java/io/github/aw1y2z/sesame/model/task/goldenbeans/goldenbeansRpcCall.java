@@ -2,6 +2,7 @@ package io.github.aw1y2z.sesame.model.task.goldenbeans;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
+import io.github.aw1y2z.sesame.util.MyUtils;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -65,7 +66,16 @@ public class goldenbeansRpcCall {
     }
 
     private static String request(String method, JSONObject data) {
-        return ApplicationHook.requestString(method, new JSONArray().put(data).toString());
+        String body = new JSONArray().put(data).toString();
+        boolean write = "com.alipay.goldenbean.sign".equals(method)
+                || "com.alipay.goldenbean.trigger".equals(method)
+                || "com.alipay.antieptask.finishTaskantorchard".equals(method)
+                || "com.alipay.antieptask.receiveTaskAwardantorchard".equals(method)
+                || "com.alipay.goldenbean.miner.grab".equals(method)
+                || "com.alipay.charitygamecenter.drawGameCenterAward".equals(method)
+                || "com.alipay.goldenbean.manureExchange".equals(method);
+        return write ? ApplicationHook.requestString(method, body, 1, 0)
+                : ApplicationHook.requestString(method, body);
     }
 
     /** 主页查询（默认农场入口） */
@@ -75,7 +85,7 @@ public class goldenbeansRpcCall {
 
     /** 主页查询（指定入口） */
     public static String homeOf(String bizType, String source) throws Exception {
-        JSONObject params = new JSONObject();
+        JSONObject params = MyUtils.newJSONObject();
         params.put("bizType", bizType);
         params.put("darwinSceneList", new JSONArray());
         params.put("source", source);
@@ -94,7 +104,7 @@ public class goldenbeansRpcCall {
         for (String type : syncTypes) {
             typeList.put(type);
         }
-        JSONObject params = new JSONObject();
+        JSONObject params = MyUtils.newJSONObject();
         params.put("bizType", bizType);
         params.put("source", source);
         params.put("syncTypeList", typeList);
@@ -108,7 +118,7 @@ public class goldenbeansRpcCall {
         for (String type : syncTypes) {
             typeList.put(type);
         }
-        JSONObject params = new JSONObject();
+        JSONObject params = MyUtils.newJSONObject();
         params.put("bizType", FARM_BIZ_TYPE);
         params.put("source", source);
         params.put("syncTypeList", typeList);
@@ -123,7 +133,7 @@ public class goldenbeansRpcCall {
 
     /** 每日签到（指定入口） */
     public static String checkInOf(String bizType, String source, String signKey) throws Exception {
-        JSONObject params = new JSONObject();
+        JSONObject params = MyUtils.newJSONObject();
         params.put("bizType", bizType);
         params.put("signKey", signKey);
         params.put("source", source);
@@ -139,7 +149,7 @@ public class goldenbeansRpcCall {
     /** 触发任务动作（指定入口） */
     public static String fireOf(String bizType, String source, String taskId, String triggerType)
             throws Exception {
-        JSONObject params = new JSONObject();
+        JSONObject params = MyUtils.newJSONObject();
         params.put("bizType", bizType);
         params.put("source", source);
         params.put("taskId", taskId);
@@ -156,9 +166,9 @@ public class goldenbeansRpcCall {
     /** 提交任务完成（指定入口，sceneCode 随入口变化） */
     public static String submitTaskOf(String bizType, String source, String taskSceneCode, String taskType)
             throws Exception {
-        JSONObject params = new JSONObject();
+        JSONObject params = MyUtils.newJSONObject();
         params.put("bizType", bizType);
-        params.put("finishBusinessInfo", new JSONObject().put("bizType", bizType));
+        params.put("finishBusinessInfo", MyUtils.newJSONObject().put("bizType", bizType));
         params.put("outBizNo", String.valueOf(System.currentTimeMillis()));
         params.put("sceneCode", taskSceneCode);
         params.put("source", source);
@@ -188,8 +198,8 @@ public class goldenbeansRpcCall {
     /** 领取任务奖励（指定入口，sceneCode 随入口变化） */
     public static String claimAwardOf(String bizType, String source, String taskSceneCode, String taskType)
             throws Exception {
-        JSONObject params = new JSONObject();
-        params.put("bizInfo", new JSONObject().put("bizType", bizType));
+        JSONObject params = MyUtils.newJSONObject();
+        params.put("bizInfo", MyUtils.newJSONObject().put("bizType", bizType));
         params.put("bizType", bizType);
         params.put("ignoreLimit", true);
         params.put("sceneCode", taskSceneCode);
@@ -201,7 +211,7 @@ public class goldenbeansRpcCall {
 
     /** 金猫矿工主页查询 */
     public static String minerHome() throws Exception {
-        JSONObject params = new JSONObject();
+        JSONObject params = MyUtils.newJSONObject();
         params.put("bizType", FARM_BIZ_TYPE);
         params.put("source", MINER_PAGE_SOURCE);
         params.put("version", VERSION);
@@ -210,7 +220,7 @@ public class goldenbeansRpcCall {
 
     /** 金猫矿工抓取 */
     public static String grabBean(String grabResult, String itemId) throws Exception {
-        JSONObject params = new JSONObject();
+        JSONObject params = MyUtils.newJSONObject();
         params.put("bizType", FARM_BIZ_TYPE);
         params.put("grabId", UUID.randomUUID().toString());
         params.put("grabResult", grabResult);
@@ -224,11 +234,11 @@ public class goldenbeansRpcCall {
 
     /** 金豆乐园游戏与权益列表查询 */
     public static String fetchGameList() throws Exception {
-        JSONObject degrade = new JSONObject();
+        JSONObject degrade = MyUtils.newJSONObject();
         degrade.put("deviceLevel", "high");
         degrade.put("platform", "Android");
         degrade.put("unityDeviceLevel", "high");
-        JSONObject params = new JSONObject();
+        JSONObject params = MyUtils.newJSONObject();
         params.put("bizType", GAME_BIZ_TYPE);
         params.put("commonDegradeFilterRequest", degrade);
         params.put("requestType", "RPC");
@@ -240,7 +250,7 @@ public class goldenbeansRpcCall {
 
     /** 金豆乐园抽奖 */
     public static String drawLottery() throws Exception {
-        JSONObject params = new JSONObject();
+        JSONObject params = MyUtils.newJSONObject();
         params.put("batchDrawCount", 1);
         params.put("bizType", GAME_BIZ_TYPE);
         params.put("requestType", "RPC");
@@ -265,7 +275,7 @@ public class goldenbeansRpcCall {
      * @param beanAmount 希望换到的金豆数量，而非被消耗的肥料或芝麻粒数量
      */
     public static String exchangeBeanOf(String bizType, String source, int beanAmount) throws Exception {
-        JSONObject params = new JSONObject();
+        JSONObject params = MyUtils.newJSONObject();
         params.put("bizType", bizType);
         params.put("exchangeBeanAmount", beanAmount);
         params.put("source", source);

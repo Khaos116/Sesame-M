@@ -14,7 +14,7 @@ import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class ExchangeScheduleCheck {
  static final String TAG="check";
  static long now=java.time.Instant.parse("2026-10-06T01:59:00Z").toEpochMilli();
- static class MyUtils {static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.setTimeInMillis(now);return c;}static JSONObject newJSONObject(String s){return new JSONObject(s);}}
+ static class MyUtils {static JSONObject newJSONObject(){return new JSONObject();}static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.setTimeInMillis(now);return c;}static JSONObject newJSONObject(String s){return new JSONObject(s);}}
  static class Bool {boolean n=true;boolean getValue(){return n;}}
  static class Text {String s="10:00,20:00";String getValue(){return s;}}
  static class Num {int n=100;int getValue(){return n;}}
@@ -27,7 +27,8 @@ public class ExchangeScheduleCheck {
  static class TaskCommon {static boolean IS_ENERGY_TIME;}
  static class Log {static void other(String s){}static void record(String s){}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
  static class Status {static Map<String,Integer> counts=new HashMap<>();static Set<String> flags=new HashSet<>();static int getIntFlagToday(String k){return counts.getOrDefault(k,0);}static void setIntFlagToday(String k,int n){counts.put(k,n);}static boolean hasFlagToday(String k){return flags.contains(k);}static void flagToday(String k){flags.add(k);}static boolean canMemberPointExchangeBenefitToday(String id){return true;}static void memberPointExchangeBenefitToday(String id){} }
- static class AntMemberRpcCall {static int calls;static String response="{\"resultCode\":\"SUCCESS\"}";static List<String> details=new ArrayList<>();static String querySingleBenefitDetail(String id){details.add(id);return new JSONObject().put("success",true).put("benefitDetail",new JSONObject().put("benefitId",id).put("itemId","item").put("name",id).put("pricePresentation",new JSONObject().put("strategyType","POINT_PAY").put("point",50).put("grabHour",id.equals("later")?20:10))).toString();}static String exchangeBenefit(String id,String item){calls++;return response;}}
+ static class AntMemberRpcCall {static int calls;static String response="{\"resultCode\":\"SUCCESS\"}";static List<String> details=new ArrayList<>();static String querySingleBenefitDetail(String id){details.add(id);return new JSONObject().put("success",true).put("benefitDetail",new JSONObject().put("benefitId",id).put("itemId","item").put("name",id).put("pricePresentation",new JSONObject().put("strategyType","POINT_PAY").put("point",50).put("grabHour",id.equals("later")?20:10))).toString();}@@RPC_EXCHANGE@@}
+ static class ApplicationHook {static class Version {String getVersionString(){return "12.12.20";}}static Version getAlipayVersion(){return new Version();}static String requestString(String name,String raw){throw new AssertionError("exchange used default retries");}static String requestString(String name,String raw,int tries,int pause){assert name.endsWith("exchangeBenefit")&&tries==1&&pause==0;JSONObject body=new JSONArray(raw).optJSONObject(0);assert body.optString("itemId").equals("item")&&body.optString("exchangeType").equals("POINT_PAY");AntMemberRpcCall.calls++;return AntMemberRpcCall.response;}}
  static class RpcRequestGuard {static boolean isFailure(JSONObject j){return Boolean.FALSE.equals(j.opt("success"));}}
  static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}
  @@METHODS@@
@@ -63,6 +64,7 @@ public class ExchangeScheduleCheck {
 }
 '''
 code=code.replace("@@METHODS@@","\n".join(method(member,s) for s in ("private static long nextMemberExchangeTime(","private synchronized void scheduleMemberExchange(","private void executeMemberExchange(","private static int memberTimedPrice(","private boolean exchangeTimedBenefit(","private Boolean exchangeBenefit(","static JSONObject memberFeaturePayload(","private void exchangeSelectedTimedBenefits(")))
+code=code.replace('@@RPC_EXCHANGE@@',method('model/task/antMember/AntMemberRpcCall.java','public static String exchangeBenefit('))
 cache=Path(os.environ.get("GRADLE_USER_HOME",Path.home()/".gradle"))/"caches/modules-2/files-2.1/org.json/json"
 jar=sorted(p for p in cache.glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar","-javadoc.jar")))[-1]
 with tempfile.TemporaryDirectory(prefix="sesame-member-timer-") as tmp:

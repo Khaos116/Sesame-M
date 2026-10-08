@@ -1,4 +1,4 @@
-"""Compile recommended sailing and gift methods; assert list/budget/reward boundaries."""
+"""Replay ocean friend actions and universal-piece selection/pagination without real RPC."""
 from pathlib import Path
 import os, subprocess, sys, tempfile
 sys.dont_write_bytecode=True
@@ -23,7 +23,9 @@ public class OceanFriendCheck {
  static class MyUtils {static JSONObject newJSONObject(){return new JSONObject();}static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
  static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}
  static class RpcRequestGuard {static boolean isFailure(JSONObject j){return Boolean.FALSE.equals(j.opt("success"));}}
- static class Log {static void other(String s){}static void record(String s){}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
+ static class Log {static void i(String s){}static void other(String s){}static void record(String s){}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
+ static class Toast {static void show(String s){}}
+ static class Statistics {enum DataType {COLLECTED}static int collected;static void addData(DataType t,int amount){collected+=amount;}}
  static class Status {static Set<String> flags=new HashSet<>();static Map<String,Integer> counts=new HashMap<>();static boolean hasFlagToday(String k){return flags.contains(k);}static void flagToday(String k){flags.add(k);}static int getIntFlagToday(String k){return counts.getOrDefault(k,0);}static void setIntFlagToday(String k,int n){counts.put(k,n);}}
  int rewards; private void checkReward(JSONArray rows){rewards+=rows.length();}
  static class ApplicationHook {
@@ -36,10 +38,22 @@ public class OceanFriendCheck {
    throw new AssertionError(name);
   }
  }
- static class AntOceanRpcCall {static String getUniqueId(){return "unique";}@@RPC@@}
+ static class AntOceanRpcCall {
+  static String getUniqueId(){return "unique";}
+  static Queue<String> fishPages=new ArrayDeque<>();static int fishReads;static boolean propFail;static List<JSONArray> uses=new ArrayList<>();
+  static String queryOceanPropList(String type){return new JSONObject().put("resultCode","SUCCESS").put("oceanPropVOByTypeList",new JSONArray().put(new JSONObject().put("holdsNum",3))).toString();}
+  static String queryFishList(int page){assert page==++fishReads;return fishPages.remove();}
+  static String useUniversalPiece(JSONArray rows){uses.add(rows);return new JSONObject().put("resultCode",propFail?"FAIL":"SUCCESS").toString();}
+  static String antfishHomepage(){return new JSONObject().put("resultCode","SUCCESS").put("myFish",new JSONObject().put("interactVO",new JSONObject().put("remainTouchChance",1))).toString();}
+  static String antfishTouchfish(){JSONArray rewards=new JSONArray();for(int n:new int[]{10,20})rewards.put(new JSONObject().put("rewardType","ENERGY").put("extInfo",new JSONObject().put("popup",new JSONObject().put("rightsNums",n))));return new JSONObject().put("resultCode","SUCCESS").put("touchRewardList",rewards).put("myFish",new JSONObject().put("interactVO",new JSONObject().put("remainTouchChance",0))).toString();}
+  @@RPC@@
+ }
  @@METHODS@@
  static long calls(String n){return ApplicationHook.calls.stream().filter(j->j.optString("rpc").endsWith(n)).count();}
  static void reset(OceanFriendCheck f){ApplicationHook.calls.clear();ApplicationHook.friends.clear();ApplicationHook.fail=false;ApplicationHook.limit=false;ApplicationHook.giftCode="SUCCESS";Status.flags.clear();Status.counts.clear();TimeUtil.cancel=false;f.recommendedSailing.on=true;f.giveFriendPiece.on=false;f.cleanOceanType.n=1;f.cleanOceanList.ids.clear();f.rewards=0;}
+ static JSONObject fish(int... nums){JSONArray pieces=new JSONArray();for(int i=0;i<nums.length;i++)pieces.put(new JSONObject().put("id",Integer.toString(i+1)).put("num",nums[i]));return new JSONObject().put("order",1).put("name","fish").put("pieces",pieces);}
+ static String fishPage(boolean more,JSONObject... rows){return new JSONObject().put("resultCode","SUCCESS").put("hasMore",more).put("fishVOS",new JSONArray(Arrays.asList(rows))).toString();}
+ static void resetPieces(){AntOceanRpcCall.fishPages.clear();AntOceanRpcCall.fishReads=0;AntOceanRpcCall.uses.clear();AntOceanRpcCall.propFail=false;TimeUtil.cancel=false;}
  public static void main(String[] args) throws Exception {
   OceanFriendCheck f=new OceanFriendCheck();reset(f);f.recommendedSailing.on=false;assert !f.helpCleanRecommendedFriend()&&ApplicationHook.calls.isEmpty();
   reset(f);f.cleanOceanType.n=0;assert !f.helpCleanRecommendedFriend()&&ApplicationHook.calls.isEmpty();
@@ -53,11 +67,17 @@ public class OceanFriendCheck {
   reset(f);f.giveFriendPiece.on=true;ApplicationHook.giftCode="PIECE_HAVE_GAVE";f.giveOceanFriendPiece("friend");assert f.rewards==0;
   reset(f);AntOceanRpcCall.cleanFriendOcean("friend\"\\");assert ApplicationHook.calls.get(0).optString("cleanedUserId").equals("friend\"\\");
   reset(f);TimeUtil.cancel=true;try{f.helpCleanRecommendedFriend();throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}assert ApplicationHook.calls.isEmpty();
-  System.out.println("PASS default-off, list modes/self/exclusion, recommended source/identity, 20/day bound, service limits, gift reward/repeat/duplicate and cancellation");
+  resetPieces();assert useUniversalPiece(fish(1,2,0),3)==1:"Only missing pieces consume props";assert AntOceanRpcCall.uses.get(0).length()==1&&AntOceanRpcCall.uses.get(0).optJSONObject(0).optInt("attachAssets")==3;
+  resetPieces();JSONObject damaged=fish(0);damaged.optJSONArray("pieces").optJSONObject(0).remove("num");assert useUniversalPiece(damaged,3)==0&&AntOceanRpcCall.uses.isEmpty():"Missing count must not become missing piece";
+  resetPieces();AntOceanRpcCall.fishPages.add(fishPage(true,fish(1,2)));AntOceanRpcCall.fishPages.add(fishPage(false,fish(0)));useUniversalPiece();assert AntOceanRpcCall.fishReads==2&&AntOceanRpcCall.uses.size()==1:"Later pages may contain missing pieces";
+  resetPieces();AntOceanRpcCall.propFail=true;AntOceanRpcCall.fishPages.add(fishPage(true,fish(0),fish(0)));AntOceanRpcCall.fishPages.add(fishPage(false,fish(0)));useUniversalPiece();assert AntOceanRpcCall.fishReads==1&&AntOceanRpcCall.uses.size()==1:"Failed consumption stops remaining writes";
+  resetPieces();TimeUtil.cancel=true;AntOceanRpcCall.fishPages.add(fishPage(false,fish(0)));try{useUniversalPiece();throw new AssertionError("piece cancellation swallowed");}catch(TaskCancelledException expected){}assert AntOceanRpcCall.uses.isEmpty();
+  resetPieces();Statistics.collected=0;f.touchfish();assert Statistics.collected==30:"Multiple rewards must each be counted once";
+  System.out.println("PASS ocean friends/default/list/budgets/cancel; missing-only universal pieces, later pages, failed write stop and exact multi-reward energy");
  }
 }
 '''
-code=code.replace("@@METHODS@@","\n".join(method(ocean,s) for s in ("private boolean helpCleanRecommendedFriend(","private void giveOceanFriendPiece(","private Boolean cleanFriendOcean(String userId, boolean recommended)")))
+code=code.replace("@@METHODS@@","\n".join(method(ocean,s) for s in ("private boolean helpCleanRecommendedFriend(","private void giveOceanFriendPiece(","private Boolean cleanFriendOcean(String userId, boolean recommended)","private static void useUniversalPiece()","private static int useUniversalPiece(JSONArray fishVOS","private static int useUniversalPiece(JSONObject fishVO","private static Boolean useUniversalPiece(JSONArray assetsDetails","private void touchfish()")))
 code=code.replace("@@RPC@@","\n".join(method(rpc,s) for s in ("public static String sailingAway(","public static String giveFriendPiece(","public static String queryFriendPage(String userId, boolean recommended)","public static String cleanFriendOcean("))).replace("io.github.aw1y2z.sesame.util.idMap.UserIdMap.getCurrentUid()", "UserIdMap.getCurrentUid()")
 cache=Path(os.environ.get("GRADLE_USER_HOME",Path.home()/".gradle"))/"caches/modules-2/files-2.1/org.json/json"
 jar=sorted(p for p in cache.glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar","-javadoc.jar")))[-1]

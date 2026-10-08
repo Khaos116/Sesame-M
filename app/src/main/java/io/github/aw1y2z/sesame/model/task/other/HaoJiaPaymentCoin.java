@@ -175,7 +175,12 @@ final class HaoJiaPaymentCoin {
         if (!current()) return null;
         JSONObject args = MyUtils.newJSONObject().put("operationParamIdentify", PROGRAM).put("components", MyUtils.newJSONObject().put(component, params));
         if (source) args.put("source", "jiaofei");
-        JSONObject root = MyUtils.newJSONObject(gate.call("好家缴费金组件", () -> ApplicationHook.requestString("alipay.imasp.program.programInvoke", new JSONArray().put(args).toString())));
+        boolean write = !component.equals(SIGN + "_recall") && !component.equals(TASK + "query");
+        JSONObject root = MyUtils.newJSONObject(gate.call("好家缴费金组件", () -> {
+            String body = new JSONArray().put(args).toString();
+            return write ? ApplicationHook.requestString("alipay.imasp.program.programInvoke", body, 1, 0)
+                    : ApplicationHook.requestString("alipay.imasp.program.programInvoke", body);
+        }));
         JSONObject components = root.optJSONObject("components"), value = components == null ? null : components.optJSONObject(component);
         return current() && success(root) && success(value) ? value : null;
     }

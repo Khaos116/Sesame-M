@@ -22,7 +22,9 @@ public class InsuredGoldCheck {
  static class ApplicationHook {
   static int warm,claims,signup,send,consult;static boolean changed=true,duplicate,unknown,disabledAfter,failGain,cancelAfterGain;static String ball="flow\"\\",stage="NONE_SIGNUP",kind="BROWSE_PAGE";
   static JSONObject task(){return new JSONObject().put("taskId","task\"\\").put("taskMainType",kind).put("taskProcessStatus",stage).put("taskConfig",new JSONObject().put("appletId","applet\"\\"));}
-  static String requestString(String name,String raw){JSONObject a=new JSONArray(raw).optJSONObject(0);JSONObject data=new JSONObject();
+  static String requestString(String name,String raw){return requestRaw(name,raw,3,-1);}
+  static String requestString(String name,String raw,int tries,int pause){return requestRaw(name,raw,tries,pause);}
+  static String requestRaw(String name,String raw,int tries,int pause){assert !(name.endsWith("gainMyAndFamilySumInsured")||name.endsWith("taskTriggerv2"))||tries==1&&pause==0:"mutation used default retries: "+name;JSONObject a=new JSONArray(raw).optJSONObject(0);JSONObject data=new JSONObject();
    if(name.endsWith("queryOpenAndAllowAndUpgrade")||name.endsWith("giftHomeRender")||name.endsWith("queryOpenAndAllow"))warm++;
    else if(name.endsWith("queryMultiSceneWaitToGainList")){assert a.optString("entrance").equals("cfsy");JSONArray list=new JSONArray();if(!ball.isEmpty())list.put(new JSONObject().put("sendFlowNo",ball).put("sendType",1).put("sendFlowStatus",1).put("disabled",disabledAfter&&claims>0));if(duplicate&&list.length()>0)list.put(list.optJSONObject(0));data.put("eventToWaitDTOList",list);if(unknown)data.remove("eventToWaitDTOList");}
    else if(name.endsWith("gainMyAndFamilySumInsured")){assert a.optString("sendFlowNo").equals(ball)&&!a.optBoolean("helpGain");claims++;if(changed&&!disabledAfter)ball="";if(cancelAfterGain)TimeUtil.cancel=true;if(failGain)return "{\"success\":false}";}

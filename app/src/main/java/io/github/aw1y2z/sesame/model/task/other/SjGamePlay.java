@@ -202,11 +202,14 @@ public final class SjGamePlay {
     }
 
     private static View web(View root) {
+        String name = root.getClass().getName();
+        if (root.isShown() && (root instanceof android.webkit.WebView || "com.alipay.mywebview.sdk.WebView".equals(name)
+                || name.contains("WebViewEx") || name.contains("MYWebView") || name.contains("AndroidWebView"))) return root;
         if (root instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) root;
             for (int i = group.getChildCount() - 1; i >= 0; i--) { View candidate = web(group.getChildAt(i)); if (candidate != null) return candidate; }
         }
-        return root.isShown() && (root instanceof android.webkit.WebView || "com.alipay.mywebview.sdk.WebView".equals(root.getClass().getName())) ? root : null;
+        return null;
     }
 
     private static String evaluateRide(String uid, int day, long generation) throws Exception {

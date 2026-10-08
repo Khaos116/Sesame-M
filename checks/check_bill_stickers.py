@@ -27,7 +27,9 @@ public class StickerCheck {
  static class ApplicationHook {
   static List<JSONObject> calls=new ArrayList<>();static boolean fail=false, changed=true, duplicate=false, malformed=false;
   static boolean received=false,upgraded=false,benefit=false,draw=false;
-  static String requestString(String name,String args){
+  static String requestString(String name,String args){return requestRaw(name,args,3,-1);}
+  static String requestString(String name,String args,int tries,int pause){return requestRaw(name,args,tries,pause);}
+  static String requestRaw(String name,String args,int tries,int pause){assert !(name.endsWith("receiveSticker")||name.endsWith("upgradeStickerBatch")||name.endsWith("triggerUpgradePrize")||name.endsWith("prize.trigger"))||tries==1&&pause==0:"mutation used default retries: "+name;
    JSONObject body=new JSONArray(args).optJSONObject(0);body.put("rpc",name);calls.add(body);
    JSONObject j=new JSONObject().put("success",!fail);
    if(name.endsWith("queryStickerCanReceive")){

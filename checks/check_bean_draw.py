@@ -18,7 +18,9 @@ public class BeanDrawCheck {
  static class AntMember {@@PAYLOAD@@}
  static class SesameAchievements {@@NUMBER@@}
  static int draws,balance=10,consults;static boolean eligible=true,change=true,fail,switchCamp,unknown,won=true;static int cost=1;static Object prize="0.01";
- static class ApplicationHook {static String requestString(String name,String raw){JSONObject p=new JSONArray(raw).optJSONObject(0),result=new JSONObject();
+ static class ApplicationHook {static String requestString(String name,String raw){return requestRaw(name,raw,3,-1);}
+  static String requestString(String name,String raw,int tries,int pause){return requestRaw(name,raw,tries,pause);}
+  static String requestRaw(String name,String raw,int tries,int pause){assert !(name.endsWith("triggerDrawPrize"))||tries==1&&pause==0:"mutation used default retries: "+name;JSONObject p=new JSONArray(raw).optJSONObject(0),result=new JSONObject();
   if(name.endsWith("campConsult")){assert p.optString("planId").equals("INSP29990111");consults++;result.put("consultResult",eligible).put("campId",switchCamp&&consults>1?"other":"camp\"\\");}
   else if(name.endsWith("queryAccountSummaryPoint")){result.put("effectPoint",balance);if(unknown)result.remove("effectPoint");}
   else if(name.endsWith("triggerDrawPrize")){draws++;assert p.optString("campId").equals("camp\"\\")&&p.optString("planId").equals("INSP29990111");if(change)balance-=cost;result.put("triggerResult",won).put("prizeAmount",prize);}

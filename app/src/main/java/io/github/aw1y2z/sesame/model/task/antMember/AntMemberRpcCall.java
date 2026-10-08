@@ -25,7 +25,7 @@ public class AntMemberRpcCall {
     }
 
     public static String obtainSesameGift(String id) throws JSONException {
-        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.award.AwardRpcManager.obtainAward", new JSONArray().put(MyUtils.newJSONObject().put("awardTemplateId", id)).toString());
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.award.AwardRpcManager.obtainAward", new JSONArray().put(MyUtils.newJSONObject().put("awardTemplateId", id)).toString(), 1, 0);
     }
 
     public static String queryMySesameGift(String recordId) throws JSONException {
@@ -64,7 +64,7 @@ public class AntMemberRpcCall {
     }
 
     public static String claimAccomplishment(String series) throws JSONException {
-        return ApplicationHook.requestString("com.antgroup.zmxy.zmcustprod.biz.rpc.creditidentity.api.CreditIdentityAchievementRpcManager.claimAccomplishmentV2", new JSONArray().put(MyUtils.newJSONObject().put("medalSeriesCode", series)).toString());
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmcustprod.biz.rpc.creditidentity.api.CreditIdentityAchievementRpcManager.claimAccomplishmentV2", new JSONArray().put(MyUtils.newJSONObject().put("medalSeriesCode", series)).toString(), 1, 0);
     }
 
     public static String merchantTranscodeCheck() {
@@ -78,11 +78,11 @@ public class AntMemberRpcCall {
     }
 
     public static String merchantSign() {
-        return ApplicationHook.requestString("alipay.mrchservbase.mrchpoint.sqyj.homepage.signin.v1", "[{\"signScene\":\"TASK_LIST_SIGN\"}]");
+        return ApplicationHook.requestString("alipay.mrchservbase.mrchpoint.sqyj.homepage.signin.v1", "[{\"signScene\":\"TASK_LIST_SIGN\"}]", 1, 0);
     }
 
     public static String merchantZcj(boolean execute) throws JSONException {
-        return ApplicationHook.requestString("alipay.mrchservbase.zcj.view.invoke", new JSONArray().put(MyUtils.newJSONObject().put("compId", execute ? "ZCJ_SIGN_IN_EXECUTE" : "ZCJ_SIGN_IN_QUERY")).toString());
+        return ApplicationHook.requestString("alipay.mrchservbase.zcj.view.invoke", new JSONArray().put(MyUtils.newJSONObject().put("compId", execute ? "ZCJ_SIGN_IN_EXECUTE" : "ZCJ_SIGN_IN_QUERY")).toString(), execute ? 1 : 3, execute ? 0 : -1);
     }
 
     public static String merchantActivity() {
@@ -90,7 +90,7 @@ public class AntMemberRpcCall {
     }
 
     public static String merchantKmdkAction(String id, boolean signIn) throws JSONException {
-        return ApplicationHook.requestString(signIn ? "alipay.merchant.kmdk.signIn" : "alipay.merchant.kmdk.signUp", new JSONArray().put(MyUtils.newJSONObject().put("activityNo", id)).toString());
+        return ApplicationHook.requestString(signIn ? "alipay.merchant.kmdk.signIn" : "alipay.merchant.kmdk.signUp", new JSONArray().put(MyUtils.newJSONObject().put("activityNo", id)).toString(), 1, 0);
     }
 
     public static String merchantBallQuery() throws JSONException {
@@ -101,7 +101,7 @@ public class AntMemberRpcCall {
 
     public static String merchantBallReceive(String id) throws JSONException {
         JSONObject args = MyUtils.newJSONObject().put("ballIds", new JSONArray().put(id)).put("channel", "MRCH_SELF").put("outBizNo", java.util.UUID.randomUUID().toString());
-        return ApplicationHook.requestString("alipay.mrchservbase.mrchpoint.ball.receive", new JSONArray().put(args).toString());
+        return ApplicationHook.requestString("alipay.mrchservbase.mrchpoint.ball.receive", new JSONArray().put(args).toString(), 1, 0);
     }
 
     public static String merchantTaskQuery(boolean service, String orderTaskCode) throws JSONException {
@@ -113,7 +113,7 @@ public class AntMemberRpcCall {
 
     public static String merchantTaskReceive(String code) throws JSONException {
         JSONObject args = MyUtils.newJSONObject().put("compId", "ZTS_TASK_RECEIVE").put("extInfo", MyUtils.newJSONObject().put("taskCode", code));
-        return ApplicationHook.requestString("alipay.mrchservbase.sqyj.task.receive", new JSONArray().put(args).toString());
+        return ApplicationHook.requestString("alipay.mrchservbase.sqyj.task.receive", new JSONArray().put(args).toString(), 1, 0);
     }
 
     public static String merchantActionQuery(String code) throws JSONException {
@@ -123,7 +123,7 @@ public class AntMemberRpcCall {
     public static String merchantActionProduce(String code, String channel) throws JSONException {
         JSONObject args = MyUtils.newJSONObject().put("actionCode", code);
         if (!channel.isEmpty()) args.put("channel", channel);
-        return ApplicationHook.requestString("alipay.mrchservbase.biz.task.action.produce", new JSONArray().put(args).toString());
+        return ApplicationHook.requestString("alipay.mrchservbase.biz.task.action.produce", new JSONArray().put(args).toString(), 1, 0);
     }
 
     public static String merchantExamPage(String code) throws JSONException {
@@ -131,7 +131,7 @@ public class AntMemberRpcCall {
     }
 
     public static String merchantTaskFinish(String bizId) throws JSONException {
-        return ApplicationHook.requestString("com.alipay.adtask.biz.mobilegw.service.task.finish", new JSONArray().put(MyUtils.newJSONObject().put("bizId", bizId)).toString());
+        return ApplicationHook.requestString("com.alipay.adtask.biz.mobilegw.service.task.finish", new JSONArray().put(MyUtils.newJSONObject().put("bizId", bizId)).toString(), 1, 0);
     }
 
     public static String queryStickerCanReceiveList(String year, String month) throws JSONException {
@@ -140,7 +140,7 @@ public class AntMemberRpcCall {
 
     public static String receiveSticker(String year, String month, JSONArray ids, JSONArray configs) throws JSONException {
         JSONObject args = MyUtils.newJSONObject().put("year", year).put("month", month).put("stickerIds", ids).put("stickerCfgIds", configs);
-        return ApplicationHook.requestString("alipay.memberasset.sticker.receiveSticker", new JSONArray().put(args).toString());
+        return ApplicationHook.requestString("alipay.memberasset.sticker.receiveSticker", new JSONArray().put(args).toString(), 1, 0);
     }
 
     public static String queryStickerHomePage(String year, String month, String day) throws JSONException {
@@ -150,7 +150,7 @@ public class AntMemberRpcCall {
     }
 
     public static String upgradeStickerBatch(JSONArray requests) throws JSONException {
-        return ApplicationHook.requestString("alipay.memberasset.sticker.upgradeStickerBatch", new JSONArray().put(MyUtils.newJSONObject().put("upgradeReqList", requests)).toString());
+        return ApplicationHook.requestString("alipay.memberasset.sticker.upgradeStickerBatch", new JSONArray().put(MyUtils.newJSONObject().put("upgradeReqList", requests)).toString(), 1, 0);
     }
 
     public static String queryStickerDetailPage(String year, String month, String id) throws JSONException {
@@ -159,7 +159,7 @@ public class AntMemberRpcCall {
     }
 
     public static String triggerStickerUpgradePrize(String id) throws JSONException {
-        return ApplicationHook.requestString("alipay.memberasset.sticker.triggerUpgradePrize", new JSONArray().put(MyUtils.newJSONObject().put("levelCode", "").put("stickerCfgId", id)).toString());
+        return ApplicationHook.requestString("alipay.memberasset.sticker.triggerUpgradePrize", new JSONArray().put(MyUtils.newJSONObject().put("levelCode", "").put("stickerCfgId", id)).toString(), 1, 0);
     }
 
     public static String queryStickerPrizeHomePage() throws JSONException {
@@ -167,7 +167,7 @@ public class AntMemberRpcCall {
     }
 
     public static String triggerStickerDrawing(String id) throws JSONException {
-        return ApplicationHook.requestString("alipay.memberasset.prize.trigger", new JSONArray().put(MyUtils.newJSONObject().put("prizeQuotaRecordId", id).put("type", "Drawing")).toString());
+        return ApplicationHook.requestString("alipay.memberasset.prize.trigger", new JSONArray().put(MyUtils.newJSONObject().put("prizeQuotaRecordId", id).put("type", "Drawing")).toString(), 1, 0);
     }
 
     private static String getUniqueId() {
@@ -178,7 +178,7 @@ public class AntMemberRpcCall {
         RpcEntity rpcEntity = ApplicationHook.requestObject("alipay.antmember.biz.rpc.member.h5.queryPointCert", "[{\"page\":" + 1 + ",\"pageSize\":" + 8 + "}]", 1, 0);
         if (rpcEntity == null || !rpcEntity.getHasResult() || ApplicationHook.isOffline()) return false;
         try {
-            JSONObject response = new JSONObject(rpcEntity.getResponseString());
+            JSONObject response = MyUtils.newJSONObject(rpcEntity.getResponseString());
             String error = response.optString("error");
             // 单接口冷却只限制会员任务，不能阻断其它模块或触发重新登录。
             if ("RPC_SKIPPED".equals(error)) return true;
@@ -646,7 +646,7 @@ public class AntMemberRpcCall {
         JSONObject args = MyUtils.newJSONObject().put("benefitId", benefitId).put("cityCode", "").put("exchangeType", "POINT_PAY")
                 .put("itemId", itemId).put("miniAppId", "").put("orderSource", "").put("requestId", requestId)
                 .put("requestSourceInfo", "").put("sourcePassMap", source).put("userOutAccount", "");
-        return ApplicationHook.requestString("com.alipay.alipaymember.biz.rpc.exchange.h5.exchangeBenefit", new JSONArray().put(args).toString());
+        return ApplicationHook.requestString("com.alipay.alipaymember.biz.rpc.exchange.h5.exchangeBenefit", new JSONArray().put(args).toString(), 1, 0);
     }
 
     // 我的快递任务
@@ -999,7 +999,7 @@ public class AntMemberRpcCall {
     }
 
     public static String collectInsuredGold(JSONObject goldBallObj) {
-        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftMain.gainMyAndFamilySumInsured", new JSONArray().put(goldBallObj).toString());
+        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftMain.gainMyAndFamilySumInsured", new JSONArray().put(goldBallObj).toString(), 1, 0);
     }
 
     public static String queryInsuredOpenAndAllowAndUpgrade(String entrance) throws JSONException {
@@ -1033,7 +1033,7 @@ public class AntMemberRpcCall {
 
     public static String triggerInsuredTask(String applet, String center, String scene, String stage) throws JSONException {
         JSONObject args = MyUtils.newJSONObject().put("appletId", applet).put("taskCenId", center).put("sceneCode", scene).put("stageCode", stage);
-        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftTask.taskTriggerv2", new JSONArray().put(args).toString());
+        return ApplicationHook.requestString("com.alipay.insgiftbff.insgiftTask.taskTriggerv2", new JSONArray().put(args).toString(), 1, 0);
     }
 
     public static String consultInsuredTask(String center, String task) throws JSONException {
@@ -1057,7 +1057,7 @@ public class AntMemberRpcCall {
      */
     public static String signInTrigger(String appletId, String scene) throws JSONException {
         JSONObject args = MyUtils.newJSONObject().put("appletId", appletId).put("scene", scene);
-        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.signInTrigger", new JSONArray().put(args).toString());
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.signInTrigger", new JSONArray().put(args).toString(), 1, 0);
     }
 
     public static String queryGuardianGradeAwards() throws JSONException {
@@ -1067,7 +1067,7 @@ public class AntMemberRpcCall {
 
     public static String guardianAwardSend(String skuId) throws JSONException {
         JSONObject args = MyUtils.newJSONObject().put("entrance", "insplatform_mine_anxindou").put("sceneCode", "POSITION").put("skuId", skuId);
-        return ApplicationHook.requestString("com.alipay.insmarketingbff.guardian.awardSend", new JSONArray().put(args).toString());
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.guardian.awardSend", new JSONArray().put(args).toString(), 1, 0);
     }
 
     private static JSONObject beanPositionFactors() throws JSONException {
@@ -1121,13 +1121,13 @@ public class AntMemberRpcCall {
 
     public static String addAskAnswerRecord(String askAnswerId, String userId) throws JSONException {
         JSONObject args = MyUtils.newJSONObject().put("answerResult", "rightAnswer").put("askAnswerId", askAnswerId).put("userId", userId);
-        return ApplicationHook.requestString("com.alipay.mfinsnsprod.biz.service.gw.qa.api.AskAnswerGwManager.addAskAnswerRecord", new JSONArray().put(args).toString());
+        return ApplicationHook.requestString("com.alipay.mfinsnsprod.biz.service.gw.qa.api.AskAnswerGwManager.addAskAnswerRecord", new JSONArray().put(args).toString(), 1, 0);
     }
 
     public static String answerQuestionDrama(String dramaId, String scriptId, String userDramaId, String userId) throws JSONException {
         JSONObject args = MyUtils.newJSONObject().put("answerResult", "SUCCESS").put("channel", "ANXINDOU")
                 .put("dramaId", dramaId).put("scriptId", scriptId).put("userDramaId", userDramaId).put("userId", userId);
-        return ApplicationHook.requestString("com.alipay.inscontentplatform.question.answerQuestionDrama", new JSONArray().put(args).toString());
+        return ApplicationHook.requestString("com.alipay.inscontentplatform.question.answerQuestionDrama", new JSONArray().put(args).toString(), 1, 0);
     }
 
     public static String beanCampConsult(String planId) throws JSONException {
@@ -1137,7 +1137,7 @@ public class AntMemberRpcCall {
 
     public static String beanTriggerDrawPrize(String campId, String planId, long lastDrawTime) throws JSONException {
         JSONObject args = MyUtils.newJSONObject().put("campId", campId).put("planId", planId).put("lastDrawTime", lastDrawTime);
-        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.triggerDrawPrize", new JSONArray().put(args).toString());
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.triggerDrawPrize", new JSONArray().put(args).toString(), 1, 0);
     }
 
     public static String queryAccountSummaryPoint() throws JSONException {
@@ -1153,7 +1153,7 @@ public class AntMemberRpcCall {
 
     public static String beanTaskTrigger(String applet, String stage) throws JSONException {
         JSONObject args = MyUtils.newJSONObject().put("appletId", applet).put("sceneCode", "AXD_TAK_LIST").put("taskCenId", "AP15241780").put("stageCode", stage);
-        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.taskTrigger", new JSONArray().put(args).toString());
+        return ApplicationHook.requestString("com.alipay.insmarketingbff.bean.taskTrigger", new JSONArray().put(args).toString(), 1, 0);
     }
 
     /**

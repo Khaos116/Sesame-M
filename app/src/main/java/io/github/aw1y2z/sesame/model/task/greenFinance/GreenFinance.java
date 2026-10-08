@@ -12,6 +12,7 @@ import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.util.JsonUtil;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 
 import java.text.SimpleDateFormat;
@@ -94,17 +95,22 @@ public class GreenFinance extends ModelTask {
                     continue;
                 }
                 String code = greenLeaf.optString("code");
-                if (currentCode.equals(code) || bsnIds.length() == 0) {
-                    bsnIds.put(greenLeaf.optString("bsnId"));
-                } else {
+                String bsnId = greenLeaf.optString("bsnId");
+                if (code.isEmpty() || bsnId.isEmpty()) {
+                    continue;
+                }
+                if (!currentCode.equals(code) && bsnIds.length() > 0) {
                     batchSelfCollect(bsnIds);
                     bsnIds = new JSONArray();
                 }
+                currentCode = code;
+                bsnIds.put(bsnId);
             }
             if (bsnIds.length() > 0) {
                 batchSelfCollect(bsnIds);
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "index err:", th);
         }
 

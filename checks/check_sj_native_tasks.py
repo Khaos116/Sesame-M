@@ -41,6 +41,15 @@ code += r'''
   static Activity getTopActivity(){return activity;}
  }
  static class XRiverActivity extends Activity{}
+ public interface ValueCallback {void onReceiveValue(String value);}
+ public static class HostWeb extends ViewGroup {
+  static int calls;static Runnable beforeCallback;
+  public int getChildCount(){return 1;}public View getChildAt(int i){return new View();}
+  public void evaluateJavascript(String script,ValueCallback callback){assert script.contains("sesame-dog");calls++;if(beforeCallback!=null)beforeCallback.run();callback.onReceiveValue("\"RIDE\"");}
+ }
+ public static class MYWebView extends HostWeb {}
+ public static class WebViewEx extends HostWeb {}
+ public static class AndroidWebView extends HostWeb {}
  @@FARM@@
  @@UI@@
  static void clean(){reset();beanState="TODO";durationWrites=0;farmState="TODO";manual=true;drift=false;Context.interactive=true;Context.locked=false;Handler.before=null;SimplePageManager.activity=null;}
@@ -75,6 +84,13 @@ code += r'''
   clean();SimplePageManager.activity=a;view.events.clear();view.down=()->{if(view.events.stream().filter(n->n==0).count()==6)beanState="FINISHED";};SjGamePlay.goldenBeans(true,1,Set.of());assert view.events.size()==12&&writes==0&&Log.confirmed==1&&TimeUtil.waited>=49&&!pending("game:2021005132680209");SjGamePlay.goldenBeans(true,1,Set.of());assert view.events.size()==12&&writes==0;
   clean();SimplePageManager.activity=a;view.events.clear();view.down=()->Context.locked=true;try{tap();throw new AssertionError("lock swallowed");}catch(TaskCancelledException expected){}assert view.events.equals(List.of(0,3));view.down=null;view.events.clear();Context.locked=false;
   Context.interactive=false;int before=queries;SjGamePlay.goldenBeans(true,1,Set.of());assert queries==before&&view.events.isEmpty();
+  for(HostWeb engine:new HostWeb[]{new MYWebView(),new WebViewEx(),new AndroidWebView()}){
+   clean();HostWeb.calls=0;HostWeb.beforeCallback=null;a.intent=new Intent(Intent.ACTION_VIEW,Uri.parse("alipays://platformapi/startapp?appId=2018073060792690"));a.window.root=engine;SimplePageManager.activity=a;
+   SjGamePlay.ride(new SjActivityTasks(new OtherRequestGate(),1));assert HostWeb.calls==30&&!pending("ride")&&writes==0:"source host engine was not driven: "+engine.getClass();
+  }
+  clean();HostWeb.calls=0;HostWeb.beforeCallback=()->UserIdMap.uid="other";a.window.root=new MYWebView();SimplePageManager.activity=a;
+  try{SjGamePlay.ride(new SjActivityTasks(new OtherRequestGate(),1));throw new AssertionError("stale JS callback accepted");}catch(TaskCancelledException expected){}assert HostWeb.calls==1&&pending("ride");HostWeb.beforeCallback=null;
+  clean();HostWeb.calls=0;a.window.root=new HostWeb();SimplePageManager.activity=a;SjGamePlay.ride(new SjActivityTasks(new OtherRequestGate(),1));assert HostWeb.calls==0&&pending("ride"):"unknown host must stay untouched";
   System.out.println("PASS production orchard/native: full duration, receipts, quotas, manual claims, URI/window ownership, coordinate scale, cancelled gestures and expired callbacks");
  }
 }

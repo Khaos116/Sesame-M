@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.math.BigDecimal;
 
 import io.github.aw1y2z.sesame.data.ModelFields;
 import io.github.aw1y2z.sesame.data.ModelGroup;
@@ -378,10 +379,12 @@ public class ProtectEcology extends ModelTask {
         }
         // 本次可浇量取三者最小值：日目标剩余、当日上限、总量上限剩余
         int dayWater = getEnergySummation("D", cooperationId, userId);
+        if (dayWater < 0) return 0;
         int energyCount = Math.min(waterNum - dayWater, waterDayLimit);
         Integer limitNum = cooperateWaterTotalLimitList.getValue().get(cooperationId);
         if (limitNum != null) {
             int allWater = getEnergySummation("A", cooperationId, userId);
+            if (allWater < 0) return 0;
             energyCount = Math.min(energyCount, limitNum - allWater);
         }
         return energyCount < 10 ? 0 : energyCount;
@@ -392,18 +395,26 @@ public class ProtectEcology extends ModelTask {
             JSONObject jo = MyUtils.newJSONObject(CooperateRpcCall.queryCooperateRank(bizType, cooperationId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 JSONArray cooperateRankInfos = jo.optJSONArray("cooperateRankInfos");
-                for (int i = 0; cooperateRankInfos != null && i < cooperateRankInfos.length(); i++) {
+                if (cooperateRankInfos == null) return -1;
+                for (int i = 0; i < cooperateRankInfos.length(); i++) {
                     jo = cooperateRankInfos.optJSONObject(i);
-                    if (jo != null && Objects.equals(userId, jo.optString("userId"))) {
-                        return jo.optInt("energySummation");
+                    if (jo == null || jo.optString("userId").isEmpty()) return -1;
+                    if (Objects.equals(userId, jo.optString("userId"))) {
+                        Object value = jo.opt("energySummation");
+                        if (!(value instanceof Number) && !(value instanceof String)) return -1;
+                        int count = new BigDecimal(value.toString()).intValueExact();
+                        return count >= 0 ? count : -1;
                     }
                 }
+                return 0;
             }
         }
         catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
+            if (t instanceof NumberFormatException || t instanceof ArithmeticException) return -1;
             Log.err(TAG, "getEnergySummation err:", t);
         }
-        return 0;
+        return -1;
     }
     
     private static void protectTree() {
@@ -423,7 +434,12 @@ public class ProtectEcology extends ModelTask {
                     break;
                 }
                 TimeUtil.sleep(300);
+                int before = exchangeableTree.certCount;
                 exchangeableTree = queryTreeForExchange(projectId);
+                if (exchangeableTree.certCount <= before) {
+                    Log.record("生态保护：证书数量未增加，停止本轮申请");
+                    break;
+                }
             }
         }
     }
@@ -490,30 +506,36 @@ public class ProtectEcology extends ModelTask {
                 return exchangeableTree;
             }
             String applyAction = jo.optString("applyAction");
-            int currentEnergy = jo.optInt("currentEnergy");
+            int currentEnergy = new BigDecimal(String.valueOf(jo.opt("currentEnergy"))).intValueExact();
             JSONArray subTreeVOs = jo.optJSONArray("subTreeVOs");
             jo = jo.optJSONObject("exchangeableTree");
             if (jo == null) {
                 return exchangeableTree;
             }
-            exchangeableTree.certCount = jo.optInt("certCount");
+            exchangeableTree.certCount = new BigDecimal(String.valueOf(jo.opt("certCount"))).intValueExact();
             exchangeableTree.projectName = jo.optString("projectName");
+            int energy = new BigDecimal(String.valueOf(jo.opt("energy"))).intValueExact();
+            if (currentEnergy < 0 || energy < 0 || exchangeableTree.certCount < 0) {
+                return exchangeableTree;
+            }
             if (!Objects.equals("AVAILABLE", applyAction)) {
                 Log.record("生态保护🏕️保护[" + exchangeableTree.projectName + "]停止:数量不足");
                 return exchangeableTree;
             }
-            if (currentEnergy < jo.optInt("energy")) {
+            if (currentEnergy < energy) {
                 Log.record("生态保护🏕️保护[" + exchangeableTree.projectName + "]停止:能量不足");
                 return exchangeableTree;
             }
             if (Objects.equals("ANIMAL", jo.optString("type"))) {
                 if (exchangeableTree.certCount == 0) {
-                    for (int i = 0; subTreeVOs != null && i < subTreeVOs.length(); i++) {
+                    if (subTreeVOs == null || subTreeVOs.length() == 0) return exchangeableTree;
+                    for (int i = 0; i < subTreeVOs.length(); i++) {
                         jo = subTreeVOs.optJSONObject(i);
                         if (jo == null) {
-                            continue;
+                            return exchangeableTree;
                         }
-                        int certCountForAlias = jo.optInt("certCountForAlias");
+                        int certCountForAlias = new BigDecimal(String.valueOf(jo.opt("certCountForAlias"))).intValueExact();
+                        if (certCountForAlias < 0) return exchangeableTree;
                         if (certCountForAlias == 0) {
                             exchangeableTree.canExchange = true;
                             break;
@@ -529,6 +551,7 @@ public class ProtectEcology extends ModelTask {
             }
         }
         catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "queryTreeForExchange err:", t);
         }
         return exchangeableTree;

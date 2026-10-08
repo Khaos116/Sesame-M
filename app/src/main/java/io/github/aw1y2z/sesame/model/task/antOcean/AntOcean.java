@@ -1176,6 +1176,7 @@ public class AntOcean extends ModelTask {
     // 使用万能拼图
     private static void useUniversalPiece() {
         try {
+            TimeUtil.sleep(0);
             // 获取道具使用类型列表的JSON数据
             JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.queryOceanPropList("UNIVERSAL_PIECE"));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -1212,14 +1213,15 @@ public class AntOcean extends ModelTask {
                         return;
                     }
                     int used = useUniversalPiece(fishVOS, holdsNum);
-                    if (used <= 0) {
-                        // 本页没有可用拼图（或替换失败）：持有数不会减少，继续翻页也是空转，直接结束
+                    if (used < 0) {
+                        // 写入失败时停止；本页没有缺片不代表后续页也没有。
                         break;
                     }
                     holdsNum -= used;
                 }
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "useUniversalPiece error:", t);
         }
     }
@@ -1232,10 +1234,14 @@ public class AntOcean extends ModelTask {
                 if (fishVO == null || !fishVO.has("pieces")) {
                     continue;
                 }
-                count += useUniversalPiece(fishVO, holdsNum - count);
+                int used = useUniversalPiece(fishVO, holdsNum - count);
+                if (used < 0) return -1;
+                count += used;
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "useUniversalPiece error:", t);
+            return -1;
         }
         return count;
     }
@@ -1248,10 +1254,10 @@ public class AntOcean extends ModelTask {
             JSONArray pieces = fishVO.optJSONArray("pieces");
             for (int i = 0; pieces != null && i < pieces.length(); i++) {
                 JSONObject piece = pieces.optJSONObject(i);
-                if (piece == null || piece.optInt("num") > 1) {
+                if (piece == null || piece.optInt("num", -1) != 0) {
                     continue;
                 }
-                JSONObject assetsDetail = new JSONObject();
+                JSONObject assetsDetail = MyUtils.newJSONObject();
                 assetsDetail.put("assets", order);
                 assetsDetail.put("assetsNum", 1);
                 assetsDetail.put("attachAssets", Integer.parseInt(piece.optString("id")));
@@ -1261,18 +1267,21 @@ public class AntOcean extends ModelTask {
                     break;
                 }
             }
+            if (assetsDetails.length() == 0) return 0;
             if (useUniversalPiece(assetsDetails, name, holdsNum - assetsDetails.length())) {
                 TimeUtil.sleep(1000);
                 return assetsDetails.length();
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "useUniversalPiece error:", t);
         }
-        return 0;
+        return -1;
     }
 
     private static Boolean useUniversalPiece(JSONArray assetsDetails, String name, int holdsNum) {
         try {
+            TimeUtil.sleep(0);
             if (assetsDetails.length() == 0) {
                 return false;
             }
@@ -1283,6 +1292,7 @@ public class AntOcean extends ModelTask {
                 return true;
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "useUniversalPiece error:", t);
         }
         return false;
@@ -1693,10 +1703,9 @@ public class AntOcean extends ModelTask {
                         Log.other("海洋摸鱼🐟[" + popup.optString("name", "") + "]" + popup.optInt("rightsNums", 0) + "g");
                         Toast.show("海洋摸鱼🐟获得" + popup.optInt("rightsNums", 0) + "g能量");
                     }
-
-                    totalEnergy += energyGain;
-                    Statistics.addData(Statistics.DataType.COLLECTED, energyGain);
                 }
+                totalEnergy += energyGain;
+                Statistics.addData(Statistics.DataType.COLLECTED, energyGain);
 
                 // 更新剩余次数：仅当响应明确带回 myFish.interactVO 时才采用，否则视为无法继续，安全退出避免死循环
                 boolean remainUpdated = false;

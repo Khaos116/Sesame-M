@@ -18,7 +18,9 @@ public class SesameAchievementsCheck {
  static class AntMember {@@HELPERS@@}
  static boolean change=true,fail=false,duplicate=false,unknown=false;static int claims,details;static long value=30,claimed;static String series="series\"\\";
  static JSONObject medal(int level,long at,long threshold){JSONObject m=new JSONObject().put("levelNo",level).put("claimedAt",at).put("threshold",threshold).put("currentValue",value).put("displayState","UPGRADEABLE");if(unknown)m.remove("claimedAt");return m;}
- static class ApplicationHook {static String requestString(String name,String args){JSONObject p=new JSONArray(args).optJSONObject(0),d=new JSONObject();
+ static class ApplicationHook {static String requestString(String name,String args){return requestRaw(name,args,3,-1);}
+  static String requestString(String name,String args,int tries,int pause){return requestRaw(name,args,tries,pause);}
+  static String requestRaw(String name,String args,int tries,int pause){assert !(name.endsWith("claimAccomplishmentV2"))||tries==1&&pause==0:"mutation used default retries: "+name;JSONObject p=new JSONArray(args).optJSONObject(0),d=new JSONObject();
   if(name.endsWith("queryAccomplishmentHomeV2")) {
    if(!p.has("tabCode"))d.put("tabs",new JSONArray().put(new JSONObject().put("tabCode","tab")));
    else {JSONObject m=medal(1,1,10).put("nextThreshold",20).put("medalSeriesCode",series);JSONArray rows=new JSONArray().put(m);if(duplicate)rows.put(m);d.put("themeCategories",new JSONArray().put(new JSONObject().put("seriesList",rows)));}

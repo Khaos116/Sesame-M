@@ -25,7 +25,9 @@ public class MerchantCheck {
  static class ApplicationHook {
   static List<JSONObject> calls=new ArrayList<>();static boolean opened=true,changed=true,fail=false,badOrder=false;static String order="";static int queries;
   static boolean signed=false,zcj=false,kmdk=false,enrolled=false,ball=false;static String taskStatus="UNRECEIVED",taskCode="BROWSE";static int current=0;
-  static String requestString(String name,String args){JSONObject body=new JSONArray(args).optJSONObject(0);body.put("rpc",name);calls.add(body);JSONObject root=new JSONObject().put("success",!fail),data=new JSONObject();
+  static String requestString(String name,String args){return requestRaw(name,args,3,-1);}
+  static String requestString(String name,String args,int tries,int pause){return requestRaw(name,args,tries,pause);}
+  static String requestRaw(String name,String args,int tries,int pause){assert !(name.endsWith("homepage.signin.v1")||name.endsWith("kmdk.signIn")||name.endsWith("kmdk.signUp")||name.endsWith("ball.receive")||name.endsWith("task.receive")||name.endsWith("action.produce")||name.endsWith("task.finish")||name.endsWith("zcj.view.invoke")&&new JSONArray(args).optJSONObject(0).optString("compId").equals("ZCJ_SIGN_IN_EXECUTE"))||tries==1&&pause==0:"mutation used default retries: "+name;JSONObject body=new JSONArray(args).optJSONObject(0);body.put("rpc",name);calls.add(body);JSONObject root=new JSONObject().put("success",!fail),data=new JSONObject();
    if(name.endsWith("transcode.check")){order="";data.put("isOpened",opened);}
    else if(name.endsWith("homepage.v5"))data.put("signIn",!signed);
    else if(name.endsWith("homepage.signin.v1")){if(changed&&!fail)signed=true;data.put("signInResult","SUCCESS");}

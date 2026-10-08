@@ -2,6 +2,8 @@ package io.github.aw1y2z.sesame.model.task.goldenbeans;
 
 import org.json.JSONObject;
 
+import java.math.BigDecimal;
+
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.Status;
 
@@ -16,12 +18,22 @@ import io.github.aw1y2z.sesame.util.Status;
  */
 public final class GoldenBeansExchange {
 
-    /** 当日肥料换豆已获得的金豆数（与芝麻粒路径语义对齐；农场入口费:豆=1:1） */
+    /** 当日肥料换豆已确认或待确认的金豆数（农场入口费:豆=1:1） */
     private static final String FLAG_MANURE_AMOUNT = "goldenBeans::manureExchangeBeanAmount";
-    /** 当日芝麻粒换豆已获得的金豆数 */
+    /** 当日芝麻粒换豆已确认或待确认的金豆数 */
     private static final String FLAG_SESAME_BEAN_AMOUNT = "goldenBeans::sesameExchangeBeanAmount";
 
     private GoldenBeansExchange() {
+    }
+
+    private static int beanDelta(JSONObject response) {
+        Object value = response.opt("beanDelta");
+        if (!(value instanceof Number) && !(value instanceof String)) return 0;
+        try {
+            return new BigDecimal(value.toString()).intValueExact();
+        } catch (NumberFormatException | ArithmeticException invalid) {
+            return 0;
+        }
     }
 
     /**
@@ -80,19 +92,21 @@ public final class GoldenBeansExchange {
             }
 
             GoldenBeansSupport.pause(interval);
+            // 响应可能丢失但兑换已生效，发出前预留额度，未知结果不能恢复用户日上限。
+            Status.setIntFlagToday(FLAG_MANURE_AMOUNT, (int) Math.min((long) exchangedToday + reserved, Integer.MAX_VALUE));
             JSONObject exchangeResponse = GoldenBeansSupport.parse(goldenbeansRpcCall.exchangeBean(reserved));
             if (!GoldenBeansSupport.ok(exchangeResponse)) {
                 Log.goldenBeans("金豆换豆⚠️失败[" + GoldenBeansSupport.describe(exchangeResponse) + "]");
                 return;
             }
-            int beanDelta = exchangeResponse.optInt("beanDelta", 0);
+            int beanDelta = beanDelta(exchangeResponse);
             if (beanDelta <= 0) {
-                Log.goldenBeans("金豆换豆⚠️响应缺少有效beanDelta#不记录额度");
+                Log.goldenBeans("金豆换豆⚠️响应缺少有效beanDelta#保留预留额度");
                 return;
             }
             Log.goldenBeans("金豆换豆🌱请求[" + reserved + "豆]消耗["
                     + exchangeResponse.optInt("manureCost", -1) + "肥料]#获得[" + beanDelta + "豆]");
-            Status.setIntFlagToday(FLAG_MANURE_AMOUNT, exchangedToday + beanDelta);
+            Status.setIntFlagToday(FLAG_MANURE_AMOUNT, (int) Math.min((long) exchangedToday + beanDelta, Integer.MAX_VALUE));
             GoldenBeansSupport.pause(interval);
             goldenbeansRpcCall.pull("JAR_INFO", "EXCHANGE_MANURE", "TASK_LIST");
         } catch (Throwable th) {
@@ -152,22 +166,20 @@ public final class GoldenBeansExchange {
 
             int exchangeBeanAmount = (int) Math.min(available, Integer.MAX_VALUE);
             GoldenBeansSupport.pause(interval);
+            Status.setIntFlagToday(FLAG_SESAME_BEAN_AMOUNT, (int) Math.min((long) exchangedToday + exchangeBeanAmount, Integer.MAX_VALUE));
             JSONObject exchangeResponse = GoldenBeansSupport.parse(goldenbeansRpcCall.exchangeBeanOf(
                     GoldenBeansEntry.ALCHEMY.bizType, GoldenBeansEntry.ALCHEMY.source, exchangeBeanAmount));
             if (!GoldenBeansSupport.ok(exchangeResponse)) {
                 Log.goldenBeans("金豆芝麻粒换豆⚠️失败[" + GoldenBeansSupport.describe(exchangeResponse) + "]");
                 return;
             }
-            int beanDelta = exchangeResponse.optInt("beanDelta", 0);
+            int beanDelta = beanDelta(exchangeResponse);
             if (beanDelta <= 0) {
-                Log.goldenBeans("金豆芝麻粒换豆⚠️响应缺少有效beanDelta#不记录额度");
+                Log.goldenBeans("金豆芝麻粒换豆⚠️响应缺少有效beanDelta#保留预留额度");
                 return;
             }
-            // 豆已换出：先记当日额度再回查。原先放在回查之后，回查失败即不记额度 → 会重复换豆/超单日上限
-            Status.setIntFlagToday(FLAG_SESAME_BEAN_AMOUNT, exchangedToday + beanDelta);
-
             // 兑换成功即记账，后续回查失败不能恢复已经消耗的单日额度。
-            Status.setIntFlagToday(FLAG_SESAME_BEAN_AMOUNT, exchangedToday + beanDelta);
+            Status.setIntFlagToday(FLAG_SESAME_BEAN_AMOUNT, (int) Math.min((long) exchangedToday + beanDelta, Integer.MAX_VALUE));
             GoldenBeansSupport.pause(interval);
             JSONObject syncResponse = GoldenBeansSupport.parse(goldenbeansRpcCall.pullOf(
                     GoldenBeansEntry.ALCHEMY.bizType, GoldenBeansEntry.ALCHEMY.source,

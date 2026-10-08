@@ -23,7 +23,9 @@ public class BeanBrowseCheck {
   .put("taskDisplayInfo",new JSONObject().put("customInfo",new JSONObject().put("taskType",manual?"ISSUED_TASK":"BROWSE_PAGE").put("taskOperationType","BROWSE_TASK").put("taskMainTitle","Browse")));
   if(state.equals("RECEIVED"))row.put("sendPrizeSendOrderList",new JSONArray().put(new JSONObject().put("sendStatus","SUCCESS").put("extInfo",new JSONObject().put("TASK_ORDER_ID",mismatch?"other":order))));return row;}
  static class ApplicationHook {
-  static String requestString(String name,String raw){JSONObject p=new JSONArray(raw).optJSONObject(0),result=new JSONObject();
+  static String requestString(String name,String raw){return requestRaw(name,raw,3,-1);}
+  static String requestString(String name,String raw,int tries,int pause){return requestRaw(name,raw,tries,pause);}
+  static String requestRaw(String name,String raw,int tries,int pause){assert !(name.endsWith("taskTrigger"))||tries==1&&pause==0:"mutation used default retries: "+name;JSONObject p=new JSONArray(raw).optJSONObject(0),result=new JSONObject();
    if(name.endsWith("taskCenterConsult")){JSONArray rows=new JSONArray().put(task());if(duplicate)rows.put(task());result.put("taskDetailList",rows).put("doneTaskDetailList",new JSONArray());}
    else if(name.endsWith("taskTrigger")){assert p.optString("appletId").equals("applet\"\\")&&p.optString("taskCenId").equals("AP15241780");if(p.optString("stageCode").equals("signup")){signup++;order="order\"\\";if(changed)state="SIGNUP_COMPLETE";if(cancelAfterSignup)TimeUtil.cancel=true;}else{assert p.optString("stageCode").equals("send");assert RuntimeInfo.instance.values.containsValue(order):"persist order before sending";send++;if(changed)state="RECEIVED";}result.put("taskOrderId",order);}
    else throw new AssertionError(name);

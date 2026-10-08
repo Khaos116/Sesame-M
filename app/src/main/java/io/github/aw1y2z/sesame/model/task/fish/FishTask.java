@@ -206,7 +206,7 @@ public class FishTask extends ModelTask {
     private String requestString(String method, String args) {
         if (Thread.currentThread().isInterrupted()
                 || (runningUid != null && !runningUid.equals(UserIdMap.getCurrentUid()))) {
-            throw new CancellationException("Fish task stopped or account changed");
+            throw new TaskCancelledException();
         }
         return ApplicationHook.requestString(method, args);
     }
@@ -274,18 +274,14 @@ public class FishTask extends ModelTask {
             }
             return true;
         } catch (Exception unused) {
+            if (unused instanceof TaskCancelledException) throw (TaskCancelledException) unused;
             return false;
         }
     }
 
     private void sleep(long ms) {
-        try {
-            if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
-            Thread.sleep(ms);
-        } catch (InterruptedException unused) {
-            Thread.currentThread().interrupt();
-            throw new CancellationException("Fish task interrupted");
-        }
+        TimeUtil.sleep(ms);
+        if (Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
     }
 
     private String buildBaseRequest(String str) {
@@ -301,7 +297,7 @@ public class FishTask extends ModelTask {
      */
     private String buildFinishTaskRequest(String sceneCode, String taskId, String adBizNo) throws org.json.JSONException {
         String uid = UserIdMap.getCurrentUid();
-        if (uid == null) throw new CancellationException("No current account");
+        if (uid == null) throw new TaskCancelledException();
         String outBizNo = taskId + "_" + System.currentTimeMillis() + "_" + uid.substring(Math.max(0, uid.length() - 8));
         JSONObject request = new JSONObject().put("outBizNo", outBizNo)
                 .put("requestType", REQUEST_TYPE_RPC).put("sceneCode", sceneCode)
@@ -367,6 +363,7 @@ public class FishTask extends ModelTask {
                 }
             }
         } catch (Throwable unused) {
+            if (unused instanceof TaskCancelledException) throw (TaskCancelledException) unused;
         }
     }
 
@@ -433,6 +430,7 @@ public class FishTask extends ModelTask {
                 AntFishpondTaskListMap.save();
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.other("鱼塘❌获取任务列表失败[" + th.getMessage() + "]");
         }
     }
@@ -483,6 +481,7 @@ public class FishTask extends ModelTask {
             return true;
 
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘❌执行任务异常[" + e.getMessage() + "]");
             return false;
         }
@@ -543,6 +542,7 @@ public class FishTask extends ModelTask {
             addToBlacklist(taskId);
             return false;
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘⚠️执行异常[" + e.getMessage() + "]");
             return false;
         }
@@ -589,6 +589,7 @@ public class FishTask extends ModelTask {
 
             Log.other("鱼塘✅浏览完成[钓鱼活动广告]");
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘❌处理广告失败[" + e.getMessage() + "]");
         }
     }
@@ -633,6 +634,7 @@ public class FishTask extends ModelTask {
                 }
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘⚠️查询任务状态失败[" + e.getMessage() + "]");
         }
         return "";
@@ -657,6 +659,7 @@ public class FishTask extends ModelTask {
             Log.other("鱼塘✅兑换完成[" + displayName + "]");
             return true;
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘❌兑换失败[" + e.getMessage() + "]");
             return false;
         }
@@ -689,6 +692,7 @@ public class FishTask extends ModelTask {
             Log.other("鱼塘✅游戏完成[" + displayName + "]");
             return true;
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘❌游戏失败[" + e.getMessage() + "]");
             return false;
         }
@@ -752,6 +756,7 @@ public class FishTask extends ModelTask {
             return true;
 
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘❌浏览失败[" + e.getMessage() + "]");
             return false;
         }
@@ -797,6 +802,7 @@ public class FishTask extends ModelTask {
                 }
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘⚠️获取adBizNo失败[" + e.getMessage() + "]");
         }
         return null;
@@ -816,6 +822,7 @@ public class FishTask extends ModelTask {
                 Log.record("鱼塘⚠️广告通知失败");
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘⚠️广告通知异常[" + e.getMessage() + "]");
         }
     }
@@ -852,6 +859,7 @@ public class FishTask extends ModelTask {
                             Log.other("鱼塘⚠️任务配置不存在，已加入黑名单[" + getTaskDisplayName(taskId) + "]");
                         }
                     } catch (Exception parseEx) {
+                        if (parseEx instanceof TaskCancelledException) throw (TaskCancelledException) parseEx;
                         Log.record("鱼塘❌finishTask失败[" + getTaskDisplayName(taskId) + "]#结果[" + result + "]");
                     }
                 } else {
@@ -859,6 +867,7 @@ public class FishTask extends ModelTask {
                 }
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘❌finishTask异常[" + e.getMessage() + "]");
         }
     }
@@ -895,6 +904,7 @@ public class FishTask extends ModelTask {
                             Log.other("鱼塘⚠️任务配置不存在，已加入黑名单[" + getTaskDisplayName(taskId) + "]");
                         }
                     } catch (Exception parseEx) {
+                        if (parseEx instanceof TaskCancelledException) throw (TaskCancelledException) parseEx;
                         Log.record("鱼塘❌finishTask失败[" + getTaskDisplayName(taskId) + "]#结果[" + result + "]");
                     }
                 } else {
@@ -903,6 +913,7 @@ public class FishTask extends ModelTask {
                 return false;
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘❌finishTask异常[" + e.getMessage() + "]");
             return false;
         }
@@ -950,6 +961,7 @@ public class FishTask extends ModelTask {
                 return false;
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.other("鱼塘❌领取异常[" + getTaskDisplayName(taskType) + "][" + th.getMessage() + "]");
             addToBlacklist(taskId);
             return false;
@@ -1023,6 +1035,7 @@ public class FishTask extends ModelTask {
                                         String awardType = extendJson.optString("awardType", "");
                                         Log.other("鱼塘🎁领取[每日宝箱]#获得[" + toAwardChineseName(awardType) + "*" + awardCount + "]");
                                     } catch (Exception e) {
+                                        if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
                                         Log.other("鱼塘🎁领取[每日宝箱]#成功");
                                     }
                                 } else {
@@ -1075,6 +1088,7 @@ public class FishTask extends ModelTask {
                                                 Log.other("鱼塘✅钓鱼活动广告完成[" + adTaskType + "]");
                                             }
                                         } catch (Exception adEx) {
+                                            if (adEx instanceof TaskCancelledException) throw (TaskCancelledException) adEx;
                                             Log.record("鱼塘⚠️解析广告信息失败[" + adEx.getMessage() + "]");
                                         }
                                     }
@@ -1083,6 +1097,7 @@ public class FishTask extends ModelTask {
                                 Log.other("鱼塘❌领取钓鱼活动奖励失败");
                             }
                         } catch (Exception e) {
+                            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
                             Log.record("鱼塘⚠️解析钓鱼活动失败[" + e.getMessage() + "]");
                         }
                     } else if ("TODO".equals(status)) {
@@ -1093,6 +1108,7 @@ public class FishTask extends ModelTask {
                                 int leftFishTimes = extendJson.optInt("leftFishTimes", -1);
                                 Log.other(String.format("鱼塘🎣钓鱼活动[%s]#剩余%d次", taskType, leftFishTimes));
                             } catch (Exception e) {
+                                if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
                                 Log.record("鱼塘⚠️解析活动失败[" + e.getMessage() + "]");
                             }
                         }
@@ -1140,6 +1156,7 @@ public class FishTask extends ModelTask {
 
             Log.other("鱼塘✅活动处理完成");
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘❌处理活动异常[" + e.getMessage() + "]");
         }
     }
@@ -1166,6 +1183,7 @@ public class FishTask extends ModelTask {
                 Log.record("鱼塘⚠️领取活动奖励失败");
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘❌领取活动奖励异常[" + e.getMessage() + "]");
         }
     }
@@ -1225,6 +1243,7 @@ public class FishTask extends ModelTask {
                                         String awardType = extendJson.optString("awardType", "");
                                         Log.other("鱼塘🎁领取[每日宝箱]#获得[" + toAwardChineseName(awardType) + "*" + awardCount + "]");
                                     } catch (Exception e) {
+                                        if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
                                         Log.other("鱼塘🎁领取[每日宝箱]#成功");
                                     }
                                 } else {
@@ -1247,6 +1266,7 @@ public class FishTask extends ModelTask {
             }
 
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘❌检查宝箱异常[" + e.getMessage() + "]");
         }
     }
@@ -1282,6 +1302,7 @@ public class FishTask extends ModelTask {
                 Log.other("鱼塘❌明日钓竿触发失败");
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘❌触发明日钓竿异常[" + e.getMessage() + "]");
         }
     }
@@ -1295,6 +1316,7 @@ public class FishTask extends ModelTask {
             );
             requestString(API_REFINED_OPERATION, request);
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.record("鱼塘⚠️enterFishpond异常[" + e.getMessage() + "]");
         }
     }
@@ -1325,6 +1347,7 @@ public class FishTask extends ModelTask {
             }
             return true;
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Status.flagToday("fish_exchange_fail_" + getToday());
             Log.other("鱼塘❌兑换异常");
             return false;
@@ -1403,6 +1426,7 @@ public class FishTask extends ModelTask {
                 Log.other("鱼塘📊今日活动奖励已领完");
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             if (!silent) {
                 Log.other("鱼塘🪝查询状态失败[" + th.getMessage() + "]");
             }
@@ -1453,6 +1477,7 @@ public class FishTask extends ModelTask {
             }
 
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.record("鱼塘❌lastAdInfo异常[" + th.getMessage() + "]");
         }
     }
@@ -1484,6 +1509,7 @@ public class FishTask extends ModelTask {
                 lastRodCount = jo.optInt("rodSumCount", lastRodCount);
                 return FishResult.success(lastRodCount, fishName, fishWeight, bizNo, angleResultInfo.optJSONObject("angleAdInfo"), true);
             } catch (Throwable th) {
+                if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
                 Log.other("鱼塘❌收杆异常[" + th.getMessage() + "]");
             }
         }
@@ -1586,6 +1612,7 @@ public class FishTask extends ModelTask {
                 }
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             // 静默忽略，不影响主流程
         }
     }
@@ -1599,6 +1626,7 @@ public class FishTask extends ModelTask {
             try {
                 riskToken = MyUtils.newJSONObject(token);
             } catch (Exception invalidToken) {
+                if (invalidToken instanceof TaskCancelledException) throw (TaskCancelledException) invalidToken;
                 return FishResult.tokenInvalid();
             }
             if (riskToken.length() == 0) return FishResult.tokenInvalid();
@@ -1640,6 +1668,7 @@ public class FishTask extends ModelTask {
             }
             return FishResult.tooSmall();
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.other("鱼塘🪝钓鱼异常[" + th.getClass().getSimpleName() + "]");
             return FishResult.fail();
         }
@@ -1669,6 +1698,7 @@ public class FishTask extends ModelTask {
                         Log.other(String.format("鱼塘📊钓竿%d#鱼获%.2fg/%sg#还需%sg", rodCount, fishAssetInfo.optDouble("currentFishWeight", 0.0d), fishAssetInfo.optString("targetFishWeight", "10000"), fishAssetInfo.optString("diffFishWeight", "0")));
                     }
                 } catch (Exception unused) {
+                    if (unused instanceof TaskCancelledException) throw (TaskCancelledException) unused;
                 }
             }
             if (!this.todayRewardEnd) {
@@ -1688,6 +1718,7 @@ public class FishTask extends ModelTask {
                         }
                     }
                 } catch (Exception unused2) {
+                    if (unused2 instanceof TaskCancelledException) throw (TaskCancelledException) unused2;
                 }
             }
             if (fishResult.getAngleAdInfo() != null && !fishResult.getAngleAdInfo().optBoolean("complete", false)) {
@@ -1770,6 +1801,7 @@ public class FishTask extends ModelTask {
             }
 
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.record("鱼塘❌双倍广告异常[" + th.getMessage() + "]");
         }
     }
@@ -1796,6 +1828,7 @@ public class FishTask extends ModelTask {
             }
 
         } catch (Throwable unused) {
+            if (unused instanceof TaskCancelledException) throw (TaskCancelledException) unused;
         }
         return "";
     }
@@ -1807,6 +1840,7 @@ public class FishTask extends ModelTask {
             }
             Log.record("鱼塘📱打开小程序: " + (url.length() > 50 ? url.substring(0, 50) + "..." : url));
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.record("鱼塘❌打开小程序失败[" + th.getMessage() + "]");
         }
     }

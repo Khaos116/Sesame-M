@@ -18,7 +18,9 @@ public class BeanSignCheck {
  static class SesameAchievements {@@NUMBER@@}
  static class ApplicationHook {
   static int signs,rewards,balance=10;static boolean signed,awarded,change=true,unknown,duplicate,noGain,fail;
-  static String requestString(String method,String args){JSONObject p=new JSONArray(args).optJSONObject(0),result=new JSONObject();
+  static String requestString(String method,String args){return requestRaw(method,args,3,-1);}
+  static String requestString(String method,String args,int tries,int pause){return requestRaw(method,args,tries,pause);}
+  static String requestRaw(String method,String args,int tries,int pause){assert !(method.endsWith("signInTrigger")||method.endsWith("awardSend"))||tries==1&&pause==0:"mutation used default retries: "+method;JSONObject p=new JSONArray(args).optJSONObject(0),result=new JSONObject();
    if(method.endsWith("querySignInProcess"))result.put("canPush",!signed);else if(method.endsWith("signInTrigger")){signs++;if(change)signed=true;}
    else if(method.endsWith("queryGradeAwards")){JSONObject award=new JSONObject().put("skuId","sku\"\\").put("spuType","MARKETING_PRIZE").put("status",awarded?"MONTH_COUNT_LIMIT":"AVAILABLE").put("beanQuantity",5);JSONArray rows=new JSONArray().put(award);if(duplicate)rows.put(award);if(unknown)award.remove("beanQuantity");result.put("gradeSkuAwardsList",new JSONArray().put(new JSONObject().put("skuAwardList",rows)));}
    else if(method.endsWith("awardSend")){assert p.optString("skuId").equals("sku\"\\");rewards++;if(change){awarded=true;if(!noGain)balance+=5;}}

@@ -23,6 +23,7 @@ import io.github.aw1y2z.sesame.util.idMap.AntFarmDoFarmTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.AntStallTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -1005,12 +1006,12 @@ public class AntStall extends ModelTask {
             }
             JSONObject astUserInfoVO = jo.optJSONObject("astUserInfoVO");
             JSONObject currentCoinObj = astUserInfoVO != null ? astUserInfoVO.optJSONObject("currentCoin") : null;
-            int currentCoin = currentCoinObj != null ? currentCoinObj.optInt("cent") : 0;
+            int currentCoin = currentCoinObj != null ? new BigDecimal(String.valueOf(currentCoinObj.opt("cent"))).intValueExact() : -1;
             JSONObject astProjectVO = jo.optJSONObject("astProjectVO");
             JSONObject jobModel = astProjectVO != null ? astProjectVO.optJSONObject("jobModel") : null;
             JSONObject donateAmountObj = jobModel != null ? jobModel.optJSONObject("donateAmount") : null;
-            int donateAmount = donateAmountObj != null ? donateAmountObj.optInt("cent") : 0;
-            if (currentCoin < donateAmount) {
+            int donateAmount = donateAmountObj != null ? new BigDecimal(String.valueOf(donateAmountObj.opt("cent"))).intValueExact() : -1;
+            if (donateAmount <= 0 || currentCoin < donateAmount) {
                 return false;
             }
             return projectDonate(projectId);

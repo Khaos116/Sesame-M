@@ -20,7 +20,9 @@ public class SesameGrainExchangeCheck {
  static class SesameAchievements {@@NUMBER@@}
  static boolean change=true,save=true,unknown=false,conflict=false,hasNext=false;static String id="chosen\"\\";static int exchanges,pages,detailCalls;static String name="\u53cc\u51fb\u5361";static String point="20";static boolean taken=false;
  static JSONObject item(){JSONObject j=new JSONObject().put("awardTemplateId",id).put("awardName",name).put("awardProdType","PROP").put("point",point).put("remainingBudget",10).put("hasTaken",taken).put("hasFinished",false).put("extInfo",new JSONObject());if(unknown)j.remove("hasTaken");return j;}
- static class ApplicationHook {static String requestString(String method,String args){JSONObject p=new JSONArray(args).optJSONObject(0),data=new JSONObject();
+ static class ApplicationHook {static String requestString(String method,String args){return requestRaw(method,args,3,-1);}
+  static String requestString(String method,String args,int tries,int pause){return requestRaw(method,args,tries,pause);}
+  static String requestRaw(String method,String args,int tries,int pause){assert !(method.endsWith("obtainAward"))||tries==1&&pause==0:"mutation used default retries: "+method;JSONObject p=new JSONArray(args).optJSONObject(0),data=new JSONObject();
   if(method.endsWith("queryListV2")){pages++;assert p.optString("formDelivery").equals("false")&&p.optInt("pageSize")==20;data.put("hasNext",hasNext).put("awardTemplateList",new JSONArray().put(item())).put("tabList",new JSONArray());}
   else if(method.endsWith("queryDetail")){detailCalls++;assert p.optString("awardTemplateId").equals(id);data.put("awardTemplateVO",item());}
   else if(method.endsWith("obtainAward")){exchanges++;assert p.optString("awardTemplateId").equals(id);if(change)taken=true;data.put("awardRecordId",change?"record":"");}

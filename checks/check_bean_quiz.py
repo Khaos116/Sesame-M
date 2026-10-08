@@ -20,7 +20,9 @@ public class BeanQuizCheck {
  static class SesameAchievements {@@NUMBER@@}
  static int records,answers,queries,finished;static boolean duplicate,unknown,noProgress,failRecord,drift,cancelAfterRecord,wrongNext,finalPending;static String status="ANSWER_PENDING";
  static JSONObject question(int i){JSONObject q=new JSONObject().put("scriptId","q"+i+"\"\\").put("userDramaId","u"+i).put("rightAnswer","A").put("sort",i).put("answerResult",i<finished?"SUCCESS":"").put("awardStatus",i<finished?"SENT":"");if(unknown&&i==0)q.remove("rightAnswer");return q;}
- static class ApplicationHook {static String requestString(String name,String raw){JSONObject p=new JSONArray(raw).optJSONObject(0),result=new JSONObject();boolean ok=true;
+ static class ApplicationHook {static String requestString(String name,String raw){return requestRaw(name,raw,3,-1);}
+  static String requestString(String name,String raw,int tries,int pause){return requestRaw(name,raw,tries,pause);}
+  static String requestRaw(String name,String raw,int tries,int pause){assert !(name.endsWith("addAskAnswerRecord")||name.endsWith("answerQuestionDrama"))||tries==1&&pause==0:"mutation used default retries: "+name;JSONObject p=new JSONArray(raw).optJSONObject(0),result=new JSONObject();boolean ok=true;
   if(name.endsWith("answerConsult")){assert p.optString("consultScene").equals("ANXINDOU");return new JSONObject().put("success",true).put("result",result.put("answerStatus",finished==2&&!finalPending?"ANSWERED":status)).toString();}
   assert p.optString("userId").equals(UserIdMap.uid);
   if(name.endsWith("queryUserQuestionDrama")){queries++;JSONArray rows=new JSONArray().put(question(0)).put(question(1));if(duplicate)rows.put(question(0));result.put("dramaId",drift&&queries>1?"other":"drama\"\\").put("nextScriptId",wrongNext?"unknown":finished<2?"q"+finished+"\"\\":"").put("userQuestionDramaAnswers",rows);}
