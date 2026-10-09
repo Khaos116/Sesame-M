@@ -2961,85 +2961,52 @@ public class AntForestV2 extends ModelTask {
             String response = AntForestRpcCall.queryEnergyRainEndGameList();
             JSONObject jo = new JSONObject(response);
             if (!MessageUtil.checkResultCode(TAG, jo)) {
-                Log.forest("能量雨游戏🎮查询结束列表失败，跳过本轮");
                 return;
             }
+            if (!jo.has("energyRainEndGameGroupTask")) {
+                Status.flagToday("EnergyRain::PlayGame");
+                return;
+            }
+
+            // 2. 初始化新任务（需要接入森林救援队）
+            if (jo.optBoolean("needInitTask", false)) {
+                Log.record("检测到新任务，准备接入[森林救援队]...");
+                String initResStr = AntForestRpcCall.initTask("GAME_DONE_SLJYD");
+                JSONObject initRes = new JSONObject(initResStr);
+                if (!MessageUtil.checkResultCode(TAG, initRes)) {
+                    return;
+                }
+            }
+
+            // 3. 仅当森林救援队(GAME_DONE_SLJYD)未完结时才上报，避免每轮重复发起外部请求
             JSONObject groupTask = jo.optJSONObject("energyRainEndGameGroupTask");
             JSONArray taskInfoList = groupTask != null ? groupTask.optJSONArray("taskInfoList") : null;
+
+            String sljydStatus = null;
+            if (taskInfoList != null) {
+                for (int i = 0; i < taskInfoList.length(); i++) {
+                    JSONObject task = taskInfoList.optJSONObject(i);
+                    JSONObject baseInfo = task != null ? task.optJSONObject("taskBaseInfo") : null;
+                    if (baseInfo == null) continue;
+                    if ("GAME_DONE_SLJYD".equals(baseInfo.optString("taskType"))) {
+                        sljydStatus = baseInfo.optString("taskStatus");
+                        break;
+                    }
+                }
+            }
+
+            // 需要初始化、或任务处于待办/未触发时上报；已完结/无任务则仅标记今日已处理
             boolean needInit = jo.optBoolean("needInitTask", false);
-            boolean reported = false;
-            // 兜底标记：本应玩但游戏不在枚举里（通用化后 matchTaskType 返回 null）时，
-            // 旧逻辑会无条件报 Forest_sljyd，这里保留等价兜底，避免整段任务被静默跳过
-            boolean fallbackNeeded = false;
-            // 服务端是否下发过游戏任务：未下发时同样按能量雨=森林救援队兜底上报
-            boolean obtainedAnyTask = taskInfoList != null && taskInfoList.length() > 0;
+            boolean shouldReport = needInit
+                    || "TODO".equals(sljydStatus)
+                    || "NOT_TRIGGER".equals(sljydStatus);
 
-            if (!obtainedAnyTask) {
-                // 原来这条分支直接打标记返回，与旧版"始终报 Forest_sljyd"的体感不一致；
-                // 用户要求即便没拿到游戏任务也兜底上报一次，故记日志后继续走底部兜底
-                Log.forest("能量雨游戏🎮本次未下发游戏任务"
-                        + (groupTask == null ? "(无energyRainEndGameGroupTask)" : "(taskInfoList为空)"));
-            }
-
-            // 2. 逐个处理下发的游戏任务：任务列表里的游戏不止一个，
-            // 原来只认 GAME_DONE_SLJYD，别的游戏（含我们还没收录常量的）会被静默跳过
-            for (int i = 0; obtainedAnyTask && i < taskInfoList.length(); i++) {
-                JSONObject task = taskInfoList.optJSONObject(i);
-                JSONObject baseInfo = task != null ? task.optJSONObject("taskBaseInfo") : null;
-                if (baseInfo == null) continue;
-
-                String taskType = baseInfo.optString("taskType");
-                String taskStatus = baseInfo.optString("taskStatus");
-                JSONObject bizInfo = task.optJSONObject("bizInfo");
-
-                boolean needPlay = needInit
-                        || "TODO".equals(taskStatus)
-                        || "NOT_TRIGGER".equals(taskStatus);
-
-                GameTask gameTask = GameTask.matchTaskType(taskType);
-                if (gameTask == null && bizInfo != null) {
-                    gameTask = GameTask.matchAppId(bizInfo.optString("appId"));
-                }
-                if (gameTask == null) {
-                    // 枚举里没有这个游戏的常量(appId/gid/action)，登录不了对应游戏服；
-                    // 能量雨本质是森林救援队，未收录时按旧逻辑兜底报 Forest_sljyd（只报一次）
-                    Log.forest("能量雨游戏🎮任务#" + taskType + "#状态=" + taskStatus + "#未收录游戏");
-                    if (needPlay) {
-                        fallbackNeeded = true;
-                    }
-                    continue;
-                }
-
-                Log.forest("能量雨游戏🎮任务[" + gameTask.getTitle() + "]#taskType=" + taskType
-                        + "#状态=" + taskStatus + (needPlay ? "" : "#无需上报"));
-                if (!needPlay) {
-                    continue;
-                }
-                if (needInit) {
-                    JSONObject initRes = new JSONObject(AntForestRpcCall.initTask(taskType));
-                    if (!MessageUtil.checkResultCode(TAG, initRes)) {
-                        // 初始化失败时不打标记，留给下一轮重试；只跳过当前任务，不影响其余
-                        Log.forest("能量雨游戏🎮任务[" + gameTask.getTitle() + "]初始化失败");
-                        continue;
-                    }
-                    TimeUtil.sleep(500);
-                }
-                gameTask.report("森林", 1);
-                reported = true;
-            }
-            // 兜底：未获取到任何游戏任务，或下发了但都不在枚举里且需要玩，
-            // 仍按能量雨=森林救援队的语义上报一次（旧版始终报 Forest_sljyd）
-            if (!reported && (fallbackNeeded || !obtainedAnyTask)) {
-                Log.forest("能量雨游戏🎮" + (!obtainedAnyTask ? "未获取到游戏任务，" : "存在未收录的可玩任务，")
-                        + "兜底按[森林救援队(能量雨)]上报");
+            if (shouldReport) {
                 GameTask.Forest_sljyd.report("森林", 1);
-                reported = true;
+                Status.flagToday("EnergyRain::PlayGame");
+                return;
             }
-            if (!reported) {
-                Log.forest("能量雨游戏🎮今日无待上报的游戏任务");
-            }
-            // 仍然只查一次：需要初始化、或任务处于待办/未触发时已在上报，
-            // 其余情况（已完结/无任务）只标记今日已处理，避免每轮重复发起外部请求
+            Log.record("森林救援队🐱无需上报(状态:" + sljydStatus + ")，今日跳过");
             Status.flagToday("EnergyRain::PlayGame");
 
         } catch (Throwable th) {
