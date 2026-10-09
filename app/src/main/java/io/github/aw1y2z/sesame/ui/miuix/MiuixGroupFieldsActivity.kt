@@ -334,6 +334,7 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                         "AntFarm" -> listOf("遣返小鸡" to "sendBack", "庄园游戏" to "game", "抽抽乐" to "chouchoule", "特殊美食" to "specialFood", "使用道具" to "useTool")
                         "FishTask" -> listOf("仅钓鱼" to "angle", "仅兑换" to "exchange")
                         "goldenbeans" -> listOf("清理所选商品回执" to "clearMallReceipts")
+                        "OtherTask" -> listOf("恢复赚金币/好运卡未确认操作" to "clearFriendReceipts")
                         else -> emptyList()
                     }
                     if (actions.isNotEmpty()) {
@@ -363,6 +364,12 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                                                 if (currentNames != selectedNames) ToastUtil.show(activity, "商品选择已变化，请重新确认")
                                                 else activity.executeModule(fields.first().modelCode, action)
                                             }
+                                            .setNegativeButton("取消", null).show()
+                                    } else if (action == "clearFriendReceipts") {
+                                        android.app.AlertDialog.Builder(activity)
+                                            .setTitle("已核对赚金币和好运卡记录？")
+                                            .setMessage("清理当前账号这两项活动的全部未确认操作，包括报名、领卡、领奖、开卡。请先核对支付宝奖励及开卡记录；错误清理可能重复提交。待开卡会保留，其他SJ活动不受影响。清理本身不请求接口，下一轮按开关和预算执行。")
+                                            .setPositiveButton("已核对，恢复") { _, _ -> activity.executeModule(fields.first().modelCode, action) }
                                             .setNegativeButton("取消", null).show()
                                     } else activity.executeModule(fields.first().modelCode, action)
                                 })

@@ -11,6 +11,7 @@ import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.TimeUtil;
@@ -138,6 +139,13 @@ final class SjActivityTasks {
         return true;
     }
 
+    boolean discard(String domain, String reason) {
+        current();
+        boolean cleared = RuntimeInfo.getInstance().putVerified(RECEIPT + domain, null);
+        Log.record("活动[" + domain + "]：" + reason + (cleared ? "，已解除回执；未记作成功" : "，清理回执保存失败"));
+        return cleared;
+    }
+
     private JSONObject call(String method, JSONObject args, boolean write, String action, JSONObject context) throws Exception {
         return call(method, args, write, action, context, null);
     }
@@ -175,6 +183,21 @@ final class SjActivityTasks {
         }
         JSONObject result = MyUtils.newJSONObject(raw);
         boolean failed = RpcRequestGuard.isFailure(result);
+        boolean rejected = domain != null && Boolean.FALSE.equals(result.opt("success"))
+                && !MessageUtil.isRetryable(result) && !MessageUtil.isServerBusy(result);
+        if (rejected) {
+            // A temporary transport/busy failure is ambiguous even when it carries success=false.
+            for (String field : new String[]{"code", "resultCode", "retCode", "errorCode", "error"}) {
+                String value = result.optString(field).trim().toUpperCase(java.util.Locale.ROOT);
+                if (Set.of("48", "102", "3000", "1009", "SYSTEM_ERROR", "REMOTE_INVOKE_EXCEPTION", "TRANSPORT_ERROR", "SYSTEM_BUSY", "SERVER_BUSY", "TOO_MANY_REQUESTS", "TIMEOUT", "REQUEST_TIMEOUT", "RATE_LIMIT", "RATE_LIMITED", "NETWORK_ERROR", "429", "500", "502", "503", "504").contains(value)) rejected = false;
+            }
+            for (String field : new String[]{"memo", "message", "desc", "resultDesc", "errorMessage"}) {
+                String value = result.optString(field).toLowerCase(java.util.Locale.ROOT);
+                if (value.contains("繁忙") || value.contains("稍后") || value.contains("开小差") || value.contains("人气大爆发") || value.contains("限流") || value.contains("超时")
+                        || value.contains("busy") || value.contains("timeout") || value.contains("timed out") || value.contains("rate limit") || value.contains("try again")) rejected = false;
+            }
+            if (rejected) discard(domain, "服务端明确拒绝，本轮不重试，下轮可重新执行");
+        }
         if (write || failed || !(Boolean.TRUE.equals(result.opt("success")) || Boolean.TRUE.equals(result.opt("isSuccess"))
                 || "alipay.imasp.program.programInvoke".equals(method) && result.optJSONObject("components") != null))
             Log.record(prefix + "响应 " + (result.length() == 0 ? "空对象或解析失败，" : "")
@@ -183,7 +206,7 @@ final class SjActivityTasks {
                 + "，error=" + responseField(result, "error") + "，errorCode=" + responseField(result, "errorCode")
                 + "，retCode=" + responseField(result, "retCode"));
         if (failed) {
-            Log.record(prefix + "响应明确失败，停止本次操作" + (write ? "，待核对记录保留" : ""));
+            Log.record(prefix + "响应明确失败，停止本次操作" + (write && !rejected ? "，待核对记录保留" : ""));
             return null;
         }
         // programInvoke reports results per component, not necessarily at the root.

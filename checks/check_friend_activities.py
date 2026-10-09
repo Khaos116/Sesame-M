@@ -14,12 +14,14 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
  static String text(JSONObject row,String key){return SjActivityTasks.text(row,key);}
  static long count(JSONObject row,String key){return SjActivityTasks.count(row,key);}
  @@FRIEND@@
+ static class OtherTask{@@MANUAL@@}
  static int writes,queries,signups,completes,receives,opens,progress,signs,sends;
  static String pstate,title,action,taskState; static boolean sign,failReceive,failOpen,emptyOpen,malformed,duplicate,failProgress,failSend;
+ static String rejectTarget="",unknownTarget="",rejectCode="BUSINESS_REJECTED";static boolean noCoins,listedCoins,notReady,noP2eTasks,noLuckyTasks;
  static Set<String> opened=new HashSet<>();
  static JSONObject card(String id){return new JSONObject().put("id",id).put("cardInfo",new JSONObject().put("title","好运卡红包").put("cardLevel","1").put("amount","0.10"));}
  static JSONArray cards(String... ids){JSONArray a=new JSONArray();for(String id:ids)a.put(card(id));return a;}
- static JSONObject row(){return new JSONObject().put("taskId","task\"\\").put("taskToken","SECRET_TOKEN").put("title",title).put("actionType",action).put("taskStatus",pstate);}
+ static JSONObject row(){JSONObject r=new JSONObject().put("taskId","task\"\\").put("taskToken","SECRET_TOKEN").put("title",title).put("actionType",action).put("taskStatus",pstate);if(listedCoins)r.put("goldCoinAmount",9);return r;}
  static JSONObject ok(){return new JSONObject().put("success",true);}
  static JSONObject result(JSONObject v){return ok().put("data",new JSONObject().put("result",v));}
  static JSONArray openedCards(){JSONArray a=new JSONArray();for(String id:opened)a.put(card(id));return a;}
@@ -29,14 +31,17 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
   static String requestString(String op,String raw,int attempts,int retries)throws Exception{assert attempts==1&&retries==0;return rpc(op,raw,true);}
   static String rpc(String op,String raw,boolean write)throws Exception{
    JSONObject a=new JSONArray(raw).optJSONObject(0);assert a!=null;if(write)writes++;else queries++;
+   String stage=op.endsWith("gameplay.rebate")?(a.optString("bizScene").equals("HAOYUNKA_SIGN_IN")?"sign":"progress"):op.endsWith("sdk.task.trigger")?a.optString("stageCode"):op.endsWith("openLuckyCard")?"open":op.endsWith("gameP2eTaskReceive")?"receive":"";
+   if(write&&!stage.isEmpty()&&stage.equals(rejectTarget)){rejectTarget="";return new JSONObject().put("success",false).put("resultCode",rejectCode).toString();}
+   if(write&&!stage.isEmpty()&&stage.equals(unknownTarget)){unknownTarget="";return "{}";}
    if(op.endsWith("p2e.queryTaskList")){
     assert a.optString("source").equals("ch_appcenter__chsub_9patch");
-    JSONArray rows=new JSONArray().put(row());if(duplicate)rows.put(row());
+    JSONArray rows=new JSONArray();if(!noP2eTasks)rows.put(row());if(duplicate)rows.put(row());
     return (malformed?ok():ok().put("data",new JSONObject().put("platformGameTaskModule",new JSONObject().put("platformTaskList",rows)))).toString();
    }
    if(op.endsWith("platformTaskSignUp")){assert a.optString("taskId").equals("task\"\\");signups++;pstate="SIGNUP_COMPLETE";return ok().toString();}
    if(op.endsWith("platformTaskComplete")){assert TimeUtil.waited>=15;completes++;pstate="COMPLETED";return ok().toString();}
-   if(op.endsWith("gameP2eTaskReceive")){assert a.optString("taskToken").equals("SECRET_TOKEN");receives++;pstate="RECEIVED";if(failReceive)return "{}";return ok().put("data",new JSONObject().put("coinAmount",12)).toString();}
+   if(op.endsWith("gameP2eTaskReceive")){assert a.optString("taskToken").equals("SECRET_TOKEN");receives++;pstate="RECEIVED";if(failReceive)return "{}";return noCoins?ok().toString():ok().put("data",new JSONObject().put("coinAmount",12)).toString();}
    if(op.endsWith("gameplay.rebate")){
     boolean trigger=a.optString("behavior").equals("trigger"),sg=a.optString("bizScene").equals("HAOYUNKA_SIGN_IN");
     if(sg){if(trigger){sign=true;signs++;}JSONObject r=new JSONObject().put("status",sign?"SIGNED_UP":"NONE_SIGNUP");if(sign)r.put("extInfo",new JSONObject().put("lastSignInTime",String.format("2026-10-%02d",MyUtils.day)).toString()).put("prizeDetails",new JSONObject().put("1",new JSONObject().put("tickets",cards("sign"))).toString());return result(r).toString();}
@@ -47,12 +52,12 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
    }
    if(op.endsWith("sdk.task.query")){
     Object show=taskState.equals("RECEIVED")?cards("task1","task2").toString():new JSONObject().put("title","浏览支付宝领好运卡").put("subTitle","免费好运卡").put("url","alipays://safe").toString();
-    return result(new JSONObject().put("taskListResult",new JSONArray().put(new JSONObject().put("taskId","lucky\"\\").put("taskStatus",taskState).put("taskShowInfo",show)))).toString();
+    return result(new JSONObject().put("taskListResult",noLuckyTasks?new JSONArray():new JSONArray().put(new JSONObject().put("taskId","lucky\"\\").put("taskStatus",taskState).put("taskShowInfo",show)))).toString();
    }
    if(op.endsWith("sdk.task.trigger")){
     assert a.optString("appletId").equals("lucky\"\\");
     if(a.optString("stageCode").equals("signup")){taskState="SIGNUP_COMPLETE";return result(new JSONObject().put("taskShowInfo","{\"needSignUp\":\"true\"}")).toString();}
-    sends++;taskState="RECEIVED";if(failSend){failSend=false;return "{}";}return result(new JSONObject().put("taskShowInfo",cards("task1","task2").toString())).toString();
+    sends++;if(notReady)return result(new JSONObject().put("taskShowInfo","{\"needFinish\":true}")).toString();taskState="RECEIVED";if(failSend){failSend=false;return "{}";}return result(new JSONObject().put("taskShowInfo",cards("task1","task2").toString())).toString();
    }
    if(op.endsWith("openLuckyCard")){
     String id=a.optJSONArray("cardIds").optString(0);assert !opened.contains(id):"duplicate card open";opens++;opened.add(id);
@@ -64,7 +69,9 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
   }
  }
  static FriendActivityTasks worker(int budget){return new FriendActivityTasks(new SjActivityTasks(new OtherRequestGate(),budget));}
- static void reset(){RuntimeInfo.data.clear();RuntimeInfo.writable=true;Status.flags.clear();Log.lines.clear();Log.confirmed=0;UserIdMap.uid="self";MyUtils.day=8;TimeUtil.cancel=TimeUtil.switchWait=TimeUtil.crossWait=false;TimeUtil.waited=0;writes=queries=signups=completes=receives=opens=progress=signs=sends=0;opened.clear();pstate="UN_SIGNUP";title="浏览支付宝活动";action="VIEW_TASK";taskState="NONE_SIGNUP";sign=failReceive=failOpen=emptyOpen=malformed=duplicate=failProgress=failSend=false;}
+ static void reset(){rejectTarget=unknownTarget="";rejectCode="BUSINESS_REJECTED";noCoins=listedCoins=notReady=noP2eTasks=noLuckyTasks=false;RuntimeInfo.data.clear();RuntimeInfo.writable=true;Status.flags.clear();Log.lines.clear();Log.confirmed=0;UserIdMap.uid="self";MyUtils.day=8;TimeUtil.cancel=TimeUtil.switchWait=TimeUtil.crossWait=false;TimeUtil.waited=0;writes=queries=signups=completes=receives=opens=progress=signs=sends=0;opened.clear();pstate="UN_SIGNUP";title="浏览支付宝活动";action="VIEW_TASK";taskState="NONE_SIGNUP";sign=failReceive=failOpen=emptyOpen=malformed=duplicate=failProgress=failSend=false;}
+ static boolean pending(String domain){return !RuntimeInfo.instance.getString("sjActivityReceipt::"+domain).isEmpty();}
+ static void nextDay(){MyUtils.day++;Status.flags.clear();}
  public static void main(String[] args)throws Exception{
   reset();worker(30).p2eBrowse();assert signups==1&&completes==1&&receives==1&&TimeUtil.waited==15;assert Log.lines.stream().anyMatch(s->s.contains("获得12金币"));worker(30).p2eBrowse();assert writes==3;
   reset();worker(1).p2eBrowse();assert signups==1&&completes==0;worker(30).p2eBrowse();assert signups==1&&completes==1&&receives==1:"budget resume";
@@ -88,6 +95,37 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
   reset();emptyOpen=true;worker(30).luckyCard();before=writes;worker(30).luckyCard();assert writes==before&&opens==4:"missing card result must not resend";
   reset();RuntimeInfo.writable=false;worker(30).luckyCard();assert writes==0;
   reset();worker(0).p2eBrowse();worker(0).luckyCard();assert writes+queries==0;
+  for(boolean listed:new boolean[]{false,true}){
+   reset();noCoins=true;listedCoins=listed;worker(30).p2eBrowse();assert receives==1&&!pending("p2eBrowse::task\"\\");
+   assert Log.lines.stream().anyMatch(s->s.contains(listed?"任务标示奖励9金币":"金币数未返回"));noP2eTasks=true;worker(30).p2eBrowse();assert receives==1;
+  }
+  for(String target:new String[]{"sign","progress","send","open","receive"}){
+   reset();rejectTarget=target;if(target.equals("receive"))worker(50).p2eBrowse();else worker(50).luckyCard();
+   assert RuntimeInfo.data.keySet().stream().noneMatch(k->k.startsWith("sjActivityReceipt::")):"explicit rejection stuck "+target;
+   if(target.equals("receive")){worker(50).p2eBrowse();assert receives==1;}else{worker(50).luckyCard();assert signs==1&&progress==4&&sends==1&&opens==4:"retry failed "+target;}
+  }
+  for(String codeValue:new String[]{"102","3000","SYSTEM_BUSY","429","48","REMOTE_INVOKE_EXCEPTION","timeout","SERVER_BUSY"}){
+   reset();rejectTarget="receive";rejectCode=codeValue;worker(30).p2eBrowse();assert pending("p2eBrowse::task\"\\"):"temporary failure discarded "+codeValue;
+  }
+  for(String target:new String[]{"sign","progress","send","open","receive"}){
+   reset();unknownTarget=target;if(target.equals("receive"))worker(50).p2eBrowse();else worker(50).luckyCard();
+   nextDay();
+   if(target.equals("sign")||target.equals("progress")){worker(50).luckyCard();assert signs==1&&progress==4:"daily receipt blocked tomorrow "+target;}
+   else{
+    RuntimeInfo.data.put("sjActivityReceipt::shenQuan", "keep-other-activity");int requestCount=queries+writes;
+    new OtherTask().runManualAction("clearFriendReceipts");assert queries+writes==requestCount:"cleanup sent RPC";
+    assert RuntimeInfo.instance.getString("sjActivityReceipt::shenQuan").equals("keep-other-activity");
+    if(target.equals("receive")){worker(50).p2eBrowse();assert receives==1;}else{worker(50).luckyCard();assert opens==4&&sends==1:"manual recovery failed "+target;}
+   }
+  }
+  reset();notReady=true;worker(50).luckyCard();before=writes;worker(50).luckyCard();assert sends==1&&writes==before:"not-ready task consumes daily budget again";nextDay();worker(50).luckyCard();assert sends==2;
+  reset();worker(50).luckyCard();JSONObject queue=new JSONObject(RuntimeInfo.instance.getString("other::luckyCardQueue"));assert queue.length()==4&&queue.optInt("sign")==20261008;
+  MyUtils.day=16;before=writes;worker(50).openCards();assert new JSONObject(RuntimeInfo.instance.getString("other::luckyCardQueue")).length()==0&&writes==before:"opened history did not expire";
+  RuntimeInfo.data.put("other::luckyCardQueue","{\"legacy\":true,\"waiting\":false}");queue=worker(50).cardQueue();assert queue.optInt("legacy")==20261016&&Boolean.FALSE.equals(queue.opt("waiting"));
+  reset();unknownTarget="receive";worker(50).p2eBrowse();nextDay();noP2eTasks=true;worker(50).p2eBrowse();assert !pending("p2eBrowse::task\"\\"):"missing old P2E task receipt retained";
+  reset();unknownTarget="send";worker(50).luckyCard();nextDay();noLuckyTasks=true;worker(50).luckyCard();assert !pending("luckyTask::lucky\"\\"):"missing old lucky task receipt retained";
+  reset();unknownTarget="receive";worker(50).p2eBrowse();RuntimeInfo.writable=false;new OtherTask().runManualAction("clearFriendReceipts");assert pending("p2eBrowse::task\"\\"):"failed cleanup destroyed receipt";
+  reset();FriendActivityTasks stale=worker(0);UserIdMap.uid="other";try{stale.clearReceipts();throw new AssertionError("cleanup crossed account");}catch(TaskCancelledException expected){}
   reset();assert worker(30).signToday(new JSONObject().put("extInfo","{\"lastSignInTime\":\"2026-10-07T18:00:00Z\"}"));
   assert !worker(30).signToday(new JSONObject().put("extInfo","{\"lastSignInTime\":\"2026-10-08T18:00:00Z\"}"));
   reset();TimeUtil.cancel=true;try{worker(30).luckyCard();throw new AssertionError();}catch(TaskCancelledException expected){}assert writes+queries==0;
@@ -99,6 +137,26 @@ for marker, filename in [('@@GATE@@', 'OtherRequestGate.java'), ('@@WORKER@@', '
     source = (SOURCE / 'model/task/other' / filename).read_text(encoding='utf-8')
     code = code.replace(marker, 'static ' + source[source.index('final class '):])
 guard = (SOURCE / 'rpc/intervallimit/RpcRequestGuard.java').read_text(encoding='utf-8')
+message = (SOURCE / 'util/MessageUtil.java').read_text(encoding='utf-8')
+helpers = []
+for name in ('isRetryable', 'isServerBusy'):
+    start = message.index('public static boolean ' + name + '(')
+    helpers.append(message[start:message.index('\n    }', start)+6])
+code = code.replace('@@RETRY_HELPERS@@', '\n'.join(helpers))
+runtime = (SOURCE / 'data/RuntimeInfo.java').read_text(encoding='utf-8')
+start = runtime.index('public synchronized java.util.List<String> keysStartingWith(')
+keys = runtime[start:runtime.index('\n    }', start)+6].replace('joCurrent', 'new JSONObject(data)')
+code = code.replace('static class RuntimeInfo{', 'static class RuntimeInfo{' + keys)
+other = (SOURCE / 'model/task/other/OtherTask.java').read_text(encoding='utf-8')
+manual = []
+for signature in ('protected boolean supportsManualAction(', 'protected void runManualAction('):
+    start = other.index(signature)
+    end = other.index('}', start)+1 if signature.startswith('protected boolean') else other.index('\n    }', start)+6
+    manual.append(other[start:end])
+code = code.replace('@@MANUAL@@', '\n'.join(manual))
+ui = (SOURCE / 'ui/miuix/MiuixGroupFieldsActivity.kt').read_text(encoding='utf-8')
+assert '"OtherTask" -> listOf("恢复赚金币/好运卡未确认操作" to "clearFriendReceipts")' in ui
+assert '.setTitle("已核对赚金币和好运卡记录？")' in ui
 code = code.replace('@@FAILURE@@', guard[guard.index('public static boolean isFailure('):guard.index('    public static boolean isNonFriend(')])
 cache = Path(os.environ.get('GRADLE_USER_HOME', Path.home() / '.gradle')) / 'caches/modules-2/files-2.1/org.json/json'
 jar = sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar', '-javadoc.jar')))[-1]

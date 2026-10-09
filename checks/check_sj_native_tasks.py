@@ -11,6 +11,12 @@ tree = ast.parse((ROOT / 'checks/check_sj_activities.py').read_text(encoding='ut
 code = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
             and any(isinstance(t, ast.Name) and t.id == 'code' for t in n.targets))
 guard = (SOURCE / 'rpc/intervallimit/RpcRequestGuard.java').read_text(encoding='utf-8')
+message = (SOURCE / 'util/MessageUtil.java').read_text(encoding='utf-8')
+helpers = []
+for name in ('isRetryable', 'isServerBusy'):
+    start = message.index('public static boolean ' + name + '(')
+    helpers.append(message[start:message.index('\n    }', start)+6])
+code = code.replace('@@RETRY_HELPERS@@', '\n'.join(helpers))
 code = code.replace('@@FAILURE@@', guard[guard.index('public static boolean isFailure('):guard.index('    public static boolean isNonFriend(')])
 code = code[:code.index(' public static void main(String[] args)')]
 code = code.replace('int retries)throws Exception', 'int retries)').replace('throws Exception{return rpc', '{return rpc').replace('boolean write)throws Exception{', 'boolean write){')

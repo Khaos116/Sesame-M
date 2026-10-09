@@ -73,6 +73,17 @@ public class RuntimeInfo {
         return joCurrent.optString(key);
     }
 
+    /** 返回当前账号键名快照，调用方删除时不迭代正在修改的JSON。 */
+    public synchronized java.util.List<String> keysStartingWith(String prefix) {
+        java.util.List<String> result = new java.util.ArrayList<>();
+        java.util.Iterator<String> keys = joCurrent.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (key.startsWith(prefix)) result.add(key);
+        }
+        return result;
+    }
+
     public synchronized Long getLong(String key, long def) {
         return joCurrent.optLong(key, def);
     }

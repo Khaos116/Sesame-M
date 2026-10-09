@@ -28,6 +28,14 @@ import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 public class OtherTask extends ModelTask {
     private static final String TAG = "OtherTask";
 
+    @Override
+    protected boolean supportsManualAction(String action) { return "clearFriendReceipts".equals(action); }
+
+    @Override
+    protected void runManualAction(String action) {
+        if (supportsManualAction(action)) new FriendActivityTasks(new SjActivityTasks(new OtherRequestGate(), 0)).clearReceipts();
+    }
+
     private BooleanModelField haojiaWuyou;
     private BooleanModelField haojiaCoinSign, haojiaCoinBrowse, haojiaCoinRewards;
     private IntegerModelField haojiaCoinBudget;

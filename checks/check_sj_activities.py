@@ -20,6 +20,7 @@ public class SjActivityCheck {
  static class Status{static Set<String> flags=new HashSet<>();static boolean hasFlagToday(String k){return flags.contains(k);}static void flagToday(String k){flags.add(k);}}
  static class Log{static int confirmed;static List<String> lines=new ArrayList<>();static void other(String s){confirmed++;lines.add(s);}static void record(String s){lines.add(s);}}
   static class RpcRequestGuard{@@FAILURE@@}
+  static class MessageUtil{@@RETRY_HELPERS@@}
  @@GATE@@
  @@WORKER@@
   static int queries,writes,signups,sends,draws,remaining,consumed,points,days;static Integer browseSeconds=3;static String taskState,title,type,signState;static boolean componentOnly,componentFailure,signed,advance,badAck,signError,missing,missingAfterWrite,stallTrigger,extraTask,duplicate,switchWrite,cancelWrite,crossWrite,risk,transportError;
@@ -190,6 +191,12 @@ for marker, filename in [('@@GATE@@', 'OtherRequestGate.java'), ('@@WORKER@@', '
     start = source.index('final class ')
     code = code.replace(marker, 'static ' + source[start:])
 guard = (SOURCE / 'rpc/intervallimit/RpcRequestGuard.java').read_text(encoding='utf-8')
+message = (SOURCE / 'util/MessageUtil.java').read_text(encoding='utf-8')
+helpers = []
+for name in ('isRetryable', 'isServerBusy'):
+    start = message.index('public static boolean ' + name + '(')
+    helpers.append(message[start:message.index('\n    }', start)+6])
+code = code.replace('@@RETRY_HELPERS@@', '\n'.join(helpers))
 code = code.replace('@@FAILURE@@', guard[guard.index('public static boolean isFailure('):guard.index('    public static boolean isNonFriend(')])
 cache = Path(os.environ.get('GRADLE_USER_HOME', Path.home() / '.gradle')) / 'caches/modules-2/files-2.1/org.json/json'
 jar = sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar', '-javadoc.jar')))[-1]
