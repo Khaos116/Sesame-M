@@ -8,6 +8,7 @@ import io.github.aw1y2z.sesame.data.task.ModelTask;
 import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.TimeUtil;
 
 public class OmegakoiTown extends ModelTask {
     private static final String TAG = OmegakoiTown.class.getSimpleName();
@@ -76,6 +77,7 @@ public class OmegakoiTown extends ModelTask {
         try {
             RuntimeInfo.getInstance().put("omegakoiTown", System.currentTimeMillis());
             getUserTasks();
+            completeQuests();
             getSignInStatus();
             houseProduct();
         } catch (Throwable t) {
@@ -120,6 +122,78 @@ public class OmegakoiTown extends ModelTask {
         } catch (Throwable t) {
             Log.err(TAG, "getUserTasks err:", t);
         }
+    }
+
+    /**
+     * 小镇「场景任务」：{@code scenario.getUserQuests} 拉到的 quest 需要
+     * {@code scenario.completeQuest} 才算完成/发奖——与 task 那套（getUserTasks / triggerTaskReward）
+     * 是两套接口。原先只实现了 task 那套，completeQuest 从未被调用，场景任务一直没人做。
+     *
+     * <p>安全约定：只为**明确标记未完成**的 quest 提交；识别不到状态字段时只打原始响应、不提交，
+     * 避免结构不符时盲发请求（同类盲发曾触发风控 1009）。
+     */
+    private void completeQuests() {
+        final String scenarioId = "shopNewestTips";
+        try {
+            String s = OmegakoiTownRpcCall.getUserQuests();
+            JSONObject jo = new JSONObject(s);
+            if (!jo.optBoolean("success")) {
+                Log.i(TAG, "getUserQuests 失败:" + s);
+                return;
+            }
+            JSONObject result = jo.optJSONObject("result");
+            JSONArray quests = result == null ? null : result.optJSONArray("quests");
+            if (quests == null) {
+                Log.i(TAG, "getUserQuests 结构未识别，原始响应:" + s);
+                return;
+            }
+            for (int i = 0; i < quests.length(); i++) {
+                JSONObject quest = quests.optJSONObject(i);
+                if (quest == null) {
+                    continue;
+                }
+                Boolean done = questDone(quest);
+                if (done == null) {
+                    Log.i(TAG, "quest 结构未识别:" + quest);
+                    continue;
+                }
+                if (done) {
+                    continue;
+                }
+                String questId = quest.optString("questId");
+                if (questId.isEmpty()) {
+                    continue;
+                }
+                try {
+                    JSONObject res = new JSONObject(OmegakoiTownRpcCall.completeQuest(questId, scenarioId));
+                    if (res.optBoolean("success")) {
+                        Log.other("小镇任务🌇[场景任务" + quest.optString("name", questId) + "]#完成");
+                    } else {
+                        Log.i(TAG, "completeQuest 失败:" + questId + "#" + res.optString("resultDesc"));
+                    }
+                } catch (Throwable th) {
+                    Log.err(TAG, "completeQuest err:", th);
+                }
+                TimeUtil.sleep(1000);
+            }
+        } catch (Throwable t) {
+            Log.err(TAG, "completeQuests err:", t);
+        }
+    }
+
+    /** quest 是否已完成；识别不到状态字段返回 {@code null}（调用方据此不提交，避免盲发）。 */
+    private static Boolean questDone(JSONObject quest) {
+        for (String flag : new String[]{"done", "completed", "hasCompleted", "finishFlag", "hasRewarded"}) {
+            if (quest.has(flag)) {
+                return quest.optBoolean(flag);
+            }
+        }
+        String status = quest.optString("status");
+        if (!status.isEmpty()) {
+            return "DONE".equalsIgnoreCase(status) || "COMPLETED".equalsIgnoreCase(status)
+                    || "FINISHED".equalsIgnoreCase(status);
+        }
+        return null;
     }
 
     private void getSignInStatus() {

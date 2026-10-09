@@ -3,9 +3,12 @@ package io.github.aw1y2z.sesame.util;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -321,11 +324,63 @@ public class MessageUtil {
         BLACKLIST_LIST_TARGETS.put("AntOceanFishBlackList", new String[]{"AntOcean", "神奇海洋去摸鱼任务"});
         BLACKLIST_LIST_TARGETS.put("AntOrchardTaskList", new String[]{"AntOrchard", "农场肥料任务"});
         BLACKLIST_LIST_TARGETS.put("OrchardChouChouLeTaskList", new String[]{"AntOrchard", "农场抽抽乐任务"});
+        BLACKLIST_LIST_TARGETS.put("WelfareFundTaskList", new String[]{"AntMember", "福利金任务"});
         BLACKLIST_LIST_TARGETS.put("GoldenBeansTaskList", new String[]{"goldenbeans", "金豆夺宝任务"});
         BLACKLIST_LIST_TARGETS.put("AntStallTaskList", new String[]{"AntStall", "新村任务"});
         BLACKLIST_LIST_TARGETS.put("AntSportsTaskList", new String[]{"AntSports", "运动任务"});
         BLACKLIST_LIST_TARGETS.put("AntMemberTaskList", new String[]{"AntMember", "会员任务"});
         BLACKLIST_LIST_TARGETS.put("MemberCreditSesameTaskList", new String[]{"AntMember", "会员芝麻信用任务芝麻粒"});
+    }
+
+    /**
+     * 各模块的**预置黑名单登记表**（键 {@code module|listTitle}）：这是"默认项"的**单一真相**——
+     * 模块 init 不再自带一份，而是取 {@link #presetBlackList} 后交给 {@link #syncTaskBlackList}。
+     * <p>为什么必须登记在这里：配置页在**独立进程**里跑，只能读到落盘/代码里的东西；
+     * 预置项若留在各模块 init 的局部变量里，配置页就无法把它标成"默认"。
+     */
+    private static final Map<String, Set<String>> PRESET_BLACKLIST = new LinkedHashMap<>();
+
+    static {
+        PRESET_BLACKLIST.put("AntFarm|AntFarmDoFarmTaskList", setOf(
+                "线上支付", "用花呗完成一笔支付"));
+        PRESET_BLACKLIST.put("AntFarm|AntFarmDrawMachineTaskList", setOf(
+                "伸出援手，点亮希望", "消耗饲料换机会"));
+        PRESET_BLACKLIST.put("AntOrchard|AntOrchardTaskList", setOf(
+                "完成1笔旧衣回收", "完成1单手机数码回收"));
+        // 芝麻粒：仍预置拉黑的只剩真实交易/履约类（下单/租赁/订酒店/回收/雇佣/付钱/查车）
+        PRESET_BLACKLIST.put("AntMember|MemberCreditSesameTaskList", setOf(
+                "用额度免押金下单", "去租赁下单", "芝麻租赁下单得芝麻粒", "去飞猪订酒店",
+                "0.1元起租会员攒粒", "9.9元抢租3天大疆", "1分起囤神券茶咖美食", "完成旧衣回收得现金",
+                "去雇佣芝麻大表鸽", "送你10.6元支付红包", "一键查询爱车估值"));
+        PRESET_BLACKLIST.put("goldenbeans|GoldenBeansTaskList", setOf(
+                "GOLDEN_BEAN_TASK_XIANSHANGZHIFU", "GOLDEN_BEAN_TASK_YUEBAO", "TEST_PUSH_SUBSCRIBE"));
+    }
+
+    private static Set<String> setOf(String... items) {
+        return new LinkedHashSet<>(Arrays.asList(items));
+    }
+
+    /**
+     * 取该列表的预置黑名单（**可变副本**）：模块 init 可在此基础上追加自己的项，再交给
+     * {@link #syncTaskBlackList}。未登记的列表返回空集。
+     */
+    public static Set<String> presetBlackList(String module, String listTitle) {
+        Set<String> preset = PRESET_BLACKLIST.get(module + "|" + listTitle);
+        return preset == null ? new LinkedHashSet<>() : new LinkedHashSet<>(preset);
+    }
+
+    /** 该条目是否来自模块预置黑名单（配置页据此标注"默认"）。 */
+    public static boolean isPresetBlackListItem(String module, String listTitle, String taskTitle) {
+        Set<String> preset = PRESET_BLACKLIST.get(module + "|" + listTitle);
+        return preset != null && preset.contains(taskTitle);
+    }
+
+    /**
+     * 按列表字段名反查拉黑目标 {模块名, 列表中文名}；未登记的列表返回 null。
+     * <p>供模块外的通用逻辑（如 {@code TaskAttemptPolicy}）在判定"该任务做不了"时按规则记账。
+     */
+    public static String[] autoBlackListTarget(String listField) {
+        return BLACKLIST_LIST_TARGETS.get(listField);
     }
 
     /**
@@ -348,14 +403,63 @@ public class MessageUtil {
                 || CODE_UNSUPPORTED_RPC.equals(jo.optString("errorCode", "").trim());
     }
 
+    /**
+     * 延迟拉黑缓冲：非 null 时，本线程的自动拉黑先入缓冲，由调用方在**任务列表核对之后**决定落盘/丢弃
+     * （列表确认已完成则不该拉黑）。供 {@link io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy} 使用。
+     */
+    private static final ThreadLocal<List<Runnable>> DEFER_BLACKLIST = new ThreadLocal<>();
+
+    /** 开始捕获本线程的自动拉黑（缓冲已存在时不覆盖，避免嵌套时丢失外层）。 */
+    public static void beginDeferBlackList() {
+        if (DEFER_BLACKLIST.get() == null) {
+            DEFER_BLACKLIST.set(new ArrayList<>());
+        }
+    }
+
+    /** 结束捕获：{@code commit=true} 落盘缓冲中的拉黑，否则丢弃；无论如何都清空本线程缓冲。 */
+    public static void endDeferBlackList(boolean commit) {
+        List<Runnable> pending = DEFER_BLACKLIST.get();
+        DEFER_BLACKLIST.remove();
+        if (pending == null || !commit) {
+            return;
+        }
+        for (Runnable action : pending) {
+            try {
+                action.run();
+            } catch (Throwable t) {
+                Log.err(TAG, "endDeferBlackList err:", t);
+            }
+        }
+    }
+
+    /** 处于延迟模式则把动作入缓冲并返回 true；否则返回 false（调用方应立即执行）。 */
+    private static boolean deferBlackList(Runnable action) {
+        List<Runnable> pending = DEFER_BLACKLIST.get();
+        if (pending == null) {
+            return false;
+        }
+        pending.add(action);
+        return true;
+    }
+
     public static void checkResultCodeAndMarkTaskBlackList(String listTitle, String taskTitle, JSONObject jo) {
+        // 开启延迟拉黑时先入缓冲：只有任务列表未确认完成时才真正落盘
+        if (deferBlackList(() -> doCheckResultCodeAndMarkTaskBlackList(listTitle, taskTitle, jo))) {
+            return;
+        }
+        doCheckResultCodeAndMarkTaskBlackList(listTitle, taskTitle, jo);
+    }
+
+    private static void doCheckResultCodeAndMarkTaskBlackList(String listTitle, String taskTitle, JSONObject jo) {
         try {
             if (jo == null) {
                 Log.i(listTitle, "JSON对象为空");
                 return;
             }
-            // 可重试错误（限流、远端异常、网络抖动）一律不拉黑，对全部任务列生效
-            if (isRetryable(jo)) {
+            // 可重试错误（限流、远端异常、网络抖动）与服务端繁忙（102 / "服务器正在开小差"）一律不拉黑，
+            // 对全部任务列生效。注意：isRetryable 不含 102，而 102 属临时故障（见 isServerBusy），
+            // 若只判 isRetryable 会让 102 漏过守卫被误拉黑，故此处与调用方一致用 isRetryable || isServerBusy
+            if (isRetryable(jo) || isServerBusy(jo)) {
                 return;
             }
             // 关键字判定：desc 命中沿用原有"立即拉黑"语义；其它字段命中走"连续确认"（字段不统一，
@@ -383,8 +487,8 @@ public class MessageUtil {
 
             // 判据：desc 命中"不支持rpc调用"＝立即拉黑；其它字段命中＝只作为"连续命中确认"的依据
             // （字段不统一，放宽判定范围必须更保守，避免一次误判就把任务停掉 3 天）
-            // 例外：400000040（同一文案的规范化错误码）**不等于任务做不了**——2026-09-22 实测庄园抽抽乐/
-            // 芭芭农场/金豆乐园都能用 com.alipay.antfarm.doFarmTask 做成，且响应可能撒谎（回 102 但已生效）。
+            // 例外：400000040（同一文案的规范化错误码）**不等于任务做不了**——另一种实现方案（doFarmTask）
+            // 能做成，且响应可能撒谎（回 102 但已生效）。
             // 据它立即拉黑会把能做的任务永久拉黑 ⇒ 降级为"连续确认"，给另一种实现方案与列表核对留出机会
             boolean unsupportedRpc = isUnsupportedRpc(jo);
             boolean canAddBlackList = strongHit && !unsupportedRpc;
@@ -414,6 +518,14 @@ public class MessageUtil {
                             || anyFieldContains(jo, "不是有效的入参")
                             || anyFieldContains(jo, "存在进行中的生活记录")
                             || anyFieldContains(jo, "生活记录模板不存在");
+                    break;
+
+                // 福利金任务：事件规则任务被 10000005「不允许完成事件规则任务」拒绝，文案里没有
+                // 「不支持rpc调用」关键字，须按错误码单独接入连续确认，不能靠 strongHit
+                case "WelfareFundTaskList":
+                    needConfirm = weakHit
+                            || "10000005".equals(jo.optString("errorCode", "").trim())
+                            || anyFieldContains(jo, "不允许完成事件规则任务");
                     break;
 
                 // 金豆夺宝任务：错误码/文案（code 或 resultCode 或 errorCode + desc/resultDesc/memo）
@@ -462,8 +574,38 @@ public class MessageUtil {
     }
 
     public static void MarkTaskBlackList(String ModelFieldsType, String listTitle, String TaskListName, String taskTitle) {
+        // 延迟拉黑：处于捕获模式时先入缓冲，由调用方在列表核对后决定落盘/丢弃
+        if (deferBlackList(() -> doMarkTaskBlackList(ModelFieldsType, listTitle, TaskListName, taskTitle, false))) {
+            return;
+        }
+        doMarkTaskBlackList(ModelFieldsType, listTitle, TaskListName, taskTitle, false);
+    }
+
+    /**
+     * 【底线】交易/支付类任务：**立即永久拉黑、永不自动解禁**。
+     *
+     * <p>这类任务只能靠真实交易完成，伪申报会被服务端判风险操作（1009 风控），必须一次拦死：
+     * 不能写 {@code blackDay=今天}——那会进入"满 {@link #BLACKLIST_RETRY_DAYS} 天自动解禁重试"的
+     * 生命周期（要循环 {@link #BLACKLIST_MAX_RETRY} 次、约 9 天才变永久），期间任务会反复回到待办；
+     * 这里直接写 {@link #AutoBlackRecord#PERMANENT}，{@link #sweepExpiredBlackList} 永不解禁。
+     *
+     * <p>**不走延迟拉黑缓冲**：缓冲的用途是"等任务列表核对后再决定是否拉黑"，
+     * 而交易/支付类没有可核对的成功路径（绝不允许被伪申报做成）。
+     */
+    public static void MarkTaskBlackListPermanent(String ModelFieldsType, String listTitle, String TaskListName,
+                                                  String taskTitle) {
+        doMarkTaskBlackList(ModelFieldsType, listTitle, TaskListName, taskTitle, true);
+    }
+
+    private static void doMarkTaskBlackList(String ModelFieldsType, String listTitle, String TaskListName,
+                                            String taskTitle, boolean permanent) {
         ConfigV2 config = ConfigV2.INSTANCE;
         ModelFields TaskModelFields = config.getModelFieldsMap().get(ModelFieldsType);
+        if (TaskModelFields == null) {
+            // BLACKLIST_LIST_TARGETS 的第一项必须是模型类名，写错时这里要能看到原因而不是 NPE
+            Log.record("添加" + TaskListName + "黑名单失败：" + taskTitle + "#未找到模块[" + ModelFieldsType + "]");
+            return;
+        }
         SelectModelField TaskSelectModelField = (SelectModelField) TaskModelFields.get(listTitle);
         if (TaskSelectModelField == null) {
             Log.record("添加" + TaskListName + "黑名单失败：" + taskTitle);
@@ -479,9 +621,16 @@ public class MessageUtil {
             TaskSelectModelField.add(taskTitle, 0); // 数组类型忽略count，传0
         }
         if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
-            Log.record("自动拉黑🏴在[" + TaskListName + "]中添加[" + taskTitle + "]黑名单:" + TaskSelectModelField.getValue());
+            Log.record((permanent ? "自动拉黑🔒永久" : "自动拉黑🏴") + "在[" + TaskListName + "]中添加[" + taskTitle
+                    + "]黑名单:" + TaskSelectModelField.getValue()
+                    + (permanent ? "#交易/支付类，永不自动解禁" : ""));
             // 记录拉黑日期，供"超期自动解禁重试"使用（只记自动项，用户手动加的不会被解禁）
-            recordAutoBlack(ModelFieldsType, listTitle, taskTitle);
+            if (permanent) {
+                // 交易/支付类：一次即永久，绝不进入"解禁重试"生命周期
+                recordAutoBlackPermanent(ModelFieldsType, listTitle, taskTitle);
+            } else {
+                recordAutoBlack(ModelFieldsType, listTitle, taskTitle);
+            }
         } else {
             Log.record("添加" + TaskListName + "黑名单失败：" + taskTitle);
         }
@@ -600,7 +749,7 @@ public class MessageUtil {
         RELEASED_DEFAULTS.put("AntOcean|AntOceanFishBlackList", new String[]{
                 "玩一玩向僵尸开炮"});
         RELEASED_DEFAULTS.put("AntForestV2|AntForestVitalityTaskList", new String[]{
-                "三国大冒险过1关征战"});
+                "三国大冒险过1关征战", "到店支付得50g能量"});
         RELEASED_DEFAULTS.put("AntForestV2|AntForestHuntTaskList", new String[]{
                 "【限时】玩游戏得2次机会", "去乐园开宝箱得机会"});
         RELEASED_DEFAULTS.put("AntFarm|AntFarmDrawMachineTaskList", new String[]{
@@ -608,8 +757,8 @@ public class MessageUtil {
                 "【限时】开宝箱得2次机会", "【限时】开宝箱得3次机会"});
         RELEASED_DEFAULTS.put("AntOrchard|AntOrchardTaskList", new String[]{
                 "逛助农好货得肥料", "钓鱼1次", "逛一逛闪购外卖", "逛好物最高得1500肥料"});
-        // 芝麻粒游戏/浏览/签到类：实测（2026-09-22 抓包 logs/chk_sesame3）服务端对 taskFeedback 不校验是否真参与过，
-        // 未报名任务一发即 success ⇒ 原先"预置拉黑"的这些条目全部释放，交给任务循环自动完成；
+        // 芝麻粒游戏/浏览/签到类：服务端对 taskFeedback 不校验是否真参与过，未报名任务一发即 success
+        // ⇒ 原先"预置拉黑"的这些条目全部释放，交给任务循环自动完成；
         // 保留预置的只剩真实交易/履约类（下单/租赁/订酒店/回收/雇佣/付钱/查车）
         RELEASED_DEFAULTS.put("AntMember|MemberCreditSesameTaskList", new String[]{
                 "去玩小游戏", "去玩这城有良田", "去玩三国冰河时代", "去玩青云诀之伏魔", "去玩龙迹之城",
@@ -618,6 +767,12 @@ public class MessageUtil {
                 "玩任意1个游戏", "添加桌面小组件", "坚持签到领奖励", "坚持逛裹酱领福利", "坚持看直播领福利",
                 "坚持种水果", "每日施肥领水果", "逛淘宝签到", "头条刷热点领现金", "618去淘金币赢20亿",
                 "去点淘逛一逛", "去淘金币逛一逛", "逛逛淘金币", "来淘金币赢20亿", "去逛一逛消消乐"});
+        RELEASED_DEFAULTS.put("AntFarm|AntFarmDoFarmTaskList", new String[]{
+                "到店付款"});
+        RELEASED_DEFAULTS.put("AntSports|AntSportsTaskList", new String[]{
+                "下载登录AI健康管家"});
+        RELEASED_DEFAULTS.put("goldenbeans|GoldenBeansTaskList", new String[]{
+                "GOLDEN_BEAN_TASK_XIANXIAZHIFU"});
     }
 
     /**
@@ -664,6 +819,61 @@ public class MessageUtil {
             return AutoBlackListMap.get(autoBlackKey(module, listTitle, taskTitle)) != null;
         } catch (Throwable t) {
             return false;
+        }
+    }
+
+    /** {@link #autoBlackState} 取值：未被自动拉黑追踪（用户手动加的，或当前不在黑名单里） */
+    public static final int AUTO_BLACK_NONE = 0;
+    /** {@link #autoBlackState} 取值：自动拉黑中（会随"满 N 天解禁重试"变化） */
+    public static final int AUTO_BLACK_TRACKED = 1;
+    /** {@link #autoBlackState} 取值：自动拉黑且永不自动解禁（交易/支付类） */
+    public static final int AUTO_BLACK_PERMANENT = 2;
+
+    /**
+     * 黑名单条目的来源：用户手动加的返回 {@link #AUTO_BLACK_NONE}；只有自动机制登记过**且当前仍在黑名单里**
+     * 才算"自动"（曾记录但已解禁待重试的不算）。
+     * <p>供配置页给候选项加"（自动）"标注，让用户能分辨自己加的还是系统加的。
+     */
+    public static int autoBlackState(String module, String listTitle, String taskTitle) {
+        try {
+            AutoBlackListMap.ensureLoaded();
+            AutoBlackRecord record = AutoBlackRecord.parse(
+                    AutoBlackListMap.get(autoBlackKey(module, listTitle, taskTitle)));
+            if (record == null) {
+                return AUTO_BLACK_NONE;
+            }
+            if (record.blackDay == AutoBlackRecord.PERMANENT) {
+                return AUTO_BLACK_PERMANENT;
+            }
+            // blackDay==0：观察期 / 已解禁待重试，当前并不在黑名单里，不标注
+            return record.blackDay != 0L ? AUTO_BLACK_TRACKED : AUTO_BLACK_NONE;
+        } catch (Throwable t) {
+            Log.printStackTrace(TAG, t);
+            return AUTO_BLACK_NONE;
+        }
+    }
+
+    /** {@link #blackListOrigin} 取值：用户手动加的（配置页不标注） */
+    public static final int ORIGIN_MANUAL = 0;
+    /** {@link #blackListOrigin} 取值：模块预置（默认）项 */
+    public static final int ORIGIN_PRESET = 1;
+    /** {@link #blackListOrigin} 取值：自动拉黑（会随"满 N 天解禁重试"变化） */
+    public static final int ORIGIN_AUTO = 2;
+    /** {@link #blackListOrigin} 取值：自动拉黑且永不自动解禁（交易/支付类） */
+    public static final int ORIGIN_AUTO_PERMANENT = 3;
+
+    /**
+     * 黑名单条目的来源（供配置页标注）：自动·永久 > 自动 > 预置（默认）> 用户手动。
+     * <p>"默认"读的是 {@link #PRESET_BLACKLIST} 登记表，所以**配置页在独立进程里也能判**。
+     */
+    public static int blackListOrigin(String module, String listTitle, String taskTitle) {
+        switch (autoBlackState(module, listTitle, taskTitle)) {
+            case AUTO_BLACK_PERMANENT:
+                return ORIGIN_AUTO_PERMANENT;
+            case AUTO_BLACK_TRACKED:
+                return ORIGIN_AUTO;
+            default:
+                return isPresetBlackListItem(module, listTitle, taskTitle) ? ORIGIN_PRESET : ORIGIN_MANUAL;
         }
     }
 
@@ -748,6 +958,26 @@ public class MessageUtil {
             } else {
                 record.blackDay = todayIndex();
             }
+            AutoBlackListMap.put(key, record.format());
+            AutoBlackListMap.save();
+        } catch (Throwable t) {
+            Log.printStackTrace(TAG, t);
+        }
+    }
+
+    /**
+     * 交易/支付类专用：直接记 {@link AutoBlackRecord#PERMANENT}，永不自动解禁。
+     * <p>{@code retry} 一并置为 {@link #BLACKLIST_MAX_RETRY}，即使日后被别的路径按常规拉黑也不会被解禁。
+     */
+    private static void recordAutoBlackPermanent(String module, String listTitle, String taskTitle) {
+        try {
+            String key = autoBlackKey(module, listTitle, taskTitle);
+            AutoBlackListMap.ensureLoaded();
+            AutoBlackRecord record = new AutoBlackRecord();
+            record.hits = 0;
+            record.lastDay = todayIndex();
+            record.retry = BLACKLIST_MAX_RETRY;
+            record.blackDay = AutoBlackRecord.PERMANENT;
             AutoBlackListMap.put(key, record.format());
             AutoBlackListMap.save();
         } catch (Throwable t) {

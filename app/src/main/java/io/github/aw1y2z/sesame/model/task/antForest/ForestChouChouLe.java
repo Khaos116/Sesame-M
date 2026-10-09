@@ -9,6 +9,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import io.github.aw1y2z.sesame.hook.Toast;
+import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy;
+import io.github.aw1y2z.sesame.data.task.TaskAward;
+import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy.Outcome;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
@@ -106,8 +109,12 @@ public class ForestChouChouLe {
                                     doublecheck = true;
                                 }
                             } else {
-                                //检查并标记黑名单任务
-                                MessageUtil.checkResultCodeAndMarkTaskBlackList("AntForestHuntTaskList", taskName, sginRes);
+                                // 领奖收口：先按任务列表复核"已领到"，未确认才交自动拉黑（顺序由 TaskAward 固定）
+                                TaskAward.confirmReceivedOrBlackList("森林寻宝🎖️",
+                                        k -> probeChouChouLeStatus(sceneCode, taskSceneCode, taskType), taskName,
+                                        taskName,
+                                        () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("AntForestHuntTaskList", taskName, sginRes),
+                                        msg -> Log.forest(msg));
                             }
                             continue;
                         }
@@ -149,6 +156,11 @@ public class ForestChouChouLe {
                                 }
                             }
                         }
+                        // 周期/持续型任务：跳过，不尝试也不拉黑
+                        if (TaskAttemptPolicy.isCyclicTask(taskBaseInfo)) {
+                            Log.i(TAG, "森林寻宝⏭️跳过周期任务[" + taskName + "]");
+                            continue;
+                        }
                         // ==================== 活力值兑换任务 =====================
                         if (taskType.equals("NORMAL_DRAW_EXCHANGE_VITALITY") && taskStatus.equals("TODO")) {
                             //先判断活力值是否大于20
@@ -184,7 +196,7 @@ public class ForestChouChouLe {
                         if ((taskType.startsWith("FOREST_NORMAL_DRAW") || taskType.startsWith("FOREST_ACTIVITY_DRAW")) && taskStatus.equals("TODO")) {
                             TimeUtil.sleep(1000);
                             // 三条腿见 chouChouLeFinishTask（XLIGHT=广告类先走 4Chouchoule，其余先走 opengreen）
-                            if (chouChouLeFinishTask(taskType, taskSceneCode, taskName, taskType.contains("XLIGHT"))) {
+                            if (chouChouLeFinishTask(taskType, taskSceneCode, taskName, taskType.contains("XLIGHT"), sceneCode)) {
                                 doublecheck = true;
                             }
                             continue;
@@ -192,7 +204,7 @@ public class ForestChouChouLe {
                         if (taskStatus.equals("TODO")) {
                             //兜底完成任务操作（三条腿见 chouChouLeFinishTask，非 XLIGHT 先走 opengreen）
                             TimeUtil.sleep(1000);
-                            if (chouChouLeFinishTask(taskType, taskSceneCode, taskName, false)) {
+                            if (chouChouLeFinishTask(taskType, taskSceneCode, taskName, false, sceneCode)) {
                                 doublecheck = true;
                             }
                         }
@@ -299,7 +311,57 @@ public class ForestChouChouLe {
      *
      * @return 已成功或已触发（true 时调用方应 {@code doublecheck = true} 重拉列表核对）
      */
-    private boolean chouChouLeFinishTask(String taskType, String taskSceneCode, String taskName, boolean xlight) {
+    private boolean chouChouLeFinishTask(String taskType, String taskSceneCode, String taskName, boolean xlight,
+                                         String activitySceneCode) {
+        // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
+        // 完成判定以任务列表为准（探针复核），响应不可信
+        Outcome outcome = TaskAttemptPolicy.handle("forest::chouchoule::" + taskSceneCode + "/" + taskType, taskName, null,
+                () -> attemptChouChouLeTask(taskType, taskSceneCode, taskName, xlight), Log::forest,
+                new TaskAttemptPolicy.Site("AntForestHuntTaskList", "森林寻宝", taskType, taskSceneCode,
+                        (k) -> probeChouChouLeStatus(activitySceneCode, taskSceneCode, taskType)));
+        return outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
+    }
+
+    /** 列表状态探针：用与本场景相同的表达式重拉寻宝任务列表，按 sceneCode+taskType 匹配该任务当前状态。 */
+    private TaskAttemptPolicy.ProbeResult probeChouChouLeStatus(String activitySceneCode, String taskSceneCode,
+                                                                String taskType) {
+        try {
+            JSONObject jo = new JSONObject(AntForestRpcCall.listTaskopengreen(activitySceneCode + "_TASK", "task_entry"));
+            if (!MessageUtil.checkSuccess(TAG, jo) || !jo.has("taskInfoList")) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            JSONArray taskList = jo.optJSONArray("taskInfoList");
+            if (taskList == null) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            for (int i = 0; i < taskList.length(); i++) {
+                JSONObject taskBaseInfo = taskList.getJSONObject(i).optJSONObject("taskBaseInfo");
+                if (taskBaseInfo == null) {
+                    continue;
+                }
+                if (!taskSceneCode.equals(taskBaseInfo.optString("sceneCode"))
+                        || !taskType.equals(taskBaseInfo.optString("taskType"))) {
+                    continue;
+                }
+                String status = taskBaseInfo.optString("taskStatus");
+                if ("FINISHED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.FINISHED;
+                }
+                if ("RECEIVED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
+                }
+                return TaskAttemptPolicy.ProbeResult.TODO;
+            }
+            // 任务已从列表消失：视为已完成且已领
+            return TaskAttemptPolicy.ProbeResult.GONE;
+        } catch (Throwable t) {
+            Log.err(TAG, "probeChouChouLeStatus err:", t);
+            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        }
+    }
+
+    /** 森林寻宝/抽抽乐完成上报：两种接口互为兜底，做不了不拉黑 */
+    private Outcome attemptChouChouLeTask(String taskType, String taskSceneCode, String taskName, boolean xlight) {
         try {
             JSONObject result = new JSONObject(xlight
                     ? AntForestRpcCall.finishTask4Chouchoule(taskType, taskSceneCode)
@@ -313,18 +375,21 @@ public class ForestChouChouLe {
             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntForestHuntTaskList", taskName, result);
             if (MessageUtil.checkSuccess(TAG, result)) {
                 Log.forest("森林寻宝🧾完成[" + taskName + "]");
-                return true;
+                return Outcome.DONE;
             }
+            if (MessageUtil.isRetryable(result) || MessageUtil.isServerBusy(result)) {
+                return Outcome.RETRY;
+            }
+            // 不支持rpc调用（400000040）→ 由 TaskAttemptPolicy 代为伪申报
             if (TaskAlternative.hit(result, taskSceneCode)) {
-                TaskAlternative.trigger(null, taskType, taskName, taskType, taskSceneCode,
-                        "森林寻宝", msg -> Log.forest(msg));
-                return true;
+                return Outcome.UNSUPPORTED;
             }
             Log.other("森林寻宝⚠️未完成[" + taskName + "]#taskType=" + taskType);
+            return Outcome.UNABLE;
         } catch (Throwable t) {
             Log.err(TAG, "chouChouLeFinishTask err:", t);
         }
-        return false;
+        return Outcome.RETRY;
     }
 
     private String shareComponentRecall(String sceneCode, String shareId) {

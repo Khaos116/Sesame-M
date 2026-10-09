@@ -6,13 +6,10 @@ import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.Status;
 
 /**
- * 金豆兑换处理。
+ * 金豆兑换处理：两个入口共用 {@code goldenbean.manureExchange}，农场入口消耗肥料、炼金入口消耗芝麻粒。
  * <p>
- * 两个入口共用 {@code com.alipay.goldenbean.manureExchange} 接口：农场入口消耗肥料，
- * 芝麻炼金入口消耗芝麻粒。请求参数 exchangeBeanAmount 表示希望换到的金豆数量，
- * 实际到账以响应中的 beanDelta 为准。
- * <p>
- * 兑换量 = min(服务端可兑换额度, 用户配置的单日上限剩余)；上限为 0 表示不限制。
+ * 请求参数 {@code exchangeBeanAmount} 是希望换到的金豆数（不是消耗量），实际到账以 {@code beanDelta} 为准；
+ * 兑换量 = min(服务端可兑换额度, 配置的单日上限剩余)，上限 0 表示不限。
  */
 public final class GoldenBeansExchange {
 

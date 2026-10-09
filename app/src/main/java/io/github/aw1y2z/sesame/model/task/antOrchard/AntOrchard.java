@@ -9,6 +9,8 @@ import io.github.aw1y2z.sesame.entity.AlipayUser;
 import io.github.aw1y2z.sesame.data.ModelFields;
 import io.github.aw1y2z.sesame.data.ModelGroup;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
+import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy;
+import io.github.aw1y2z.sesame.data.task.TaskAward;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
@@ -53,27 +55,6 @@ public class AntOrchard extends ModelTask {
     private static final ModelGroup GROUP = ModelGroup.ORCHARD;
     private String[] wuaList;
     private String userId;
-
-    // 任务黑名单：某些广告/外跳类任务后端不支持 finishTask 或需要前端行为配合
-    //groupId或者title
-    private static final Set<String> ORCHARD_TASK_BLACKLIST = new HashSet<>();
-
-    static {
-        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_KUAISHOU_MAX");  // 逛一逛快手
-        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_DIAOYU1");       // 钓鱼1次
-        ORCHARD_TASK_BLACKLIST.add("ZHUFANG3IN1");                  // 添加农场小组件并访问
-        ORCHARD_TASK_BLACKLIST.add("逛助农好货得肥料");                        // 逛助农好货得肥料
-        ORCHARD_TASK_BLACKLIST.add("12173");                        // 买好货
-        ORCHARD_TASK_BLACKLIST.add("70000");                        // 逛好物最高得1500肥料（XLIGHT）
-        ORCHARD_TASK_BLACKLIST.add("TOUTIAO");                      // 逛一逛今日头条
-        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_ZADAN10_3000");  // 农场对对碰
-        ORCHARD_TASK_BLACKLIST.add("TAOBAO2");                      // 逛一逛闲鱼
-        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_JIUYIHUISHOU_VISIT");  // 旧衣服回收
-        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_SHOUJISHUMAHUISHOU");  // 数码回收
-        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_AQ_XIAZAI");           // 下载AQ
-        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_WAIMAIMIANDAN");      // 逛一逛闪购外卖
-        ORCHARD_TASK_BLACKLIST.add("逛一逛签到领现金");      // 逛一逛签到领现金
-    }
 
     // 模型字段定义
     private IntegerModelField executeInterval;
@@ -241,6 +222,43 @@ public class AntOrchard extends ModelTask {
         }
     }
 
+    /** 列表状态探针：重拉农场抽抽乐任务列表，按 sceneCode+taskType 匹配该任务当前状态。 */
+    private static TaskAttemptPolicy.ProbeResult probeOrchardChouChouLeStatus(String activitySceneCode,
+                                                                             String taskSceneCode, String taskType) {
+        try {
+            JSONObject jo = new JSONObject(
+                    AntOrchardRpcCall.listTaskantorchard(activitySceneCode + "_TASK", "antorchard"));
+            if (!MessageUtil.checkSuccess(TAG, jo)) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
+            if (taskInfoList == null) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            for (int i = 0; i < taskInfoList.length(); i++) {
+                JSONObject taskInfo = taskInfoList.optJSONObject(i);
+                JSONObject taskBaseInfo = taskInfo == null ? null : taskInfo.optJSONObject("taskBaseInfo");
+                if (taskBaseInfo == null || !taskSceneCode.equals(taskBaseInfo.optString("sceneCode"))
+                        || !taskType.equals(taskBaseInfo.optString("taskType"))) {
+                    continue;
+                }
+                String status = taskBaseInfo.optString("taskStatus");
+                if ("FINISHED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.FINISHED;
+                }
+                if ("RECEIVED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
+                }
+                return TaskAttemptPolicy.ProbeResult.TODO;
+            }
+            // 任务已从列表消失：视为已完成且已领
+            return TaskAttemptPolicy.ProbeResult.GONE;
+        } catch (Throwable t) {
+            Log.err(TAG, "probeOrchardChouChouLeStatus err:", t);
+            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        }
+    }
+
     private void orchardChouChouLeScene(String activityId, String drawScenename, String sceneCode) {
         try {
             boolean doublecheck;
@@ -291,7 +309,12 @@ public class AntOrchard extends ModelTask {
                                 doublecheck = true;
                             }
                         } else {
-                            MessageUtil.checkResultCodeAndMarkTaskBlackList("OrchardChouChouLeTaskList", taskName, sginRes);
+                            // 领奖收口：先按任务列表复核"已领到"，未确认才交自动拉黑（顺序由 TaskAward 固定）
+                            TaskAward.confirmReceivedOrBlackList("农场抽抽乐🎖️",
+                                    k -> probeOrchardChouChouLeStatus(sceneCode, taskSceneCode, taskType), taskName,
+                                    taskName,
+                                    () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("OrchardChouChouLeTaskList", taskName, sginRes),
+                                    msg -> Log.farm(msg));
                         }
                     } else if ("TODO".equals(taskStatus)) {
                         // 第二种方式：尝试自动完成（小游戏/任务），两条腿互备，失败由 checkResultCodeAndMarkTaskBlackList 自动拉黑
@@ -459,14 +482,10 @@ public class AntOrchard extends ModelTask {
             //初始化AntOrchardTaskListMap
             AntOrchardTaskListMap.load();
             // 1. 定义黑名单（需要添加的任务）和白名单（需要移除的任务）
-            // 注：浏览/外跳类不再预置拉黑，交由自动拉黑机制判定；
-            // 需真实完成或存在风险的（旧衣回收、数码回收、下载APP、快手、签到领现金）保留
-            Set<String> blackList = new HashSet<>();
-            blackList.add("完成1笔旧衣回收");
-            blackList.add("下载蚂蚁阿福看健康攻略");
-            blackList.add("完成1单手机数码回收");
-            blackList.add("逛一逛快手");
-            blackList.add("逛一逛签到领现金");
+            // 注：浏览/外跳类、下载APP类不再预置拉黑，交由自动拉黑机制判定；
+            // 需真实完成或存在风险的（旧衣回收、数码回收）保留
+            // 预置黑名单登记在 MessageUtil（单一真相，配置页据此标注"默认"）
+            Set<String> blackList = MessageUtil.presetBlackList("AntOrchard", "AntOrchardTaskList");
             // 可继续添加更多黑名单任务
 
             Set<String> whiteList = new HashSet<>();// 从黑名单中移除该任务
@@ -511,7 +530,8 @@ public class AntOrchard extends ModelTask {
 
             // ============ 农场抽抽乐任务黑名单初始化 ============
             OrchardChouChouLeTaskListMap.load();
-            Set<String> chouChouLeBlackList = new HashSet<>();
+            // 预置黑名单登记在 MessageUtil（单一真相，配置页据此标注"默认"）
+            Set<String> chouChouLeBlackList = MessageUtil.presetBlackList("AntOrchard", "OrchardChouChouLeTaskList");
             Set<String> chouChouLeWhiteList = new HashSet<>();
             if (orchardChouChouLe) {
                 String res = AntOrchardRpcCall.enterDrawActivityantorchard("", "ANTORCHARD_DRAW_TIMES", "antorchard");
@@ -1053,6 +1073,16 @@ public class AntOrchard extends ModelTask {
                 }
 
                 if (TaskStatus.TODO.name().equals(taskStatus)) {
+                    // 底线：交易/支付类任务一律不申报、一次即**永久**拉黑。
+                    // taskId 与 groupId 都查（服务端两处键名不统一，实测 ORCHARD_NORMAL_CHONGZHI9 /
+                    // ORCHARD_NCLY_CHARGE1_XDDQ 这类"充值"任务正是靠这两个键识别的）。
+                    if (TaskAlternative.isTransactionTask(jo.optString("taskId"))
+                            || TaskAlternative.isTransactionTask(groupId)) {
+                        MessageUtil.MarkTaskBlackListPermanent("AntOrchard", "AntOrchardTaskList",
+                                "农场肥料任务", title);
+                        Log.farm("肥料任务⏭️交易/履约类[" + title + "]#不申报，已永久拉黑");
+                        continue;
+                    }
                     if (!finishOrchardTask(jo)) {
                         continue;
                     }
@@ -1503,28 +1533,46 @@ public class AntOrchard extends ModelTask {
             String result = AntOrchardRpcCall.yebPlantSceneRevenuePage();
             JSONObject jo = new JSONObject(result);
             if (!MessageUtil.checkResultCode(TAG, jo)) {
-                // 服务端偶发 error 3000「系统出错，正在排查」，属临时故障，记流程日志即可
-                Log.record("摇钱树收益详情未获取：" + (result.length() > 200 ? result.substring(0, 200) : result));
+                // 服务端常回 error 3000「系统出错，正在排查」⇒ 详情列表拿不到。
+                // 但调用点的判据 yebSceneActivityInfo.revenueNotReceived=true 本身就是"有未领收益"的证据，
+                // 故不再直接放弃，改为直接触发摇钱树（没收益时服务端会拒绝，不会误领）。
+                Log.record("摇钱树收益详情未获取，改走直接触发：" + (result.length() > 200 ? result.substring(0, 200) : result));
+                triggerYebMoneyTreeOnce();
                 return;
             }
 
-            JSONArray revenueList = jo.getJSONArray("yebRevenueDetailList");
+            JSONArray revenueList = jo.optJSONArray("yebRevenueDetailList");
+            if (revenueList == null) {
+                Log.record("摇钱树收益详情结构异常：" + (result.length() > 200 ? result.substring(0, 200) : result));
+                triggerYebMoneyTreeOnce();
+                return;
+            }
             for (int i = 0; i < revenueList.length(); i++) {
                 JSONObject revenue = revenueList.getJSONObject(i);
-                if ("I".equals(revenue.getString("orderStatus"))) {
-                    String triggerResult = AntOrchardRpcCall.triggerYebMoneyTree();
-                    JSONObject triggerJo = new JSONObject(triggerResult);
-                    if (MessageUtil.checkResultCode(TAG, triggerJo)) {
-                        JSONObject awardInfo = triggerJo.getJSONObject("result").optJSONObject("awardInfo");
-                        if (awardInfo != null) {
-                            String amount = awardInfo.getString("totalAmount");
-                            Log.farm("芭芭农场🌳领取奖励[摇钱树]#获得[" + amount + "元余额宝收益]");
-                        }
-                    }
+                if ("I".equals(revenue.optString("orderStatus"))) {
+                    triggerYebMoneyTreeOnce();
                 }
             }
         } catch (Throwable t) {
             Log.err(TAG, "queryYebRevenueDetail err:", t);
+        }
+    }
+
+    /**
+     * 触发摇钱树领奖：无论成败都留痕（原实现失败时静默，导致"到底是没收益还是接口不通"无法判断）。
+     */
+    private void triggerYebMoneyTreeOnce() {
+        try {
+            String triggerResult = AntOrchardRpcCall.triggerYebMoneyTree();
+            JSONObject triggerJo = new JSONObject(triggerResult);
+            if (!MessageUtil.checkResultCode(TAG, triggerJo)) {
+                Log.record("摇钱树触发未成功：" + (triggerResult.length() > 200 ? triggerResult.substring(0, 200) : triggerResult));
+                return;
+            }
+            // 只记"已受理"：金额是触发响应当次返回的值，不作为"已到账收益"上报
+            Log.farm("💰领取奖励[摇钱树]");
+        } catch (Throwable t) {
+            Log.err(TAG, "triggerYebMoneyTree err:", t);
         }
     }
 

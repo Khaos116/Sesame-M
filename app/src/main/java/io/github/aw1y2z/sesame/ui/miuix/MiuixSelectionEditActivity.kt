@@ -53,6 +53,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.SelectOneModelField
 import io.github.aw1y2z.sesame.entity.IdAndName
 import io.github.aw1y2z.sesame.entity.KVNode
 import io.github.aw1y2z.sesame.util.Log
+import io.github.aw1y2z.sesame.util.MessageUtil
 import io.github.aw1y2z.sesame.util.ToastUtil
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TextField
@@ -198,6 +199,22 @@ fun SelectionEditContent(
     val options = initialState.first
     val selectedIds = initialState.second
     val initialCounts = initialState.third
+
+    // 黑名单来源标注（id -> "（手动）"/"（默认）"/"（自动）"/"（自动·永久）"）：进入页面时算一次，
+    // 避免在列表渲染循环里逐项查表。非黑名单字段反查不到目标，标注为空。
+    // 注意：候选项里含"从未拉黑"的任务，所以"手动"只标注**确实在黑名单里**的（进入页面时的选中集），
+    // 否则会把未拉黑的候选项全标成手动。
+    val blackListMarks: Map<String, String> = remember(modelCode, field.code, selectedIds) {
+        val target = MessageUtil.autoBlackListTarget(field.code) ?: return@remember emptyMap()
+        options.mapNotNull { opt ->
+            when (MessageUtil.blackListOrigin(target[0], field.code, opt.id)) {
+                MessageUtil.ORIGIN_AUTO_PERMANENT -> opt.id to "（自动·永久）"
+                MessageUtil.ORIGIN_AUTO -> opt.id to "（自动）"
+                MessageUtil.ORIGIN_PRESET -> opt.id to "（默认）"
+                else -> if (opt.id in selectedIds) opt.id to "（手动）" else null
+            }
+        }.toMap()
+    }
 
     // 诊断日志只写一次：放在 Composable 主体会导致每次重组都做 O(n) 的 value.toString() 并入队写盘。
     LaunchedEffect(Unit) {
@@ -392,7 +409,7 @@ fun SelectionEditContent(
                         ) {
                             if (single) {
                                 RadioButtonPreference(
-                                    title = opt.name,
+                                    title = opt.name + (blackListMarks[opt.id] ?: ""),
                                     selected = isChecked,
                                     onClick = {
                                         sel = setOf(opt.id)
@@ -401,7 +418,7 @@ fun SelectionEditContent(
                                 )
                             } else {
                                 CheckboxPreference(
-                                    title = opt.name,
+                                    title = opt.name + (blackListMarks[opt.id] ?: ""),
                                     checked = isChecked,
                                     onCheckedChange = { checked ->
                                         if (checked) {

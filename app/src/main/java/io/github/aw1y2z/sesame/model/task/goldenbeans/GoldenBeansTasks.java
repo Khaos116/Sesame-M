@@ -11,6 +11,9 @@ import java.util.Set;
 import io.github.aw1y2z.sesame.data.ConfigV2;
 import io.github.aw1y2z.sesame.data.ModelFields;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
+import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy;
+import io.github.aw1y2z.sesame.data.task.TaskAward;
+import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy.Outcome;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
@@ -21,7 +24,6 @@ import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 /**
  * 金豆夺宝的入口日常与任务列表处理。
  * <p>
- * 每个入口独立执行：主页查询 → 每日签到 → 营销弹窗 → 任务列表。
  * 任务列表只处理 sceneCode 与本入口一致的任务；需真实付款、换豆承接类任务直接跳过；
  * 其余 TODO 任务走服务端完成契约，失败且命中不可重试错误时自动加入黑名单。
  */
@@ -62,7 +64,7 @@ public final class GoldenBeansTasks {
     /**
      * 处理单个入口。
      *
-     * @return 该入口的任务列表是否已无待推进项
+     * @return 该入口是否已无待推进任务
      */
     public boolean processEntry(GoldenBeansEntry entry, int interval,
                                 boolean signEnabled, boolean popupEnabled, boolean taskEnabled) {
@@ -304,8 +306,13 @@ public final class GoldenBeansTasks {
                 }
 
                 if (STATUS_TODO.equals(taskStatus)) {
-                    if (isPayTask(taskId)) {
-                        Log.record("金豆[" + entry.alias + "]任务⏭️[" + taskName + "]需真实付款#跳过");
+                    // 底线：付款类/交易类一律不申报、一次即**永久**拉黑
+                    // （原先只"跳过"：不写黑名单，解禁周期外还会反复回到待办）
+                    if (isPayTask(taskId) || TaskAlternative.isTransactionTask(taskId)) {
+                        MessageUtil.MarkTaskBlackListPermanent("goldenbeans", "GoldenBeansTaskList",
+                                "金豆夺宝任务", taskName);
+                        Log.goldenBeans("金豆[" + entry.alias + "]任务⏭️[" + taskName
+                                + "]交易/支付类#不申报，已永久拉黑");
                         continue;
                     }
                     if (goldenbeansRpcCall.TASK_TYPE_EXCHANGE.equals(taskId)) {
@@ -399,34 +406,50 @@ public final class GoldenBeansTasks {
             Log.i("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]缺少taskId#跳过");
             return false;
         }
+        // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
+        // 完成与否一律以任务列表为准（探针 probeGoldenBeansStatus 复核），响应不可信；
+        // 兜底后的核对仍交给本模块的 verifyPendingTasks，故 listField 传 null（黑名单由 verify 管）
+        Outcome outcome = TaskAttemptPolicy.handle("goldenbeans::" + entry.alias + "/" + taskId, taskName, null,
+                () -> attemptFinishTask(entry, taskId, taskName), msg -> Log.goldenBeans(msg),
+                new TaskAttemptPolicy.Site(null, "金豆[" + entry.alias + "]任务", null, entry.taskSceneCode,
+                        (k) -> probeGoldenBeansStatus(entry, taskId)));
+        return outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
+    }
+
+    /** 任务提交：做不了的不拉黑、交给兜底方案；其它错误码才算真做不了（仍计入自动拉黑） */
+    private Outcome attemptFinishTask(GoldenBeansEntry entry, String taskId, String taskName) {
         try {
             JSONObject jo = GoldenBeansSupport.parse(goldenbeansRpcCall.submitTaskOf(
                     entry.bizType, entry.source, entry.taskSceneCode, taskId));
             if (GoldenBeansSupport.ok(jo)) {
                 Log.goldenBeans("金豆[" + entry.alias + "]任务🧾完成[" + taskName + "]");
-                return true;
+                return Outcome.DONE;
             }
             String failMessage = GoldenBeansSupport.describe(jo);
-            // 另一种实现方案（见 TaskAlternative）；乐园游戏类任务会被 finishTaskantorchard 以 400000040 拒绝
+            if (MessageUtil.isRetryable(jo) || MessageUtil.isServerBusy(jo)) {
+                return Outcome.RETRY;
+            }
+            // 另一种实现方案（见 TaskAlternative）；乐园游戏类任务会被 finishTaskantorchard 以 400000040 拒绝。
+            // 本模块自行伪申报并登记同轮核对（verifyPendingTasks），故返回 FORGED 而不是交给通用类
             if (TaskAlternative.hit(jo, entry.taskSceneCode)) {
                 TaskAlternative.trigger(pendingVerifyTasks, taskId, taskName, taskId, entry.taskSceneCode,
                         goldenbeansRpcCall.VERSION, "金豆[" + entry.alias + "]任务", msg -> Log.goldenBeans(msg));
-                return false;
+                return Outcome.FORGED;
             }
             // 其它错误码（支付/配置类）= 真做不了，仍计入自动拉黑
             MessageUtil.checkResultCodeAndMarkTaskBlackList("GoldenBeansTaskList", taskId, jo);
             Log.goldenBeans("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]完成失败[" + failMessage + "]");
+            return Outcome.UNABLE;
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "finishTask err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
         }
-        return false;
+        return Outcome.RETRY;
     }
 
     /**
      * 核对「已触发但响应不可信」的任务：等几秒后重拉本入口任务列表，**仍未完成**的才计入自动拉黑。
-     * <p>为什么以列表为准：{@code doFarmTask} 会回 102「服务器正在开小差」但任务其实已生效，
-     * 服务端是异步推进状态的，只有列表里的 {@code taskStatus} 才是最终判据。
+     * 以列表为准的原因：{@code doFarmTask} 会回 102 但任务其实已生效，服务端异步推进状态。
      *
      * @return 是否有任务确认完成（用于决定是否再同步一次列表）
      */
@@ -461,6 +484,42 @@ public final class GoldenBeansTasks {
         });
     }
 
+    /** 列表状态探针：重拉本入口任务列表，按 taskId 匹配；仅待办视为未完成（消失即已完成）。 */
+    private TaskAttemptPolicy.ProbeResult probeGoldenBeansStatus(GoldenBeansEntry entry, String taskId) {
+        try {
+            JSONObject syncJo = GoldenBeansSupport.parse(goldenbeansRpcCall.pullOf(
+                    entry.bizType, entry.source, "FARM_TASK", "TASK_LIST"));
+            if (!GoldenBeansSupport.ok(syncJo)) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            JSONArray taskList = syncJo.optJSONArray("taskList");
+            if (taskList == null) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            for (int i = 0; i < taskList.length(); i++) {
+                JSONObject task = taskList.optJSONObject(i);
+                if (task == null || !taskId.equals(task.optString("taskId", "").trim())) {
+                    continue;
+                }
+                String status = task.optString("taskStatus", "").trim().toUpperCase();
+                if (STATUS_TODO.equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.TODO;
+                }
+                // DONE 与 RECEIVED 同义（本文件状态分派处：两者都算"已领取"），FINISHED / TO_RECEIVE 才是"待领"
+                if (STATUS_RECEIVED.equals(status) || STATUS_DONE.equals(status) || "HAS_RECEIVED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
+                }
+                return TaskAttemptPolicy.ProbeResult.FINISHED;
+            }
+            // 任务已从列表消失：视为已完成且已领
+            return TaskAttemptPolicy.ProbeResult.GONE;
+        } catch (Throwable th) {
+            Log.i(GoldenBeansSupport.TAG, "probeGoldenBeansStatus err:");
+            Log.printStackTrace(GoldenBeansSupport.TAG, th);
+            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        }
+    }
+
     private boolean claimAward(GoldenBeansEntry entry, String taskId, String taskName) {
         if (taskId == null || taskId.isEmpty()) {
             Log.i("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]缺少taskId#跳过领奖");
@@ -474,8 +533,13 @@ public final class GoldenBeansTasks {
                         + GoldenBeansSupport.awardText(jo));
                 return true;
             }
-            // 领奖失败同样按不可重试错误自动拉黑，避免每轮重复请求
-            MessageUtil.checkResultCodeAndMarkTaskBlackList("GoldenBeansTaskList", taskId, jo);
+            // 领奖收口：先按任务列表复核"已领到"，未确认才交自动拉黑（顺序由 TaskAward 固定）
+            if (TaskAward.confirmReceivedOrBlackList("金豆[" + entry.alias + "]任务🎖️领取",
+                    k -> probeGoldenBeansStatus(entry, taskId), taskId, taskName,
+                    () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("GoldenBeansTaskList", taskId, jo),
+                    msg -> Log.goldenBeans(msg))) {
+                return true;
+            }
             Log.goldenBeans("金豆[" + entry.alias + "]任务⚠️领取[" + taskName + "]失败["
                     + GoldenBeansSupport.describe(jo) + "]");
         } catch (Throwable th) {
@@ -485,12 +549,7 @@ public final class GoldenBeansTasks {
         return false;
     }
 
-    /**
-     * 初始化任务黑白名单。
-     * <p>
-     * 先把两个入口的任务列表同步到本地 idMap（供配置界面选择），
-     * 再把默认黑名单任务写入模块黑名单配置。
-     */
+    /** 把两个入口的任务列表同步到本地 idMap（供配置界面选择），并写入默认黑名单 */
     public void initTaskListMap() {
         try {
             GoldenBeansTaskListMap.load();
@@ -500,11 +559,12 @@ public final class GoldenBeansTasks {
             // 3) 芝麻炼金游戏任务：暂时从黑名单移除，让 finishTask() 尝试完成
             Map<String, String> defaultBlackList = new LinkedHashMap<>();
             defaultBlackList.put("GOLDEN_BEAN_TASK_XIANSHANGZHIFU", "线上支付");
-            defaultBlackList.put("GOLDEN_BEAN_TASK_XIANXIAZHIFU", "到店/线下支付");
             defaultBlackList.put("GOLDEN_BEAN_TASK_YUEBAO", "余额宝真实业务动作");
             defaultBlackList.put("TEST_PUSH_SUBSCRIBE", "订阅消息需真实确认");
             // 芝麻炼金游戏任务已移除黑名单，将通过 finishTask() API 尝试自动完成
-            Set<String> defaultKeys = new LinkedHashSet<>(defaultBlackList.keySet());
+            // 预置黑名单以 MessageUtil 登记为准（单一真相，配置页据此标注"默认"）；
+            // 上面的 defaultBlackList 仅剩"展示名"用途（下面灌本地 idMap 用）
+            Set<String> defaultKeys = MessageUtil.presetBlackList("goldenbeans", "GoldenBeansTaskList");
 
             for (Map.Entry<String, String> item : defaultBlackList.entrySet()) {
                 GoldenBeansTaskListMap.add(item.getKey(), item.getValue());
