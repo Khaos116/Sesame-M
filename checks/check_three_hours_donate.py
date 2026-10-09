@@ -136,7 +136,7 @@ public class ThreeHoursDonateCheck {
   reset();unstable=true;run();assert donations==0;
   reset();RuntimeInfo.writable=false;run();assert donations==0;
   reset();AuthCodeHelper.empty=true;run();assert logins==0&&donations==0;
-  reset();http=302;run();assert donations==0&&opened==1;
+  reset();http=302;run();assert donations==0&&opened==1;assert Log.messages.contains("3hours.taobao.com/")&&Log.messages.contains("HTTP=302")&&Log.messages.contains("尚未提交")&&!Log.messages.contains("保留未确认回执"):"pre-donation failure incorrectly claimed a receipt";
   reset();http=429;run();assert donations==0;
   reset();huge=true;run();assert donations==0;
   for(String mode:new String[]{"ack","ackType","ackTotal","ackRemaining","todayAfter","wrongDelta"}){reset();failure=mode;run();assert donations==1&&!RuntimeInfo.getInstance().getString(RECEIPT).isEmpty():mode;MyUtils.offset++;Status.flags.clear();Status.counts.clear();run();assert donations==1;noSecrets();}

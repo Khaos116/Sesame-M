@@ -29,15 +29,22 @@ public class FarmLimitCheck {
  static class Bool {boolean getValue(){return false;}}Bool useFullRewardTool=new Bool();String ownerFarmId="farm";boolean useBigEaterRewardTool(){throw new AssertionError("disabled full-stock policy");}
  enum ToolType { ACCELERATETOOL, NEWEGGTOOL,BIG_EATER_TOOL; String nickName(){return name();} }
  static class MyUtils { static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}} }
- static class MessageUtil { static boolean checkMemo(String t,JSONObject j){return "SUCCESS".equals(j.optString("memo"));} }
+ static class MessageUtil { static boolean checkMemo(String t,JSONObject j){return "SUCCESS".equals(j.optString("memo"));} static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}static boolean checkResultCode(String t,JSONObject j){return checkSuccess(t,j);}static void checkResultCodeAndMarkTaskBlackList(String k,String title,JSONObject j){} }
  static class TimeUtil { static boolean cancel; static void sleep(long n){if(cancel)throw new TaskCancelledException();} }
- static class Log { static void farm(String s){} static void err(String t,String s,Throwable e){throw new AssertionError(e);} }
+ static class Log { static List<String> lines=new ArrayList<>();static void record(String s){lines.add(s);} static void farm(String s){lines.add(s);}static void i(String s){lines.add(s);} static void err(String t,String s,Throwable e){throw new AssertionError(e);} }
+ static class ApplicationHook {static JSONObject request;static String requestString(String method,String body){request=new JSONArray(body).optJSONObject(0);return "{}";}}
+ static class TaskAlternative {static boolean isTransactionTask(String key){return key.equals("paid");}}
+ static class ProductionRpc {static final String VERSION="source-version";@@RPC@@}
  static class AntFarmRpcCall {
    static int reads,uses; static String reply="{\"memo\":\"SUCCESS\"}";
    static String listFarmTool(){reads++;return "{\"memo\":\"SUCCESS\",\"toolList\":[{\"toolType\":\"ACCELERATETOOL\",\"toolCount\":9,\"toolId\":\"a\"},{\"toolType\":\"NEWEGGTOOL\",\"toolCount\":1,\"toolId\":\"b\"}]}";}
-   static String useFarmTool(String f,String id,String type){uses++;return reply;}
- }
- @@METHOD@@
+    static String useFarmTool(String f,String id,String type){uses++;return reply;}
+    static String route;static int completions;static boolean cancelTask;
+    static String doFarmTask(String biz){route="legacy:"+biz;completions++;if(cancelTask)throw new TaskCancelledException();return "{\"success\":true}";}
+    static String finishTask(String type,String scene){route=scene+":"+type;completions++;return "{\"success\":true}";}
+  }
+ boolean doVideoTask(String title){AntFarmRpcCall.route="video";return true;}boolean doAnswerTask(String title){AntFarmRpcCall.route="answer";return true;}
+  @@METHOD@@
  public static void main(String[] args) {
    FarmLimitCheck f=new FarmLimitCheck();
    ModelTask.task.f.n=0; assert !f.useFarmTool("farm",ToolType.ACCELERATETOOL); assert AntFarmRpcCall.reads==0;
@@ -56,13 +63,23 @@ public class FarmLimitCheck {
    Status.INSTANCE=new Status(); assert Status.canUseAccelerateToolToday();
    TimeUtil.cancel=true; int before=AntFarmRpcCall.uses;
    try{f.useFarmTool("farm",ToolType.ACCELERATETOOL);throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}
-   assert AntFarmRpcCall.uses==before;
+    assert AntFarmRpcCall.uses==before;
+    ProductionRpc.doFarmTask("quote\"\\");assert ApplicationHook.request.optString("bizKey").equals("quote\"\\")&&ApplicationHook.request.optString("version").equals("source-version")&&ApplicationHook.request.optString("requestType").equals("NORMAL");
+    ApplicationHook.request=null;ProductionRpc.doFarmTask("paid");assert ApplicationHook.request==null : "transaction exclusion lost";
+    for(String id:List.of("COOK","SLEEP","HIRE_LOW_ACTIVITY","XJLY_xxljy","XJLYKBX1_sl90")){AntFarmRpcCall.completions=0;assert !f.doFarmTask(new JSONObject().put("taskId",id).put("bizKey",id).put("title",id))&&AntFarmRpcCall.completions==0 : "real owner task sent generic RPC: "+id;}
+    JSONObject task=new JSONObject().put("taskId","SHANGYEHUA_90_1").put("bizKey","SHANGYEHUA_90_1").put("title","商业化").put("deliveryControlItem",new JSONObject().put("iepTaskTracer","taskType:SHANGYEHUA_90_1~sceneCode:ANTFARM_FOOD_TASK"));
+    assert f.doFarmTask(task)&&AntFarmRpcCall.route.equals("ANTFARM_FOOD_TASK:SHANGYEHUA_90_1");
+    task.optJSONObject("deliveryControlItem").put("iepTaskTracer","taskType:other~sceneCode:ANTFARM_FOOD_TASK");assert f.doFarmTask(task)&&AntFarmRpcCall.route.startsWith("legacy:") : "mismatched tracer used direct finish";
+    for(String scene:List.of("ANTFARM_DAILY_DRAW_TASK","ANTFARM_IP_DRAW_TASK")){task.optJSONObject("deliveryControlItem").put("iepTaskTracer","sceneCode:"+scene);AntFarmRpcCall.completions=0;assert !f.doFarmTask(task)&&AntFarmRpcCall.completions==0;}
+    task.remove("deliveryControlItem");task.put("taskId","VIDEO_TASK");assert f.doFarmTask(task)&&AntFarmRpcCall.route.equals("video");task.put("taskId","ANSWER");assert f.doFarmTask(task)&&AntFarmRpcCall.route.equals("answer");
+    task.put("taskId","ordinary");AntFarmRpcCall.cancelTask=true;try{f.doFarmTask(task);throw new AssertionError("task cancellation swallowed");}catch(TaskCancelledException expected){}
    System.out.println("PASS configurable cap, default8, unlimited/zero, reset, server limit, success accounting, other tools, malformed response and cancellation");
  }
 }
 '''
 code=code.replace("@@STATUS@@",method("util/Status.java","public static synchronized Boolean canUseAccelerateToolToday()")+method("util/Status.java","public static synchronized void useAccelerateToolToday()"))
-code=code.replace("@@METHOD@@",method(farm,"private Boolean useFarmTool("))
+code=code.replace("@@METHOD@@",method(farm,"private Boolean useFarmTool(")+method(farm,"private static String farmTaskRoute(")+method(farm,"private static boolean isUnsupportedFarmTask(")+method(farm,"private Boolean doFarmTask("))
+code=code.replace("@@RPC@@",method("model/task/antFarm/AntFarmRpcCall.java","public static String doFarmTask(String bizKey)"))
 cache=Path(os.environ.get("GRADLE_USER_HOME",Path.home()/".gradle"))/"caches/modules-2/files-2.1/org.json/json"
 jar=sorted(p for p in cache.glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar","-javadoc.jar")))[-1]
 with tempfile.TemporaryDirectory(prefix="sesame-farm-limit-") as tmp:

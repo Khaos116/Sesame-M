@@ -35,6 +35,8 @@ final class ThreeHoursDonate {
     private final CookieManager cookies = new CookieManager(null, CookiePolicy.ACCEPT_ORIGINAL_SERVER);
     private String sid, csrf;
     private long expires;
+    private String stage = "初始化", businessState = "";
+    private int lastHttpCode = -1;
 
     static void run(boolean enabled) {
         if (!enabled || UserIdMap.getCurrentUid() == null || UserIdMap.getCurrentUid().isEmpty()) return;
@@ -43,7 +45,12 @@ final class ThreeHoursDonate {
         if (Integer.toString(work.day).equals(work.runtime.getString(DONE))) return;
         try { work.donate(); }
         catch (TaskCancelledException cancelled) { throw cancelled; }
-        catch (Exception error) { Log.record("3小时捐步：授权、网络或响应校验失败（" + error.getClass().getSimpleName() + "），保留未确认回执"); }
+        catch (Exception error) {
+            Log.record("3小时捐步：阶段=" + work.stage + "，HTTP=" + work.lastHttpCode + work.businessState
+                    + "，异常=" + error.getClass().getSimpleName()
+                    + (error.getCause() == null ? "" : "，原因类型=" + error.getCause().getClass().getSimpleName())
+                    + (work.runtime.getString(RECEIPT).isEmpty() ? "；捐步尚未提交，无待确认回执" : "；已预留捐步回执，保留未确认回执，不重复提交"));
+        }
     }
 
     private static int day() {
@@ -59,6 +66,7 @@ final class ThreeHoursDonate {
 
     private String authCode() throws Exception {
         current();
+        stage = "获取当前账号授权";
         String code = AuthCodeHelper.getAuthCode(APP_ID);
         current();
         return credential(code);
@@ -144,6 +152,9 @@ final class ThreeHoursDonate {
 
     private JSONObject request(String address, JSONObject body) throws Exception {
         JSONObject root = MyUtils.newJSONObject(http(address, body));
+        String code = root.optString("code", "");
+        businessState = "，业务code=" + (code.matches("-?[0-9]{1,6}") ? code : "缺失或格式无效")
+                + "，success=" + (root.opt("success") instanceof Boolean ? root.optBoolean("success") : "缺失或格式无效");
         if (!Boolean.TRUE.equals(root.opt("success")) || !"200".equals(root.optString("code"))) throw new IOException();
         return root;
     }
@@ -151,6 +162,9 @@ final class ThreeHoursDonate {
     private String http(String address, JSONObject body) throws Exception {
         current();
         URL url = new URL(address);
+        stage = (body == null ? "GET " : "POST ") + url.getHost() + url.getPath();
+        lastHttpCode = -1;
+        businessState = "";
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         try {
             conn.setConnectTimeout(5000); conn.setReadTimeout(8000); conn.setInstanceFollowRedirects(false); conn.setUseCaches(false);
@@ -169,7 +183,8 @@ final class ThreeHoursDonate {
                 try (OutputStream out = conn.getOutputStream()) { current(); out.write(bytes); }
             }
             current();
-            if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) throw new IOException();
+            lastHttpCode = conn.getResponseCode();
+            if (lastHttpCode != HttpURLConnection.HTTP_OK) throw new IOException();
             List<String> freshCookies = new ArrayList<>();
             for (Map.Entry<String, List<String>> header : conn.getHeaderFields().entrySet()) {
                 if (header.getKey() == null || !"Set-Cookie".equalsIgnoreCase(header.getKey()) || header.getValue() == null) continue;

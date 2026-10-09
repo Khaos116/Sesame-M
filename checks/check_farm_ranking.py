@@ -27,7 +27,7 @@ signatures = ["private static final class RankingSnapshot", "private static int 
               "private boolean confirmRankingDonation(", "private boolean dailyRankingDonation(",
               "private void scheduleRankingWatch(",
               "private Boolean donationCompetition(", "private boolean isCompetitionRoundActive("]
-signatures += ["private boolean donateToCompetition(", "private int queryProjectDonationNum(", "private void stealRankS2("]
+signatures += ["private boolean donateToCompetition(", "private int queryProjectDonationNum(", "private void stealRankS2(", "private void receiveCompetitionTaskAwards("]
 
 code = r'''
 import java.util.*;
@@ -66,8 +66,9 @@ public class FarmRankingCheck {
  static class MyUtils {static JSONObject newJSONObject(){return new JSONObject();}
    static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}
    static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.setTimeInMillis(System.now);return c;}}
- static class MessageUtil {static boolean checkMemo(String t,JSONObject o){return "SUCCESS".equals(o.optString("memo"));}}
- static class Log {static void record(String s){}static void farm(String s){}static void i(String s){}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
+ static class TimeUtil {static void sleep(long ms){}}
+ static class MessageUtil {static boolean checkSuccess(String t,JSONObject o){return Boolean.TRUE.equals(o.opt("success"));}static boolean checkMemo(String t,JSONObject o){return "SUCCESS".equals(o.optString("memo"));}}
+ static class Log {static List<String> lines=new ArrayList<>();static void record(String s){lines.add(s);}static void farm(String s){lines.add(s);}static void i(String s){}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
  static class ChildModelTask {String id;Runnable work;long at;ChildModelTask(String id,String g,Runnable work,Long at){this.id=id;this.work=work;this.at=at;}}
  Map<String,ChildModelTask> children=new HashMap<>();boolean hasChildTask(String id){return children.containsKey(id);}boolean addChildTask(ChildModelTask task){children.put(task.id,task);return true;}
  static JSONObject row(String owner,int position,int count,int stars){return new JSONObject().put("userId",owner).put("rankOrder",position).put("donationNum",count).put("rewardStarNum",stars);}
@@ -82,6 +83,10 @@ public class FarmRankingCheck {
    .put("userDonationLevelInfo",new JSONObject().put("levelId",1).put("levelLightStarNum",0))
    .put("levelAwardInfoList",new JSONArray().put(new JSONObject().put("levelId",1).put("levelStarUpNum",30)).put(new JSONObject().put("levelId",2).put("levelStarUpNum",10000)));}
  static class AntFarmRpcCall {
+   static int taskAwards;static String taskStatus="TODO";
+   static String listCompetitionTask(){return new JSONObject().put("memo","SUCCESS").put("taskList",new JSONArray().put(new JSONObject().put("taskType","TEAM_TASK").put("taskStatus",taskStatus).put("canReceiveAwardCount",1))).toString();}
+   static String receiveCompetitionTaskAward(String type,int count){assert taskStatus.equals("FINISHED")&&count==1;taskAwards++;return "{\"success\":true,\"code\":\"100000000\",\"incAwardCount\":1}";}
+
    static int donated=0,uses=0,reads=0,leader=8;static boolean weekly,unknown,noChange,switchOwner;static String activity="season",round="week1";
    static String queryCompetitionEntranceInfo(){return new JSONObject().put("memo","SUCCESS").put("animationInfo",new JSONObject().put("competitionProjectInfo",new JSONObject().put("projectId","weeklyProject").put("projectName","project"))).toString();}
    static String getProjectInfo(String id){return new JSONObject().put("memo","SUCCESS").put("userProjectDonationNum",donated).toString();}
@@ -177,6 +182,8 @@ public class FarmRankingCheck {
    assert f.donateToCompetition(3) && AntFarmRpcCall.uses==0 && f.foodCalls==0;
    reset(f);AntFarmRpcCall.weekly=true;AntFarmRpcCall.switchOwner=true;
    assert !f.donateToCompetition(3) && AntFarmRpcCall.uses==1 && !Status.hasFlagToday(FLAG_COMPETITION_DONATED_TODAY);
+   AntFarmRpcCall.taskAwards=0;for(String status:new String[]{"TODO","RECEIVED","EXPIRED",""}){AntFarmRpcCall.taskStatus=status;f.receiveCompetitionTaskAwards();}assert AntFarmRpcCall.taskAwards==0:"non-FINISHED reward submitted";
+   AntFarmRpcCall.taskStatus="FINISHED";Log.lines.clear();f.receiveCompetitionTaskAwards();assert AntFarmRpcCall.taskAwards==1&&Log.lines.stream().anyMatch(x->x.contains("本次领取1个任务奖励")):"success-based reward response rejected as missing memo";
    java.lang.System.out.println("PASS farm ranking: typed daily/S2 schemas, own account, stars/cheapest plan, budget zero/caps, GMT+8 day/week reset, restart persistence, pre-RPC write failure, unknown/readback guards, schedule identity and cancellation");
  }
 }

@@ -10,6 +10,7 @@ import io.github.aw1y2z.sesame.util.MessageUtil;
 
 public class AntSportsRpcCall {
     private static final String chInfo = "ch_appcenter__chsub_9patch", timeZone = "Asia/Shanghai", version = "3.0.1" + ".2", alipayAppVersion = "0.0.852", cityCode = "330100", appId = "2021002116659397";
+    private static final String WALK_FEATURES = "[\"DAILY_STEPS_RANK_V2\",\"STEP_BATTLE\",\"CLUB_HOME_CARD\",\"NEW_HOME_PAGE_STATIC\",\"CLOUD_SDK_AUTH\",\"STAY_ON_COMPLETE\",\"EXTRA_TREASURE_BOX\",\"NEW_HOME_PAGE_STATIC\",\"SUPPORT_AI\",\"SUPPORT_TAB3\",\"SUPPORT_FLYRABBIT\",\"SUPPORT_NEW_MATCH\",\"EXTERNAL_ADVERTISEMENT_TASK\",\"PROP\",\"PROPV2\",\"ASIAN_GAMES\"]";
     
     // 运动任务查询
     // {"apiVersion":"energy","canAddHome":false,"chInfo":"medical_health","clientAuthStatus":"not_support",
@@ -153,10 +154,8 @@ public class AntSportsRpcCall {
     
     // 查询路线
     public static String queryPath(String date, String pathId) {
-        //String args = "[{\"date\":\"" + date + "\",\"pathId\":\"" + pathId + "\"}]";
-        String args =
-                "[{\"apiVersion\":\"energy\",\"chInfo\":\"medical_health\",\"clientOS\":\"android\",\"date\":\"" + date + "\",\"enableNewVersion\":true,\"features\":[\"DAILY_STEPS_RANK_V2\",\"STEP_BATTLE\",\"CLUB_HOME_CARD\",\"NEW_HOME_PAGE_STATIC\",\"CLOUD_SDK_AUTH\",\"STAY_ON_COMPLETE\"," +
-                "\"EXTRA_TREASURE_BOX\",\"NEW_HOME_PAGE_STATIC\",\"SUPPORT_AI\",\"SUPPORT_TAB3\",\"SUPPORT_FLYRABBIT\",\"SUPPORT_NEW_MATCH\",\"EXTERNAL_ADVERTISEMENT_TASK\",\"PROP\",\"PROPV2\",\"ASIAN_GAMES\"],\"pathId\":\"" + pathId + "\",\"timezoneId\":\"" + timeZone + "\"}]";
+        String args = "[{\"chInfo\":\"ch_othertinyapp\",\"clientOS\":\"android\",\"date\":" + JSONObject.quote(date)
+                + ",\"enableNewVersion\":true,\"features\":" + WALK_FEATURES + ",\"pathId\":" + JSONObject.quote(pathId) + ",\"timeZone\":\"" + timeZone + "\"}]";
         return ApplicationHook.requestString("com.alipay.sportsplay.biz.rpc.walk.queryPath", args);
     }
     
@@ -177,13 +176,14 @@ public class AntSportsRpcCall {
     
     // 加入路线
     public static String joinPath(String pathId) {
-        String args = "[{\"pathId\":\"" + pathId + "\"}]";
+        String args = "[{\"chInfo\":\"ch_othertinyapp\",\"clientOS\":\"android\",\"features\":" + WALK_FEATURES + ",\"pathId\":" + JSONObject.quote(pathId) + "}]";
         return ApplicationHook.requestString("com.alipay.sportsplay.biz.rpc.walk.joinPath", args);
     }
     
     // 行走路线
     public static String walkGo(String date, String pathId, int useStepCount) {
-        String args = "[{\"date\":\"" + date + "\",\"pathId\":\"" + pathId + "\",\"useStepCount\":\"" + useStepCount + "\"}]";
+        String args = "[{\"chInfo\":\"ch_othertinyapp\",\"clientOS\":\"android\",\"date\":" + JSONObject.quote(date) + ",\"features\":" + WALK_FEATURES
+                + ",\"pathId\":" + JSONObject.quote(pathId) + ",\"source\":\"ch_othertinyapp\",\"timeZone\":\"" + timeZone + "\",\"useStepCount\":" + useStepCount + "}]";
         return ApplicationHook.requestString("com.alipay.sportsplay.biz.rpc.walk.go", args);
     }
     

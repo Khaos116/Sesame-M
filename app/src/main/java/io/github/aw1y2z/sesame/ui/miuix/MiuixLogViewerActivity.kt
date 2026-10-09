@@ -144,7 +144,7 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
             delay(1000)
         }
     }
-    var entries by remember(logType) { mutableStateOf(loadLogEntries(file)) }
+    var entries by remember(logType) { mutableStateOf(emptyList<LogEntry>()) }
     val listState = rememberLazyListState()
     // 搜索文本
     var searchQuery by remember { mutableStateOf("") }
@@ -520,10 +520,10 @@ fun LogTopBar(
 }
 
 /** 日志查看时最多从文件尾部读取的字节数(避免大文件全量加载导致卡顿) */
-private const val MAX_TAIL_BYTES = 1024 * 1024L
+private const val MAX_TAIL_BYTES = 4 * 1024 * 1024L
 
 /** 日志查看时最多展示的条目数 */
-private const val MAX_LOG_ENTRIES = 500
+private const val MAX_LOG_ENTRIES = 5000
 
 /**
  * 从文件尾部读取文本,最多 maxBytes 字节。

@@ -7,7 +7,7 @@ import tempfile
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent / "audit_regressions"))
-from run import method
+from run import method, SOURCE
 
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle"))
 jar = next((cache / "caches/modules-2/files-2.1/org.json/json").glob("*/*/json-*.jar"))
@@ -56,7 +56,8 @@ public class RemainingCheck {
     }
     static class AntStallRpcCall { static String detail; static String projectDetail(String id) { return detail; } }
     static class UserIdMap { static String uid="uid"; static String getCurrentUid() { return uid; } }
-    static class ApplicationHook { static String requestString(String method,String args) { throw new TaskCancelledException(); } }
+    static class ApplicationHook {static boolean capture;static JSONObject request;static String rpc;static String requestString(String method,String args) {if(capture){request=new JSONArray(args).optJSONObject(0);rpc=method;return "{}";} throw new TaskCancelledException(); } }
+    static class SportsRpc {static String timeZone="Asia/Shanghai";@@WALK_FEATURES@@ @@WALK_RPC@@}
     static class Fish {
         static String API_RECEIVE_AWARD="award"; String runningUid="uid"; int blacklisted;
         String getTaskSceneCode(String task) { return "scene"; } String buildReceiveAwardRequest(String scene,String task) { return "[]"; }
@@ -101,6 +102,10 @@ public class RemainingCheck {
         assert stopped.signs==0;
     }
     static void sports() {
+        ApplicationHook.capture=true;
+        SportsRpc.queryPath("2026-10-09","p\"\\");assert ApplicationHook.request.optString("pathId").equals("p\"\\")&&ApplicationHook.request.optString("timeZone").equals("Asia/Shanghai")&&!ApplicationHook.request.has("timezoneId");
+        SportsRpc.joinPath("p\"\\");assert ApplicationHook.request.optString("pathId").equals("p\"\\");
+        SportsRpc.walkGo("2026-10-09","p\"\\",1005);assert ApplicationHook.request.opt("useStepCount") instanceof Number&&ApplicationHook.request.optInt("useStepCount")==1005&&ApplicationHook.request.optString("source").equals("ch_othertinyapp")&&ApplicationHook.request.optJSONArray("features").length()==16&&ApplicationHook.request.optString("chInfo").equals("ch_othertinyapp")&&ApplicationHook.request.optString("clientOS").equals("android");ApplicationHook.capture=false;
         for (boolean minimum:new boolean[]{true,false}) {
             Sports work=new Sports(); work.walkMinimumCompleteCount.value=minimum; work.walk(1000);
             assert work.joined.equals(List.of("new")) && work.queried.equals(List.of("new")) : "route must be joined before walking";
@@ -205,6 +210,10 @@ for token, path, signature in (
     ("@@TREE_LOOP@@", "protectEcology/ProtectEcology.java", "    private static void protectTree()"),
 ):
     code = code.replace(token, method("model/task/" + path, signature))
+import re
+rpc_source=(SOURCE/'model/task/antSports/AntSportsRpcCall.java').read_text(encoding='utf-8')
+code=code.replace('@@WALK_FEATURES@@',re.search(r'private static final String WALK_FEATURES = .*?;',rpc_source).group())
+code=code.replace('@@WALK_RPC@@','\n'.join(method('model/task/antSports/AntSportsRpcCall.java',s) for s in ('public static String queryPath(String date, String pathId)','public static String joinPath(String pathId)','public static String walkGo(String date, String pathId, int useStepCount)')))
 with tempfile.TemporaryDirectory(prefix="sesame-remaining-") as temporary:
     source = Path(temporary) / "RemainingCheck.java"
     source.write_text(code, encoding="utf-8")

@@ -124,8 +124,8 @@ public class FlowCheck {
         static List<String> results = new ArrayList<>();
         static void other(String s) { results.add(s); }
         static void forest(String s) {} static void farm(String s) {}
-        static void record(String s) {} static void i(String s) {}
-        static void err(String tag, String msg, Throwable t) { throw new AssertionError(t); }
+        static void record(String s) { results.add(s); } static void i(String s) {}
+        static void err(String tag, String msg, Throwable t) { if(t instanceof IllegalStateException && "lost push reply".equals(t.getMessage())) return; throw new AssertionError(t); }
         static void printStackTrace(String tag, Throwable t) { throw new AssertionError(t); }
     }
     static class TimeUtil { static void sleep(long ms) {} }
@@ -156,16 +156,17 @@ public class FlowCheck {
         static String gameHome; static int prizes;
         static String gameCenterHomePage() { return gameHome; }
         static String batchReceiveTaskPrize() { prizes++; return new JSONObject().put("success",true).toString(); }
-        static String fresh, last, join; static int reads; static List<String> calls = new ArrayList<>();
+        static String first, active, fresh, last, join; static boolean cancelLast, losePushReply; static int reads; static List<String> calls = new ArrayList<>();
         static String queryHome() { return ok().put("entrance", new JSONObject().put("openApp", true)).toString(); }
-        static String CreditAccumulateStrategyRpcManager() { return reads++ == 0 ? tasks(new JSONArray().put(task(0, 2))) : fresh; }
+        static String CreditAccumulateStrategyRpcManager() { return reads++ == 0 ? first : fresh; }
+        static String queryAvailableSesameTask() { calls.add("refresh"); return active; }
         static String queryCreditFeedback() { return ok().put("creditFeedbackVOS", new JSONArray()).toString(); }
         static String collectCreditFeedback(String id) { throw new AssertionError("unexpected reward"); }
         static String collectAllCreditFeedback() { throw new AssertionError("unexpected reward"); }
         static String joinSesameTaskNew(String id) { calls.add("join"); return join; }
         static String feedBackSesameTaskNew(String id) { calls.add("feedback"); return ok().toString(); }
-        static String finishSesameTask(String id) { calls.add("push:" + id); return ok().toString(); }
-        static String queryLastOperateTask() { calls.add("last"); return last; }
+        static String finishSesameTask(String id) { calls.add("push:" + id); if(losePushReply) throw new IllegalStateException("lost push reply"); return ok().toString(); }
+        static String queryLastOperateTask() { calls.add("last"); if(cancelLast) throw new TaskCancelledException(); return last; }
     }
     static JSONObject task(int done, int need) {
         return new JSONObject().put("templateId", "T").put("title", "task").put("completedNum", done).put("needCompleteNum", need);
@@ -258,13 +259,16 @@ public class FlowCheck {
     static void reset() {
         ApplicationHook.offline = false; AntForestRpcCall.cancelled = false;
         Status.flags.clear(); Status.used = 0; Log.results.clear(); MessageUtil.blackHits = 0;
-        AntMemberRpcCall.prizes = 0;
+        AntMemberRpcCall.prizes = 0; AntMemberRpcCall.cancelLast=false; AntMemberRpcCall.losePushReply=false;
         AntMemberRpcCall.reads = 0; AntMemberRpcCall.calls.clear(); AntForestRpcCall.waters = 0;
+        AntMemberRpcCall.first = tasks(new JSONArray().put(task(0,2)));
+        AntMemberRpcCall.active = tasks(new JSONArray());
         AntMemberRpcCall.join = ok().put("data", new JSONObject().put("recordId", "R")).toString();
+        AntMemberRpcCall.last = ok().put("data", new JSONObject().put("lastOperateTaskVO", task(0,2).put("recordId","R").put("finishFlag",false))).toString();
     }
     static void sesame(String response, int flags, int black, boolean completed) {
         reset(); AntMemberRpcCall.fresh = response; new Member().collectSesame();
-        assert AntMemberRpcCall.calls.equals(List.of("join", "feedback", "push:R"));
+        assert AntMemberRpcCall.calls.equals(List.of("join", "feedback", "last", "push:R"));
         assert Status.flags.size() == flags && MessageUtil.blackHits == black;
         assert Log.results.stream().anyMatch(s -> s.contains("完成任务[")) == completed : Log.results;
     }
@@ -292,14 +296,60 @@ public class FlowCheck {
             assert m.lastOperateRecordId("different") == null;
         }
         AntMemberRpcCall.calls.clear(); AntMemberRpcCall.join = new JSONObject().put("resultCode", "PROMISE_HAS_PROCESSING_TEMPLATE").toString();
-        m.reportSesameTask("task", "T");
-        assert AntMemberRpcCall.calls.equals(List.of("join","last","feedback","push:old"));
+        m.reportSesameTask("task", "T", "", "");
+        assert AntMemberRpcCall.calls.equals(List.of("join","refresh","last","feedback","last","push:old"));
         vo.put("recordId", new JSONObject());
         AntMemberRpcCall.last = ok().put("data", new JSONObject().put("lastOperateTaskVO", vo)).toString();
         assert m.lastOperateRecordId("T") == null;
         AntMemberRpcCall.calls.clear();
         AntMemberRpcCall.join = ok().put("data", new JSONObject().put("recordId", new JSONObject())).toString();
-        m.reportSesameTask("task", "T"); assert AntMemberRpcCall.calls.equals(List.of("join"));
+        m.reportSesameTask("task", "T", "", ""); assert AntMemberRpcCall.calls.equals(List.of("join"));
+        reset();
+        AntMemberRpcCall.last=ok().put("data",new JSONObject().put("lastOperateTaskVO",task(0,2).put("recordId","R").put("finishFlag",true))).toString();
+        assert !m.reportSesameTask("task","T","", "") && AntMemberRpcCall.calls.equals(List.of("join","feedback","last")) : "completed record must not push or mark stale aggregate as failed";
+        for(String url:new String[]{"alipays://app?jumpAction=userGrowth", "https://a/?x=1&jumpAction=userGrowth&y=2", "alipays://app?url=https%3A%2F%2Fa%2F%3FjumpAction%3DuserGrowth", "https://a/?x=%ZZ"}) {
+            reset(); assert !m.reportSesameTask("task","T",url, "") && AntMemberRpcCall.calls.equals(List.of("join","feedback","last"));
+            assert Status.flags.isEmpty() && MessageUtil.blackHits==0;
+        }
+        for(JSONObject last:new JSONObject[]{new JSONObject(), task(0,2).put("recordId","other").put("finishFlag",true)}) {
+            reset();AntMemberRpcCall.last=ok().put("data",new JSONObject().put("lastOperateTaskVO",last)).toString();
+            assert m.reportSesameTask("task","T","", "R") && AntMemberRpcCall.calls.equals(List.of("feedback","last","push:R")) : "optional recent task blocked the known current record";
+        }
+        reset();AntMemberRpcCall.last=ok().put("data",new JSONObject()).toString();
+        assert m.reportSesameTask("task","T","", "R")&&AntMemberRpcCall.calls.equals(List.of("feedback","last","push:R")) : "no recent task blocked the known current record";
+        reset();AntMemberRpcCall.last=ok().put("data",new JSONObject().put("lastOperateTaskVO",task(0,2).put("recordId","R").put("finishFlag","false"))).toString();
+        assert !m.reportSesameTask("task","T","", "R")&&!AntMemberRpcCall.calls.contains("push:R") : "invalid same-record completion flag was trusted";
+        reset();AntMemberRpcCall.last=new JSONObject().put("resultCode","FAIL").toString();
+        assert !m.reportSesameTask("task","T","", "R")&&!AntMemberRpcCall.calls.contains("push:R") : "failed recent query was ignored";
+        reset();AntMemberRpcCall.last=ok().put("data",new JSONObject().put("lastOperateTaskVO",task(0,2).put("templateId",123).put("recordId","R").put("finishFlag",true))).toString();
+        assert !m.reportSesameTask("task","123","", "R")&&!AntMemberRpcCall.calls.contains("push:R") : "numeric template ID failed to match a completed record";
+        assert "R".equals(m.activeSesameRecordId(new JSONObject().put("toCompleteVOS",new JSONArray().put(task(0,2).put("templateId",123).put("recordId","R").put("finishFlag",false))),"123")) : "numeric template lost the existing record";
+        reset();AntMemberRpcCall.join=new JSONObject().put("resultCode","PROMISE_HAS_PROCESSING_TEMPLATE").toString();
+        AntMemberRpcCall.last=ok().put("data",new JSONObject().put("lastOperateTaskVO",task(0,2).put("templateId","other").put("recordId","foreign").put("finishFlag",false))).toString();
+        m.collectSesame();assert AntMemberRpcCall.calls.equals(List.of("join","refresh","last")) && Status.flags.isEmpty() && MessageUtil.blackHits==0 : "unsubmitted task must not be blacklisted";
+        reset();AntMemberRpcCall.first=tasks(new JSONArray().put(task(0,2).put("recordId","R").put("finishFlag",false)));
+        AntMemberRpcCall.fresh=tasks(new JSONArray().put(task(1,2)));m.collectSesame();
+        assert AntMemberRpcCall.calls.equals(List.of("feedback","last","push:R")) : "existing task record was needlessly joined again";
+        for(String listName:new String[]{"toCompleteVOS","waitCompleteTaskVOS"}) {
+            reset();AntMemberRpcCall.join=new JSONObject().put("resultCode","PROMISE_HAS_PROCESSING_TEMPLATE").toString();
+            JSONArray activeRows=new JSONArray().put(task(0,2).put("recordId","R").put("finishFlag",false));
+            JSONObject activeData=listName.equals("toCompleteVOS")?new JSONObject().put(listName,activeRows):new JSONObject().put("dailyTaskListVO",new JSONObject().put(listName,activeRows));
+            AntMemberRpcCall.active=ok().put("data",activeData).toString();AntMemberRpcCall.fresh=tasks(new JSONArray().put(task(1,2)));
+            m.collectSesame();assert AntMemberRpcCall.calls.equals(List.of("join","refresh","feedback","last","push:R")) : "processing record was not recovered from the full task list";
+        }
+        reset();AntMemberRpcCall.first=tasks(new JSONArray().put(task(0,2).put("recordId","R").put("finishFlag",false)).put(task(0,2).put("recordId","foreign").put("finishFlag",false)));
+        m.collectSesame();assert AntMemberRpcCall.calls.isEmpty() : "conflicting records were submitted";
+        for(Object invalid:new Object[]{new JSONObject(),7," "}) {
+            reset();AntMemberRpcCall.first=tasks(new JSONArray().put(task(0,2).put("recordId",invalid).put("finishFlag",false)));
+            m.collectSesame();assert AntMemberRpcCall.calls.isEmpty() : "invalid existing record was submitted";
+        }
+        reset();AntMemberRpcCall.first=tasks(new JSONArray().put(task(2,2).put("recordId","R").put("finishFlag",false)));
+        m.collectSesame();assert AntMemberRpcCall.calls.isEmpty() : "completed record counters were ignored";
+        reset();AntMemberRpcCall.cancelLast=true;
+        try {m.reportSesameTask("task","T","", "");throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}
+        reset();AntMemberRpcCall.losePushReply=true;
+        assert m.reportSesameTask("task","T","", "") : "unknown push outcome must still schedule task-list readback";
+        assert AntMemberRpcCall.calls.equals(List.of("join","feedback","last","push:R"));
         Forest f = new Forest(); f.getAllSkuInfo();
         assert AntForestRpcCall.pages.size() == 10 && f.skuInfo.size() == 10 && VitalityBenefitIdMap.saves == 1;
         assert AntForestRpcCall.pages.contains("SKIN:20") && AntForestRpcCall.pages.contains("OTHER:20");
@@ -368,7 +418,7 @@ public class FlowCheck {
 '''
 for placeholder, path, signatures in (
     ("@@RETRY@@", "util/MessageUtil.java", ("public static boolean isRetryable(",)),
-    ("@@MEMBER@@", member, ("private void collectSesame(", "private void reportSesameTask(", "private String lastOperateRecordId(", "public void gameCenterTaskPrize(", "private static boolean collectNotDoneIds(", "private static boolean collectNotDoneFromArray(")),
+    ("@@MEMBER@@", member, ("private void collectSesame(", "private boolean reportSesameTask(", "private String lastOperateRecordId(", "private String activeSesameRecordId(", "public void gameCenterTaskPrize(", "private static boolean collectNotDoneIds(", "private static boolean collectNotDoneFromArray(")),
     ("@@FOREST@@", "model/task/antForest/AntForestV2.java", ("private boolean getAllSkuInfo(", "private static JSONArray optItemInfoVOList(",
         "private static boolean hasMore(", "private boolean getSkuInfoByItemInfoVO(", "private void teamCooperateWater(",
         "private static JSONObject queryTeamHomePage(", "private static String getTeamId(", "private static int getTeamCanWaterCount(",

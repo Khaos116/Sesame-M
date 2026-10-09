@@ -130,7 +130,7 @@ public class AntOrchard extends ModelTask {
         modelFields.addField(orchardFloatBallTask = new BooleanModelField("orchardFloatBallTask", "农场任务 | 当前任务列表浮球时长", false).setDependsOn("orchardListTask")
                 .setDescription("补充VISIT+floatBallConfig协议，按实际时长分段完整等待后上报并回查；不代表真实打开页面游玩。"));
         modelFields.addField(orchardManualVisitAward = new BooleanModelField("orchardManualVisitAward", "农场访问奖励 | 领取需手动确认的奖励", false));
-        modelFields.addField(orchardVisitDailyBudget = new IntegerModelField("orchardVisitDailyBudget", "农场访问扩展 | 每日操作尝试预算（0不执行）", 0, 0, 30));
+        modelFields.addField(orchardVisitDailyBudget = new IntegerModelField("orchardVisitDailyBudget", "农场访问扩展 | 每日操作尝试预算（0不执行）", 20, 0, 30));
         modelFields.addField(AutoAntOrchardTaskList = new BooleanModelField("AutoAntOrchardTaskList", "农场任务 | 自动黑名单", true).setDependsOn("orchardListTask"));
         modelFields.addField(AntOrchardTaskList = new SelectModelField("AntOrchardTaskList", "农场任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntOrchardTaskList::getList).setDependsOn("AutoAntOrchardTaskList"));
         modelFields.addField(orchardSpreadManure = new BooleanModelField("orchardSpreadManure", "农场施肥 | 开启", false));
@@ -233,7 +233,7 @@ public class AntOrchard extends ModelTask {
                 Log.record("农场抽抽乐：跳过，当前账号为空");
                 return;
             }
-            Log.record("农场抽抽乐：开始，查询任务与抽奖次数");
+            Log.record("农场轮盘（抽抽乐）：开始，查询任务与抽奖次数，appMode=normal");
             String res = AntOrchardRpcCall.enterDrawActivityantorchard("", "ANTORCHARD_DRAW_TIMES", "antorchard");
             JSONObject resData = MyUtils.newJSONObject(res);
             if (!orchardDrawSuccessful(resData, "进入活动")) {
@@ -321,6 +321,8 @@ public class AntOrchard extends ModelTask {
                     if (!"TODO".equals(taskStatus) && !"FINISHED".equals(taskStatus)) {
                         if (!"RECEIVED".equals(taskStatus)) {
                             Log.record("农场抽抽乐：跳过[" + taskName + "]，未识别的任务状态=" + taskStatus);
+                        } else {
+                            Log.record("农场抽抽乐：任务[" + taskName + "]已领奖，领取进度=" + rightsTimes + "/" + rightsTimesLimit);
                         }
                         continue;
                     }

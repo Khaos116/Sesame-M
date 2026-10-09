@@ -46,10 +46,20 @@ public final class SjGamePlay {
             String uid = UserIdMap.getCurrentUid(); int day = SjActivityTasks.date(); long generation = TaskLifecycle.generation();
             launch(RIDE_URL, uid, day, generation); worker.waitSeconds(8);
             int steps = 0;
+            boolean interacted = false;
             for (int round = 0; round < 60 && steps < 30; round++) {
                 worker.current();
                 String result = evaluateRide(uid, day, generation);
-                if (result == null || "NOT_GAME_PAGE".equals(result)) return;
+                if (result == null) {
+                    Log.record("乐游记：页面脚本回执未返回，保留待核对记录，不重复操作"); return;
+                }
+                if ("NOT_SUBMITTED".equals(result) || "NOT_GAME_PAGE".equals(result)) {
+                    worker.current();
+                    boolean cleared = !interacted && io.github.aw1y2z.sesame.data.RuntimeInfo.getInstance().putVerified("sjActivityReceipt::ride", null);
+                    Log.record("乐游记：" + ("NOT_SUBMITTED".equals(result) ? "页面或脚本接口未就绪，未发送本次动作" : "当前页面未匹配骑行页面，未执行本次动作")
+                            + "，待核对记录=" + (cleared ? "已清理，可下轮再检查" : "保留")); return;
+                }
+                if (!"NO_ACTION".equals(result)) interacted = true;
                 if ("NEEDS_MANUAL".equals(result) || "DESTINATION".equals(result)) {
                     Log.record("乐游记：" + ("DESTINATION".equals(result) ? "已到终点，请手动领取大奖" : "关卡需要人工处理"));
                     finishRide(worker); return;
@@ -232,7 +242,8 @@ public final class SjGamePlay {
             }
             return false;
         }, uid, day, generation);
-        if (!submitted || !latch.await(3, TimeUnit.SECONDS)) return null; owner(uid, day, generation);
+        if (!submitted) return "NOT_SUBMITTED";
+        if (!latch.await(3, TimeUnit.SECONDS)) return null; owner(uid, day, generation);
         String raw = result.get(); if (raw == null) return null;
         JSONArray value = new JSONArray("[" + raw + "]"); return value.opt(0) instanceof String ? value.optString(0) : null;
     }

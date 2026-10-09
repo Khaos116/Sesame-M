@@ -30,7 +30,7 @@ stubs = {
  public static JSONObject treeFind(String id){for(JSONArray a:new JSONArray[]{rows(),rent.optJSONArray("taskDetailList")})for(int i=0;i<a.length();i++){JSONObject r=a.optJSONObject(i);if(id.equals(r.optJSONObject("taskBaseInfo").optString("appletId")))return r;}throw new AssertionError(id);}
  public static JSONObject alcFind(String id){for(JSONArray rows:new JSONArray[]{alchemyRows(),credit.optJSONArray("toCompleteVOS")})for(int i=0;i<rows.length();i++){JSONObject r=rows.optJSONObject(i);if(id.equals(r.optString("templateId"))||id.equals(r.optJSONObject("logExtMap")==null?"":r.optJSONObject("logExtMap").optString("bizId"))||id.equals(r.optString("recordId")))return r;}throw new AssertionError(id);}
  static String call(String method,String raw,boolean mutation){
-  JSONObject args=new JSONArray(raw).optJSONObject(0);String op=method.substring(method.lastIndexOf('.')+1);if(op.equals("trigger"))op=args.optString("operationCode");calls.add(op);if(mutation)mutations++;else queries++;
+  JSONObject args=new JSONArray(raw).optJSONObject(0);String op=method.substring(method.lastIndexOf('.')+1);if(op.equals("trigger")){assert !args.has("operationCode"):"promoprod trigger requires operation, not operationCode";op=args.optString("operation");}calls.add(op);if(mutation)mutations++;else queries++;
   if(!mutation&&(!readback&&mutations>0||op.equals(failOp)))return "garbage";
   JSONObject result=ok();
   if(op.equals("ZHIMA_TREE_HOME_PAGE"))result.put("extInfo",new JSONObject().put("zhimaTreeHomePageQueryResult",copy(home)));

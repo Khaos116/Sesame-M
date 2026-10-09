@@ -54,6 +54,7 @@ final class SjActivityTasks {
         current();
         if (!RuntimeInfo.getInstance().getString(RECEIPT + domain).isEmpty()) {
             Log.record("SJ活动[" + domain + "]有未确认回执，本轮不重发");
+            if ("ride".equals(domain)) Log.record("乐游记：上次前台会话未取得结束回执，当前未发送页面动作；需核对游戏页面进度");
             return false;
         }
         return true;
@@ -64,6 +65,10 @@ final class SjActivityTasks {
     }
 
     private boolean reserve(String domain, String action, String acceptedReceipt) throws Exception {
+        return reserve(domain, action, acceptedReceipt, null);
+    }
+
+    private boolean reserve(String domain, String action, String acceptedReceipt, JSONObject context) throws Exception {
         if (acceptedReceipt == null ? !enabled(domain) : budget <= 0) return false;
         current();
         RuntimeInfo runtime = RuntimeInfo.getInstance();
@@ -72,48 +77,129 @@ final class SjActivityTasks {
         JSONObject ledger = MyUtils.newJSONObject(raw);
         long used = raw.isEmpty() ? 0 : count(ledger, "count");
         long savedDay = raw.isEmpty() ? day : count(ledger, "day");
-        if (used < 0 || savedDay < 20000101 || savedDay > day) return false;
+        if (used < 0 || savedDay < 20000101 || savedDay > day) {
+            Log.record("SJ活动[" + domain + "]：每日预算记录无效，未提交操作");
+            return false;
+        }
         if (savedDay != day) used = 0;
-        if (used >= budget) return false;
-        if (!runtime.putVerified(attemptsKey, MyUtils.newJSONObject().put("day", day).put("count", used + 1).toString())) return false;
+        if (used >= budget) {
+            Log.record("SJ活动[" + domain + "]：每日操作预算已用尽（" + used + "/" + budget + "），未提交操作");
+            return false;
+        }
+        if (!runtime.putVerified(attemptsKey, MyUtils.newJSONObject().put("day", day).put("count", used + 1).toString())) {
+            Log.record("SJ活动[" + domain + "]：每日预算保存失败，未提交操作");
+            return false;
+        }
         current();
-        return runtime.putVerified(RECEIPT + domain, MyUtils.newJSONObject().put("uid", uid).put("day", day).put("action", action).toString());
+        JSONObject receipt = MyUtils.newJSONObject().put("uid", uid).put("day", day).put("action", action);
+        if (context != null) receipt.put("context", context);
+        if (!runtime.putVerified(RECEIPT + domain, receipt.toString())) {
+            Log.record("SJ活动[" + domain + "]：待核对记录保存失败，未提交操作");
+            return false;
+        }
+        Log.record("SJ活动[" + domain + "]：已预留每日额度（" + (used + 1) + "/" + budget + "）");
+        return true;
     }
 
     boolean confirmed(String domain, String label) {
+        return confirmed(domain, label, false);
+    }
+
+    private boolean confirmed(String domain, String label, boolean submittedOnly) {
         current();
-        if (!RuntimeInfo.getInstance().putVerified(RECEIPT + domain, null)) return false;
-        Log.other(label + "：服务端状态回查确认");
+        if (!RuntimeInfo.getInstance().putVerified(RECEIPT + domain, null)) {
+            Log.record("SJ活动[" + domain + "]：服务端状态已确认，但清除待核对记录失败，停止后续提交");
+            return false;
+        }
+        String prefix = submittedOnly ? "📤 " : "✅ ";
+        String message = prefix + label + (submittedOnly ? "：上报已回查，继续核对领奖状态" : "（已回查确认）");
+        Log.other(message);
+        Log.record(message);
         return true;
     }
 
     JSONObject call(String method, JSONObject args, boolean write) throws Exception {
+        return call(method, args, write, null, null);
+    }
+
+    private JSONObject call(String method, JSONObject args, boolean write, String action, JSONObject context) throws Exception {
         current();
-        String raw = gate.call("SJ活动", () -> {
+        String prefix = "SJ活动[" + method + "]：";
+        boolean[] invoked = {false};
+        String raw;
+        try {
+            raw = gate.call("SJ活动[" + method + "]", () -> {
+                current();
+                String body = new JSONArray().put(args).toString();
+                // Reserve only after the shared gate admits this write; rejected requests leave no receipt or quota charge.
+                if (action != null) {
+                    if (!reserve(shenQuanDomain(action), action, null, context)) return null;
+                    Log.record("神券团购：尝试提交" + shenQuanAction(action));
+                }
+                invoked[0] = true;
+                if (write) Log.record(prefix + "进入写RPC调用（单次发送）");
+                return write ? ApplicationHook.requestString(method, body, 1, 0) : ApplicationHook.requestString(method, body);
+            });
             current();
-            String body = new JSONArray().put(args).toString();
-            return write ? ApplicationHook.requestString(method, body, 1, 0) : ApplicationHook.requestString(method, body);
-        });
-        current();
-        JSONObject result = MyUtils.newJSONObject(raw);
-        if ("1009".equals(result.optString("errorCode"))) {
-            RuntimeInfo.getInstance().put("OtherTask.nextRun", System.currentTimeMillis() + 86400000L);
-            throw new OtherRequestGate.Denied();
+        } catch (Exception failure) {
+            Log.record(prefix + (invoked[0] ? "已进入RPC，流程中断" : "未调用RPC，发送前停止")
+                    + "（" + failure.getClass().getSimpleName() + "）");
+            if (failure instanceof TaskCancelledException || failure instanceof OtherRequestGate.Denied
+                    || failure instanceof OtherRequestGate.BudgetExhausted) throw failure;
+            // The outer task logs stack traces; never propagate a transport message containing request secrets.
+            throw new java.io.IOException(prefix + "RPC流程异常（" + failure.getClass().getSimpleName() + "）");
         }
-        if (RpcRequestGuard.isFailure(result)) return null;
+        if (!invoked[0]) {
+            Log.record(prefix + "未调用RPC，操作额度或待核对记录未获准");
+            return null;
+        }
+        JSONObject result = MyUtils.newJSONObject(raw);
+        boolean failed = RpcRequestGuard.isFailure(result);
+        if (write || failed || !(Boolean.TRUE.equals(result.opt("success")) || Boolean.TRUE.equals(result.opt("isSuccess"))
+                || "alipay.imasp.program.programInvoke".equals(method) && result.optJSONObject("components") != null))
+            Log.record(prefix + "响应 " + (result.length() == 0 ? "空对象或解析失败，" : "")
+                + "success=" + responseField(result, "success") + "，isSuccess=" + responseField(result, "isSuccess")
+                + "，code=" + responseField(result, "code") + "，resultCode=" + responseField(result, "resultCode")
+                + "，error=" + responseField(result, "error") + "，errorCode=" + responseField(result, "errorCode")
+                + "，retCode=" + responseField(result, "retCode"));
+        if (failed) {
+            Log.record(prefix + "响应明确失败，停止本次操作" + (write ? "，待核对记录保留" : ""));
+            return null;
+        }
         // programInvoke reports results per component, not necessarily at the root.
         if ("alipay.imasp.program.programInvoke".equals(method) && result.optJSONObject("components") != null) return result;
-        return Boolean.TRUE.equals(result.opt("success")) || Boolean.TRUE.equals(result.opt("isSuccess")) ? result : null;
+        if (Boolean.TRUE.equals(result.opt("success")) || Boolean.TRUE.equals(result.opt("isSuccess"))) return result;
+        Log.record(prefix + "缺少有效成功标记，停止本次操作" + (write ? "，待核对记录保留" : ""));
+        return null;
+    }
+
+    static String responseField(JSONObject object, String key) {
+        Object value = object == null ? null : object.opt(key);
+        if (value == null || JSONObject.NULL.equals(value)) return "缺失";
+        if (!(value instanceof String) && !(value instanceof Number) && !(value instanceof Boolean)) return "类型异常";
+        String text = value.toString();
+        return text.matches("[0-9]{1,18}|true|false|[A-Z][A-Z0-9_]{0,79}") ? text : "非预期值";
     }
 
     private JSONObject lottery(String suffix, JSONObject args, boolean write) throws Exception {
         JSONObject root = call(LOTTERY + suffix, args, write);
-        return root != null && "10000001".equals(root.optString("code")) ? root.optJSONObject("data") : null;
+        if (root == null) return null;
+        JSONObject data = root.optJSONObject("data");
+        if (!"10000001".equals(root.optString("code")) || data == null) {
+            Log.record("神券团购[" + suffix + "]：业务code=" + responseField(root, "code") + "，data对象=" + (data != null) + "，本次校验未通过");
+            return null;
+        }
+        return data;
     }
 
     private JSONObject camp() throws Exception {
         JSONObject data = lottery("camp.query", MyUtils.newJSONObject().put("hitLotteryMachineV2Delivery", true), false);
-        return data != null && Boolean.TRUE.equals(data.opt("active")) ? data : null;
+        if (data == null) return null;
+        Log.record("神券团购活动状态：active=" + responseField(data, "active") + "，今日已抽=" + count(data, "dayConsumeCount")
+                + "，剩余机会=" + count(data, "remainingCount") + "，已签到=" + responseField(data.optJSONObject("extInfo"), "hasCheckedIn"));
+        if (Boolean.TRUE.equals(data.opt("active"))) return data;
+        Log.record("神券团购：活动未开启或active字段无效，停止本次操作");
+        return null;
     }
 
     private JSONObject lotteryTask(String play) throws Exception {
@@ -122,52 +208,122 @@ final class SjActivityTasks {
     }
 
     void shenQuan(boolean sign, boolean tasks, boolean draw, String location) throws Exception {
-        if (!enabled("shenQuan") || !(sign || tasks || draw)) return;
+        Log.record("神券团购：开始，签到=" + sign + "，任务=" + tasks + "，抽奖=" + draw + "，每日操作预算=" + budget);
+        if (!(sign || tasks || draw) || budget <= 0 || uid == null || uid.isEmpty()) return;
+        if (!reconcileShenQuan() || !enabled("shenQuan")) return;
+        // SJ checks sign, tasks and free draws independently; an unknown sign must only prevent another sign.
+        boolean signReady = reconcileShenQuan("shenQuanSign") && enabled("shenQuanSign");
         JSONObject camp = camp();
         if (camp == null) return;
-        if (sign && !checked(camp)) {
+        if (sign && signReady && !checked(camp)) {
             JSONObject consult = lottery("checkInConsult", MyUtils.newJSONObject(), false);
+            Log.record("神券团购签到资格：triggerCheckIn=" + responseField(consult, "triggerCheckIn"));
             if (consult != null && Boolean.TRUE.equals(consult.opt("triggerCheckIn"))) {
-                if (!reserve("shenQuan", "sign")) return;
-                JSONObject ack = call(LOTTERY + "checkIn", MyUtils.newJSONObject(), true);
+                JSONObject ack = call(LOTTERY + "checkIn", MyUtils.newJSONObject(), true, "sign", null);
                 JSONObject after = camp();
-                if (ack == null || !"10000001".equals(ack.optString("code")) || after == null || !checked(after) || !confirmed("shenQuan", "神券团购签到")) return;
+                if (!checked(after)) {
+                    Log.record("神券团购签到未确认：提交响应通过=" + (ack != null && "10000001".equals(ack.optString("code")))
+                            + "，回查已签到=" + checked(after) + "，待核对记录=" + !RuntimeInfo.getInstance().getString(RECEIPT + "shenQuanSign").isEmpty());
+                    Log.record("神券团购：保留未确认签到回执，不重发签到，继续检查其他任务及已有免费抽奖机会");
+                } else {
+                    if (ack == null || !"10000001".equals(ack.optString("code"))) {
+                        Log.record("神券团购签到：提交响应未通过，但本账号今日有效回查已签到；不重发签到，按回查结果继续");
+                    }
+                    if (!confirmed("shenQuanSign", "神券团购签到")) return;
+                }
+            } else {
+                Log.record("神券团购：签到资格未允许提交，本轮未发送签到请求");
             }
+        } else if (sign && checked(camp)) {
+            Log.record("神券团购：服务端显示今日已签到，无需提交");
+        } else if (sign) {
+            Log.record("神券团购：上次签到结果未确认，本轮不重发签到，继续检查其他任务及已有免费抽奖机会");
         }
         if (tasks) {
             JSONObject data = lottery("taskConsult", MyUtils.newJSONObject().put("hitLotteryMachineV2Delivery", true), false);
             JSONArray list = data == null ? null : data.optJSONArray("taskList");
-            if (list == null || list.length() > 100) return;
+            if (list == null || list.length() > 100) {
+                Log.record("神券团购：任务列表缺失或数量超限，停止任务处理");
+                return;
+            }
+            Log.record("神券团购：查询到任务数=" + list.length());
+            int completed = 0, previouslyCompleted = 0;
             for (int i = 0; i < list.length(); i++) {
                 JSONObject initial = list.optJSONObject(i);
+                String label = "神券团购任务[" + lotteryTaskTitle(initial) + "]";
                 String id = text(initial, "playId");
                 JSONObject row = id.isEmpty() ? null : unique(list, "playId", id);
-                if (row == null || !lotterySafe(row)) continue;
+                if (row == null || !lotterySafe(row)) {
+                    Log.record(label + "：跳过第" + (i + 1) + "项任务，原因=" + (id.isEmpty() ? "playId缺失"
+                            : row == null ? "playId重复" : "不满足免费浏览/搜索规则")
+                            + "，类型=" + responseField(initial, "taskType") + "，状态=" + responseField(initial, "taskStatus")
+                            + "，标题字段=" + !text(initial == null ? null : initial.optJSONObject("taskExtProps"), "taskTitle").isEmpty());
+                    continue;
+                }
+                if (Status.hasFlagToday("sjActivityShenQuanUnconfirmed::" + id)) {
+                    Log.record(label + "：旧回执尚未确认，仅跳过该任务，继续其他操作");
+                    continue;
+                }
+                String taskDomain = shenQuanDomain("trigger:" + id);
+                if (!reconcileShenQuan(taskDomain) || !enabled(taskDomain) || Status.hasFlagToday("sjActivityShenQuanUnconfirmed::" + id)) {
+                    Log.record(label + "：回执尚未确认，仅跳过本任务，继续其他任务及已有免费次数抽奖");
+                    continue;
+                }
+                if (Set.of("RECEIVED", "DONE").contains(row.optString("taskStatus"))) {
+                    previouslyCompleted++;
+                    Log.record("☑️ " + label + "：此前已完成并领奖，本轮无需提交");
+                    continue;
+                }
                 row = lotteryTask(id);
-                if (row == null || !lotterySafe(row) || !lotteryContract(initial).equals(lotteryContract(row))) continue;
+                if (row == null || !lotterySafe(row) || !lotteryContract(initial).equals(lotteryContract(row))) {
+                    Log.record(label + "：实时查询未匹配原任务资料，未提交");
+                    continue;
+                }
                 JSONObject props = row.optJSONObject("taskExtProps");
-                long seconds = count(props, "browseTime");
+                // SJ 对未提供时长或 0 秒的浏览任务等待 4～6 秒；取其下限。
+                long seconds = props == null || !props.has("browseTime") ? 4 : count(props, "browseTime");
+                if (seconds == 0) seconds = 4;
+                Log.record(label + "：状态=" + responseField(row, "taskStatus") + "，等待秒数=" + seconds);
                 if ("INIT".equals(row.optString("taskStatus"))) {
-                    if (seconds < 1 || seconds > 300) continue;
-                    if (!reserve("shenQuan", "trigger:" + id)) return;
-                    JSONObject ack = call("alipay.asset.promplaymatrix.play.trigger", MyUtils.newJSONObject().put("bizNo", UUID.randomUUID().toString()).put("playId", id), true);
+                    if (seconds < 1 || seconds > 300) {
+                        Log.record(label + "：任务等待时长不在1～300秒内，未提交");
+                        continue;
+                    }
+                    JSONObject ack = call("alipay.asset.promplaymatrix.play.trigger", MyUtils.newJSONObject().put("bizNo", UUID.randomUUID().toString()).put("playId", id), true,
+                            "trigger:" + id, MyUtils.newJSONObject().put("contract", lotteryContract(row)));
+                    if (ack == null) { Log.record(label + "：上报响应未通过，结果待回查，未记完成"); continue; }
+                    Log.record(label + "：上报已受理，开始等待" + seconds + "秒，待回查完成状态");
                     waitSeconds(seconds);
                     JSONObject after = lotteryTask(id);
-                    if (ack == null || after == null || !lotteryContract(row).equals(lotteryContract(after))
-                            || !"TO_RECEIVE".equals(after.optString("taskStatus")) || !confirmed("shenQuan", "神券团购任务")) return;
+                    if (after == null || !lotteryContract(row).equals(lotteryContract(after))
+                            || !Set.of("TO_RECEIVE", "RECEIVED", "DONE").contains(after.optString("taskStatus"))) {
+                        Log.record(label + "：任务上报未确认，回查状态=" + responseField(after, "taskStatus")
+                                + "，任务资料匹配=" + (after != null && lotteryContract(row).equals(lotteryContract(after))));
+                        continue;
+                    }
+                    if (!confirmed(taskDomain, label + "上报", true)) continue;
                     row = after;
+                    if (Set.of("RECEIVED", "DONE").contains(row.optString("taskStatus"))) {
+                        completed++;
+                        String message = "✅ " + label + "：本轮完成并领奖，服务端状态回查已确认，未提供奖励名称";
+                        Log.other(message);
+                        Log.record(message);
+                    }
                 }
                 if ("TO_RECEIVE".equals(row.optString("taskStatus"))) {
-                    JSONObject before = camp();
-                    long remaining = count(before, "remainingCount");
-                    if (remaining < 0 || !reserve("shenQuan", "reward:" + id)) return;
-                    JSONObject ack = call("alipay.asset.promplaymatrix.play.prize.receive", MyUtils.newJSONObject().put("bizNo", UUID.randomUUID().toString()).put("playId", id), true);
-                    JSONObject after = lotteryTask(id), amount = camp();
+                    JSONObject ack = call("alipay.asset.promplaymatrix.play.prize.receive", MyUtils.newJSONObject().put("bizNo", UUID.randomUUID().toString()).put("playId", id), true,
+                            "reward:" + id, MyUtils.newJSONObject().put("contract", lotteryContract(row)));
+                    JSONObject after = lotteryTask(id);
+                    Log.record(label + "：领奖回查状态=" + responseField(after, "taskStatus")
+                            + "，任务资料匹配=" + (after != null && lotteryContract(row).equals(lotteryContract(after))));
                     if (ack == null || after == null || !lotteryContract(row).equals(lotteryContract(after))
                             || !Set.of("RECEIVED", "DONE").contains(after.optString("taskStatus"))
-                            || count(amount, "remainingCount") <= remaining || !confirmed("shenQuan", "神券团购抽奖机会")) return;
+                            || !confirmed(taskDomain, "神券团购完成任务[" + lotteryTaskTitle(row) + "]得["
+                            + lotteryPrizeNames(ack.optJSONArray("prizeInfoList")) + "]")) continue;
+                    completed++;
                 }
             }
+            Log.record("📊 神券团购任务结果：本轮新完成并领奖=" + completed + "项，此前已完成并领奖=" + previouslyCompleted + "项");
         }
         if (!draw) return;
         JSONObject args = drawLocation(location);
@@ -175,17 +331,166 @@ final class SjActivityTasks {
         for (int i = 0; i < budget; i++) {
             JSONObject before = camp();
             long remaining = count(before, "remainingCount"), consumed = count(before, "dayConsumeCount");
-            if (remaining <= 0 || consumed < 0 || !reserve("shenQuan", "draw:" + consumed)) return;
+            if (remaining <= 0 || consumed < 0) {
+                Log.record("神券团购：" + (remaining == 0 && consumed >= 0 ? "剩余机会为0，抽奖处理已结束"
+                        : "抽奖次数字段无效，停止抽奖（remaining=" + remaining + "，consumed=" + consumed + "）"));
+                return;
+            }
             args.put("timestamp", System.currentTimeMillis());
-            JSONObject ack = lottery("receive", args, true), after = camp();
-            if (ack == null || count(after, "remainingCount") != remaining - 1
-                    || count(after, "dayConsumeCount") != consumed + 1 || !confirmed("shenQuan", "神券团购抽奖")) return;
+            JSONObject ack = call(LOTTERY + "receive", args, true, "draw:" + consumed,
+                    MyUtils.newJSONObject().put("remaining", remaining).put("consumed", consumed)), after = camp();
+            Log.record("神券团购抽奖回查：已抽=" + consumed + "→" + count(after, "dayConsumeCount")
+                    + "，剩余=" + remaining + "→" + count(after, "remainingCount"));
+            if (ack == null || !"10000001".equals(ack.optString("code")) || ack.optJSONObject("data") == null || count(after, "remainingCount") != remaining - 1
+                    || count(after, "dayConsumeCount") != consumed + 1 || !confirmed("shenQuan", "神券团购第" + (consumed + 1)
+                    + "抽得[" + lotteryPrizeNames(ack.optJSONObject("data").optJSONArray("prizeList")) + "]")) return;
         }
+    }
+
+    private static String lotteryTaskTitle(JSONObject row) {
+        String title = text(row == null ? null : row.optJSONObject("taskExtProps"), "taskTitle").replaceAll("[\\r\\n\\t]", " ");
+        return title.isEmpty() ? "未提供任务名称" : title.substring(0, Math.min(title.length(), 80));
+    }
+
+    private static String lotteryPrizeNames(JSONArray prizes) {
+        StringBuilder names = new StringBuilder();
+        // shortcut: 日志最多展示20项奖励；服务端出现更多奖品时再扩展展示。
+        for (int i = 0; prizes != null && i < Math.min(prizes.length(), 20); i++) {
+            JSONObject prize = prizes.optJSONObject(i);
+            JSONObject display = prize == null ? null : prize.optJSONObject("prizeDisplayInfo");
+            String name = display == null ? text(prize, "prizeName") : text(display, "PRIZE_DISPLAY_NAME");
+            if (name.isEmpty()) name = display == null ? text(prize, "prizeBizSubType") : text(display, "PRIZE_SHORT_TITLE");
+            name = name.replaceAll("[\\r\\n\\t]", " ");
+            if (name.isEmpty()) continue;
+            if (names.length() > 0) names.append(",");
+            names.append(name, 0, Math.min(name.length(), 80));
+        }
+        return names.length() == 0 ? "未提供奖励名称" : names.toString();
     }
 
     private static boolean checked(JSONObject camp) {
         JSONObject ext = camp == null ? null : camp.optJSONObject("extInfo");
         return ext != null && (Boolean.TRUE.equals(ext.opt("hasCheckedIn")) || "true".equals(ext.opt("hasCheckedIn")));
+    }
+
+    private boolean reconcileShenQuan() throws Exception {
+        return reconcileShenQuan("shenQuan");
+    }
+
+    private static String shenQuanDomain(String action) {
+        if ("sign".equals(action)) return "shenQuanSign";
+        return action.startsWith("trigger:") || action.startsWith("reward:")
+                ? "shenQuanTask::" + action.substring(action.indexOf(':') + 1) : "shenQuan";
+    }
+
+    private boolean reconcileShenQuan(String domain) throws Exception {
+        current();
+        String raw = RuntimeInfo.getInstance().getString(RECEIPT + domain);
+        if (raw.isEmpty()) return true;
+        JSONObject receipt = MyUtils.newJSONObject(raw), context = receipt.optJSONObject("context");
+        String action = text(receipt, "action"), label = shenQuanAction(action);
+        long receiptDay = count(receipt, "day");
+        boolean validDay = receiptDay >= 20000101 && receiptDay <= day;
+        if (validDay) {
+            Calendar savedDate = MyUtils.getInstance();
+            savedDate.setLenient(false);
+            savedDate.set((int) receiptDay / 10000, (int) receiptDay / 100 % 100 - 1, (int) receiptDay % 100);
+            try { savedDate.getTimeInMillis(); } catch (IllegalArgumentException invalid) { validDay = false; }
+        }
+        boolean validAction = "sign".equals(action) || action.matches("draw:[0-9]{1,18}")
+                || (action.startsWith("trigger:") || action.startsWith("reward:")) && !action.substring(action.indexOf(':') + 1).isEmpty();
+        if (!uid.equals(text(receipt, "uid")) || !validDay || !validAction || receipt.has("context") && context == null
+                || !"shenQuan".equals(domain) && !domain.equals(shenQuanDomain(action))) {
+            Log.record("神券团购待核对记录：账号匹配=" + uid.equals(text(receipt, "uid")) + "，记录日期=" + count(receipt, "day")
+                    + "，当前日期=" + day + "，操作=" + label + "，资料有效=" + (!receipt.has("context") || context != null)
+                    + "，日期有效=" + validDay + "，操作有效=" + validAction
+                    + "；校验未通过，保留记录，不重复提交");
+            return false;
+        }
+        Log.record("神券团购：查询上次" + label + "的服务端状态");
+        JSONObject status = camp();
+        if (status == null) {
+            Log.record("神券团购：活动状态查询未通过校验，保留待核对记录");
+            return false;
+        }
+        if (receiptDay == day && "shenQuan".equals(domain) && !domain.equals(shenQuanDomain(action))) {
+            RuntimeInfo runtime = RuntimeInfo.getInstance();
+            String taskKey = RECEIPT + shenQuanDomain(action), saved = runtime.getString(taskKey);
+            if (!saved.isEmpty() && !saved.equals(raw) || !runtime.putVerified(taskKey, raw)) {
+                Log.record("神券团购：旧" + label + "回执分离保存失败或与已有记录冲突，保留原记录");
+                return false;
+            }
+            current();
+            if (!raw.equals(runtime.getString(RECEIPT + domain)) || !runtime.putVerified(RECEIPT + domain, null)) return false;
+            Log.record("神券团购：旧" + label + "回执已原样分离，仅限制对应操作，不阻塞其他任务及已有免费次数抽奖，未知结果未记成功");
+            return true;
+        }
+        if (receiptDay != day) {
+            // SJ 的机会/签到按日查询；昨日计数不能与今日重置后的计数比较，也不能确认昨日成功。
+            if (count(status, "remainingCount") < 0 || count(status, "dayConsumeCount") < 0) return false;
+            String id = action.startsWith("trigger:") || action.startsWith("reward:")
+                    ? action.substring(action.indexOf(':') + 1) : "";
+            JSONObject row = id.isEmpty() ? null : lotteryTask(id);
+            String state = text(row, "taskStatus");
+            String archiveKey = RECEIPT + domain + "::history::" + receiptDay;
+            RuntimeInfo runtime = RuntimeInfo.getInstance();
+            String saved = runtime.getString(archiveKey);
+            if (!saved.isEmpty() && !saved.equals(raw) || !runtime.putVerified(archiveKey, raw)) {
+                Log.record("神券团购：跨日回执归档失败，保留原记录，本轮未提交");
+                return false;
+            }
+            current();
+            if (!id.isEmpty() && !(row != null && lotterySafe(row)
+                    && (context == null || text(context, "contract").equals(lotteryContract(row)))
+                    && (Set.of("RECEIVED", "DONE").contains(state)
+                    || action.startsWith("trigger:") && "TO_RECEIVE".equals(state))))
+                Status.flagToday("sjActivityShenQuanUnconfirmed::" + id);
+            if (!raw.equals(runtime.getString(RECEIPT + domain)) || !runtime.putVerified(RECEIPT + domain, null)) return false;
+            Log.record("神券团购：" + receiptDay + "的" + label + "回执已归档，历史结果未计作成功；继续按今日资格处理"
+                    + (id.isEmpty() ? "" : "，旧任务状态=" + responseField(row, "taskStatus")));
+            return true;
+        }
+        boolean done = false;
+        if ("sign".equals(action)) {
+            done = checked(status);
+            JSONObject ext = status.optJSONObject("extInfo");
+            Object signed = ext == null ? null : ext.opt("hasCheckedIn");
+            Log.record("神券团购回查：今日签到状态=" + (done ? "已签到"
+                    : Boolean.FALSE.equals(signed) || "false".equals(signed) ? "未签到" : "未知"));
+        } else if (action.startsWith("trigger:") || action.startsWith("reward:")) {
+            String id = action.substring(action.indexOf(':') + 1);
+            JSONObject row = id.isEmpty() ? null : lotteryTask(id);
+            String state = text(row, "taskStatus");
+            label = "任务[" + lotteryTaskTitle(row) + "]" + shenQuanAction(action);
+            Log.record("神券团购" + label + "回查：任务状态=" + (Set.of("INIT", "TO_RECEIVE", "RECEIVED", "DONE").contains(state) ? state : "未知"));
+            if (row != null && lotterySafe(row) && (context == null
+                    || !text(context, "contract").isEmpty() && text(context, "contract").equals(lotteryContract(row)))) {
+                done = action.startsWith("trigger:") ? Set.of("TO_RECEIVE", "RECEIVED", "DONE").contains(state)
+                        : Set.of("RECEIVED", "DONE").contains(state);
+            } else {
+                Log.record("神券团购回查：任务未唯一匹配、规则不满足或与提交时资料不一致");
+            }
+        } else if (action.startsWith("draw:")) {
+            long before;
+            try { before = Long.parseLong(action.substring(5)); }
+            catch (NumberFormatException invalid) { before = -1; }
+            long consumed = count(status, "dayConsumeCount"), remaining = count(status, "remainingCount");
+            Log.record("神券团购回查：今日已抽=" + consumed + "，剩余机会=" + remaining);
+            done = before >= 0 && before < Long.MAX_VALUE && consumed == before + 1 && remaining >= 0
+                    && (context == null || count(context, "consumed") == before
+                    && count(context, "remaining") > 0 && remaining == count(context, "remaining") - 1);
+        }
+        if (done) return confirmed(domain, "神券团购" + label + "待核对记录", action.startsWith("trigger:"));
+        Log.record("神券团购：上次" + label + "结果仍未确认，本轮已回查，不重复提交");
+        return false;
+    }
+
+    private static String shenQuanAction(String action) {
+        if ("sign".equals(action)) return "签到";
+        if (action.startsWith("trigger:")) return "任务上报";
+        if (action.startsWith("reward:")) return "抽奖机会领取";
+        if (action.startsWith("draw:")) return "抽奖";
+        return "未知操作";
     }
 
     static JSONObject drawLocation(String raw) throws Exception {
@@ -221,7 +526,9 @@ final class SjActivityTasks {
     static boolean lotterySafe(JSONObject row) {
         JSONObject props = row == null ? null : row.optJSONObject("taskExtProps");
         String title = text(props, "taskTitle"), type = text(row, "taskType"), template = text(props, "taskTemplate");
-        if (title.isEmpty() || type.isEmpty() || unsafe(title + " " + type + " " + template)) return false;
+        // SJ 允许“浏览支付宝/支付活动”等标题；实际 PAY/ORDER 类型仍禁止。
+        String checkedTitle = title.contains("浏览") || title.contains("逛") ? title.replace("支付", "") : title;
+        if (unsafe(checkedTitle + " " + type + " " + template)) return false;
         return type.contains("BROWSE") || type.contains("SEARCH") || template.equals("BROWSE") || template.equals("SEARCH")
                 || title.contains("浏览") || title.contains("搜索") || title.contains("逛");
     }

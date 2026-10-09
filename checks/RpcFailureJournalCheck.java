@@ -26,8 +26,8 @@ public class RpcFailureJournalCheck {
             assert !second.shouldSkip() : "one signin scene must not pause another";
             second.record(success);
         }
-        assert new RpcRequestGuard(new RpcEntity(method, a)).shouldSkip()
-                : "another scene's success must not clear failure history";
+        assert !new RpcRequestGuard(new RpcEntity(method, a)).shouldSkip()
+                : "ordinary business failures must remain eligible; journal still keeps each scene";
         new RpcRequestGuard(new RpcEntity(method, b)).record(failure);
         JSONObject report = read(FileUtil.getCurrentUserLogDirectory(), GuardCheck.now);
         assert report.optLong("totalFailures") == 4;

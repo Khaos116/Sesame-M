@@ -212,7 +212,7 @@ public class AntSports extends ModelTask {
                                     Log.i("同步步数🏃🏻‍♂️[" + step + "步]");
                                     Status.flagToday("sport::syncStepPush");
                                 } else {
-                                    Log.record("同步运动步数失败:" + step);
+                                    Log.record("同步运动步数失败：目标步数=" + step + "，具体宿主调用阶段见前述日志；本次未标记成功");
                                 }
                             } catch (Throwable t) {
                                 // XHelpers 会把 NoSuchMethodException 包装进 RuntimeException，这里统一处理
@@ -340,16 +340,19 @@ public class AntSports extends ModelTask {
             try {
                 rpcManagerClass = loader.loadClass(className);
             } catch (Throwable t) {
+                Log.record("同步步数[加载接口]：" + className + "，异常=" + t.getClass().getSimpleName());
                 continue;
             }
             List<Method> syncMethods = findSyncStepMethods(rpcManagerClass);
             if (syncMethods.isEmpty()) {
+                Log.record("同步步数[匹配接口]：" + className + "，未找到来源约定的三参数方法");
                 continue;
             }
             for (Method method : syncMethods) {
                 List<Object> targets = Modifier.isStatic(method.getModifiers())
                         ? Collections.singletonList(null)
                         : collectRpcManagerInstances(rpcManagerClass);
+                Log.record("同步步数[调用接口]：" + className + "." + method.getName() + "，候选接收者=" + targets.size());
                 for (Object target : targets) {
                     if (invokeSyncStepMethod(method, target, step)) {
                         return true;
@@ -451,10 +454,14 @@ public class AntSports extends ModelTask {
             Object stepArg = (firstParamType == long.class || firstParamType == Long.class) ? (Object) (long) step : (Object) step;
             Object result = method.invoke(target, stepArg, Boolean.FALSE, "system");
             if (result instanceof Boolean) {
+                Log.record("同步步数[宿主返回]：" + method.getDeclaringClass().getName() + "." + method.getName() + "，结果=" + result);
                 return (Boolean) result;
             }
             return result == null && method.getReturnType() == void.class;
         } catch (Throwable t) {
+            Log.record("同步步数[调用异常]：" + method.getDeclaringClass().getName() + "." + method.getName()
+                    + "，异常=" + t.getClass().getSimpleName()
+                    + (t.getCause() == null ? "" : "，原因类型=" + t.getCause().getClass().getSimpleName()));
             return false;
         }
     }
@@ -984,6 +991,7 @@ public class AntSports extends ModelTask {
             }
             String pathId = path.optString("pathId");
             String pathName = path.optString("name");
+            Log.record("行走路线：准备提交，服务端可用步数=" + remainStepCount + "，本次步数=" + useStepCount + "，最低步数=" + minGoStepCount + "，今日限额=" + dayLimit);
             return walkGo(pathName, pathId, useStepCount);
         } catch (Throwable t) {
             Log.err(TAG, "walkGo err:", t);
@@ -1004,6 +1012,10 @@ public class AntSports extends ModelTask {
                     Log.other("行走路线🚶🏻‍♂️完成[" + pathName + "]");
                 }
                 parseRewardsByJSONObjectData(jo);
+            } else {
+                String code = jo.optString("errorCode", jo.optString("resultCode", jo.optString("error")));
+                Log.record("行走路线：行走请求未成功，本次步数=" + useStepCount + "，错误码="
+                        + (code.matches("[A-Z0-9_]{1,80}") ? code : "缺失或格式无效") + "；本轮停止该路线，未新增业务冷却");
             }
         } catch (Throwable t) {
             Log.err(TAG, "walkGo err:", t);

@@ -10,13 +10,16 @@ SOURCE = ROOT / 'app/src/main/java/io/github/aw1y2z/sesame'
 tree = ast.parse((ROOT / 'checks/check_sj_activities.py').read_text(encoding='utf-8'))
 code = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
             and any(isinstance(t, ast.Name) and t.id == 'code' for t in n.targets))
+guard = (SOURCE / 'rpc/intervallimit/RpcRequestGuard.java').read_text(encoding='utf-8')
+code = code.replace('@@FAILURE@@', guard[guard.index('public static boolean isFailure('):guard.index('    public static boolean isNonFriend(')])
 code = code[:code.index(' public static void main(String[] args)')]
 code = code.replace('int retries)throws Exception', 'int retries)').replace('throws Exception{return rpc', '{return rpc').replace('boolean write)throws Exception{', 'boolean write){')
+code = code.replace('if(transportError)throw new java.io.IOException(', 'if(transportError)throw new IllegalStateException(')
 code = code.replace('public class SjActivityCheck', 'public class SjNativeCheck')
 code = code.replace('import org.json.*;', '''import android.app.*;import android.content.*;import android.net.*;import android.os.*;import android.view.*;
 import java.lang.reflect.*;import java.util.concurrent.*;import java.util.concurrent.atomic.*;
 import io.github.aw1y2z.sesame.data.task.TaskLifecycle;import org.json.*;''')
-code = code.replace('static void record(String s){}', 'static void record(String s){}static void farm(String s){confirmed++;}static void err(String a,String b,Throwable e){throw new AssertionError(e);}')
+code = code.replace('static void record(String s){lines.add(s);}', 'static void record(String s){lines.add(s);}static void farm(String s){confirmed++;}static void err(String a,String b,Throwable e){throw new AssertionError(e);}')
 code = code.replace('static boolean offline;static boolean isOffline()', 'static Context context=new Context();static Context getContext(){return context;}static boolean offline;static boolean isOffline()')
 code = code.replace('if(op.endsWith("camp.query"))', '''if(op.equals("com.alipay.goldenbean.index")){
     assert !write;root.put("taskList",new JSONArray().put(new JSONObject().put("taskId","game").put("taskStatus",beanState).put("taskDisplayConfig",new JSONObject().put("title","这关我很行").put("targetUrl","alipays://platformapi/startapp?appId=2021005132680209"))));
@@ -90,7 +93,7 @@ code += r'''
   }
   clean();HostWeb.calls=0;HostWeb.beforeCallback=()->UserIdMap.uid="other";a.window.root=new MYWebView();SimplePageManager.activity=a;
   try{SjGamePlay.ride(new SjActivityTasks(new OtherRequestGate(),1));throw new AssertionError("stale JS callback accepted");}catch(TaskCancelledException expected){}assert HostWeb.calls==1&&pending("ride");HostWeb.beforeCallback=null;
-  clean();HostWeb.calls=0;a.window.root=new HostWeb();SimplePageManager.activity=a;SjGamePlay.ride(new SjActivityTasks(new OtherRequestGate(),1));assert HostWeb.calls==0&&pending("ride"):"unknown host must stay untouched";
+  clean();HostWeb.calls=0;a.window.root=new HostWeb();SimplePageManager.activity=a;SjGamePlay.ride(new SjActivityTasks(new OtherRequestGate(),1));assert HostWeb.calls==0&&!pending("ride"):"unsent UI action left blocking receipt";
   System.out.println("PASS production orchard/native: full duration, receipts, quotas, manual claims, URI/window ownership, coordinate scale, cancelled gestures and expired callbacks");
  }
 }

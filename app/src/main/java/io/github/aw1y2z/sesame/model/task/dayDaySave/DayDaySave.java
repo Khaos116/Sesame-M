@@ -20,8 +20,12 @@ public final class DayDaySave extends IsolatedRewardTask {
         JSONObject response = run.query("com.alipay.ficcscenepromobff.needle.daydaysave.index",
                 "[{\"bizScenario\":\"huangjinpiao\"}]");
         JSONObject result = response.optJSONObject("result");
-        if (result == null || !(result.opt("hasSignIn") instanceof Boolean)) {
-            Log.record(getName() + "：缺少明确签到状态，停止本轮"); return;
+        Object signedState = result == null ? null : result.opt("hasSignIn");
+        if (!(signedState instanceof Boolean) && !"true".equals(signedState) && !"false".equals(signedState)) {
+            run.stop("缺少明确签到状态（result对象=" + (result != null) + "，hasSignIn字段="
+                    + (signedState != null && signedState != JSONObject.NULL) + "），根结构=" + responseShape(response)
+                    + "，result结构=" + responseShape(result) + "，degradePage="
+                    + (result != null && result.opt("degradePage") instanceof Boolean ? result.optBoolean("degradePage") : "缺失或类型异常")); return;
         }
         if (result.optBoolean("hasSignIn")) { Log.record(getName() + "：已经签到"); return; }
         if (!checkIn.getValue()) { Log.record(getName() + "：未签到，签到开关未开启"); return; }

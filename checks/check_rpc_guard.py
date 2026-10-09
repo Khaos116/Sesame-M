@@ -282,6 +282,10 @@ public class GuardCheck {
         field(bridge, "parseObjectMethod", GuardCheck.class.getMethod("parse", String.class));
         field(bridge, "newRpcCallMethod", GuardCheck.class.getMethod("rpc", types));
         for (boolean async : new boolean[]{false, true}) {
+            reset(); calls = 0; payload = "{\"success\":true,\"resultCode\":\"MGW200\"}";
+            RpcEntity promplay = new RpcEntity("alipay.asset.promplaymatrix.play.trigger", "[{}]");
+            if (async) bridge.newAsyncRequest(promplay, 3, 0); else bridge.requestObject(promplay, 3, 0);
+            assert calls == 1 && !promplay.getHasError() && !guard(promplay.getRequestMethod()).shouldSkip() : "new bridge rejected MGW200";
             reset(); calls = 0; payload = "{\"success\":true}";
             Thread.currentThread().interrupt();
             try {
@@ -366,6 +370,11 @@ public class GuardCheck {
         OldRpcBridge old = new OldRpcBridge();
         field(old, "rpcCallMethod", GuardCheck.class.getMethod("oldRpc", java.util.Arrays.copyOf(types, 12)));
         field(old, "getResponseMethod", GuardCheck.class.getMethod("getResponse"));
+        payload = "{\"success\":true,\"resultCode\":\"MGW200\"}";
+        RpcEntity promplay = new RpcEntity("alipay.asset.promplaymatrix.play.prize.receive", "[{}]");
+        old.requestObject(promplay, 3, 0);
+        assert calls == 1 && !promplay.getHasError() && !guard(promplay.getRequestMethod()).shouldSkip() : "old bridge rejected MGW200";
+        reset(); calls = 0;
         Thread.currentThread().interrupt();
         try { old.requestObject(new RpcEntity("cancelled.old.entry", "[{}]"), 3, 0); assert false : "interrupted child still sent old RPC"; }
         catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 0; }
@@ -460,6 +469,7 @@ public class GuardCheck {
             assert new RpcRequestGuard(request).shouldSkip() : "unsupported primary route still sent: " + route[1];
             JSONObject response = json(request.getResponseString());
             assert "RPC_SKIPPED".equals(response.optString("error"));
+            assert response.optString("resultDesc").contains(method) : "skip reason hides the blocked interface";
             assert io.github.aw1y2z.sesame.model.base.TaskAlternative.hit(response, route[0])
                     : "skipping primary must preserve alternative task completion";
             assert !guard(method, args.replace(route[0], "OTHER_SCENE")).shouldSkip();
@@ -500,16 +510,36 @@ public class GuardCheck {
         System.out.println("PASS C158 exact primary routes, preserved fallback/awards, local journal exclusion and task/account busy cooldowns");
     }
     public static void main(String[] ignored) throws Exception {
+        JSONObject mgw = json("{\"success\":true,\"resultCode\":\"MGW200\",\"resultMsg\":\"成功\",\"triggeredNodeCount\":1}");
+        assert !RpcRequestGuard.isFailure(mgw) : "SJ promplay success was classified as failure";
+        reset();
+        for (int i=0;i<4;i++) guard("alipay.asset.promplaymatrix.play.trigger").record(mgw);
+        assert !guard("alipay.asset.promplaymatrix.play.trigger").shouldSkip() : "MGW200 success created a cooldown";
+        for (String field : new String[]{"success", "isSuccess", "error", "errorCode", "retCode"}) {
+            JSONObject denied = new JSONObject(mgw.toString()).put(field, field.endsWith("Success") || field.equals("success") ? false : "1009");
+            assert RpcRequestGuard.isFailure(denied) : "MGW200 masked explicit failure: " + field;
+        }
         for (String response : new String[]{"{\"success\":true,\"isSuccess\":false}",
                 "{\"success\":true,\"resultCode\":\"FAIL\"}",
                 "{\"isSuccess\":true,\"retCode\":\"1\"}",
                 "{\"retCode\":\"0\",\"resultCode\":\"DENIED\"}"}) {
             assert RpcRequestGuard.isFailure(json(response)) : "explicit failure masked by success: " + response;
         }
-        for (String response : new String[]{"{\"success\":true}", "{\"isSuccess\":true}",
+        for (String response : new String[]{"{\"success\":true}", "{\"isSuccess\":true}", "{\"resultCode\":\"MGW200\"}",
                 "{\"success\":true,\"isSuccess\":true,\"retCode\":\"0\",\"resultCode\":\"SUCCESS\"}",
                 "{\"retCode\":\"0\"}", "{\"resultCode\":\"100\"}", "{\"resultCode\":\"200\"}"}) {
             assert !RpcRequestGuard.isFailure(json(response)) : response;
+        }
+        for (String field : new String[]{"errorCode", "retCode"}) {
+            reset();
+            JSONObject denied = json("{\"success\":true}").put(field, "1009");
+            assert RpcRequestGuard.isFailure(denied) : "risk denial masked by success: " + field;
+            String method = "com.alipay.consumecc.ark.promotion.gate.lottery-machine.camp.query";
+            guard(method).record(denied);
+            assert guard(method).shouldSkip() : "risk field not handled by shared guard: " + field;
+            assert !guard("unrelated.activity.query").shouldSkip() : "denial blocked unrelated activity";
+            now += 30 * MIN;
+            assert !guard(method).shouldSkip() : "first refusal gained an extra day pause";
         }
         dailyReportRules();
         bridges();
@@ -658,6 +688,11 @@ public class GuardCheck {
             assert !guard(friendCert).shouldSkip() : "\"对方未实名\" must not pause the method for every friend";
         }
         reset();
+        String join = "com.antgroup.zmxy.zmmemberop.biz.rpc.promise.PromiseRpcManager.joinActivity";
+        guard(join,"[{\"templateId\":\"A\"}]").record(json("{\"error\":1009,\"errorMessage\":\"访问被拒绝\"}"));
+        assert guard(join,"[{\"templateId\":\"A\"}]").shouldSkip();
+        assert !guard(join,"[{\"templateId\":\"B\"}]").shouldSkip() : "one template paused all member tasks";
+        reset();
         String enter = "com.alipay.antfarm.enterFarm";
         guard(enter, "[{\"sceneCode\":\"ANTFARM\",\"userId\":\"friend\"}]").record(json("{\"error\":48}"));
         assert guard(enter, "[{\"sceneCode\":\"ANTFARM\",\"userId\":\"friend\"}]").shouldSkip();
@@ -690,7 +725,7 @@ public class GuardCheck {
         }
         assert !guard(farm).shouldSkip() && !guard(forest).shouldSkip();
         for (int i=0; i<3; i++) guard(other).record(json("{\"success\":false,\"resultCode\":\"FAIL\"}"));
-        assert guard(other).shouldSkip();
+        assert !guard(other).shouldSkip() : "ordinary business failure must not add a day pause";
         reset();
         guard(forest).record(json("{\"error\":1009,\"errorMessage\":\"访问被拒绝\"}"));
         now += 30 * MIN - 1;

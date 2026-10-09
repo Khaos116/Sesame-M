@@ -389,7 +389,7 @@ public class AntForestV2 extends ModelTask {
         modelFields.addField(expiringForestProps = new BooleanModelField("expiringForestProps", "森林道具 | 集中使用临期库存", false));
         modelFields.addField(expiringForestPropTypes = new SelectModelField("expiringForestPropTypes", "临期道具 | 允许使用类别", new LinkedHashSet<>(), ForestExpiringProps::getOptions).setDependsOn("expiringForestProps"));
         modelFields.addField(expiringForestPropHours = new IntegerModelField("expiringForestPropHours", "临期道具 | 剩余有效小时", 24, 1, 24).setDependsOn("expiringForestProps"));
-        modelFields.addField(expiringForestPropDailyLimit = new IntegerModelField("expiringForestPropDailyLimit", "临期道具 | 每日尝试上限（0不用）", 0, 0, 10).setDependsOn("expiringForestProps"));
+        modelFields.addField(expiringForestPropDailyLimit = new IntegerModelField("expiringForestPropDailyLimit", "临期道具 | 每日尝试上限（0不用）", 1, 0, 10).setDependsOn("expiringForestProps"));
         modelFields.addField(autoUseShieldCard = new BooleanModelField("autoUseShieldCard", "自动续用保护罩", false));
         modelFields.addField(continuousUseShieldHour = new IntegerModelField("continuousUseShieldHour", "自动续用保护罩(小时)", 24, 1, 168).setDependsOn("autoUseShieldCard"));
         //modelFields.addField(doubleClickType = new ChoiceModelField("doubleClickType", "双击卡 | " + "自动使用", UsePropType.CLOSE, UsePropType.nickNames));

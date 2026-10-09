@@ -19,10 +19,11 @@ import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RequestBudgetPolicy;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcFailurePolicy;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 /**
- * Serial execution, request bounds and per-account cooldown for the new
+ * Serial execution, request bounds and successful-query intervals for the new
  * (2026-09-14 GR 快照) 批量小额福利任务的公共基类。移植自 GR 分支，见 docs/MyFix.md。
  */
 public abstract class IsolatedRewardTask extends ModelTask {
@@ -42,32 +43,29 @@ public abstract class IsolatedRewardTask extends ModelTask {
     protected abstract void addFields(ModelFields fields);
     protected abstract void execute(Run run) throws Exception;
 
-    /** Allows a migrated model to retain its persisted normal query key. */
-    protected String nextKey() { return getClass().getSimpleName() + ".nextQuery"; }
-    protected String cooldownKey() { return getClass().getSimpleName() + ".cooldownUntil"; }
-
-    protected final RuntimeInfo cooldownState() {
-        RuntimeInfo state = RuntimeInfo.getInstance();
-        // 旧键无法区分普通间隔与服务端冷却，首次迁移保留其截止时间。
-        if (state.getLong(cooldownKey(), -1L) < 0L) {
-            state.put(cooldownKey(), state.getLong(nextKey(), 0L));
-        }
-        return state;
-    }
+    // 旧键还会把业务字段缺失当成功；仅记录已通过业务校验的查询。
+    protected String nextKey() { return getClass().getSimpleName() + ".nextConfirmedQuery"; }
 
     @Override public final Boolean check() {
         String uid = UserIdMap.getCurrentUid();
         if (uid == null || uid.isEmpty()) return false;
-        RuntimeInfo state = cooldownState();
+        RuntimeInfo state = RuntimeInfo.getInstance();
         resetCooldownAfterBuild(uid, state);
         long now = System.currentTimeMillis();
-        return isEnable() && RewardRunPolicy.sameAccount(uid, uid)
-                && !ApplicationHook.isOffline() && !TaskCommon.IS_ENERGY_TIME
-                && RewardRunPolicy.mayQuery(now, state.getLong(nextKey(), 0L))
-                && RewardRunPolicy.mayQuery(now, state.getLong(cooldownKey(), 0L));
+        if (!isEnable() || !RewardRunPolicy.sameAccount(uid, uid)) return false;
+        if (ApplicationHook.isOffline() || TaskCommon.IS_ENERGY_TIME) {
+            Log.record(getName() + "：本轮未启动，" + (ApplicationHook.isOffline() ? "支付宝离线" : "当前为只收能量时段"));
+            return false;
+        }
+        long next = state.getLong(nextKey(), 0L);
+        if (!RewardRunPolicy.mayQuery(now, next)) {
+            Log.record(getName() + "：本轮未启动，查询间隔剩余" + Math.max(1, (next - now) / 1000) + "秒，未调用RPC");
+            return false;
+        }
+        return true;
     }
 
-    /** Resets the normal interval after a build; server rejection cooldowns remain durable. */
+    /** Resets the normal interval after a version update; RPC rejection state is independent. */
     private void resetCooldownAfterBuild(String uid, RuntimeInfo state) {
         if (uid == null || uid.isEmpty()) return;
         String marker = getClass().getSimpleName() + ".cooldownResetVersion";
@@ -88,8 +86,9 @@ public abstract class IsolatedRewardTask extends ModelTask {
             if (!RewardRunPolicy.sameAccount(queuedAccount, UserIdMap.getCurrentUid()) || !check()) return;
             Run run = new Run(queuedAccount, RuntimeInfo.getInstance());
             run.requireCurrent();
-            run.state.put(nextKey(), System.currentTimeMillis() + intervalHours.getValue() * 3_600_000L);
             execute(run);
+            run.requireCurrent();
+            if (run.requests > 0) run.state.put(nextKey(), System.currentTimeMillis() + intervalHours.getValue() * 3_600_000L);
         } catch (Stopped ignored) {
             // A bounded, failed or interrupted run has already logged its reason.
         } catch (InterruptedException e) {
@@ -118,6 +117,11 @@ public abstract class IsolatedRewardTask extends ModelTask {
             return call(method, args, () -> true);
         }
 
+        public void stop(String reason) throws Exception {
+            Log.record(getName() + "：" + reason + "，停止本轮，未新增查询间隔");
+            throw new Stopped();
+        }
+
         private JSONObject call(String method, String args, Allowed allowed) throws Exception {
             requireCurrent();
             if (!allowed.isAllowed()) throw new Stopped();
@@ -139,14 +143,14 @@ public abstract class IsolatedRewardTask extends ModelTask {
                 Log.record(getName() + "：无响应，停止本轮 method=" + method);
                 throw new Stopped();
             }
-            JSONObject result = new JSONObject(raw);
+            JSONObject result = MyUtils.newJSONObject(raw);
             boolean denied = RpcFailurePolicy.isRiskDenied(
                     result.optInt("error", 0) == 1009 ? "1009" : result.optString("error", ""),
-                    result.optString("errorMessage", ""));
+                    result.optString("errorMessage", ""))
+                    || RpcFailurePolicy.isRiskDenied(result.optString("errorCode"), "")
+                    || RpcFailurePolicy.isRiskDenied(result.optString("retCode"), "");
             if (denied) {
-                state.put(cooldownKey(), RequestBudgetPolicy.cooldownUntil(System.currentTimeMillis(),
-                        RpcFailurePolicy.RISK_DENIED_MS));
-                Log.record(getName() + "：访问被拒绝，暂停24小时 method=" + method);
+                Log.record(getName() + "：服务端拒绝，结束本轮，退避由RPC保护处理 method=" + method);
                 throw new Stopped();
             }
             if (result.optInt("error", 0) != 0 || !Boolean.TRUE.equals(result.opt("success"))) {
@@ -154,22 +158,8 @@ public abstract class IsolatedRewardTask extends ModelTask {
                         : result.optString("resultCode", "");
                 String message = RpcFailurePolicy.boundedMessage(result.optString("errorMessage",
                         result.optString("errorMsg", result.optString("resultDesc", ""))));
-                RpcFailurePolicy.Kind kind = RpcFailurePolicy.kind(code);
-                long cooldown = RpcFailurePolicy.cooldownMs(kind);
-                if (cooldown > 0L) {
-                    state.put(cooldownKey(), RequestBudgetPolicy.cooldownUntil(
-                            System.currentTimeMillis(), cooldown));
-                }
-                if (kind == RpcFailurePolicy.Kind.BUSINESS_REJECTED) {
-                    Log.record(getName() + "：抓取资格/窗口未满足，暂停6小时 method=" + method
-                            + " code=" + code + (message.isEmpty() ? "" : " message=" + message));
-                } else if (kind == RpcFailurePolicy.Kind.SYSTEM_ERROR) {
-                    Log.record(getName() + "：服务端暂时不可用，暂停12小时 method=" + method
-                            + " code=" + code + (message.isEmpty() ? "" : " message=" + message));
-                } else {
-                    Log.record(getName() + "：响应未明确成功，停止本轮 method=" + method
-                            + " code=" + code + (message.isEmpty() ? "" : " message=" + message));
-                }
+                Log.record(getName() + "：响应未明确成功，停止本轮，未新增查询间隔 method=" + method
+                        + " code=" + code + (message.isEmpty() ? "" : " message=" + message));
                 throw new Stopped();
             }
             return result;
@@ -193,6 +183,22 @@ public abstract class IsolatedRewardTask extends ModelTask {
         }
 
         private String getClassKey() { return IsolatedRewardTask.this.getClass().getSimpleName(); }
+    }
+
+    /** 只输出字段名和类型，未知协议也不能把授权/用户资料的值写进运行日志。 */
+    protected static String responseShape(JSONObject object) {
+        if (object == null) return "缺失";
+        StringBuilder shape = new StringBuilder();
+        java.util.Iterator<String> keys = object.keys();
+        int seen = 0;
+        while (keys.hasNext() && seen++ < 12) {
+            String key = keys.next();
+            if (!key.matches("[A-Za-z][A-Za-z0-9_]{0,47}")) continue;
+            Object value = object.opt(key);
+            if (shape.length() > 0) shape.append(',');
+            shape.append(key).append(':').append(value == null || value == JSONObject.NULL ? "null" : value.getClass().getSimpleName());
+        }
+        return "{" + shape + (keys.hasNext() ? ",…" : "") + "}";
     }
 
     private static final class Stopped extends Exception { }

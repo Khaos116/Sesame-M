@@ -108,8 +108,9 @@ public class OrchardDrawCheck {
         JSONObject batch=calls("batchDrawantorchard").get(0);
         assert batch.optInt("times")==41 && batch.optString("activityId").equals("A\"B") && batch.optString("userId").equals("USER\"A");
         assert calls("drawantorchard").isEmpty() && logged("批量抽奖成功") && logged("肥料100g");
-        assert calls("enterDrawActivityantorchard").get(0).optJSONObject("context").optString("appMode").equals("student");
-        assert calls("listTaskantorchard").get(0).optJSONObject("extend").optString("appMode").equals("student");
+        assert calls("enterDrawActivityantorchard").get(0).optJSONObject("context").optString("appMode").equals("normal") : "entry retained Xu's old student mode";
+        assert calls("listTaskantorchard").get(0).optJSONObject("extend").optString("appMode").equals("normal");
+        assert calls("drawSyncantorchard").get(0).optJSONObject("context").optString("appMode").equals("normal");
         assert Log.runtime.containsAll(Log.farm);
         System.out.println("PASS flat activity, >30 batch count, escaped RPC values, runtime result logs");
 

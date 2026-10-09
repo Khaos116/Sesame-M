@@ -27,7 +27,9 @@ jars = [str(next((cache / group / name / version).glob(f"*/{name}-{version}.jar"
 classpath = os.pathsep.join(jars)
 model = re.search(r"data class LogEntry\([\s\S]*?\n\)", source)[0]
 code = "import java.io.*\n" + model + "\n"
-code += "private const val MAX_TAIL_BYTES = 1024 * 1024L\nprivate const val MAX_LOG_ENTRIES = 500\n"
+limits = re.findall(r"^private const val MAX_(?:TAIL_BYTES|LOG_ENTRIES) = .+$", source, re.MULTILINE)
+assert len(limits) == 2
+code += "\n".join(limits) + "\n"
 code += method(source_path, "private fun readTailText(") + "\n"
 code += method(source_path, "private fun loadLogEntries(") + "\n"
 code += method("ui/miuix/MiuixMainActivity.kt", "private fun accountDisplayName(") + "\n"
@@ -82,19 +84,23 @@ fun main() {
             check(displayed[1].body == "$category 旧记录")
         }
         println("PASS: four untagged categories display newest first and preserve continuation lines")
-        file.writeText((0..599).joinToString("\\n") { "12:00:00.000 I: entry $it" })
+        check(MAX_LOG_ENTRIES == 5000 && MAX_TAIL_BYTES == 4 * 1024 * 1024L)
+        val padding = " 好家任务已完成✅".repeat(15)
+        file.writeText((0..5099).joinToString("\\n") { "12:00:00.000 I: entry $it$padding" })
+        check(file.length() > 1024 * 1024L && file.length() < MAX_TAIL_BYTES)
         var entries = emptyList<LogEntry>()
         val listState = ListState()
         @@UPDATE@@
         updateEntries(loadLogEntries(file))
-        check(entries.size == 500 && listState.requests == 1)
-        check(entries.asReversed().first().body == "entry 599")
+        check(entries.size == 5000 && listState.requests == 1)
+        check(entries.first().body == "entry 100$padding")
+        check(entries.asReversed().first().body == "entry 5099$padding")
         file.appendText("\\n12:00:01.000 I: latest")
         updateEntries(loadLogEntries(file))
-        check(entries.size == 500 && listState.requests == 2)
+        check(entries.size == 5000 && listState.requests == 2)
         file.appendText("\\n" + "continuation\\n".repeat(100))
         updateEntries(loadLogEntries(file))
-        check(entries.size == 500 && listState.requests == 3)
+        check(entries.size == 5000 && listState.requests == 3)
         listState.canScrollBackward = true // Older log, including a partially visible last card.
         file.appendText("\\n12:00:02.000 I: newer")
         updateEntries(loadLogEntries(file))
@@ -108,7 +114,11 @@ fun main() {
         check(listState.requests == 5 && entries.isEmpty())
         updateEntries(loadLogEntries(file))
         check(listState.requests == 6)
-        println("PASS: empty entry, 500-entry rollover, multiline append, manual reading, resume and reset")
+        file.writeText("旧记录".repeat((MAX_TAIL_BYTES / 9).toInt() + 10) + "\\n12:00:05.000 OTHER: ✅ 最新结果\\n详情")
+        val tail = loadLogEntries(file)
+        check(tail.size == 1 && tail.single().body == "✅ 最新结果\\n详情")
+        check(!tail.single().body.contains('�'))
+        println("PASS: 5000-entry rollover beyond 1MiB, bounded 4MiB UTF-8 tail, multiline append, manual reading, resume and reset")
     } finally { file.delete() }
 }
 '''.replace("@@UPDATE@@", method(source_path, "    fun updateEntries("))

@@ -176,7 +176,7 @@ public class LegacyCardRewardsCheck {
   reset();RuntimeInfo.data.put("legacyCardAttempts","broken");run(true,true,true,true,3);assert sends+receives+flips+merges==0;
   for(int corruptDay:new int[]{1,20261000,20260230,20270101}){reset();RuntimeInfo.data.put("legacyCardAttempts",new JSONObject().put("day",corruptDay).put("count",1).toString());run(true,true,true,true,3);assert sends+receives+flips+merges==0:corruptDay;}
   reset();RuntimeInfo.data.put("legacyCard::hundredReceipt","broken");run(true,true,false,false,3);assert requests==0;
-  reset();risk=true;run(true,true,false,false,3);assert sends+receives==0&&OtherRequestGate.isCoolingDown();
+  reset();risk=true;run(true,true,false,false,3);assert sends+receives==0&&RuntimeInfo.getInstance().getLong("OtherTask.nextRun",0)==0;
   reset();duplicate=true;run(true,false,false,false,3);assert sends==0;
   reset();RuntimeInfo.writable=false;run(true,true,false,false,3);assert sends==0&&receives==0;
   reset();change=false;run(true,false,false,false,3);assert sends==1&&Log.ok==0;MyUtils.day++;run(true,false,false,false,3);assert sends==1;

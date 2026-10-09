@@ -20,14 +20,15 @@ public final class LuckCardStatus extends IsolatedRewardTask {
 
     @Override protected void execute(Run run) throws Exception {
         if (!inspect.getValue()) { Log.record(getName() + "：查询开关未开启"); return; }
-        JSONObject home = run.query("com.alipay.pcreditcardweb.activity.LuckCard.consult", "[]");
+        // SJ 的 requestString(method, "") 经基类包装后实际发送 [{}]。
+        JSONObject home = run.query("com.alipay.pcreditcardweb.activity.LuckCard.consult", "[{}]");
         JSONObject result = home.optJSONObject("result");
         JSONObject taskInfo = result == null ? null : result.optJSONObject("taskInfo");
         String centerId = taskInfo == null ? "" : taskInfo.optString("taskCenterId", "");
         if (centerId.isEmpty()) { Log.record(getName() + "：当前没有任务中心"); return; }
         JSONObject list = run.query("com.alipay.pcreditcardweb.activity.LuckCard.queryTaskList", "[]");
         JSONArray tasks = list.optJSONArray("result");
-        if (tasks == null || tasks.length() > 100) { Log.record(getName() + "：任务列表格式不明确"); return; }
+        if (tasks == null || tasks.length() > 100) { run.stop("任务列表格式不明确"); return; }
         int total = 0, done = 0, signup = 0, other = 0;
         for (int i = 0; i < tasks.length(); i++) {
             JSONObject task = tasks.optJSONObject(i);

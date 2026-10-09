@@ -205,7 +205,7 @@ final class SesameCreditExtras {
     private static JSONObject treeQuery(Guard g, boolean rent) throws JSONException {
         JSONObject ext = MyUtils.newJSONObject();
         if (rent) ext.put("batchId", "").put("chInfo", CHANNEL);
-        JSONObject root = g.request(TRIGGER, MyUtils.newJSONObject().put("operationCode", rent ? "RENT_GREEN_TASK_LIST_QUERY" : "ZHIMA_TREE_HOME_PAGE")
+        JSONObject root = g.request(TRIGGER, MyUtils.newJSONObject().put("operation", rent ? "RENT_GREEN_TASK_LIST_QUERY" : "ZHIMA_TREE_HOME_PAGE")
                 .put("playInfo", PLAY).put("refer", REFER).put("extInfo", ext), false);
         JSONObject info = root == null ? null : root.optJSONObject("extInfo");
         return info == null ? null : info.optJSONObject(rent ? "taskDetailList" : "zhimaTreeHomePageQueryResult");
@@ -378,7 +378,7 @@ final class SesameCreditExtras {
             TreeState fresh = treeState(g);
             if (fresh == null || !chosen.equals(fresh.tasks.get(chosen.id))) return;
             JSONObject ext = MyUtils.newJSONObject().put("chInfo", chosen.chInfo).put("taskId", chosen.id).put("stageCode", stage);
-            JSONObject args = MyUtils.newJSONObject().put("operationCode", "RENT_GREEN_TASK_FINISH").put("playInfo", chosen.play)
+            JSONObject args = MyUtils.newJSONObject().put("operation", "RENT_GREEN_TASK_FINISH").put("playInfo", chosen.play)
                     .put("refer", chosen.refer).put("taskId", chosen.id).put("stageCode", stage).put("extInfo", ext);
             if (chosen.rent && "RENT".equalsIgnoreCase(chosen.channel)) {
                 if (chosen.appId.isEmpty()) return;
@@ -507,7 +507,7 @@ final class SesameCreditExtras {
             if (g.attempted(area) || !before.equals(cleanState(treeQuery(g, false)))) return;
             JSONObject ext = MyUtils.newJSONObject().put("clearArea", area).put("clickNum", "1").put("treeCode", before.tree);
             if (!g.begin(area)) return;
-            JSONObject ack = g.request(TRIGGER, MyUtils.newJSONObject().put("operationCode", "ZHIMA_TREE_CLEAN_AND_PUSH")
+            JSONObject ack = g.request(TRIGGER, MyUtils.newJSONObject().put("operation", "ZHIMA_TREE_CLEAN_AND_PUSH")
                     .put("playInfo", PLAY).put("refer", REFER).put("extInfo", ext), true);
             CleanState after = cleanState(treeQuery(g, false));
             if (!g.finish(ack, after != null && before.tree.equals(after.tree) && !after.areas.contains(area)

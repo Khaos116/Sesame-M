@@ -23,9 +23,9 @@ public class StickerCheck {
  static class TimeUtil {static boolean cancel;static void sleep(long n){if(cancel)throw new TaskCancelledException();}}
  static class RpcRequestGuard {static boolean isFailure(JSONObject j){return Boolean.FALSE.equals(j.opt("success"));}static String errorMessage(JSONObject j){return "failed";}}
  static class Status {static Set<String> flags=new HashSet<>();static boolean hasFlagToday(String k){return flags.contains(k);}static void flagToday(String k){flags.add(k);}}
- static class Log {static int ok;static void other(String s){ok++;}static void record(String s){}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
+ static class Log {static int ok;static String lines="";static void other(String s){ok++;}static void record(String s){lines+=s;}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
  static class ApplicationHook {
-  static List<JSONObject> calls=new ArrayList<>();static boolean fail=false, changed=true, duplicate=false, malformed=false;
+  static int emptyMode;static List<JSONObject> calls=new ArrayList<>();static boolean fail=false, changed=true, duplicate=false, malformed=false;
   static boolean received=false,upgraded=false,benefit=false,draw=false;
   static String requestString(String name,String args){return requestRaw(name,args,3,-1);}
   static String requestString(String name,String args,int tries,int pause){return requestRaw(name,args,tries,pause);}
@@ -33,16 +33,29 @@ public class StickerCheck {
    JSONObject body=new JSONArray(args).optJSONObject(0);body.put("rpc",name);calls.add(body);
    JSONObject j=new JSONObject().put("success",!fail);
    if(name.endsWith("queryStickerCanReceive")){
+    if(emptyMode==1||emptyMode==10)return j.toString();
+    if(emptyMode==2)return j.put("canReceivePageList",JSONObject.NULL).toString();
+    if(emptyMode==5)return j.put("canReceivePageList","bad-type").toString();
+    if(emptyMode==8)return j.put("canReceivePageList",new JSONArray().put(new JSONObject())).toString();
     if(malformed)return "garbage";
     JSONArray list=received?new JSONArray():new JSONArray().put(new JSONObject().put("id","record").put("stickerConfigId","cfg").put("name","Name"));
     if(duplicate&&!received)list.put(new JSONObject().put("id","record").put("stickerConfigId","other"));
     return j.put("canReceivePageList",new JSONArray().put(new JSONObject().put("stickerCanReceiveList",list))).toString();
    }
    if(name.endsWith("receiveSticker")){if(changed&&!fail)received=true;return j.toString();}
+   if(name.endsWith("queryHomePage")){
+    if(emptyMode==3||emptyMode==10)return j.toString();
+    if(emptyMode==6)return j.put("commonStickerRes","bad-type").toString();
+    if(emptyMode==9)return j.put("commonStickerRes",new JSONObject()).toString();
+   }
    if(name.endsWith("queryHomePage"))return j.put("commonStickerRes",new JSONObject().put("stickerDetailList",new JSONArray().put(new JSONObject().put("stickerConfigId","cfg").put("name","Name").put("status",upgraded?"received":"upgradable").put("hasBenefit",true).put("currentLevel",new JSONObject().put("levelCode",upgraded?"2":"1")).put("upgradableLevel",new JSONObject().put("levelCode","2"))))).toString();
    if(name.endsWith("upgradeStickerBatch")){if(changed&&!fail)upgraded=true;return j.toString();}
    if(name.endsWith("queryDetailPage"))return j.put("stickerDetailRes",new JSONObject().put("stickerDetailList",new JSONArray().put(new JSONObject().put("upgradeBenefitModel",new JSONObject().put("status",benefit?"received":"can_receive"))))).toString();
    if(name.endsWith("triggerUpgradePrize")){if(changed&&!fail)benefit=true;return j.toString();}
+   if(name.endsWith("prize.home.page")){
+    if(emptyMode==4||emptyMode==10)return j.toString();
+    if(emptyMode==7)return j.put("prizeConsumerIdList","bad-type").toString();
+   }
    if(name.endsWith("prize.home.page"))return j.put("prizeConsumerIdList",draw?new JSONArray():new JSONArray().put("quota")).toString();
    if(name.endsWith("prize.trigger")){if(changed&&!fail)draw=true;return j.toString();}
    throw new AssertionError(name);
@@ -51,7 +64,7 @@ public class StickerCheck {
  static class AntMemberRpcCall {@@RPC@@}
  @@METHODS@@
  static long mutations(){return ApplicationHook.calls.stream().filter(j->{String s=j.optString("rpc");return s.endsWith("receiveSticker")||s.endsWith("upgradeStickerBatch")||s.endsWith("triggerUpgradePrize")||s.endsWith("prize.trigger");}).count();}
- static void reset(){ApplicationHook.calls.clear();ApplicationHook.received=false;ApplicationHook.upgraded=false;ApplicationHook.benefit=false;ApplicationHook.draw=false;ApplicationHook.fail=false;ApplicationHook.changed=true;ApplicationHook.duplicate=false;ApplicationHook.malformed=false;Status.flags.clear();Log.ok=0;TimeUtil.cancel=false;}
+ static void reset(){ApplicationHook.emptyMode=0;ApplicationHook.calls.clear();ApplicationHook.received=false;ApplicationHook.upgraded=false;ApplicationHook.benefit=false;ApplicationHook.draw=false;ApplicationHook.fail=false;ApplicationHook.changed=true;ApplicationHook.duplicate=false;ApplicationHook.malformed=false;Status.flags.clear();Log.ok=0;TimeUtil.cancel=false;}
  public static void main(String[] args){
   TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));StickerCheck f=new StickerCheck();
   reset();f.collectStickers.on=false;f.collectBillStickers();assert ApplicationHook.calls.isEmpty();f.collectStickers.on=true;
@@ -59,12 +72,22 @@ public class StickerCheck {
   assert ApplicationHook.calls.get(0).optString("year").equals("2026")&&ApplicationHook.calls.get(0).optString("month").equals("10");
   f.collectBillStickers();assert mutations()==4;
   reset();ApplicationHook.changed=false;f.collectBillStickers();f.collectBillStickers();assert mutations()==1&&Log.ok==0;
-  reset();ApplicationHook.fail=true;f.collectBillStickers();assert mutations()==0;
+  reset();ApplicationHook.fail=true;Log.lines="";f.collectBillStickers();assert mutations()==0;assert Log.lines.contains("账单贴纸[领取]"):"failed sticker phase is hidden";
   reset();ApplicationHook.malformed=true;f.collectBillStickers();assert mutations()==0;
   reset();ApplicationHook.duplicate=true;f.collectBillStickers();assert mutations()==0;
   reset();ApplicationHook.received=true;ApplicationHook.changed=false;f.collectBillStickers();f.collectBillStickers();assert mutations()==1&&Log.ok==0;
   reset();ApplicationHook.received=true;ApplicationHook.upgraded=true;ApplicationHook.changed=false;f.collectBillStickers();f.collectBillStickers();assert mutations()==1&&Log.ok==0;
   reset();ApplicationHook.received=true;ApplicationHook.upgraded=true;ApplicationHook.benefit=true;ApplicationHook.changed=false;f.collectBillStickers();f.collectBillStickers();assert mutations()==1&&Log.ok==0;
+  for(int mode:new int[]{1,2,3,4,8,9,10}){
+   reset();ApplicationHook.emptyMode=mode;f.collectBillStickers();
+   assert Status.hasFlagToday("member::billStickersDone"):"valid empty list stopped flow: "+mode;
+   assert ApplicationHook.calls.stream().anyMatch(j->j.optString("rpc").endsWith("prize.home.page")):"empty earlier branch blocked prize query: "+mode;
+   if(mode!=4&&mode!=10)assert ApplicationHook.draw:"empty earlier branch blocked free prize: "+mode;
+   if(mode==10)assert mutations()==0&&Log.ok==0:"empty response invented a reward";
+  }
+  for(int mode:new int[]{5,6,7}){
+   reset();ApplicationHook.emptyMode=mode;f.collectBillStickers();assert !Status.hasFlagToday("member::billStickersDone"):"wrong list type passed: "+mode;
+  }
   reset();TimeUtil.cancel=true;try{f.collectBillStickers();throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}assert mutations()==0;
   reset();AntMemberRpcCall.receiveSticker("2026","10",new JSONArray().put("quote\"id"),new JSONArray().put("cfg"));assert ApplicationHook.calls.get(0).optJSONArray("stickerIds").optString(0).equals("quote\"id");
   System.out.println("PASS default-off/GMT+8, receive/readback, upgrade/readback, benefit/readback, drawing/readback, stale/failed/malformed/duplicate/retry guards, cancellation and RPC escaping");

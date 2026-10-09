@@ -85,7 +85,7 @@ public class goldenbeans extends ModelTask {
         modelFields.addField(sesameAlchemyNextDayReward = new BooleanModelField("sesameAlchemyNextDayReward", "芝麻信用 | 炼金次日奖励", false));
         modelFields.addField(goldenBeansGamePlay = new BooleanModelField("goldenBeansGamePlay", "金豆夺宝 | 前台小游戏自动操作", false)
                 .setDescription("仅向日葵、这关我很行、三国冰河；实际操作，需要亮屏解锁。窗口身份无法确认、失焦、切号或锁屏立即停止；由服务端任务回查确认，不伪造完成。"));
-        modelFields.addField(goldenBeansGamePlayLimit = new IntegerModelField("goldenBeansGamePlayLimit", "金豆夺宝 | 小游戏每日尝试上限（0不执行）", 0, 0, 3).setDependsOn("goldenBeansGamePlay"));
+        modelFields.addField(goldenBeansGamePlayLimit = new IntegerModelField("goldenBeansGamePlayLimit", "金豆夺宝 | 小游戏每日尝试上限（0不执行）", 1, 0, 3).setDependsOn("goldenBeansGamePlay"));
         return modelFields;
     }
 

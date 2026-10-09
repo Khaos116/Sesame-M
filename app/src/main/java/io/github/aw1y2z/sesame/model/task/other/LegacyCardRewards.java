@@ -70,17 +70,13 @@ final class LegacyCardRewards {
         current();
         boolean write = Set.of("alipay.promoprod.applet.trigger", HUNDRED + "task.receive", HHK + ".flopcard", HHK + ".merge",
                 "com.alipay.pcreditbfweb.sdk.task.trigger", "com.alipay.pcreditbfweb.sdk.task.award").contains(method);
-        String raw = gate.call("旧卡活动", () -> {
+        String raw = gate.call("旧卡活动[" + method + "]", () -> {
             current();
             String body = new JSONArray().put(args).toString();
             return write ? ApplicationHook.requestString(method, body, 1, 0) : ApplicationHook.requestString(method, body);
         });
         current();
         JSONObject root = MyUtils.newJSONObject(raw);
-        if ("1009".equals(root.optString("errorCode"))) {
-            RuntimeInfo.getInstance().put("OtherTask.nextRun", System.currentTimeMillis() + 86400000L);
-            throw new OtherRequestGate.Denied();
-        }
         Object code = root.opt("errorCode");
         if (code != null && !JSONObject.NULL.equals(code) && !"0".equals(String.valueOf(code))) return null;
         return Boolean.TRUE.equals(root.opt("success")) && !RpcRequestGuard.isFailure(root) ? root : null;

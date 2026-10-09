@@ -196,7 +196,7 @@ public class AntFarmRpcCall {
             Log.i("doFarmTask⏭️跳过交易/履约类任务#bizKey=" + bizKey + "，不自动申报");
             return "{}";
         }
-        String args1 = "[{\"bizKey\":\""+bizKey+"\",\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\"}]";
+        String args1 = "[{\"bizKey\":" + JSONObject.quote(bizKey) + ",\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"version\":\"" + VERSION + "\"}]";
         return ApplicationHook.requestString("com.alipay.antfarm.doFarmTask", args1);
     }
 

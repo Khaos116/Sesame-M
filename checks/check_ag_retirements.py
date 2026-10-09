@@ -14,6 +14,23 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent / "audit_regressions"))
 from run import SOURCE, ROOT, method
 
+for java in SOURCE.rglob("*.java"):
+    text = java.read_text(encoding="utf-8")
+    assert not re.search(r"Credit2101|credit2101|信用2101", text), java
+other = (SOURCE / "model/task/other/OtherTask.java").read_text(encoding="utf-8")
+for java in SOURCE.rglob("*.java"):
+    text = java.read_text(encoding="utf-8")
+    for removed in ("DailyCash", "WealthDayRewards", "WealthDayCashProtocol", "SIGN_TASK_CENTER",
+                    "com.alipay.wealthdaybff.open2025.drawCash"):
+        assert removed not in text, (java, removed)
+member = (SOURCE / "model/task/antMember/AntMember.java").read_text(encoding="utf-8")
+for retained in ("YebVouchers.run(", "enableGoldTicketConsume"):
+    assert retained in member, retained
+assert "triggerYebMoneyTree" in (SOURCE / "model/task/antOrchard/AntOrchardRpcCall.java").read_text(encoding="utf-8")
+assert "clazzList.add(OtherTask.class)" in (SOURCE / "model/base/ModelOrder.java").read_text(encoding="utf-8")
+for key in ("haojiaWuyou", "haojiaCoinSign", "shenQuanSign", "shenQuanTasks", "shenQuanDraw"):
+    assert '"' + key + '"' in other, key
+
 path = "model/task/antStall/AntStall.java"
 fish = (SOURCE / "model/task/fish/FishConfig.java").read_text(encoding="utf-8")
 for key in ("enableFishAuto", "enableFishTaskAuto"):

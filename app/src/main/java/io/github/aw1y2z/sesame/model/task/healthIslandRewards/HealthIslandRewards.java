@@ -35,12 +35,12 @@ public final class HealthIslandRewards extends IsolatedRewardTask {
         JSONObject data = response.optJSONObject("data");
         JSONObject medium = data == null ? null : data.optJSONObject("mediumModule");
         JSONObject catalog = data == null ? null : data.optJSONObject("exchangePrizeModule");
-        if (medium == null || catalog == null) { Log.record(getName() + "：未返回完整兑换信息"); return; }
+        if (medium == null || catalog == null) { run.stop("未返回完整兑换信息"); return; }
         String expiring = medium.optString("expiringAmount", "");
-        if (!expiring.matches("[0-9]{1,9}")) { Log.record(getName() + "：到期碎片数量格式不明确"); return; }
+        if (!expiring.matches("[0-9]{1,9}")) { run.stop("到期碎片数量格式不明确"); return; }
         long available = Long.parseLong(expiring);
         JSONArray offers = catalog.optJSONArray("exchangePrizes");
-        if (offers == null || offers.length() > 100) { Log.record(getName() + "：兑换目录格式不明确"); return; }
+        if (offers == null || offers.length() > 100) { run.stop("兑换目录格式不明确"); return; }
         if (available == 0) { Log.record(getName() + "：没有即将到期的红包碎片"); return; }
         if (!exchange.getValue() || prizeId.getValue().isEmpty()) {
             Log.record(getName() + "：有到期碎片，兑换未开启或尚未选择礼品；目录条目=" + offers.length()); return;
@@ -51,7 +51,7 @@ public final class HealthIslandRewards extends IsolatedRewardTask {
         for (int i = 0; i < offers.length(); i++) {
             JSONObject offer = offers.optJSONObject(i);
             if (offer != null && selectedId.equals(offer.optString("prizeId"))) {
-                if (selected != null) { Log.record(getName() + "：礼品ID重复，停止本轮"); return; }
+                if (selected != null) { run.stop("礼品ID重复"); return; }
                 selected = offer;
             }
         }

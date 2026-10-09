@@ -17,7 +17,7 @@ public final class FactCheckRewards extends IsolatedRewardTask {
         if (!inspect.getValue()) return;
         JSONObject result = run.query(FactCheckProtocol.INDEX_METHOD, FactCheckProtocol.args());
         JSONObject data = result.optJSONObject("data");
-        if (data == null) { Log.record(getName() + "：未返回题目数据"); return; }
+        if (data == null) { run.stop("未返回题目数据"); return; }
         String contentId = data.optString("contentId", "");
         String title = data.optString("title", "");
         int answerCount = Math.max(0, Math.min(100, data.optInt("answerCount", 0)));

@@ -90,6 +90,7 @@ public final class RpcRequestGuard {
         } catch (Exception ignored) {
             args = null;
         }
+        boolean hasObjectArgument = args != null;
         if (args == null) args = MyUtils.newJSONObject("{}");
         String scene = args.optString("sceneCode");
         core = method.contains("antforest") || method.contains(".forest.")
@@ -106,6 +107,12 @@ public final class RpcRequestGuard {
         // Preserve existing keys for requests without sceneId.
         String sceneId = args.optString("sceneId");
         if (!sceneId.isEmpty()) identity.put("sceneId").put(sceneId);
+        // 不同芝麻任务/运动路线不能共用一次失败；同时作废旧的不完整标识。
+        for (String field : new String[]{"templateId", "pathId"}) {
+            if (!args.optString(field).isEmpty()) identity.put(field).put(args.optString(field));
+        }
+        if ("com.alipay.pcreditcardweb.activity.LuckCard.consult".equals(method))
+            identity.put("objectArgument").put(hasObjectArgument);
         // enterFarm serves own farm and every friend farm; a friend's failure must not pause own farm.
         if ("com.alipay.antfarm.enterFarm".equals(method)) {
             identity.put("userId").put(args.optString("userId")).put("farmId").put(args.optString("farmId"));
@@ -171,6 +178,9 @@ public final class RpcRequestGuard {
             String reason = unsupportedTaskFinish ? "跳过已确认不支持的完成接口，保留备用完成与列表核对"
                     : knownUnsupported ? "跳过GR已知异常任务" : "请求异常暂停中，剩余"
                     + Math.max(1, (until - System.currentTimeMillis()) / 1000) + "秒";
+            if (!knownUnsupported && saved.optLong("until") > System.currentTimeMillis())
+                reason += saved.has("causeCode") ? "，原始错误码=" + saved.optString("causeCode") : "，旧暂停记录未保存错误码";
+            reason = request.getRequestMethod() + "：" + reason;
             JSONObject result = MyUtils.newJSONObject("{\"success\":false,\"error\":\"RPC_SKIPPED\",\"resultCode\":\"RPC_SKIPPED\"}");
             try {
                 result.put("resultDesc", reason).put("errorMessage", reason).put("memo", reason);
@@ -215,6 +225,7 @@ public final class RpcRequestGuard {
     }
 
     public static boolean isFailure(JSONObject result) {
+        if ("1009".equals(result.optString("errorCode")) || "1009".equals(result.optString("retCode"))) return true;
         String error = result.optString("error");
         if (!error.isEmpty() && !"0".equals(error)) return true;
         if (result.has("success") && !result.optBoolean("success")) return true;
@@ -222,7 +233,7 @@ public final class RpcRequestGuard {
         if (result.has("retCode") && !"0".equals(result.optString("retCode"))) return true;
         if (result.has("resultCode")) {
             String code = result.optString("resultCode");
-            return !"SUCCESS".equalsIgnoreCase(code) && !"100".equals(code) && !"200".equals(code);
+            return !"SUCCESS".equalsIgnoreCase(code) && !"100".equals(code) && !"200".equals(code) && !"MGW200".equals(code);
         }
         // Unrecognized response shapes are left to the business parser, not blacklisted.
         return result.length() == 0;
@@ -274,6 +285,7 @@ public final class RpcRequestGuard {
             }
             String code = result.optString("error");
             if (code.isEmpty() || "0".equals(code)) code = result.optString("resultCode");
+            if ("1009".equals(result.optString("errorCode")) || "1009".equals(result.optString("retCode"))) code = "1009";
             if ("2000".equals(code) || "RPC_SKIPPED".equals(code)) return;
             String message = errorMessage(result);
             int failures = now - saved.optLong("last") < DAY ? saved.optInt("failures") + 1 : 1;
@@ -311,13 +323,13 @@ public final class RpcRequestGuard {
             } else if (!core && isBusy(message)) {
                 // 服务端临时繁忙（“人气大爆发，请稍后再试”等）：短退避，不能因为连续 3 次就停一天；核心接口本就不因普通失败暂停
                 pause = busyPause(failures);
-            } else if (!core && failures >= 3) {
-                pause = DAY;
             }
-            // Ordinary farm/forest failures (full feed, already claimed, etc.) stay eligible.
-            if (core && pause == 0) return;
+            // 业务状态、参数错误都交给调用方处理，不能连续三次就暂停一天。
+            if (pause == 0) return;
             try {
-                saved.put("last", now).put("failures", failures).put("until", now + pause);
+                String causeCode = code.isEmpty() ? result.optString("errorCode") : code;
+                saved.put("last", now).put("failures", failures).put("until", now + pause)
+                        .put("causeCode", causeCode.matches("[A-Za-z0-9_]{1,80}") ? causeCode : "UNKNOWN");
                 state.put(key, saved.toString());
             } catch (Exception e) {
                 Log.printStackTrace(e);

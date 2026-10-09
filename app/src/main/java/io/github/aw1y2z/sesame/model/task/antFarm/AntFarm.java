@@ -1915,6 +1915,12 @@ public class AntFarm extends ModelTask {
             for (int i = 0; i < taskList.length(); i++) {
                 JSONObject task = taskList.optJSONObject(i);
                 if (task == null) continue;
+                // AG 仅领取 FINISHED；可领数量不能替代任务状态。
+                if (!"FINISHED".equals(task.optString("taskStatus"))) {
+                    Log.record("爱心鸡结号❤️跳过非待领奖任务#taskType=" + task.optString("taskType")
+                            + "，状态=" + task.optString("taskStatus"));
+                    continue;
+                }
                 int canReceive = task.optInt("canReceiveAwardCount");
                 if (canReceive <= 0) {
                     continue;
@@ -1924,7 +1930,7 @@ public class AntFarm extends ModelTask {
                     continue;
                 }
                 JSONObject rjo = MyUtils.newJSONObject(AntFarmRpcCall.receiveCompetitionTaskAward(taskType, canReceive));
-                if (MessageUtil.checkMemo(TAG, rjo)) {
+                if (MessageUtil.checkSuccess(TAG, rjo)) {
                     claimed++;
                     Log.farm("爱心鸡结号❤️领取任务奖励[" + task.optString("title") + "] taskType=" + taskType);
                 }
@@ -2949,12 +2955,41 @@ public class AntFarm extends ModelTask {
         }
     }
 
+    private static String farmTaskRoute(JSONObject task) {
+        String type = task.optString("taskId").trim();
+        if (type.isEmpty()) type = task.optString("bizKey").trim();
+        JSONObject control = task.optJSONObject("deliveryControlItem");
+        Map<String, String> tracer = new HashMap<>();
+        for (String part : (control == null ? "" : control.optString("iepTaskTracer")).split("~")) {
+            int at = part.indexOf(':');
+            if (at > 0 && at < part.length() - 1) tracer.put(part.substring(0, at), part.substring(at + 1));
+        }
+        if (type.isEmpty()) type = tracer.getOrDefault("taskType", "");
+        // AG resolveFarmTaskClosureRoute：真实业务由已有流程推进，不能再报成通用浏览任务。
+        if ("COOK".equals(type)) return "小鸡厨房";
+        if ("SLEEP".equals(type)) return "小鸡睡觉";
+        if ("HIRE_LOW_ACTIVITY".equals(type)) return "雇佣小鸡";
+        String scene = tracer.getOrDefault("sceneCode", "");
+        if (Set.of("ANTFARM_DAILY_DRAW_TASK", "ANTFARM_IP_DRAW_TASK").contains(scene)) return "抽抽乐";
+        JSONObject params = task.optJSONObject("categorizationParamModel");
+        if (Set.of("XJLY_xxljy", "XJLYKBX1_sl90").contains(type)
+                || params != null && "2021005181698249".equals(params.optString("game_id"))
+                || "PARADISE".equals(task.optString("innerAction")) && "AccOpenBox".equals(task.optString("categorizationThirdLevel"))) return "小鸡乐园开宝箱";
+        return "SHANGYEHUA_90_1".equals(type) && type.equals(tracer.get("taskType")) && "ANTFARM_FOOD_TASK".equals(scene)
+                ? "ANTFARM_FOOD_TASK" : "";
+    }
+
     private Boolean doFarmTask(JSONObject task) {
         boolean isDoTask = false;
         try {
             String title = task.optString("title");
             String bizKey = task.optString("bizKey");
             String taskId = task.optString("taskId");
+            String route = farmTaskRoute(task);
+            if (!route.isEmpty() && !"ANTFARM_FOOD_TASK".equals(route)) {
+                Log.record("饲料任务[" + title + "]由" + route + "业务流程推进；本次未发送通用完成请求");
+                return false;
+            }
             if (isUnsupportedFarmTask(bizKey)) {
                 return false;
             }
@@ -2967,10 +3002,11 @@ public class AntFarm extends ModelTask {
             } else if ("ANSWER".equals(taskId)) {
                 isDoTask = doAnswerTask(title);
             } else {
-                JSONObject jodoFarmTask = MyUtils.newJSONObject(AntFarmRpcCall.doFarmTask(bizKey));
+                JSONObject jodoFarmTask = MyUtils.newJSONObject("ANTFARM_FOOD_TASK".equals(route)
+                        ? AntFarmRpcCall.finishTask("SHANGYEHUA_90_1", route) : AntFarmRpcCall.doFarmTask(bizKey));
                 //检查并标记黑名单任务（此处是庄园饲料任务，应写入饲料黑名单而非抽抽乐）
                 MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDoFarmTaskList", title, jodoFarmTask);
-                if (MessageUtil.checkResultCode(TAG, jodoFarmTask)) {
+                if ("ANTFARM_FOOD_TASK".equals(route) ? MessageUtil.checkSuccess(TAG, jodoFarmTask) : MessageUtil.checkResultCode(TAG, jodoFarmTask)) {
                     isDoTask=true;
                 } else {
                     // 留痕：标题被服务端改得完全不像时会落到这里（并可能被自动拉黑），
@@ -2984,6 +3020,8 @@ public class AntFarm extends ModelTask {
             } else {
                 //Log.record("任务执行失败或跳过: " + title);
             }
+        } catch (TaskCancelledException e) {
+            throw e;
         } catch (Throwable t) {
             Log.err(TAG, "doFarmTask err:", t);
         }
@@ -3004,7 +3042,8 @@ public class AntFarm extends ModelTask {
                         Log.record("饲料领取🎖️任务[" + task.optString("title", "") + "]小额[" + awardCount + "个]直接领取");
                     } else {
                         unReceiveTaskAward++;
-                        // Log.record("领取" + awardCount + "克饲料后将超过[" + foodStockLimit + "克]上限，终止领取");
+                        Log.record("饲料领取：跳过[" + task.optString("title", "") + "]，待领=" + awardCount
+                                + "g，库存=" + foodStock + "g，上限=" + foodStockLimit + "g；本次未发送领奖请求");
                         return false;
                     }
                 }

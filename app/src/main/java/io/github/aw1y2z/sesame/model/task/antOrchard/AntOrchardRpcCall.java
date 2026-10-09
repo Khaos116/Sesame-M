@@ -277,7 +277,7 @@ public class AntOrchardRpcCall {
      */
     public static String enterDrawActivityantorchard(String activityId, String sceneCode, String source) throws org.json.JSONException {
         JSONObject body = MyUtils.newJSONObject().put("activityId", activityId)
-                .put("context", MyUtils.newJSONObject().put("appMode", "student"))
+                .put("context", MyUtils.newJSONObject().put("appMode", "normal"))
                 .put("requestType", "RPC").put("sceneCode", sceneCode).put("source", source);
         String args = new JSONArray().put(body).toString();
         return ApplicationHook.requestString("com.alipay.antiepdrawprod.enterDrawActivityantorchard", args);
@@ -287,7 +287,7 @@ public class AntOrchardRpcCall {
      * 农场抽抽乐-请求任务列表
      */
     public static String listTaskantorchard(String sceneCode, String source) throws org.json.JSONException {
-        JSONObject body = MyUtils.newJSONObject().put("extend", MyUtils.newJSONObject().put("appMode", "student"))
+        JSONObject body = MyUtils.newJSONObject().put("extend", MyUtils.newJSONObject().put("appMode", "normal"))
                 .put("requestType", "RPC").put("sceneCode", sceneCode).put("source", source);
         String args = new JSONArray().put(body).toString();
         return ApplicationHook.requestString("com.alipay.antieptask.listTaskantorchard", args);
@@ -320,7 +320,7 @@ public class AntOrchardRpcCall {
 
     public static String drawSyncantorchard(String activityId, String sceneCode, String source) throws org.json.JSONException {
         JSONObject body = MyUtils.newJSONObject().put("activityId", activityId)
-                .put("context", MyUtils.newJSONObject().put("appMode", "student"))
+                .put("context", MyUtils.newJSONObject().put("appMode", "normal"))
                 .put("requestType", "RPC").put("sceneCode", sceneCode).put("source", source);
         String args = new JSONArray().put(body).toString();
         return ApplicationHook.requestString("com.alipay.antiepdrawprod.drawSyncantorchard", args);

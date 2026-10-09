@@ -82,6 +82,22 @@ public class MergeConfigCheck {
         test.setModelFieldsMap(Map.of("AntOrchard", old, "BaseModel", base));
         assert scenes.getValue().equals(Map.of("main", 10, "yeb", 3));
         assert Boolean.FALSE.equals(test.modelFieldsMap.get("BaseModel").get("batteryPerm").getValue());
+        var flowers = new ModelFields(); flowers.addField(field("plantingFlowersSign", true));
+        var animals = new ModelFields(); animals.addField(field("adventureSign", false));
+        var cash = new ModelFields(); cash.addField(field("receiveCash", true));
+        test.setModelFieldsMap(Map.of("AntOrchard", old, "PlantingFlowers", flowers, "AntAnimalGuess", animals,
+                "DailyCash", cash, "WealthDayRewards", cash));
+        assert !test.modelFieldsMap.containsKey("PlantingFlowers") && !test.modelFieldsMap.containsKey("AntAnimalGuess")
+                && !test.modelFieldsMap.containsKey("DailyCash") && !test.modelFieldsMap.containsKey("WealthDayRewards")
+                : "removed module restored by old configuration";
+        assert !ModelTask.configs.containsKey("PlantingFlowers") && !ModelTask.configs.containsKey("AntAnimalGuess")
+                : "saved data reactivated a removed module";
+        String retained = JsonUtil.toFormatJsonString(test.modelFieldsMap);
+        assert !retained.contains("plantingFlowersSign") && !retained.contains("adventureSign") && !retained.contains("receiveCash");
+        assert scenes.getValue().equals(Map.of("main", 10, "yeb", 3)) : "retirement changed retained orchard settings";
+        test.setModelFieldsMap(Map.of("AntOrchard", old));
+        assert !test.modelFieldsMap.containsKey("PlantingFlowers") && !test.modelFieldsMap.containsKey("AntAnimalGuess")
+                : "removed module data leaked into another account";
         old.put("orchardSpreadManureSceneList", field("orchardSpreadManureSceneList", List.of("main", "yeb")));
         old.addField(field("orchardSpreadManureCount", 7));
         test.setModelFieldsMap(Map.of("AntOrchard", old));
