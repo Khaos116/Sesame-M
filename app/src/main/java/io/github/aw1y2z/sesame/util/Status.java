@@ -29,6 +29,14 @@ public class Status {
      */
     private static volatile boolean saveFailureNotified = false;
 
+    /**
+     * 内存里这份状态属于哪个 uid（静态字段不进 Jackson、不落盘）。
+     * <p>启动早期 uid 可能尚未就绪，此时 load() 读到的不是本账号的文件；若据此落盘，
+     * 会覆盖真实账号当天的 status.json。uid 与之一致前，读、写都必须先按当前 uid 重载，
+     * 见 {@link #ensureLoadedForCurrentUid()}。
+     */
+    private static volatile String loadedUid;
+
     /** 帮喂好友/家庭成员：当日总次数已达上限（服务端返回 resultCode=391），全局标记 */
     public static final String FLAG_FEED_FRIEND_ANIMAL_LIMIT = "farm::feedFriendAnimalLimit";
     
@@ -89,6 +97,8 @@ public class Status {
     private final Set<String> goldenBeansTaskReceivedSet = new HashSet<>();
     
     public static synchronized Boolean hasFlagToday(String tag) {
+        // 读也要先对齐归属，否则会拿「别的账号/空的状态」判断
+        ensureLoadedForCurrentUid();
         return INSTANCE.flagLogList.contains(tag);
     }
     
@@ -717,6 +727,20 @@ public class Status {
         }
     }
     
+    /**
+     * uid 与内存状态归属不一致（启动早期 uid 未就绪、切号）时，按当前 uid 重新加载。
+     * <p>读写两条路径都要过：只在 save() 里挡，挡不住用错状态做判断；只在 hasFlagToday()
+     * 里挡，挡不住把错状态写回真实账号。切号不丢内存标记——置位入口都即时落盘。
+     */
+    private static void ensureLoadedForCurrentUid() {
+        String currentUid = UserIdMap.getCurrentUid();
+        if (StringUtil.isEmpty(currentUid) || currentUid.equals(loadedUid)) {
+            return;
+        }
+        Log.system(TAG, "状态归属由[" + loadedUid + "]变为[" + currentUid + "]，按当前账号重新加载");
+        load();
+    }
+
     public static synchronized Status load() {
         String currentUid = UserIdMap.getCurrentUid();
         try {
@@ -724,6 +748,9 @@ public class Status {
                 Log.i(TAG, "用户为空，状态加载失败");
                 throw new RuntimeException("用户为空，状态加载失败");
             }
+            // 先声明归属再动文件：本方法内部会写文件，若该链路回调到 hasFlagToday()，
+            // loadedUid 未更新就会再进 load() 形成递归
+            loadedUid = currentUid;
             File statusFile = FileUtil.getStatusFile(currentUid);
             if (statusFile.exists()) {
                 String json = FileUtil.readFromFile(statusFile);
@@ -781,6 +808,8 @@ public class Status {
             Log.record("用户为空，状态保存失败");
             throw new RuntimeException("用户为空，状态保存失败");
         }
+        // 落盘前先对齐归属：uid 未就绪时内存可能是空状态，直接写会清掉真实账号当天的 status.json
+        ensureLoadedForCurrentUid();
         if (updateDay(nowCalendar)) {
             Log.system(TAG, "重置 status.json");
         }
