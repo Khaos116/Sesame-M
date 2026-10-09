@@ -289,21 +289,37 @@ final class FriendActivityTasks {
                 .put("bizScene", "HAOYUNKA_DAILY").put("bizSceneFrom", "creditCard").put("extInfo", MyUtils.newJSONObject().put("version", 1))
                 .put("requestFrom", "pccp"), false));
         JSONArray rows = result == null ? null : result.optJSONArray("taskListResult");
-        if (!validRows(rows, "taskId")) {
-            Set<String> ids = new HashSet<>();
-            int missing = 0, duplicate = 0;
-            if (rows != null) for (int i = 0; i < Math.min(rows.length(), 100); i++) {
-                String id = text(rows.optJSONObject(i), "taskId");
-                if (id.isEmpty()) missing++; else if (!ids.add(id)) duplicate++;
-            }
+        if (rows == null || rows.length() > 100) {
             Log.record("好运卡任务：列表校验失败，data.result对象=" + (result != null)
                     + "，taskListResult类型=" + (result == null || result.opt("taskListResult") == null ? "缺失" : result.opt("taskListResult").getClass().getSimpleName())
-                    + "，条目数=" + (rows == null ? -1 : rows.length()) + "，前100项无有效ID=" + missing + "，重复ID=" + duplicate
+                    + "，条目数=" + (rows == null ? -1 : rows.length())
                     + "；未提交任务");
             return null;
         }
-        Log.record("好运卡任务：查询成功，共" + rows.length() + "项");
-        return rows;
+        java.util.Map<String, JSONObject> tasks = new java.util.LinkedHashMap<>();
+        Set<String> conflicts = new HashSet<>();
+        int missing = 0, duplicate = 0;
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.optJSONObject(i);
+            String id = text(row, "taskId");
+            if (id.isEmpty()) { missing++; continue; }
+            JSONObject previous = tasks.get(id);
+            if (previous == null) { tasks.put(id, row); continue; }
+            duplicate++;
+            // 只有执行所需字段一致才合并，冲突仅隔离该ID，不能阻断其他任务。
+            for (String field : new String[]{"taskStatus", "taskType", "taskShowInfo"}) {
+                if (!java.util.Objects.toString(previous.opt(field), "").equals(java.util.Objects.toString(row.opt(field), "")))
+                    conflicts.add(id);
+            }
+        }
+        JSONArray unique = new JSONArray();
+        for (java.util.Map.Entry<String, JSONObject> task : tasks.entrySet()) {
+            if (!conflicts.contains(task.getKey())) unique.put(task.getValue());
+        }
+        Log.record("好运卡任务：查询成功，原始条目=" + rows.length() + "，有效唯一任务=" + unique.length()
+                + "，重复条目=" + duplicate + "，无有效ID=" + missing + "，冲突ID=" + conflicts.size()
+                + "；重复仅处理一次，无效或冲突仅跳过对应项，其余任务继续");
+        return unique;
     }
 
     private JSONObject trigger(String id, String stage, String domain) throws Exception {

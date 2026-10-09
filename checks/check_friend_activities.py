@@ -19,6 +19,7 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
  static String pstate,title,action,taskState; static boolean sign,failReceive,failOpen,emptyOpen,malformed,duplicate,failProgress,failSend;
  static String rejectTarget="",unknownTarget="",rejectCode="BUSINESS_REJECTED";static boolean noCoins,listedCoins,notReady,noP2eTasks,noLuckyTasks;
  static Set<String> opened=new HashSet<>();
+ static JSONArray luckyOverride;
  static JSONObject card(String id){return new JSONObject().put("id",id).put("cardInfo",new JSONObject().put("title","好运卡红包").put("cardLevel","1").put("amount","0.10"));}
  static JSONArray cards(String... ids){JSONArray a=new JSONArray();for(String id:ids)a.put(card(id));return a;}
  static JSONObject row(){JSONObject r=new JSONObject().put("taskId","task\"\\").put("taskToken","SECRET_TOKEN").put("title",title).put("actionType",action).put("taskStatus",pstate);if(listedCoins)r.put("goldCoinAmount",9);return r;}
@@ -53,6 +54,7 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
     return result(r).toString();
    }
    if(op.endsWith("sdk.task.query")){
+    if(luckyOverride!=null)return result(new JSONObject().put("taskListResult",luckyOverride)).toString();
     if(malformed)return result(new JSONObject().put("taskListResult",new JSONArray().put(new JSONObject().put("taskStatus","TODO")))).toString();
     Object show=taskState.equals("RECEIVED")?cards("task1","task2").toString():new JSONObject().put("title","浏览支付宝领好运卡").put("subTitle","免费好运卡").put("url","alipays://safe").toString();
     return result(new JSONObject().put("taskListResult",noLuckyTasks?new JSONArray():new JSONArray().put(new JSONObject().put("taskId","lucky\"\\").put("taskStatus",taskState).put("taskShowInfo",show)))).toString();
@@ -76,6 +78,23 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
  static boolean pending(String domain){return !RuntimeInfo.instance.getString("sjActivityReceipt::"+domain).isEmpty();}
  static void nextDay(){MyUtils.day++;Status.flags.clear();}
  public static void main(String[] args)throws Exception{
+  reset();
+  JSONObject luckyRow=new JSONObject().put("taskId","lucky\"\\").put("taskStatus","NONE_SIGNUP")
+    .put("taskShowInfo",new JSONObject().put("title","浏览支付宝领好运卡").toString());
+  luckyOverride=new JSONArray().put(luckyRow);
+  for(int i=0;i<30;i++)luckyOverride.put(new JSONObject().put("taskId","other"+i).put("taskStatus","DONE"));
+  luckyOverride.put(luckyRow).put(luckyRow).put(luckyRow);
+  worker(30).luckyCard();assert sends==1&&opens==4:"34 rows/3 duplicates blocked valid lucky task";
+  assert Log.lines.stream().anyMatch(s->s.contains("原始条目=34，有效唯一任务=31，重复条目=3"));
+  reset();luckyOverride=new JSONArray().put(luckyRow).put(new JSONObject().put("taskId","conflict").put("taskStatus","TODO"))
+    .put(new JSONObject().put("taskId","conflict").put("taskStatus","RECEIVED")).put(new JSONObject()).put("broken");
+  worker(30).luckyCard();assert sends==1&&opens==4:"conflict/invalid rows blocked independent task";
+  assert Log.lines.stream().anyMatch(s->s.contains("无有效ID=2，冲突ID=1"));
+  for(String field:new String[]{"taskStatus","taskType","taskShowInfo"}){
+   reset();luckyOverride=new JSONArray().put(luckyRow).put(new JSONObject(luckyRow.toString()).put(field,"CONFLICT")).put(luckyRow);
+   worker(30).luckyCard();assert sends==0:"conflicting duplicate was submitted: "+field;
+  }
+  luckyOverride=null;
   reset();worker(30).p2eBrowse();assert signups==1&&completes==1&&receives==1&&TimeUtil.waited==15;assert Log.lines.stream().anyMatch(s->s.contains("获得12金币"));worker(30).p2eBrowse();assert writes==3;
   reset();worker(1).p2eBrowse();assert signups==1&&completes==0;worker(30).p2eBrowse();assert signups==1&&completes==1&&receives==1:"budget resume";
   reset();pstate="COMPLETED";worker(30).p2eBrowse();assert receives==1&&signups==0&&completes==0;
