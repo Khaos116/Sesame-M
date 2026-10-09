@@ -47,6 +47,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.StringModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.TextModelField;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy;
+import io.github.aw1y2z.sesame.data.task.TaskAward;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy.Outcome;
 import io.github.aw1y2z.sesame.entity.AlipayAntForestHuntTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayAntForestVitalityTaskList;
@@ -1750,21 +1751,12 @@ public class AntForestV2 extends ModelTask {
             //初始化AntForestVitalityTaskListMap
             AntForestVitalityTaskListMap.load();
             // 1. 定义黑名单（需要添加的任务）和白名单（需要移除的任务）
-            // 注："三国大冒险过1关征战"（小游戏）不再预置拉黑，交由自动拉黑机制判定；
-            // 其余（邀请助力/添加组件/连续7天/到店支付/淘宝花花乐/健康问答）保留
-            Set<String> blackList = new HashSet<>();
-            blackList.add("邀请1位好友助力");
-            blackList.add("添加组件及时收能量");
-            blackList.add("到店支付得50g能量");
-            blackList.add("践行绿色行为");
-            blackList.add("连续7天收自己能量");
-            blackList.add("去淘宝花花乐领红包");
-            blackList.add("去蚂蚁阿福健康问答");
-
+            // 注：不再预置拉黑，全部交由自动拉黑机制判定
+            // 预置黑名单登记在 MessageUtil（单一真相，配置页据此标注"默认"）
+            Set<String> blackList = MessageUtil.presetBlackList("AntForestV2", "AntForestVitalityTaskList");
             // 可继续添加更多黑名单任务
 
-            Set<String> whiteList = new HashSet<>();// 从黑名单中移除该任务
-            whiteList.add("逛农场得落叶肥料");
+            Set<String> whiteList = new HashSet<>();
             // 可继续添加更多白名单任务
             for (String task : blackList) {
                 AntForestVitalityTaskListMap.add(task, task);
@@ -1834,11 +1826,10 @@ public class AntForestV2 extends ModelTask {
             AntForestHuntTaskListMap.load();
             // 1. 定义黑名单（需要添加的任务）和白名单（需要移除的任务）
             // 注：抽抽乐里的游戏/开宝箱类不再预置拉黑，交由自动拉黑机制判定
-            blackList = new HashSet<>();
+            blackList = MessageUtil.presetBlackList("AntForestV2", "AntForestHuntTaskList");
             // 可继续添加更多黑名单任务
 
-            whiteList = new HashSet<>();// 从黑名单中移除该任务
-            whiteList.add("消耗活力值得机会");
+            whiteList = new HashSet<>();
             // 可继续添加更多白名单任务
             for (String task : blackList) {
                 AntForestHuntTaskListMap.add(task, task);
@@ -2452,11 +2443,17 @@ public class AntForestV2 extends ModelTask {
                     if (AntForestVitalityTaskList.getValue().contains(taskTitle)) {
                         continue;
                     }
+                    // 周期/持续型任务：由真实行为推进、常驻列表且无 RPC 可完成，跳过（不尝试、不拉黑）
+                    if (TaskAttemptPolicy.isCyclicTask(taskBaseInfo)) {
+                        Log.i(TAG, "森林任务⏭️跳过周期任务[" + taskTitle + "]");
+                        continue;
+                    }
 
                     // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
                     Outcome outcome = TaskAttemptPolicy.handle("forest::" + sceneCode + "/" + taskType, taskTitle, null,
                             () -> attemptFinishTask(sceneCode, taskType, taskTitle), Log::forest,
-                            new TaskAttemptPolicy.Site("AntForestVitalityTaskList", "森林任务", taskType, sceneCode));
+                            new TaskAttemptPolicy.Site("AntForestVitalityTaskList", "森林任务", taskType, sceneCode,
+                                    (k) -> probeForestVitalityStatus(sceneCode, taskType)));
                     doubleCheck = outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
                 }
             }
@@ -2537,6 +2534,13 @@ public class AntForestV2 extends ModelTask {
                 }
                 return true;
             }
+            // 领奖收口：先按任务列表复核"已领到"（该调用点不拉黑）
+            TimeUtil.sleep(800);
+            if (TaskAward.confirmReceivedOrBlackList("森林任务🎖️领取",
+                    k -> probeForestVitalityStatus(sceneCode, taskType), taskTitle, taskTitle, null,
+                    msg -> Log.forest(msg))) {
+                return true;
+            }
         } catch (Throwable t) {
             Log.err(TAG, "receiveTaskAward err:", t);
         }
@@ -2583,6 +2587,44 @@ public class AntForestV2 extends ModelTask {
             Log.err(TAG, "finishTask err:", t);
         }
         return Outcome.RETRY;
+    }
+
+    /** 列表状态探针：重拉绿色行动任务列表，按 sceneCode+taskType 匹配该任务当前状态。 */
+    private TaskAttemptPolicy.ProbeResult probeForestVitalityStatus(String sceneCode, String taskType) {
+        try {
+            JSONObject jo = new JSONObject(AntForestRpcCall.listTaskopengreen());
+            if (!MessageUtil.checkResultCode(TAG, jo) || !jo.has("taskInfoList")) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
+            if (taskInfoList == null) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            for (int i = 0; i < taskInfoList.length(); i++) {
+                JSONObject taskInfo = taskInfoList.getJSONObject(i);
+                JSONObject taskBaseInfo = taskInfo.optJSONObject("taskBaseInfo");
+                if (taskBaseInfo == null) {
+                    continue;
+                }
+                if (!sceneCode.equals(taskBaseInfo.optString("sceneCode"))
+                        || !taskType.equals(taskBaseInfo.optString("taskType"))) {
+                    continue;
+                }
+                String status = taskBaseInfo.optString("taskStatus");
+                if ("FINISHED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.FINISHED;
+                }
+                if ("RECEIVED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
+                }
+                return TaskAttemptPolicy.ProbeResult.TODO;
+            }
+            // 任务已从列表消失：视为已完成且已领
+            return TaskAttemptPolicy.ProbeResult.GONE;
+        } catch (Throwable t) {
+            Log.err(TAG, "probeForestVitalityStatus err:", t);
+            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        }
     }
 
     /**
@@ -2669,7 +2711,8 @@ public class AntForestV2 extends ModelTask {
                 } else if (allowAttempt && TaskStatus.TODO.name().equals(taskStatus)) {
                     outcome = TaskAttemptPolicy.handle(sceneCode + "/" + taskType, taskTitle, null,
                             () -> attemptSceneTask(sceneCode, taskType, taskTitle), Log::forest,
-                            new TaskAttemptPolicy.Site("AntForestVitalityTaskList", "森林任务", taskType, sceneCode));
+                            new TaskAttemptPolicy.Site("AntForestVitalityTaskList", "森林任务", taskType, sceneCode,
+                                    (k) -> probeForestVitalityStatus(sceneCode, taskType)));
                 } else {
                     continue;
                 }
@@ -2844,23 +2887,29 @@ public class AntForestV2 extends ModelTask {
             String response = AntForestRpcCall.queryEnergyRainEndGameList();
             JSONObject jo = new JSONObject(response);
             if (!MessageUtil.checkResultCode(TAG, jo)) {
+                Log.forest("能量雨游戏🎮查询结束列表失败，跳过本轮");
                 return;
             }
             JSONObject groupTask = jo.optJSONObject("energyRainEndGameGroupTask");
             JSONArray taskInfoList = groupTask != null ? groupTask.optJSONArray("taskInfoList") : null;
-            if (taskInfoList == null || taskInfoList.length() == 0) {
-                // 原来这条分支没有任何日志就打了标记，事后分不清是"服务端确实没下发"还是我们没识别出来
+            boolean needInit = jo.optBoolean("needInitTask", false);
+            boolean reported = false;
+            // 兜底标记：本应玩但游戏不在枚举里（通用化后 matchTaskType 返回 null）时，
+            // 旧逻辑会无条件报 Forest_sljyd，这里保留等价兜底，避免整段任务被静默跳过
+            boolean fallbackNeeded = false;
+            // 服务端是否下发过游戏任务：未下发时同样按能量雨=森林救援队兜底上报
+            boolean obtainedAnyTask = taskInfoList != null && taskInfoList.length() > 0;
+
+            if (!obtainedAnyTask) {
+                // 原来这条分支直接打标记返回，与旧版"始终报 Forest_sljyd"的体感不一致；
+                // 用户要求即便没拿到游戏任务也兜底上报一次，故记日志后继续走底部兜底
                 Log.forest("能量雨游戏🎮本次未下发游戏任务"
                         + (groupTask == null ? "(无energyRainEndGameGroupTask)" : "(taskInfoList为空)"));
-                Status.flagToday("EnergyRain::PlayGame");
-                return;
             }
 
             // 2. 逐个处理下发的游戏任务：任务列表里的游戏不止一个，
             // 原来只认 GAME_DONE_SLJYD，别的游戏（含我们还没收录常量的）会被静默跳过
-            boolean needInit = jo.optBoolean("needInitTask", false);
-            boolean reported = false;
-            for (int i = 0; i < taskInfoList.length(); i++) {
+            for (int i = 0; obtainedAnyTask && i < taskInfoList.length(); i++) {
                 JSONObject task = taskInfoList.optJSONObject(i);
                 JSONObject baseInfo = task != null ? task.optJSONObject("taskBaseInfo") : null;
                 if (baseInfo == null) continue;
@@ -2869,19 +2918,24 @@ public class AntForestV2 extends ModelTask {
                 String taskStatus = baseInfo.optString("taskStatus");
                 JSONObject bizInfo = task.optJSONObject("bizInfo");
 
+                boolean needPlay = needInit
+                        || "TODO".equals(taskStatus)
+                        || "NOT_TRIGGER".equals(taskStatus);
+
                 GameTask gameTask = GameTask.matchTaskType(taskType);
                 if (gameTask == null && bizInfo != null) {
                     gameTask = GameTask.matchAppId(bizInfo.optString("appId"));
                 }
                 if (gameTask == null) {
-                    // 枚举里没有这个游戏的常量(appId/gid/action)，登录不了游戏服，只能跳过
+                    // 枚举里没有这个游戏的常量(appId/gid/action)，登录不了对应游戏服；
+                    // 能量雨本质是森林救援队，未收录时按旧逻辑兜底报 Forest_sljyd（只报一次）
                     Log.forest("能量雨游戏🎮任务#" + taskType + "#状态=" + taskStatus + "#未收录游戏");
+                    if (needPlay) {
+                        fallbackNeeded = true;
+                    }
                     continue;
                 }
 
-                boolean needPlay = needInit
-                        || "TODO".equals(taskStatus)
-                        || "NOT_TRIGGER".equals(taskStatus);
                 Log.forest("能量雨游戏🎮任务[" + gameTask.getTitle() + "]#taskType=" + taskType
                         + "#状态=" + taskStatus + (needPlay ? "" : "#无需上报"));
                 if (!needPlay) {
@@ -2890,13 +2944,21 @@ public class AntForestV2 extends ModelTask {
                 if (needInit) {
                     JSONObject initRes = new JSONObject(AntForestRpcCall.initTask(taskType));
                     if (!MessageUtil.checkResultCode(TAG, initRes)) {
-                        // 初始化失败时不打标记，留给下一轮重试
+                        // 初始化失败时不打标记，留给下一轮重试；只跳过当前任务，不影响其余
                         Log.forest("能量雨游戏🎮任务[" + gameTask.getTitle() + "]初始化失败");
-                        return;
+                        continue;
                     }
                     TimeUtil.sleep(500);
                 }
                 gameTask.report("森林", 1);
+                reported = true;
+            }
+            // 兜底：未获取到任何游戏任务，或下发了但都不在枚举里且需要玩，
+            // 仍按能量雨=森林救援队的语义上报一次（旧版始终报 Forest_sljyd）
+            if (!reported && (fallbackNeeded || !obtainedAnyTask)) {
+                Log.forest("能量雨游戏🎮" + (!obtainedAnyTask ? "未获取到游戏任务，" : "存在未收录的可玩任务，")
+                        + "兜底按[森林救援队(能量雨)]上报");
+                GameTask.Forest_sljyd.report("森林", 1);
                 reported = true;
             }
             if (!reported) {
@@ -3999,7 +4061,7 @@ public class AntForestV2 extends ModelTask {
                     }
                     if ("FINISHED".equals(status)) {
                         acted = true;
-                        changed |= monopolyReceiveTaskAward(taskType, sceneCode, title);
+                        changed |= monopolyReceiveTaskAward(regionCode, taskType, sceneCode, title);
                     } else if ("TODO".equals(status) && "NORMAL".equals(base.optString("taskMode"))
                             && "VISIT_FLOAT_BALL".equals(base.optString("taskProdPlayType"))) {
                         // 只自动做"浏览浮球"这类纯等待任务，其余需要真实业务动作的任务不碰
@@ -4063,8 +4125,23 @@ public class AntForestV2 extends ModelTask {
                 return false;
             }
             TimeUtil.sleep(TimeUnit.SECONDS.toMillis(seconds));
+            // 交易/履约类：不申报（伪申报会被服务端判风险），直接交自动黑名单
+            if (TaskAlternative.isTransactionTask(taskType)) {
+                // 底线：交易/支付类一次即永久拉黑，绝不伪造
+                Log.forest("新版保护地🌲⏭️交易/履约类[" + title + "]#不申报，已永久拉黑");
+                MessageUtil.MarkTaskBlackListPermanent("AntForestV2", "MonopolyTaskList", "新版保护地任务",
+                        blackTaskKey(title));
+                return false;
+            }
             JSONObject jo = monopolyResponse(AntForestRpcCall.finishMonopolyTask(taskType, sceneCode));
             markMonopolyTaskBlackList(title, jo);
+            // 不支持rpc调用（400000040）→ 换另一种实现方案（doFarmTask 伪申报）；
+            // 响应不可信，成败仍以任务列表为准（下一轮列表 FINISHED 即去领奖）
+            if (TaskAlternative.hit(jo, sceneCode)) {
+                TaskAlternative.trigger(null, null, title, taskType, sceneCode,
+                        TaskAlternative.DEFAULT_VERSION, "新版保护地🌲", Log::forest);
+                return true;
+            }
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 Log.forest("新版保护地🌲任务完成[" + title + "]");
                 return true;
@@ -4076,11 +4153,19 @@ public class AntForestV2 extends ModelTask {
     }
 
     /* 新版保护地：领取任务奖励 */
-    private boolean monopolyReceiveTaskAward(String taskType, String sceneCode, String title) {
+    private boolean monopolyReceiveTaskAward(String regionCode, String taskType, String sceneCode, String title) {
         try {
             JSONObject jo = monopolyResponse(AntForestRpcCall.receiveMonopolyTask(taskType, sceneCode));
-            markMonopolyTaskBlackList(title, jo);
-            if (MessageUtil.checkSuccess(TAG, jo)) {
+            boolean ok = MessageUtil.checkSuccess(TAG, jo);
+            // 领奖收口：先按任务列表复核"已领到"，未确认才交自动拉黑（顺序由 TaskAward 固定）
+            if (!ok && TaskAward.confirmReceivedOrBlackList("新版保护地🌲任务奖励",
+                    k -> probeMonopolyStatus(regionCode, taskType, sceneCode), taskType, title,
+                    () -> markMonopolyTaskBlackList(title, jo),
+                    msg -> Log.forest(msg))) {
+                return true;
+            }
+            if (ok) {
+                markMonopolyTaskBlackList(title, jo);
                 Log.forest("新版保护地🌲任务奖励[" + title + "]");
                 return true;
             }
@@ -4088,6 +4173,40 @@ public class AntForestV2 extends ModelTask {
             Log.err(TAG, "monopolyReceiveTaskAward err:", t);
         }
         return false;
+    }
+
+    /* 列表状态探针：重拉新版保护地任务列表，按 taskType 匹配该任务当前状态 */
+    private TaskAttemptPolicy.ProbeResult probeMonopolyStatus(String regionCode, String taskType, String sceneCode) {
+        try {
+            JSONObject jo = monopolyResponse(AntForestRpcCall.listMonopolyTasks(regionCode, sceneCode));
+            if (!MessageUtil.checkSuccess(TAG, jo)) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
+            if (taskInfoList == null) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            for (int i = 0; i < taskInfoList.length(); i++) {
+                JSONObject task = taskInfoList.optJSONObject(i);
+                JSONObject base = task == null ? null : task.optJSONObject("taskBaseInfo");
+                if (base == null || !taskType.equals(base.optString("taskType"))) {
+                    continue;
+                }
+                String status = base.optString("taskStatus");
+                if ("FINISHED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.FINISHED;
+                }
+                if ("RECEIVED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
+                }
+                return TaskAttemptPolicy.ProbeResult.TODO;
+            }
+            // 任务已从列表消失：视为已完成且已领
+            return TaskAttemptPolicy.ProbeResult.GONE;
+        } catch (Throwable t) {
+            Log.err(TAG, "probeMonopolyStatus err:", t);
+            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        }
     }
 
     /* 新版动物伙伴：领取已产生的派遣能量 */

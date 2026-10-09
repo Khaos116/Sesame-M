@@ -12,6 +12,7 @@ import io.github.aw1y2z.sesame.data.ConfigV2;
 import io.github.aw1y2z.sesame.data.ModelFields;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy;
+import io.github.aw1y2z.sesame.data.task.TaskAward;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy.Outcome;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.Log;
@@ -305,8 +306,13 @@ public final class GoldenBeansTasks {
                 }
 
                 if (STATUS_TODO.equals(taskStatus)) {
-                    if (isPayTask(taskId)) {
-                        Log.record("金豆[" + entry.alias + "]任务⏭️[" + taskName + "]需真实付款#跳过");
+                    // 底线：付款类/交易类一律不申报、一次即**永久**拉黑
+                    // （原先只"跳过"：不写黑名单，解禁周期外还会反复回到待办）
+                    if (isPayTask(taskId) || TaskAlternative.isTransactionTask(taskId)) {
+                        MessageUtil.MarkTaskBlackListPermanent("goldenbeans", "GoldenBeansTaskList",
+                                "金豆夺宝任务", taskName);
+                        Log.goldenBeans("金豆[" + entry.alias + "]任务⏭️[" + taskName
+                                + "]交易/支付类#不申报，已永久拉黑");
                         continue;
                     }
                     if (goldenbeansRpcCall.TASK_TYPE_EXCHANGE.equals(taskId)) {
@@ -401,9 +407,12 @@ public final class GoldenBeansTasks {
             return false;
         }
         // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
-        // 兜底后的核对交给本模块的 verifyPendingTasks（TaskAlternative.verify），故 listField 传 null
+        // 完成与否一律以任务列表为准（探针 probeGoldenBeansStatus 复核），响应不可信；
+        // 兜底后的核对仍交给本模块的 verifyPendingTasks，故 listField 传 null（黑名单由 verify 管）
         Outcome outcome = TaskAttemptPolicy.handle("goldenbeans::" + entry.alias + "/" + taskId, taskName, null,
-                () -> attemptFinishTask(entry, taskId, taskName), msg -> Log.goldenBeans(msg), null);
+                () -> attemptFinishTask(entry, taskId, taskName), msg -> Log.goldenBeans(msg),
+                new TaskAttemptPolicy.Site(null, "金豆[" + entry.alias + "]任务", null, entry.taskSceneCode,
+                        (k) -> probeGoldenBeansStatus(entry, taskId)));
         return outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
     }
 
@@ -475,6 +484,42 @@ public final class GoldenBeansTasks {
         });
     }
 
+    /** 列表状态探针：重拉本入口任务列表，按 taskId 匹配；仅待办视为未完成（消失即已完成）。 */
+    private TaskAttemptPolicy.ProbeResult probeGoldenBeansStatus(GoldenBeansEntry entry, String taskId) {
+        try {
+            JSONObject syncJo = GoldenBeansSupport.parse(goldenbeansRpcCall.pullOf(
+                    entry.bizType, entry.source, "FARM_TASK", "TASK_LIST"));
+            if (!GoldenBeansSupport.ok(syncJo)) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            JSONArray taskList = syncJo.optJSONArray("taskList");
+            if (taskList == null) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            for (int i = 0; i < taskList.length(); i++) {
+                JSONObject task = taskList.optJSONObject(i);
+                if (task == null || !taskId.equals(task.optString("taskId", "").trim())) {
+                    continue;
+                }
+                String status = task.optString("taskStatus", "").trim().toUpperCase();
+                if (STATUS_TODO.equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.TODO;
+                }
+                // DONE 与 RECEIVED 同义（本文件状态分派处：两者都算"已领取"），FINISHED / TO_RECEIVE 才是"待领"
+                if (STATUS_RECEIVED.equals(status) || STATUS_DONE.equals(status) || "HAS_RECEIVED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
+                }
+                return TaskAttemptPolicy.ProbeResult.FINISHED;
+            }
+            // 任务已从列表消失：视为已完成且已领
+            return TaskAttemptPolicy.ProbeResult.GONE;
+        } catch (Throwable th) {
+            Log.i(GoldenBeansSupport.TAG, "probeGoldenBeansStatus err:");
+            Log.printStackTrace(GoldenBeansSupport.TAG, th);
+            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        }
+    }
+
     private boolean claimAward(GoldenBeansEntry entry, String taskId, String taskName) {
         if (taskId == null || taskId.isEmpty()) {
             Log.i("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]缺少taskId#跳过领奖");
@@ -488,8 +533,13 @@ public final class GoldenBeansTasks {
                         + GoldenBeansSupport.awardText(jo));
                 return true;
             }
-            // 领奖失败同样按不可重试错误自动拉黑，避免每轮重复请求
-            MessageUtil.checkResultCodeAndMarkTaskBlackList("GoldenBeansTaskList", taskId, jo);
+            // 领奖收口：先按任务列表复核"已领到"，未确认才交自动拉黑（顺序由 TaskAward 固定）
+            if (TaskAward.confirmReceivedOrBlackList("金豆[" + entry.alias + "]任务🎖️领取",
+                    k -> probeGoldenBeansStatus(entry, taskId), taskId, taskName,
+                    () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("GoldenBeansTaskList", taskId, jo),
+                    msg -> Log.goldenBeans(msg))) {
+                return true;
+            }
             Log.goldenBeans("金豆[" + entry.alias + "]任务⚠️领取[" + taskName + "]失败["
                     + GoldenBeansSupport.describe(jo) + "]");
         } catch (Throwable th) {
@@ -509,11 +559,12 @@ public final class GoldenBeansTasks {
             // 3) 芝麻炼金游戏任务：暂时从黑名单移除，让 finishTask() 尝试完成
             Map<String, String> defaultBlackList = new LinkedHashMap<>();
             defaultBlackList.put("GOLDEN_BEAN_TASK_XIANSHANGZHIFU", "线上支付");
-            defaultBlackList.put("GOLDEN_BEAN_TASK_XIANXIAZHIFU", "到店/线下支付");
             defaultBlackList.put("GOLDEN_BEAN_TASK_YUEBAO", "余额宝真实业务动作");
             defaultBlackList.put("TEST_PUSH_SUBSCRIBE", "订阅消息需真实确认");
             // 芝麻炼金游戏任务已移除黑名单，将通过 finishTask() API 尝试自动完成
-            Set<String> defaultKeys = new LinkedHashSet<>(defaultBlackList.keySet());
+            // 预置黑名单以 MessageUtil 登记为准（单一真相，配置页据此标注"默认"）；
+            // 上面的 defaultBlackList 仅剩"展示名"用途（下面灌本地 idMap 用）
+            Set<String> defaultKeys = MessageUtil.presetBlackList("goldenbeans", "GoldenBeansTaskList");
 
             for (Map.Entry<String, String> item : defaultBlackList.entrySet()) {
                 GoldenBeansTaskListMap.add(item.getKey(), item.getValue());

@@ -23,6 +23,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy;
+import io.github.aw1y2z.sesame.data.task.TaskAward;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy.Outcome;
 import io.github.aw1y2z.sesame.entity.AlipayAntSportsTaskList;
 import io.github.aw1y2z.sesame.entity.WalkPathThemeMapList;
@@ -302,10 +303,10 @@ public class AntSports extends ModelTask {
         try {
             //初始化AntSportsTaskListMap
             AntSportsTaskListMap.load();
-            Set<String> blackList = new HashSet<>();
-            blackList.add("下载登录AI健康管家");
+            // 预置黑名单登记在 MessageUtil（单一真相，配置页据此标注"默认"）
+            Set<String> blackList = MessageUtil.presetBlackList("AntSports", "AntSportsTaskList");
 
-            Set<String> whiteList = new HashSet<>();// 从黑名单中移除该任务
+            Set<String> whiteList = new HashSet<>();
             //whiteList.add("逛一逛树");
             for (String task : blackList) {
                 AntSportsTaskListMap.add(task, task);
@@ -449,7 +450,10 @@ public class AntSports extends ModelTask {
                 if (TaskStatus.WAIT_RECEIVE.name().equals(taskStatus)) {
                     String assetId = jo.getString("assetId");
                     int prizeAmount = jo.getInt("prizeAmount");
-                    if (receiveCoinAsset(assetId, prizeAmount, taskName)) {
+                    String taskId = jo.optString("taskId", "");
+                    // 领奖是否成功以任务列表"奖励是否已领到"为准：响应不可信（102 等也可能已发放）
+                    // 复核已在 receiveCoinAsset 内部（拉黑之前）完成，这里无需重复
+                    if (receiveCoinAsset(assetId, prizeAmount, taskName, taskId)) {
                         sleepTaskInterval();
                     }
                     continue;
@@ -508,7 +512,8 @@ public class AntSports extends ModelTask {
         // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
         Outcome outcome = TaskAttemptPolicy.handle("sports::" + taskId, taskName, null,
                 () -> attemptCompleteTask(taskAction, taskId, taskName, sceneCode), Log::other,
-                new TaskAttemptPolicy.Site("AntSportsTaskList", "运动任务", taskId, sceneCode));
+                new TaskAttemptPolicy.Site("AntSportsTaskList", "运动任务", taskId, sceneCode,
+                        (k) -> probeSportsStatus(taskId, sceneCode)));
         return outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
     }
 
@@ -535,6 +540,61 @@ public class AntSports extends ModelTask {
             Log.err(TAG, "completeTask err:", t);
         }
         return Outcome.RETRY;
+    }
+
+    /** 列表状态探针：重拉运动币任务面板，按 taskId 匹配该任务当前状态。 */
+    private static TaskAttemptPolicy.ProbeResult probeSportsStatus(String taskId, String sceneCode) {
+        try {
+            JSONObject jo = new JSONObject(AntSportsRpcCall.queryCoinTaskPanel());
+            if (!MessageUtil.checkSuccess(TAG, jo) || !jo.has("data") || !jo.getJSONObject("data").has("taskList")) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            JSONArray taskList = jo.getJSONObject("data").getJSONArray("taskList");
+            for (int i = 0; i < taskList.length(); i++) {
+                JSONObject t = taskList.getJSONObject(i);
+                if (!taskId.equals(t.optString("taskId"))) {
+                    continue;
+                }
+                String status = t.optString("taskStatus");
+                if ("WAIT_COMPLETE".equals(status) || "TODO".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.TODO;
+                }
+                if ("WAIT_RECEIVE".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.FINISHED;
+                }
+                if ("HAS_RECEIVED".equals(status) || "RECEIVED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
+                }
+                return TaskAttemptPolicy.ProbeResult.FINISHED;
+            }
+            // 任务已从列表消失：视为已完成且已领
+            return TaskAttemptPolicy.ProbeResult.GONE;
+        } catch (Throwable t) {
+            Log.err(TAG, "probeSportsStatus err:", t);
+            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        }
+    }
+
+    /** 列表状态探针：重拉浏览任务列表，按标题匹配；完成后服务端移出，故仍在列表即视为未完成。 */
+    private static TaskAttemptPolicy.ProbeResult probeBrowseStatus(String taskName) {
+        try {
+            JSONObject jo = new JSONObject(AntSportsRpcCall.queryTaskInfo());
+            if (!MessageUtil.checkSuccess(TAG, jo) || !jo.has("data") || !jo.getJSONObject("data").has("taskInfos")) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            JSONArray taskInfos = jo.getJSONObject("data").getJSONArray("taskInfos");
+            for (int i = 0; i < taskInfos.length(); i++) {
+                JSONObject t = taskInfos.getJSONObject(i);
+                if (taskName.equals(t.optString("title"))) {
+                    return TaskAttemptPolicy.ProbeResult.TODO;
+                }
+            }
+            // 任务已从列表消失：视为已完成且已领
+            return TaskAttemptPolicy.ProbeResult.GONE;
+        } catch (Throwable t) {
+            Log.err(TAG, "probeBrowseStatus err:", t);
+            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        }
     }
 
     private void signInCoinTask() {
@@ -585,7 +645,7 @@ public class AntSports extends ModelTask {
                 String assetId = jo.getString("assetId");
                 int coinAmount = jo.getInt("coinAmount");
                 String simpleSourceName = jo.optString("simpleSourceName");
-                if (receiveCoinAsset(assetId, coinAmount, simpleSourceName)) {
+                if (receiveCoinAsset(assetId, coinAmount, simpleSourceName, jo.optString("taskId"))) {
                     TimeUtil.sleep(500);
                 }
             }
@@ -594,15 +654,21 @@ public class AntSports extends ModelTask {
         }
     }
 
-    private Boolean receiveCoinAsset(String assetId, int coinAmount, String title) {
+    private Boolean receiveCoinAsset(String assetId, int coinAmount, String title, String taskId) {
         try {
             JSONObject jo = new JSONObject(AntSportsRpcCall.receiveCoinAsset(assetId));
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 Log.other("运动中心🧊领取[" + title + "]奖励[" + coinAmount + "运动能量]");
                 return true;
             }
-            //检查并标记黑名单任务
-            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntSportsTaskList", title, jo);
+            // 领奖收口：先按任务列表复核"已领到"，未确认才交自动拉黑（顺序由 TaskAward 固定）
+            TaskAttemptPolicy.StatusProbe probe = (taskId == null || taskId.isEmpty())
+                    ? null : k -> probeSportsStatus(taskId, "");
+            if (TaskAward.confirmReceivedOrBlackList("运动中心🧊领取", probe, taskId, title,
+                    () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("AntSportsTaskList", title, jo),
+                    msg -> Log.other(msg))) {
+                return true;
+            }
         } catch (Throwable t) {
             Log.err(TAG, "receiveCoinAsset err:", t);
         }
@@ -2311,7 +2377,8 @@ public class AntSports extends ModelTask {
                             TimeUtil.sleep(viewMillis);
                             return receiveBrowseReward(task) ? Outcome.DONE : Outcome.UNABLE;
                         },
-                        Log::other, new TaskAttemptPolicy.Site("AntSportsTaskList", "运动任务", taskName, ""));
+                        Log::other, new TaskAttemptPolicy.Site("AntSportsTaskList", "运动任务", taskName, "",
+                                (k) -> probeBrowseStatus(taskName)));
                 if (outcome == Outcome.DONE) {
                     hasNewTask = true;
                 }

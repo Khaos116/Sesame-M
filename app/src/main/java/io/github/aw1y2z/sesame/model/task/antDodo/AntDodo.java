@@ -11,6 +11,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.ChoiceModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy;
+import io.github.aw1y2z.sesame.data.task.TaskAward;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy.Outcome;
 import io.github.aw1y2z.sesame.entity.AlipayAntDodoTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayAntDodoTaskList;
@@ -141,10 +142,8 @@ public class AntDodo extends ModelTask {
             //初始化AntDodoTaskListMap
             AntDodoTaskListMap.load();
             // 1. 定义黑名单（需要添加的任务）和白名单（需要移除的任务）
-            Set<String> blackList = new HashSet<>();
-            blackList.add("惊喜任务：添加森林组件");
-            blackList.add("连续访问并主动抽卡7天");
-            blackList.add("每日任务：帮好友抽卡");
+            // 预置黑名单登记在 MessageUtil（单一真相，配置页据此标注"默认"）
+            Set<String> blackList = MessageUtil.presetBlackList("AntDodo", "AntDodoTaskList");
             // 可继续添加更多黑名单任务
 
             Set<String> whiteList = new HashSet<>();// 从黑名单中移除该任务
@@ -304,6 +303,11 @@ public class AntDodo extends ModelTask {
                         continue;
                     }
                     if (TaskStatus.TODO.name().equals(taskStatus)) {
+                        // 周期/持续型任务：由真实行为推进、常驻列表且无 RPC 可完成，跳过（不尝试、不拉黑）
+                        if (TaskAttemptPolicy.isCyclicTask(taskBaseInfo)) {
+                            Log.i(TAG, "神奇物种⏭️跳过周期任务[" + taskTitle + "]");
+                            continue;
+                        }
                         if (finishTask(sceneCode, taskType, taskTitle)) {
                             receiveTaskAward(sceneCode, taskType, taskTitle);
                         }
@@ -323,7 +327,8 @@ public class AntDodo extends ModelTask {
         // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
         Outcome outcome = TaskAttemptPolicy.handle("dodo::" + sceneCode + "/" + taskType, taskTitle, null,
                 () -> attemptFinishTask(sceneCode, taskType, taskTitle), Log::forest,
-                new TaskAttemptPolicy.Site("AntDodoTaskList", "神奇物种", taskType, sceneCode));
+                new TaskAttemptPolicy.Site("AntDodoTaskList", "神奇物种", taskType, sceneCode,
+                        (k) -> probeDodoStatus(sceneCode, taskType)));
         return outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
     }
 
@@ -351,13 +356,65 @@ public class AntDodo extends ModelTask {
         return Outcome.RETRY;
     }
 
+    /** 列表状态探针：重拉神奇物种任务列表，按 sceneCode+taskType 匹配该任务当前状态。 */
+    private TaskAttemptPolicy.ProbeResult probeDodoStatus(String sceneCode, String taskType) {
+        try {
+            JSONObject jo = new JSONObject(AntDodoRpcCall.taskList());
+            if (!MessageUtil.checkResultCode(TAG, jo) || !jo.has("data")) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            jo = jo.getJSONObject("data");
+            JSONArray taskGroupInfoList = jo.optJSONArray("taskGroupInfoList");
+            if (taskGroupInfoList == null) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            for (int i = 0; i < taskGroupInfoList.length(); i++) {
+                JSONObject antDodoTask = taskGroupInfoList.getJSONObject(i);
+                JSONArray taskInfoList = antDodoTask.optJSONArray("taskInfoList");
+                if (taskInfoList == null) {
+                    continue;
+                }
+                for (int j = 0; j < taskInfoList.length(); j++) {
+                    JSONObject taskInfo = taskInfoList.getJSONObject(j);
+                    JSONObject taskBaseInfo = taskInfo.optJSONObject("taskBaseInfo");
+                    if (taskBaseInfo == null) {
+                        continue;
+                    }
+                    if (!sceneCode.equals(taskBaseInfo.optString("sceneCode"))
+                            || !taskType.equals(taskBaseInfo.optString("taskType"))) {
+                        continue;
+                    }
+                    String status = taskBaseInfo.optString("taskStatus");
+                    if ("FINISHED".equals(status)) {
+                        return TaskAttemptPolicy.ProbeResult.FINISHED;
+                    }
+                    if ("RECEIVED".equals(status)) {
+                        return TaskAttemptPolicy.ProbeResult.RECEIVED;
+                    }
+                    return TaskAttemptPolicy.ProbeResult.TODO;
+                }
+            }
+            // 任务已从列表消失：视为已完成且已领
+            return TaskAttemptPolicy.ProbeResult.GONE;
+        } catch (Throwable t) {
+            Log.err(TAG, "probeDodoStatus err:", t);
+            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        }
+    }
+
     private void receiveTaskAward(String sceneCode, String taskType, String taskTitle) {
         try {
             JSONObject jo = new JSONObject(AntDodoRpcCall.receiveTaskAward(sceneCode, taskType));
-            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntDodoTaskList", taskTitle, jo);
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 Log.forest("神奇物种🦕领取[" + taskTitle + "]奖励");
+                return;
             }
+            // 领奖收口：先按任务列表复核"已领到"，未确认才交自动拉黑（顺序由 TaskAward 固定）
+            TimeUtil.sleep(800);
+            TaskAward.confirmReceivedOrBlackList("神奇物种🦕领取",
+                    k -> probeDodoStatus(sceneCode, taskType), taskTitle, taskTitle,
+                    () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("AntDodoTaskList", taskTitle, jo),
+                    msg -> Log.forest(msg));
         } catch (Throwable t) {
             Log.err(TAG, "receiveTaskAward err:", t);
         }
