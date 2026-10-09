@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.data;
 
+import io.github.aw1y2z.sesame.entity.AlipayGoldenBeansMallItem;
+import io.github.aw1y2z.sesame.entity.AlipayWelfareFundTaskList;
 import io.github.aw1y2z.sesame.util.FileUtil;
 import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.idMap.AnimalIdMap;
@@ -19,6 +21,7 @@ import io.github.aw1y2z.sesame.util.idMap.CooperationIdMap;
 import io.github.aw1y2z.sesame.util.idMap.FarmOrnamentsIdMap;
 import io.github.aw1y2z.sesame.util.idMap.GameCenterMallItemMap;
 import io.github.aw1y2z.sesame.util.idMap.GoldenBeansTaskListMap;
+import io.github.aw1y2z.sesame.util.idMap.GoldenBeansMallItemMap;
 import io.github.aw1y2z.sesame.util.idMap.MarathonIdMap;
 import io.github.aw1y2z.sesame.util.idMap.MemberBenefitIdMap;
 import io.github.aw1y2z.sesame.util.idMap.SesameGiftIdMap;
@@ -35,6 +38,7 @@ import io.github.aw1y2z.sesame.util.idMap.ReserveIdMap;
 import io.github.aw1y2z.sesame.util.idMap.TreeIdMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 import io.github.aw1y2z.sesame.util.idMap.VitalityBenefitIdMap;
+import io.github.aw1y2z.sesame.util.idMap.WelfareFundTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.ForestHuntIdMap;
 import io.github.aw1y2z.sesame.util.idMap.rpcRequestMap;
 
@@ -94,6 +98,11 @@ public final class ConfigPreload {
         PathThemeMapListMap.load();
         AntMemberTaskListMap.load();
         GoldenBeansTaskListMap.load();
+        GoldenBeansMallItemMap.load();
+        // 候选实体的静态缓存是注入进程写的，App 进程必须清一次才会重建
+        AlipayGoldenBeansMallItem.clear();
+        WelfareFundTaskListMap.load();
+        AlipayWelfareFundTaskList.clear();
         MonopolyTaskListMap.load();
         ConfigV2.load(userId);
     }

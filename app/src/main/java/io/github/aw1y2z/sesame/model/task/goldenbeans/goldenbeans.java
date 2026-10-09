@@ -2,29 +2,30 @@ package io.github.aw1y2z.sesame.model.task.goldenbeans;
 
 import org.json.JSONObject;
 
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 
 import io.github.aw1y2z.sesame.data.ModelFields;
 import io.github.aw1y2z.sesame.data.ModelGroup;
 import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField;
+import io.github.aw1y2z.sesame.data.modelFieldExt.SelectAndCountModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
 import io.github.aw1y2z.sesame.entity.AlipayGoldenBeansTaskList;
+import io.github.aw1y2z.sesame.entity.AlipayGoldenBeansMallItem;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 
 /**
- * 金豆夺宝任务模块。
+ * 金豆夺宝任务模块：只管理配置项与执行编排。
  * <p>
- * 具体玩法按业务域拆到独立处理器：{@link GoldenBeansTasks} 负责入口日常与任务列表，
- * {@link GoldenBeansGameCenter} 负责乐园抽奖与游戏权益，{@link GoldenBeansMiner} 负责金猫矿工，
- * {@link GoldenBeansExchange} 负责两种换豆；本类只管理配置项与执行编排。
- * <p>
- * 两个入口（芭芭农场 / 芝麻炼金）由 {@link GoldenBeansEntry} 描述，各自使用配套的
- * bizType / source / sceneCode，不可混用。
+ * 玩法按业务域拆到独立处理器——{@link GoldenBeansTasks}（入口日常与任务列表）、
+ * {@link GoldenBeansGameCenter}（乐园抽奖与游戏权益）、{@link GoldenBeansMiner}（金猫矿工）、
+ * {@link GoldenBeansExchange}（两种换豆）、{@link GoldenBeansMall}（商城兑换）；
+ * 两个入口（芭芭农场 / 芝麻炼金）由 {@link GoldenBeansEntry} 描述，bizType / source / sceneCode 不可混用。
  */
 public class goldenbeans extends ModelTask {
     private BooleanModelField goldenBeansGamePlay;
@@ -45,6 +46,8 @@ public class goldenbeans extends ModelTask {
     private IntegerModelField goldenBeansManureExchangeLimit;
     private BooleanModelField goldenBeansAutoSesameExchange;
     private IntegerModelField goldenBeansSesameExchangeLimit;
+    private BooleanModelField goldenBeansMallExchange;
+    private SelectAndCountModelField GoldenBeansMallItemList;
     private IntegerModelField executeInterval;
     private BooleanModelField sesameTreeTasks;
     private BooleanModelField sesameTreePurification;
@@ -77,6 +80,8 @@ public class goldenbeans extends ModelTask {
         modelFields.addField(goldenBeansManureExchangeLimit = new IntegerModelField("goldenBeansManureExchangeLimit", "金豆夺宝 | 肥料换豆单日上限(0不限)", 0, 0, null).setDependsOn("goldenBeansAutoManureExchange"));
         modelFields.addField(goldenBeansAutoSesameExchange = new BooleanModelField("goldenBeansAutoSesameExchange", "金豆夺宝 | 自动芝麻粒换豆", false));
         modelFields.addField(goldenBeansSesameExchangeLimit = new IntegerModelField("goldenBeansSesameExchangeLimit", "金豆夺宝 | 芝麻粒换豆单日上限(0不限)", 0, 0, null).setDependsOn("goldenBeansAutoSesameExchange"));
+        modelFields.addField(goldenBeansMallExchange = new BooleanModelField("goldenBeansMallExchange", "金豆夺宝 | 商城兑换权益", false));
+        modelFields.addField(GoldenBeansMallItemList = new SelectAndCountModelField("GoldenBeansMallItemList", "金豆夺宝 | 商城可兑列表", new LinkedHashMap<>(), AlipayGoldenBeansMallItem::getList, "请填写每日兑换次数(0为不限)", 0, 99).setDependsOn("goldenBeansMallExchange"));
         modelFields.addField(executeInterval = new IntegerModelField("executeInterval", "操作间隔(毫秒)", 500, 500, null));
         modelFields.addField(sesameTreeTasks = new BooleanModelField("sesameTreeTasks", "芝麻信用 | 芝麻树报名、浏览与领奖", false));
         modelFields.addField(sesameTreePurification = new BooleanModelField("sesameTreePurification", "芝麻信用 | 芝麻树净化(消耗净化值)", false));
@@ -115,9 +120,10 @@ public class goldenbeans extends ModelTask {
             boolean resyncEnabled = GoldenBeansSupport.enabled(goldenBeansCollectReward);
             boolean manureEnabled = GoldenBeansSupport.enabled(goldenBeansAutoManureExchange);
             boolean sesameEnabled = GoldenBeansSupport.enabled(goldenBeansAutoSesameExchange);
+            boolean mallEnabled = GoldenBeansSupport.enabled(goldenBeansMallExchange);
 
             if (!signEnabled && !popupEnabled && !taskEnabled && !gameEnabled
-                    && !mineEnabled && !resyncEnabled && !manureEnabled && !sesameEnabled) {
+                    && !mineEnabled && !resyncEnabled && !manureEnabled && !sesameEnabled && !mallEnabled) {
                 Log.record("金豆夺宝功能未开启#本轮跳过");
                 return;
             }
@@ -156,6 +162,9 @@ public class goldenbeans extends ModelTask {
             if (sesameEnabled) {
                 GoldenBeansExchange.exchangeSesame(interval, dailyLimit(goldenBeansSesameExchangeLimit));
             }
+
+            // 商城可兑列表无条件同步（供配置页勾选），兑换才受开关控制
+            GoldenBeansMall.run(interval, GoldenBeansMallItemList.getValue(), mallEnabled);
 
             if (resyncEnabled) {
                 resync(interval);

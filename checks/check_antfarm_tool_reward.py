@@ -17,6 +17,7 @@ import tempfile
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent / "audit_regressions"))
+from task_policy_fixture import POLICY, award
 from run import method, SOURCE
 
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches/modules-2/files-2.1/org.json/json"
@@ -320,6 +321,10 @@ for token, path, signature in (
     ("@@FARMTOOL@@", "model/task/antFarm/AntFarm.java", "    private static class FarmTool {"),
 ):
     code = code.replace(token, method(path, signature))
+
+code=code.replace("public class ToolRewardCheck {", "public class ToolRewardCheck {\n"+POLICY[:POLICY.index("    static class Site")] + "}\n"+award(method))
+code=code.replace("boolean farmTaskAwardBusy;", "boolean farmTaskAwardBusy; TaskAttemptPolicy.ProbeResult probeFarmStatus(String key){return TaskAttemptPolicy.ProbeResult.UNKNOWN;}")
+
 with tempfile.TemporaryDirectory(prefix="sesame-tool-reward-") as tmp:
     java = Path(tmp) / "ToolRewardCheck.java"
     java.write_text(code, encoding="utf-8")

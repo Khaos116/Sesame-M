@@ -24,7 +24,7 @@ for signature in (
 code += method("model/task/antForest/AntForestV2.java", "private static int teamState(") + "\n"
 code += method("model/base/TaskAlternative.java", "public static boolean isTransactionTask(") + "\n"
 code += r'''
-static final String[] TRANSACTION_BIZ_KEYWORDS = {"xiadan", "zhifu", "pay", "goumai", "jiaofei", "huankuan", "chongzhi", "taobao", "babafarm_tb", "70000"};
+static final String[] TRANSACTION_KEYWORDS = {"xiadan", "zhifu", "pay", "goumai", "jiaofei", "huankuan", "chongzhi", "taobao", "babafarm_tb", "70000"};
 static class MyUtils {
     static JSONObject newJSONObject() { return new JSONObject(); }
     static JSONObject newJSONObject(String raw) { try { return raw == null ? new JSONObject() : new JSONObject(raw); } catch (JSONException e) { return new JSONObject(); } }
@@ -448,7 +448,7 @@ public class UpstreamFixCheck {
  static class FileUtil {static boolean success;static int writes;static File getStatusFile(String s){return new File("never-created-status.json");}static boolean write2File(String s,File f){writes++;return success;}}
  static class JsonUtil {static boolean fail;static String toFormatJsonString(Object o){if(fail)throw new IllegalStateException("serialization");return "{}";}}
  static class MessageUtil {static void sweepExpiredBlackList(){}static void sweepReleasedDefaults(){}}
- static class Status {static final String TAG="check";static final Status INSTANCE=new Status();static boolean saveFailureNotified;static int unloads;long saveTime;Set<String> flags=new HashSet<>();static void unload(){unloads++;INSTANCE.flags.clear();}
+ static class Status {static final String TAG="check";static final Status INSTANCE=new Status();static boolean saveFailureNotified;static int unloads;long saveTime;Set<String> flags=new HashSet<>();static void unload(){unloads++;INSTANCE.flags.clear();}static void ensureLoadedForCurrentUid(){}
  @@STATUS@@
  }
  static class Statistics {enum DataType{COLLECTED}static int collected;static void addData(DataType type,int amount){collected+=amount;}}

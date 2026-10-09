@@ -3,6 +3,7 @@ from pathlib import Path
 import os, subprocess, sys, tempfile
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent / "audit_regressions"))
+from task_policy_fixture import POLICY, award
 from run import method, SOURCE
 
 farm = "model/task/antFarm/AntFarm.java"
@@ -23,17 +24,17 @@ public class FarmLimitCheck {
    static Set<String> flags=new HashSet<>(); static int saves;
    static boolean hasFlagToday(String k){return flags.contains(k);}
    static void flagToday(String k){flags.add(k);}
-   static void save(){saves++;}
+   static void save(){saves++;}static void ensureLoadedForCurrentUid(){}
    @@STATUS@@
  }
  static class Bool {boolean getValue(){return false;}}Bool useFullRewardTool=new Bool();String ownerFarmId="farm";boolean useBigEaterRewardTool(){throw new AssertionError("disabled full-stock policy");}
  enum ToolType { ACCELERATETOOL, NEWEGGTOOL,BIG_EATER_TOOL; String nickName(){return name();} }
  static class MyUtils { static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}} }
- static class MessageUtil { static boolean checkMemo(String t,JSONObject j){return "SUCCESS".equals(j.optString("memo"));} static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}static boolean checkResultCode(String t,JSONObject j){return checkSuccess(t,j);}static void checkResultCodeAndMarkTaskBlackList(String k,String title,JSONObject j){} }
+ static class MessageUtil {static boolean isRetryable(JSONObject j){return false;}static boolean isServerBusy(JSONObject j){return false;} static boolean checkMemo(String t,JSONObject j){return "SUCCESS".equals(j.optString("memo"));} static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}static boolean checkResultCode(String t,JSONObject j){return checkSuccess(t,j);}static void checkResultCodeAndMarkTaskBlackList(String k,String title,JSONObject j){} }
  static class TimeUtil { static boolean cancel; static void sleep(long n){if(cancel)throw new TaskCancelledException();} }
  static class Log { static List<String> lines=new ArrayList<>();static void record(String s){lines.add(s);} static void farm(String s){lines.add(s);}static void i(String s){lines.add(s);} static void err(String t,String s,Throwable e){throw new AssertionError(e);} }
  static class ApplicationHook {static JSONObject request;static String requestString(String method,String body){request=new JSONArray(body).optJSONObject(0);return "{}";}}
- static class TaskAlternative {static boolean isTransactionTask(String key){return key.equals("paid");}}
+ static class TaskAlternative {static String DEFAULT_VERSION="test";static void trigger(String a,String b,String c,String d,String e,String f,java.util.function.Consumer<String> log){}static boolean hit(JSONObject j,String scene){return false;}static boolean isTransactionTask(String key){return key.equals("paid");}}
  static class ProductionRpc {static final String VERSION="source-version";@@RPC@@}
  static class AntFarmRpcCall {
    static int reads,uses; static String reply="{\"memo\":\"SUCCESS\"}";
@@ -43,7 +44,7 @@ public class FarmLimitCheck {
     static String doFarmTask(String biz){route="legacy:"+biz;completions++;if(cancelTask)throw new TaskCancelledException();return "{\"success\":true}";}
     static String finishTask(String type,String scene){route=scene+":"+type;completions++;return "{\"success\":true}";}
   }
- boolean doVideoTask(String title){AntFarmRpcCall.route="video";return true;}boolean doAnswerTask(String title){AntFarmRpcCall.route="answer";return true;}
+ Outcome doVideoTask(String title){AntFarmRpcCall.route="video";return Outcome.DONE;}Outcome attemptVideoTask(String title,String bizKey){return Outcome.UNSUPPORTED;}TaskAttemptPolicy.ProbeResult probeFarmStatus(String k){return TaskAttemptPolicy.ProbeResult.FINISHED;}boolean doAnswerTask(String title){AntFarmRpcCall.route="answer";return true;}
   @@METHOD@@
  public static void main(String[] args) {
    FarmLimitCheck f=new FarmLimitCheck();
@@ -82,6 +83,10 @@ code=code.replace("@@METHOD@@",method(farm,"private Boolean useFarmTool(")+metho
 code=code.replace("@@RPC@@",method("model/task/antFarm/AntFarmRpcCall.java","public static String doFarmTask(String bizKey)"))
 cache=Path(os.environ.get("GRADLE_USER_HOME",Path.home()/".gradle"))/"caches/modules-2/files-2.1/org.json/json"
 jar=sorted(p for p in cache.glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar","-javadoc.jar")))[-1]
+
+code=code.replace("public class FarmLimitCheck {", "public class FarmLimitCheck {\n"+POLICY+award(method))
+code=code.replace("public static void main",method(farm,"private Outcome attemptFarmTask(")+"\n public static void main")
+
 with tempfile.TemporaryDirectory(prefix="sesame-farm-limit-") as tmp:
  java=Path(tmp)/"FarmLimitCheck.java";java.write_text(code,encoding="utf-8")
  subprocess.run(["javac","-encoding","UTF-8","-cp",str(jar),"-d",tmp,str(java),str(SOURCE/"util/TaskCancelledException.java")],check=True)

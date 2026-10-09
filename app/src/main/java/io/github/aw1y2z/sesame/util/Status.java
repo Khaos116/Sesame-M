@@ -29,6 +29,14 @@ public class Status {
      */
     private static volatile boolean saveFailureNotified = false;
 
+    /**
+     * 内存里这份状态属于哪个 uid（静态字段不进 Jackson、不落盘）。
+     * <p>启动早期 uid 可能尚未就绪，此时 load() 读到的不是本账号的文件；若据此落盘，
+     * 会覆盖真实账号当天的 status.json。uid 与之一致前，读、写都必须先按当前 uid 重载，
+     * 见 {@link #ensureLoadedForCurrentUid()}。
+     */
+    private static volatile String loadedUid;
+
     /** 帮喂好友/家庭成员：当日总次数已达上限（服务端返回 resultCode=391），全局标记 */
     public static final String FLAG_FEED_FRIEND_ANIMAL_LIMIT = "farm::feedFriendAnimalLimit";
     
@@ -94,10 +102,13 @@ public class Status {
     private Long fishLastExecTime = 0L;
     
     public static synchronized Boolean hasFlagToday(String tag) {
+        // 读也要先对齐归属，否则会拿「别的账号/空的状态」判断
+        ensureLoadedForCurrentUid();
         return INSTANCE.flagLogList.contains(tag);
     }
     
     public static synchronized void flagToday(String tag) {
+        ensureLoadedForCurrentUid();
         if (!hasFlagToday(tag)) {
             INSTANCE.flagLogList.add(tag);
             save();
@@ -110,6 +121,7 @@ public class Status {
     
     //在写入status中时，重要数据提前记录Uid,一定程度上避免因支付宝账号切换导致标记到下一个账号的少数情况
     public static synchronized void flagToday(String tag, String taskUid) {
+        ensureLoadedForCurrentUid();
         if (!hasFlagToday(tag)) {
             if (taskUid.equals(UserIdMap.getCurrentUid())) {
                 INSTANCE.flagLogList.add(tag);
@@ -122,6 +134,7 @@ public class Status {
      * 读取当日整型标记（不存在时返回 0）
      */
     public static synchronized int getIntFlagToday(String tag) {
+        ensureLoadedForCurrentUid();
         Integer value = INSTANCE.intFlagLogList.get(tag);
         return value == null ? 0 : value;
     }
@@ -130,12 +143,14 @@ public class Status {
      * 写入当日整型标记（用于累计类额度，如芝麻粒换豆当日已兑换金豆数）
      */
     public static synchronized void setIntFlagToday(String tag, int value) {
+        ensureLoadedForCurrentUid();
         INSTANCE.intFlagLogList.put(tag, value);
         save();
     }
     
     // 清除单个指定Flag
     public static synchronized void clearFlag(String tag) {
+        ensureLoadedForCurrentUid();
         if (INSTANCE.flagLogList.contains(tag)) {
             INSTANCE.flagLogList.remove(tag);
             save(); // 清除后需保存状态，避免下次加载时恢复
@@ -144,6 +159,7 @@ public class Status {
     
     //根据助力场景记录助力次数
     public static synchronized void forestHuntHelpToday(String taskType, int count, String taskUid) {
+        ensureLoadedForCurrentUid();
         if (taskUid.equals(UserIdMap.getCurrentUid())) {
             INSTANCE.forestHuntHelpLogList.put(taskType, count);
             save();
@@ -151,6 +167,7 @@ public class Status {
     }
     
     public static synchronized Integer getforestHuntHelpToday(String taskType) {
+        ensureLoadedForCurrentUid();
         Integer count = INSTANCE.forestHuntHelpLogList.get(taskType);
         if (count == null) {
             return 0;
@@ -162,11 +179,13 @@ public class Status {
     
     //记录完成任务次数
     public static synchronized void rpcRequestListToday(String taskName, int count) {
+        ensureLoadedForCurrentUid();
         INSTANCE.forestHuntHelpLogList.put(taskName, count);
         save();
     }
     
     public static synchronized Integer getrpcRequestListToday(String taskName) {
+        ensureLoadedForCurrentUid();
         Integer count = INSTANCE.forestHuntHelpLogList.get(taskName);
         if (count == null) {
             return 0;
@@ -177,6 +196,7 @@ public class Status {
     }
     
     public static synchronized void wateredFriendToday(String id) {
+        ensureLoadedForCurrentUid();
         Integer count = INSTANCE.wateredFriendLogList.get(id);
         if (count == null) {
             count = 0; // 首次被浇水，次数初始化为0
@@ -187,6 +207,7 @@ public class Status {
     //Log.forest("统计被水🍯
     //Log.forest("统计浇水🚿
     public static synchronized void getWateredFriendToday() {
+        ensureLoadedForCurrentUid();
         // 1. 基础统计：浇水好友数量（Map的key数量）
         int friendCount = INSTANCE.wateredFriendLogList.size();
         // 2. 统计总浇水量（遍历Map累加所有value）
@@ -272,6 +293,7 @@ public class Status {
     }
 
     public static synchronized void fillWateredFriendList() {
+        ensureLoadedForCurrentUid();
         // 1. 获取当前被浇水的好友数据
         Map<String, Integer> currentData = INSTANCE.wateredFriendLogList;
         if (currentData == null || currentData.isEmpty()) {
@@ -354,6 +376,7 @@ public class Status {
     }
     
     public static synchronized void wateringFriendToday(String id) {
+        ensureLoadedForCurrentUid();
         Integer count = INSTANCE.wateringFriendLogList.get(id);
         if (count == null) {
             count = 0; // 首次被浇水，次数初始化为0
@@ -364,6 +387,7 @@ public class Status {
     }
     
     public static synchronized void getWateringFriendToday() {
+        ensureLoadedForCurrentUid();
         // 1. 基础统计：浇水好友数量（Map的key数量）
         int friendCount = INSTANCE.wateringFriendLogList.size();
         // 2. 统计总浇水量（遍历Map累加所有value）
@@ -436,6 +460,7 @@ public class Status {
     }
     
     public static synchronized Boolean canWaterFriendToday(String id, int newCount) {
+        ensureLoadedForCurrentUid();
         Integer count = INSTANCE.waterFriendLogList.get(id);
         if (count == null) {
             return true;
@@ -444,11 +469,13 @@ public class Status {
     }
     
     public static synchronized int getWaterFriendToday(String id) {
+        ensureLoadedForCurrentUid();
         Integer count = INSTANCE.waterFriendLogList.get(id);
         return count == null ? 0 : count;
     }
 
     public static synchronized void waterFriendToday(String id, int count, String taskUid) {
+        ensureLoadedForCurrentUid();
         if (taskUid.equals(UserIdMap.getCurrentUid())) {
             // 累加当日已浇次数：覆盖式记账会让「部分失败后再浇满」越过用户配置
             INSTANCE.waterFriendLogList.put(id, getWaterFriendToday(id) + count);
@@ -458,6 +485,7 @@ public class Status {
 
     /** 显式清零当日浇水次数：累加语义下不能用「加 0」代替重置 */
     public static synchronized void resetWaterFriendToday(String id, String taskUid) {
+        ensureLoadedForCurrentUid();
         if (taskUid.equals(UserIdMap.getCurrentUid())) {
             INSTANCE.waterFriendLogList.put(id, 0);
             save();
@@ -467,6 +495,7 @@ public class Status {
 
     
     public static synchronized int getVitalityExchangeBenefitCountToday(String skuId) {
+        ensureLoadedForCurrentUid();
         Integer exchangedCount = INSTANCE.vitality_ExchangeBenefitLogList.get(skuId);
         if (exchangedCount == null) {
             exchangedCount = 0;
@@ -479,12 +508,14 @@ public class Status {
     }
     
     public static synchronized void vitalityExchangeBenefitToday(String skuId) {
+        ensureLoadedForCurrentUid();
         int count = getVitalityExchangeBenefitCountToday(skuId) + 1;
         INSTANCE.vitality_ExchangeBenefitLogList.put(skuId, count);
         save();
     }
     
     public static synchronized int getGameCenterBuyMallItemCountToday(String skuId) {
+        ensureLoadedForCurrentUid();
         Integer buyedCount = INSTANCE.gameCenterBuyMallItemList.get(skuId);
         if (buyedCount == null) {
             buyedCount = 0;
@@ -497,12 +528,14 @@ public class Status {
     }
     
     public static synchronized void gameCenterBuyMallItemToday(String skuId) {
+        ensureLoadedForCurrentUid();
         int count = getGameCenterBuyMallItemCountToday(skuId) + 1;
         INSTANCE.gameCenterBuyMallItemList.put(skuId, count);
         save();
     }
     
     public static synchronized int getExchangeReserveCountToday(int id) {
+        ensureLoadedForCurrentUid();
         Integer count = INSTANCE.exchangeReserveLogList.get(id);
         return count == null ? 0 : count;
     }
@@ -512,16 +545,19 @@ public class Status {
     }
     
     public static synchronized void exchangeReserveToday(int id) {
+        ensureLoadedForCurrentUid();
         int count = getExchangeReserveCountToday(id) + 1;
         INSTANCE.exchangeReserveLogList.put(id, count);
         save();
     }
     
     public static synchronized Boolean canMemberPointExchangeBenefitToday(String benefitId) {
+        ensureLoadedForCurrentUid();
         return !INSTANCE.memberPointExchangeBenefitLogList.contains(benefitId);
     }
     
     public static synchronized void memberPointExchangeBenefitToday(String benefitId) {
+        ensureLoadedForCurrentUid();
         if (canMemberPointExchangeBenefitToday(benefitId)) {
             INSTANCE.memberPointExchangeBenefitLogList.add(benefitId);
             save();
@@ -529,10 +565,12 @@ public class Status {
     }
     
     public static synchronized Boolean canAncientTreeToday(String cityCode) {
+        ensureLoadedForCurrentUid();
         return !INSTANCE.ancientTreeCityCodeList.contains(cityCode);
     }
     
     public static synchronized void ancientTreeToday(String cityCode) {
+        ensureLoadedForCurrentUid();
         Status stat = INSTANCE;
         if (!stat.ancientTreeCityCodeList.contains(cityCode)) {
             stat.ancientTreeCityCodeList.add(cityCode);
@@ -550,6 +588,7 @@ public class Status {
     }
     
     public static synchronized void feedFriendToday(String id) {
+        ensureLoadedForCurrentUid();
         int count = getFeedFriendCountToday(id) + 1;
         INSTANCE.feedFriendLogList.put(id, count);
         save();
@@ -567,17 +606,20 @@ public class Status {
     }
     
     public static synchronized void visitFriendToday(String id) {
+        ensureLoadedForCurrentUid();
         int count = getVisitFriendCountToday(id) + 1;
         INSTANCE.visitFriendLogList.put(id, count);
         save();
     }
     
     public static synchronized void visitFriendToday(String id, int count) {
+        ensureLoadedForCurrentUid();
         INSTANCE.visitFriendLogList.put(id, count);
         save();
     }
     
     public static synchronized boolean canStallHelpToday(String id) {
+        ensureLoadedForCurrentUid();
         Integer count = INSTANCE.stallHelpedCountLogList.get(id);
         if (count == null) {
             return true;
@@ -586,6 +628,7 @@ public class Status {
     }
     
     public static synchronized void stallHelpToday(String id, boolean limited) {
+        ensureLoadedForCurrentUid();
         Integer count = INSTANCE.stallHelpedCountLogList.get(id);
         if (count == null) {
             count = 0;
@@ -601,6 +644,7 @@ public class Status {
     }
     
     public static synchronized Boolean canUseAccelerateToolToday() {
+        ensureLoadedForCurrentUid();
         if (hasFlagToday("farm::useFarmToolLimit::ACCELERATETOOL")) return false;
         AntFarm task = ModelTask.getModel(AntFarm.class);
         if (task == null || task.getAccelerateToolDailyLimit() == null) return false;
@@ -609,11 +653,13 @@ public class Status {
     }
     
     public static synchronized void useAccelerateToolToday() {
+        ensureLoadedForCurrentUid();
         INSTANCE.useAccelerateToolCount += 1;
         save();
     }
     
     public static synchronized Boolean canUseSpecialFoodToday() {
+        ensureLoadedForCurrentUid();
         AntFarm task = ModelTask.getModel(AntFarm.class);
         if (task == null) {
             return false;
@@ -626,15 +672,18 @@ public class Status {
     }
     
     public static synchronized void useSpecialFoodToday() {
+        ensureLoadedForCurrentUid();
         INSTANCE.useSpecialFoodCount += 1;
         save();
     }
     
     public static synchronized Boolean canOrchardShareP2PToday(String friendUserId) {
+        ensureLoadedForCurrentUid();
         return !hasFlagToday("orchard::shareP2PLimit") && !hasFlagToday("orchard::shareP2PLimit::" + friendUserId) && !INSTANCE.orchardShareP2PLogList.contains(friendUserId);
     }
     
     public static synchronized void orchardShareP2PToday(String friendUserId) {
+        ensureLoadedForCurrentUid();
         if (canOrchardShareP2PToday(friendUserId)) {
             INSTANCE.orchardShareP2PLogList.add(friendUserId);
             save();
@@ -642,10 +691,12 @@ public class Status {
     }
     
     public static synchronized Boolean canStallShareP2PToday(String friendUserId) {
+        ensureLoadedForCurrentUid();
         return !hasFlagToday("stall::shareP2PLimit") && !hasFlagToday("stall::shareP2PLimit::" + friendUserId) && !INSTANCE.stallShareP2PLogList.contains(friendUserId);
     }
     
     public static synchronized void stallShareP2PToday(String friendUserId) {
+        ensureLoadedForCurrentUid();
         if (canStallShareP2PToday(friendUserId)) {
             INSTANCE.stallShareP2PLogList.add(friendUserId);
             save();
@@ -653,6 +704,7 @@ public class Status {
     }
     
     public static synchronized boolean canDoubleToday() {
+        ensureLoadedForCurrentUid();
         AntForestV2 task = ModelTask.getModel(AntForestV2.class);
         if (task == null) {
             return false;
@@ -666,6 +718,7 @@ public class Status {
     }
     
     public static synchronized void DoubleToday() {
+        ensureLoadedForCurrentUid();
         INSTANCE.doubleTimes += 1;
         save();
     }
@@ -676,6 +729,7 @@ public class Status {
      * @return true是，false否
      */
     public static synchronized boolean canGreenFinancePointFriend() {
+        ensureLoadedForCurrentUid();
         return !INSTANCE.greenFinancePointFriend;
     }
     
@@ -683,6 +737,7 @@ public class Status {
      * 绿色经营-收好友金币完了
      */
     public static synchronized void greenFinancePointFriend() {
+        ensureLoadedForCurrentUid();
         Status stat = INSTANCE;
         if (!stat.greenFinancePointFriend) {
             stat.greenFinancePointFriend = true;
@@ -696,6 +751,7 @@ public class Status {
      * @return true是，false否
      */
     public static synchronized boolean canGreenFinancePrizesMap() {
+        ensureLoadedForCurrentUid();
         int week = TimeUtil.getWeekNumber(new Date());
         return !INSTANCE.greenFinancePrizesSet.contains(week);
     }
@@ -704,6 +760,7 @@ public class Status {
      * 绿色经营-评级任务完了
      */
     public static synchronized void greenFinancePrizesMap() {
+        ensureLoadedForCurrentUid();
         int week = TimeUtil.getWeekNumber(new Date());
         Status stat = INSTANCE;
         if (!stat.greenFinancePrizesSet.contains(week)) {
@@ -716,6 +773,7 @@ public class Status {
      * 金豆-是否已领取任务奖励
      */
     public static synchronized boolean canGoldenBeansTaskReceive(String taskId) {
+        ensureLoadedForCurrentUid();
         return !INSTANCE.goldenBeansTaskReceivedSet.contains(taskId);
     }
 
@@ -723,6 +781,7 @@ public class Status {
      * 金豆-任务奖励已领取
      */
     public static synchronized void goldenBeansTaskReceived(String taskId) {
+        ensureLoadedForCurrentUid();
         Status stat = INSTANCE;
         if (!stat.goldenBeansTaskReceivedSet.contains(taskId)) {
             stat.goldenBeansTaskReceivedSet.add(taskId);
@@ -730,6 +789,20 @@ public class Status {
         }
     }
     
+    /**
+     * uid 与内存状态归属不一致（启动早期 uid 未就绪、切号）时，按当前 uid 重新加载。
+     * <p>读写两条路径都要过：只在 save() 里挡，挡不住用错状态做判断；只在 hasFlagToday()
+     * 里挡，挡不住把错状态写回真实账号。切号不丢内存标记——置位入口都即时落盘。
+     */
+    private static void ensureLoadedForCurrentUid() {
+        String currentUid = UserIdMap.getCurrentUid();
+        if (StringUtil.isEmpty(currentUid) || currentUid.equals(loadedUid)) {
+            return;
+        }
+        Log.system(TAG, "状态归属由[" + loadedUid + "]变为[" + currentUid + "]，按当前账号重新加载");
+        load();
+    }
+
     public static synchronized Status load() {
         String currentUid = UserIdMap.getCurrentUid();
         try {
@@ -737,6 +810,10 @@ public class Status {
                 Log.i(TAG, "用户为空，状态加载失败");
                 throw new RuntimeException("用户为空，状态加载失败");
             }
+            // 先声明归属再动文件：本方法内部会写文件，若该链路回调到 hasFlagToday()，
+            // loadedUid 未更新就会再进 load() 形成递归
+            loadedUid = currentUid;
+            JsonUtil.copyMapper().updateValue(INSTANCE, new Status());
             File statusFile = FileUtil.getStatusFile(currentUid);
             if (statusFile.exists()) {
                 String json = FileUtil.readFromFile(statusFile);
@@ -794,6 +871,8 @@ public class Status {
             Log.record("用户为空，状态保存失败");
             throw new RuntimeException("用户为空，状态保存失败");
         }
+        // 落盘前先对齐归属：uid 未就绪时内存可能是空状态，直接写会清掉真实账号当天的 status.json
+        ensureLoadedForCurrentUid();
         if (updateDay(nowCalendar)) {
             Log.system(TAG, "重置 status.json");
         }

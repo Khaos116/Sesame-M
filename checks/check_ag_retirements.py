@@ -12,6 +12,7 @@ import tempfile
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent / "audit_regressions"))
+from task_policy_fixture import POLICY, award
 from run import SOURCE, ROOT, method
 
 for java in SOURCE.rglob("*.java"):
@@ -67,7 +68,7 @@ public class StallCheck {
     static class MessageUtil {
         static int marks;
         static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}
-        static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}
+        static boolean isRetryable(JSONObject j){return false;}static boolean isServerBusy(JSONObject j){return false;}static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}
         static void checkResultCodeAndMarkTaskBlackList(String a,String b,JSONObject j){marks++;}
     }
     static class TaskAlternative {
@@ -111,6 +112,10 @@ public class StallCheck {
 }
 '''.replace("@@METHODS@@", finish + "\n" + method(path, "    private void taskList()") +
             "\n" + method(path, "    private static void receiveTaskAward("))
+
+code=code.replace("public class StallCheck {", "public class StallCheck {\n"+POLICY+award(method))
+code=code.replace("    public static void main", method(path,"private static Outcome attemptFinishTask(")+method(path,"private static TaskAttemptPolicy.ProbeResult probeStallStatus(")+"\n    public static void main")
+
 with tempfile.TemporaryDirectory(prefix="sesame-ag-retirements-") as tmp:
     java = Path(tmp) / "StallCheck.java"
     java.write_text(code, encoding="utf-8")

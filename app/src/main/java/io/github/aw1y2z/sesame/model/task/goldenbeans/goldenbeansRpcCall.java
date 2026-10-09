@@ -36,6 +36,17 @@ public class goldenbeansRpcCall {
     public static final String ALCHEMY_TASK_SCENE_CODE = "GOLDEN_BEAN_ZHIMA_LIST";
 
     public static final String VERSION = "20260803.01";
+
+    // ===== 金豆商城（芭芭农场金豆罐兑换页） =====
+    /** 商城场景码与主页任务场景不同，混用会被拒 */
+    public static final String MALL_SCENE_CODE = "ANTORCHARD_JINDOU_MALL";
+    /** 商品列表与兑换的 source */
+    public static final String MALL_SOURCE = "MASTER";
+    /** 订单查询的 source 与列表不同，取自官方页面调用 */
+    private static final String MALL_ORDER_SOURCE = "antorchard";
+    private static final String MALL_SUB_CHANNEL = "babafarm";
+    /** 商城接口版本，与主页 VERSION 不同，勿混用 */
+    public static final String MALL_VERSION = "20260901.01";
     /** 金猫矿工页面来源 */
     public static final String MINER_PAGE_SOURCE =
             "ch_url-https://render.alipay.com/p/yuyan/180020010001291350/index.html";
@@ -126,6 +137,46 @@ public class goldenbeansRpcCall {
         return request("com.alipay.goldenbean.sync", params);
     }
 
+    // ===== 金豆商城 =====
+    /** 商城商品列表；响应 itemInfoVOList[].skuModelList[] 带 spuId/skuId/价格与当日可兑次数 */
+    public static String mallItems(int startIndex, int pageSize) throws Exception {
+        JSONObject params = MyUtils.newJSONObject();
+        params.put("bizType", FARM_BIZ_TYPE);
+        params.put("pageSize", pageSize);
+        params.put("requestType", "RPC");
+        params.put("sceneCode", MALL_SCENE_CODE);
+        params.put("source", MALL_SOURCE);
+        params.put("startIndex", startIndex);
+        params.put("subChannel", MALL_SUB_CHANNEL);
+        params.put("version", MALL_VERSION);
+        return request("com.alipay.antiep.itemList", params);
+    }
+
+    /** 商城兑换；以 canBuy 判定是否成立，orderNo 用于事后核对 */
+    public static String mallExchange(String spuId, String skuId) throws Exception {
+        JSONObject params = MyUtils.newJSONObject();
+        params.put("bizType", FARM_BIZ_TYPE);
+        params.put("requestId", UUID.randomUUID().toString());
+        params.put("sceneCode", MALL_SCENE_CODE);
+        params.put("skuId", skuId);
+        params.put("source", MALL_SOURCE);
+        params.put("spuId", spuId);
+        params.put("version", MALL_VERSION);
+        return request("com.alipay.antcommonweal.exchange.h5.exchangeBenefit", params);
+    }
+
+    /** 商城兑换订单查询，响应 orderInfos[] 用于兑换后回查是否真的落单 */
+    public static String mallOrders(int pageNum, int size) throws Exception {
+        JSONObject params = MyUtils.newJSONObject();
+        params.put("bizType", FARM_BIZ_TYPE);
+        params.put("pageNum", pageNum);
+        params.put("sceneCode", MALL_SCENE_CODE);
+        params.put("size", size);
+        params.put("source", MALL_ORDER_SOURCE);
+        params.put("version", MALL_VERSION);
+        return request("com.alipay.antcommonweal.exchange.h5.queryExchangeOrders", params);
+    }
+
     /** 每日签到（默认农场入口） */
     public static String checkIn(String signKey) throws Exception {
         return checkInOf(FARM_BIZ_TYPE, FARM_SOURCE, signKey);
@@ -178,15 +229,11 @@ public class goldenbeansRpcCall {
     }
 
     /**
-     * 另一种实现方案：按 bizKey 完成任务（{@code com.alipay.antfarm.doFarmTask}）。
-     * <p>乐园游戏类任务（taskId 形如 {@code GOLDENBEAN_GAME_*} / {@code ZHIMA_youxi_*}）会被
-     * {@code finishTaskantorchard} 以 400000040「不支持rpc调用」拒绝，而这条接口能把它们做成
-     * （2026-09-22 在庄园抽抽乐、芭芭农场实测：任务转 RECEIVED、rightsTimes 0→1）。
-     * <p>它的响应**不可信**——实测常回 102「服务器正在开小差」而任务其实已生效，
-     * 所以调用方必须用任务列表状态核对，不能据响应判成败。
+     * 另一种实现方案：乐园游戏类任务（{@code GOLDENBEAN_GAME_*} / {@code ZHIMA_youxi_*}）会被
+     * {@code finishTaskantorchard} 以 400000040 拒绝，改走这条能做成。
+     * 它的响应不可信（常回 102 而任务已生效），调用方必须回查任务列表核对。
      */
     public static String doFarmTask(String bizKey, String taskSceneCode) throws Exception {
-        // 另一种实现方案 payload 只剩一份实现，见 TaskAlternative.request（version 沿用本模块的 VERSION）
         return TaskAlternative.request(bizKey, taskSceneCode, VERSION);
     }
 

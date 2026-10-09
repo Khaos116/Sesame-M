@@ -12,6 +12,9 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.ChoiceModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
+import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy;
+import io.github.aw1y2z.sesame.data.task.TaskAward;
+import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy.Outcome;
 import io.github.aw1y2z.sesame.entity.AlipayAntOceanAntiepTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayAntOceanFishBlackList;
 import io.github.aw1y2z.sesame.entity.AlipayUser;
@@ -62,7 +65,7 @@ public class AntOcean extends ModelTask {
      */
     @Override
     public ModelGroup getGroup() {
-        return ModelGroup.FOREST;
+        return ModelGroup.OCEAN;
     }
 
     private BooleanModelField queryTaskList;
@@ -183,7 +186,8 @@ public class AntOcean extends ModelTask {
             // 1. 定义黑名单（需要添加的任务）和白名单（需要移除的任务）
             // 注：battleTile 类实验任务（如"随机任务：玩一玩得拼图"）不再预置拉黑，
             // 交由自动拉黑机制判定（释放清单见 MessageUtil.sweepReleasedDefaults）
-            Set<String> blackList = new HashSet<>();
+            // 预置黑名单登记在 MessageUtil（单一真相，配置页据此标注"默认"）
+            Set<String> blackList = MessageUtil.presetBlackList("AntOcean", "AntOceanAntiepTaskList");
             // 可继续添加更多黑名单任务
 
             Set<String> whiteList = new HashSet<>();// 从黑名单中移除该任务
@@ -231,7 +235,7 @@ public class AntOcean extends ModelTask {
             AntOceanFishBlackListMap.load();
             // 1. 定义黑名单（需要添加的任务）和白名单（需要移除的任务）
             // 注：小游戏类任务（如"玩一玩向僵尸开炮"）不再预置拉黑，交由自动拉黑机制判定
-            blackList = new HashSet<>();
+            blackList = MessageUtil.presetBlackList("AntOcean", "AntOceanFishBlackList");
             // 可继续添加更多黑名单任务
             whiteList = new HashSet<>();// 从黑名单中移除该任务
             //whiteList.add("逛一芝麻树");
@@ -1023,12 +1027,17 @@ public class AntOcean extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.receiveTaskAward(sceneCode, taskType));
             TimeUtil.sleep(500);
-            //检查并标记黑名单任务
-            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOceanAntiepTaskList", taskTitle, jo);
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 String awardCount = jo.optString("incAwardCount");
                 Log.other("海洋任务🎖️领取[" + taskTitle + "]奖励#获得[" + awardCount + "块拼图]");
+                return;
             }
+            // 领奖收口：先按任务列表复核"已领到"，未确认才交自动拉黑（顺序由 TaskAward 固定）
+            TimeUtil.sleep(800);
+            TaskAward.confirmReceivedOrBlackList("海洋任务🎖️领取",
+                    k -> probeOceanStatus(sceneCode, taskType), taskTitle, taskTitle,
+                    () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOceanAntiepTaskList", taskTitle, jo),
+                    msg -> Log.other(msg));
         } catch (Throwable t) {
             Log.err(TAG, "receiveTaskAward err:", t);
         }
@@ -1040,6 +1049,11 @@ public class AntOcean extends ModelTask {
                 // 进度类任务（如"连续N天来海洋"）无法用 RPC 直接完成，也不能拉黑（否则会永久跳过真任务）；
                 // 这里显式记录，避免"列表拿到了却没动作、日志也没有"
                 Log.i("海洋任务⏭️跳过[进度任务暂不自动完成]#taskType=" + task.optString("taskType"));
+                return false;
+            }
+            // 周期/持续型任务：跳过，不尝试也不拉黑
+            if (TaskAttemptPolicy.isCyclicTask(task)) {
+                Log.i("海洋任务⏭️跳过周期任务#taskType=" + task.optString("taskType"));
                 return false;
             }
             JSONObject bizInfo = MyUtils.newJSONObject(task.optString("bizInfo"));
@@ -1078,24 +1092,76 @@ public class AntOcean extends ModelTask {
             // 其余 TODO 一律尝试完成：原先按中文文案 + taskType 白名单精确分派，服务端一改文案
             // 或换个 taskType 变体就会整类任务一个请求都不发（列表拿到了却没动作、日志也没有）。
             // 做不了的由自动拉黑机制接管，避免用"服务端字符串精确相等"这种不稳定假设当开关
+            // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
+            Outcome outcome = TaskAttemptPolicy.handle("ocean::" + sceneCode + "/" + taskType, taskTitle, null,
+                    () -> attemptFinishOceanTask(sceneCode, taskType, taskTitle), Log::other,
+                    new TaskAttemptPolicy.Site("AntOceanAntiepTaskList", "海洋任务", taskType, sceneCode,
+                            (k) -> probeOceanStatus(sceneCode, taskType)));
+            return outcome == Outcome.DONE;
+        } catch (Throwable t) {
+            Log.err(TAG, "finishOceanTask err:", t);
+        }
+        return false;
+    }
+
+    /** 海洋任务完成上报：做不了的只记一行、不拉黑；"不支持rpc"交给通用类伪申报 */
+    private static Outcome attemptFinishOceanTask(String sceneCode, String taskType, String taskTitle) {
+        try {
             JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.finishTask(sceneCode, taskType));
             //检查并标记黑名单任务
             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOceanAntiepTaskList", taskTitle, jo);
             if (MessageUtil.checkSuccess(TAG, jo)) {
-                Log.other("海洋任务🧾完成[" + taskTitle + "]");
-                return true;
+                Log.other("海洋任务🧾上报已受理[" + taskTitle + "]");
+                return Outcome.DONE;
             }
-            // 另一种实现方案（见 TaskAlternative）
+            if (MessageUtil.isRetryable(jo) || MessageUtil.isServerBusy(jo)) {
+                return Outcome.RETRY;
+            }
+            // 不支持rpc调用（400000040）→ 由 TaskAttemptPolicy 代为伪申报
             if (TaskAlternative.hit(jo, sceneCode)) {
-                TaskAlternative.trigger(null, taskType, taskTitle, taskType, sceneCode, "海洋任务", msg -> Log.other(msg));
-                return false;
+                return Outcome.UNSUPPORTED;
             }
-            Log.other("海洋任务⚠️未完成[" + taskTitle + "]#taskType=" + taskType + "，需在支付宝内手动完成");
+            Log.other("海洋任务⚠️未上报已受理[" + taskTitle + "]#taskType=" + taskType + "，需在支付宝内手动完成");
+            return Outcome.UNABLE;
         } catch (Throwable t) {
             if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "finishOceanTask err:", t);
         }
-        return false;
+        return Outcome.RETRY;
+    }
+
+    /** 列表状态探针：重拉海洋任务列表，按 sceneCode+taskType 匹配该任务当前状态。 */
+    private static TaskAttemptPolicy.ProbeResult probeOceanStatus(String sceneCode, String taskType) {
+        try {
+            JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.queryTaskList());
+            if (!MessageUtil.checkResultCode(TAG, jo) || !jo.has("antOceanTaskVOList")) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            JSONArray ja = jo.optJSONArray("antOceanTaskVOList");
+            if (ja == null) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            for (int i = 0; i < ja.length(); i++) {
+                JSONObject t = ja.optJSONObject(i);
+                if (t == null) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+                if (!sceneCode.equals(t.optString("sceneCode")) || !taskType.equals(t.optString("taskType"))) {
+                    continue;
+                }
+                String status = t.optString("taskStatus");
+                if ("FINISHED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.FINISHED;
+                }
+                if ("RECEIVED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
+                }
+                return "TODO".equals(status) ? TaskAttemptPolicy.ProbeResult.TODO : TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            // 任务已从列表消失：视为已完成且已领
+            return TaskAttemptPolicy.ProbeResult.GONE;
+        } catch (Throwable t) {
+            Log.err(TAG, "probeOceanStatus err:", t);
+            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        }
     }
 
     // 海洋答题任务
@@ -1570,21 +1636,72 @@ public class AntOcean extends ModelTask {
     }
 
     /**
-     * 完成任务
+     * 完成任务：完成与否以任务列表为准（探针复核），响应不可信；
+     * 400000040「不支持rpc调用」由 TaskAttemptPolicy 代为伪申报（同 antiep 家族）。
      */
     private boolean antfishFinishTask(String taskTitle, String taskType) {
+        Outcome outcome = TaskAttemptPolicy.handle("ocean::fish::" + taskType, taskTitle, null,
+                () -> attemptAntfishFinishTask(taskTitle, taskType), Log::other,
+                new TaskAttemptPolicy.Site("AntOceanFishBlackList", "摸鱼任务", taskType, "ANTAIFISH",
+                        (k) -> probeAntfishStatus(taskType)));
+        return outcome == Outcome.DONE;
+    }
+
+    private Outcome attemptAntfishFinishTask(String taskTitle, String taskType) {
         try {
             String result = AntOceanRpcCall.antfishFinishTask(taskType);
             JSONObject jo = MyUtils.newJSONObject(result);
             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOceanFishBlackList", taskTitle, jo);
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                Log.other("摸鱼任务🧾完成[" + taskTitle + "]");
-                return true;
+                return Outcome.DONE;
+            }
+            if (MessageUtil.isRetryable(jo) || MessageUtil.isServerBusy(jo)) {
+                return Outcome.RETRY;
+            }
+            // 不支持rpc调用（400000040）→ 由 TaskAttemptPolicy 代为伪申报
+            if (TaskAlternative.hit(jo, "ANTAIFISH")) {
+                return Outcome.UNSUPPORTED;
             }
         } catch (Throwable t) {
-            Log.err(TAG, "antfishFinishTask err:", t);
+            Log.err(TAG, "attemptAntfishFinishTask err:", t);
+            return Outcome.RETRY;
         }
-        return false;
+        return Outcome.UNABLE;
+    }
+
+    /** 列表状态探针：重拉摸鱼任务列表（ANTAIFISH），按 taskType 匹配该任务当前状态。 */
+    private static TaskAttemptPolicy.ProbeResult probeAntfishStatus(String taskType) {
+        try {
+            JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.antfishListTask());
+            if (!MessageUtil.checkResultCode(TAG, jo)) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
+            if (taskInfoList == null) {
+                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            for (int i = 0; i < taskInfoList.length(); i++) {
+                JSONObject taskInfo = taskInfoList.optJSONObject(i);
+                JSONObject base = taskInfo == null ? null : taskInfo.optJSONObject("taskBaseInfo");
+                if (base == null) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+                if (!taskType.equals(base.optString("taskType"))) {
+                    continue;
+                }
+                String status = base.optString("taskStatus");
+                if ("FINISHED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.FINISHED;
+                }
+                if ("RECEIVED".equals(status)) {
+                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
+                }
+                return "TODO".equals(status) ? TaskAttemptPolicy.ProbeResult.TODO : TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            // 任务已从列表消失：视为已完成且已领
+            return TaskAttemptPolicy.ProbeResult.GONE;
+        } catch (Throwable t) {
+            Log.err(TAG, "probeAntfishStatus err:", t);
+            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        }
     }
 
     /**

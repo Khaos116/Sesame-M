@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.model.task.protectEcology;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -42,7 +43,7 @@ public class ProtectEcology extends ModelTask {
     
     @Override
     public ModelGroup getGroup() {
-        return ModelGroup.FOREST;
+        return ModelGroup.PROTECT;
     }
     
     private static BooleanModelField cooperateWater;
@@ -635,7 +636,7 @@ public class ProtectEcology extends ModelTask {
     
     private static void marathonQueryActivity(String activityId) {
         try {
-            JSONObject paramMap = new JSONObject();
+            JSONObject paramMap = MyUtils.newJSONObject();
             paramMap.put("donateQueryActionParam", "marathonWater");
             JSONObject jo = MyUtils.newJSONObject(ProtectTreeRpcCall.doRubickActivity("marathonHome", activityId, paramMap));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -683,7 +684,7 @@ public class ProtectEcology extends ModelTask {
     
     private static void carbonQueryActivity(String activityId) {
         try {
-            JSONObject paramMap = new JSONObject();
+            JSONObject paramMap = MyUtils.newJSONObject();
             paramMap.put("donateQueryActionParam", "carbonWater");
             JSONObject jo = MyUtils.newJSONObject(ProtectTreeRpcCall.doRubickActivity("carbonHome", activityId, paramMap));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -731,7 +732,7 @@ public class ProtectEcology extends ModelTask {
     
     private static Boolean carbonCharityActivity(String actionCode, String activityId, int donateNum) {
         try {
-            JSONObject paramMap = new JSONObject();
+            JSONObject paramMap = MyUtils.newJSONObject();
             paramMap.put("donateNum", donateNum);
             paramMap.put("incrNum", donateNum);
             JSONObject jo = MyUtils.newJSONObject(ProtectTreeRpcCall.doRubickActivity(actionCode, activityId, paramMap));

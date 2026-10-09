@@ -17,11 +17,9 @@ import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 
-import java.text.SimpleDateFormat;
+import java.util.Calendar;
 import java.util.Collection;
-import java.util.Date;
 import java.util.LinkedHashSet;
-import java.util.Locale;
 
 public class AncientTree extends ModelTask {
     private static final String TAG = AncientTree.class.getSimpleName();
@@ -33,7 +31,7 @@ public class AncientTree extends ModelTask {
 
     @Override
     public ModelGroup getGroup() {
-        return ModelGroup.FOREST;
+        return ModelGroup.PROTECT;
     }
 
     private BooleanModelField ancientTreeOnlyWeek;
@@ -54,9 +52,9 @@ public class AncientTree extends ModelTask {
         if (!TaskCommon.IS_ENERGY_TIME && TaskCommon.IS_AFTER_8AM) {
             if (!ancientTreeOnlyWeek.getValue()) {
                 return true;
-            } SimpleDateFormat sdf_week = new SimpleDateFormat("EEEE", Locale.getDefault());
-            String week = sdf_week.format(new Date());
-            return "星期一".equals(week) || "星期三".equals(week) || "星期五".equals(week);
+            }
+            int week = MyUtils.getInstance().get(Calendar.DAY_OF_WEEK);
+            return week == Calendar.MONDAY || week == Calendar.WEDNESDAY || week == Calendar.FRIDAY;
         } return false;
     }
 

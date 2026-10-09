@@ -8,6 +8,7 @@ import tempfile
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent / "audit_regressions"))
+from task_policy_fixture import POLICY, award
 from run import SOURCE, method
 
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches/modules-2/files-2.1/org.json/json"
@@ -172,6 +173,9 @@ public class OrchardDrawCheck {
 for token, value in (("@@FLOW@@", flow), ("@@RPC@@", rpc_methods), ("@@GUARD@@", guard),
                      ("@@VERSION@@", re.search(r'private static final String VERSION[^;]+;', rpc)[0])):
     code = code.replace(token, value)
+
+code=code.replace("public class OrchardDrawCheck {", "public class OrchardDrawCheck {\n"+POLICY[:POLICY.index("    static class Site")] + "}\n"+award(method))
+
 with tempfile.TemporaryDirectory(prefix="sesame-orchard-draw-") as tmp:
     java = Path(tmp) / "OrchardDrawCheck.java"
     java.write_text(code, encoding="utf-8")

@@ -8,7 +8,7 @@ static Field<Integer> protectMarathonType=new Field<>(1);
 static Field<Map<String,Integer>> protectMarathonList=new Field<>(Map.of("a",1000));
 static Field<Integer> protectNewAncientTreeType=protectMarathonType;
 static Field<Map<String,Integer>> protectNewAncientTreeList=protectMarathonList;
-static class MyUtils {static JSONObject newJSONObject(String s){return new JSONObject(s);}}
+static class MyUtils {static JSONObject newJSONObject(){return new JSONObject();}static JSONObject newJSONObject(String s){return new JSONObject(s);}}
 static class MessageUtil {static boolean checkResultCode(String tag,JSONObject j){return true;}}
 static class Log {static void i(String a,String b){} static void printStackTrace(String a,Throwable t){System.out.println(t.getClass().getSimpleName());} static void err(String a,String b,Throwable t){System.out.println(t.getClass().getSimpleName());}}
 static class ProtectTreeRpcCall {static String response;static String doRubickActivity(String a,String b,JSONObject c){return response;}}

@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.model.base;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -26,23 +27,46 @@ public final class TaskAlternative {
     public static final String DEFAULT_VERSION = "1.8.2302070202.46";
 
     /**
-     * 交易/履约类任务的 bizKey 关键词。这类任务只能靠真实交易完成，
-     * 用 doFarmTask 伪申报会被判风险操作（服务端回 1009 风控），一律不发。
+     * 交易/履约类任务关键词：**只认 bizKey**（服务端稳定字段），这类任务只能靠真实交易完成，
+     * 用 doFarmTask 伪申报会被判风险操作（服务端回 1009 风控），一律不发，交自动黑名单。
+     *
+     * <p>关键词逐条来自实际日志里出现过的 bizKey：
+     * <pre>
+     * OFFLINE_PAY / ONLINE_PAY / MYZY_pay_* / ORCHARD_NORMAL_XIANXIAZHIFU100  → 支付
+     * LSHS_xiadan_202509 / SHANGOU_xiadan / HANGOU_xiadan                   → 下单（回收/闪购）
+     * ORCHARD_NCLY_CHARGE1_XDDQ / ORCHARD_NORMAL_CHONGZHI9                  → 充值
+     * GOLDENBEAN_GAME_CZ_XDDQ_AI / GROUP_DAILY_GAME_CZ / 2026cc_cz6ylyb_fz  → 游戏充值
+     * ORCHARD_NORMAL_KUAIDI100 / ORCHARD_NORMAL_JIUYIHUISHOU_VISIT          → 寄件/回收
+     * </pre>
+     *
+     * <p><b>不要再加 {@code taobao} 这类宽泛词、也不要匹配任务标题</b>：标题/宽泛词会把外跳类
+     * 任务误伤成交易类而拒绝申报（如 {@code ORCHARD_NORMAL_TAOBAOTAOLIPAI_VISIT} 曾被 taobao
+     * 误拦，随后又被自动拉黑）——外跳类本应去尝试。
      */
-    private static final String[] TRANSACTION_BIZ_KEYWORDS = {
-            "xiadan", "zhifu", "pay", "goumai", "jiaofei", "huankuan", "chongzhi",
-            "taobao", "babafarm_tb", "70000"
+    private static final String[] TRANSACTION_KEYWORDS = {
+            // 支付 / 下单 / 缴费
+            "xiadan", "zhifu", "pay", "goumai", "jiaofei", "huankuan",
+            // 充值（拼音 chongzhi + 英文 charge）
+            "chongzhi", "charge",
+            // 游戏内充值（bizKey 用 CZ，如 GOLDENBEAN_GAME_CZ_XDDQ_AI）
+            "game_cz", "_cz",
+            // 履约：寄件 / 回收
+            "kuaidi", "huishou",
+            // 租赁 / 出行 / 酒店机票
+            "zulin", "zuche", "dache", "jiudian", "jipiao", "yuebao",
+            // 既有特殊项
+            "babafarm_tb", "70000",
     };
 
-    /** bizKey 是否属于交易/履约类（下单、支付、购买、缴费、还款、充值、淘宝）。 */
+    /** bizKey 命中交易/履约类关键词，即视为交易/履约类。 */
     public static boolean isTransactionTask(String bizKey) {
         if (bizKey == null || bizKey.isEmpty()) {
             return false;
         }
         String key = bizKey.toLowerCase(java.util.Locale.ROOT);
-        for (String keyword : TRANSACTION_BIZ_KEYWORDS) {
+        for (String keyword : TRANSACTION_KEYWORDS) {
             // 纯数字关键词按「整段数字」匹配：直接 contains 时 70000 会命中 appId
-            // （如 2060170000359285 里的 "170000"）,把「玩游戏」这类任务误判成交易类
+            // （如 2060170000359285 里的 "170000"），把「玩游戏」这类任务误判成交易类
             if (keyword.matches("[0-9]+")) {
                 if (Pattern.compile("(?<![0-9])" + keyword + "(?![0-9])").matcher(key).find()) {
                     return true;
@@ -64,12 +88,21 @@ public final class TaskAlternative {
 
     /** 唯一的 doFarmTask payload，返回原始响应。 */
     public static String request(String bizKey, String taskSceneCode, String version) {
+        if (bizKey == null || bizKey.isEmpty() || taskSceneCode == null || version == null || version.isEmpty()) {
+            throw new IllegalArgumentException("doFarmTask missing request fields");
+        }
         if (isTransactionTask(bizKey)) {
             Log.i("doFarmTask⏭️跳过交易/履约类任务#bizKey=" + bizKey + "，不自动申报");
             return "{}";
         }
-        String args = "[{\"bizKey\":\"" + bizKey + "\",\"requestType\":\"RPC\",\"sceneCode\":\"ANTFARM\","
-                + "\"source\":\"H5\",\"taskSceneCode\":\"" + taskSceneCode + "\",\"version\":\"" + version + "\"}]";
+        String args;
+        try {
+            args = new org.json.JSONArray().put(MyUtils.newJSONObject().put("bizKey", bizKey)
+                    .put("requestType", "RPC").put("sceneCode", "ANTFARM").put("source", "H5")
+                    .put("taskSceneCode", taskSceneCode).put("version", version)).toString();
+        } catch (JSONException e) {
+            throw new IllegalArgumentException("doFarmTask invalid request");
+        }
         return ApplicationHook.requestString("com.alipay.antfarm.doFarmTask", args);
     }
 
@@ -78,7 +111,11 @@ public final class TaskAlternative {
         if (raw == null) {
             throw new JSONException("doFarmTask empty response");
         }
-        return new JSONObject(raw);
+        JSONObject result = MyUtils.newJSONObject(raw);
+        if (result.length() == 0 && !"{}".equals(raw.trim())) {
+            throw new JSONException("doFarmTask invalid response");
+        }
+        return result;
     }
 
     /** 日志片段 {@code resultCode/memo}（{@code desc}、{@code resultDesc} 兜底）。 */
@@ -117,6 +154,11 @@ public final class TaskAlternative {
         try {
             if (isTransactionTask(bizKey)) {
                 Log.i(logPrefix + "⏭️跳过[" + taskTitle + "]#bizKey=" + bizKey + "，交易/履约类不自动申报");
+                // 跳过 = 该任务不会完成：同样登记进同轮核对，由调用方的核对机制把它拉黑。
+                // 否则只跳过、不拉黑，任务每天被反复跳过（会员游戏中心/金豆夺宝走的就是这条路）。
+                if (pending != null && taskId != null && !taskId.isEmpty()) {
+                    pending.put(taskId, taskTitle);
+                }
                 return null;
             }
             JSONObject doFarmJo = doFarmTask(bizKey, taskSceneCode, version);
