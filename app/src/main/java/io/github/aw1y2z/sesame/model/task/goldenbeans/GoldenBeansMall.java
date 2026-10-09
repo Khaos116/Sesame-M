@@ -5,11 +5,15 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 
 import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.entity.AlipayGoldenBeansMallItem;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.MessageUtil;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.idMap.GoldenBeansMallItemMap;
 
 /**
@@ -32,9 +36,11 @@ public final class GoldenBeansMall {
     private GoldenBeansMall() {
     }
 
-    /** 同步候选并兑换已勾选的商品；列表无条件同步，兑换受开关控制 */
+    /** 模块运行时每日同步候选；开启兑换且有勾选项时使用实时列表。 */
     public static boolean run(int interval, Map<String, Integer> selected, boolean exchangeEnabled) {
         try {
+            boolean exchangeRequested = exchangeEnabled && selected != null && !selected.isEmpty();
+            if (!exchangeRequested && Status.hasFlagToday(FLAG_CATALOGUE)) return true;
             JSONArray items = fetchItems(interval);
             if (items == null) {
                 return false;
@@ -65,8 +71,8 @@ public final class GoldenBeansMall {
             Log.goldenBeans("金豆商城🛒本轮兑换[" + exchanged + "]项");
             return true;
         } catch (Throwable th) {
-            Log.i(GoldenBeansSupport.TAG, "mall err:");
-            Log.printStackTrace(GoldenBeansSupport.TAG, th);
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
+            Log.record("金豆商城：查询/同步异常=" + th.getClass().getSimpleName());
             return false;
         }
     }
@@ -76,7 +82,8 @@ public final class GoldenBeansMall {
         GoldenBeansSupport.pause(interval);
         JSONObject jo = GoldenBeansSupport.parse(goldenbeansRpcCall.mallItems(0, PAGE_SIZE));
         if (!GoldenBeansSupport.ok(jo)) {
-            Log.goldenBeans("金豆商城⚠️商品列表获取失败[" + GoldenBeansSupport.describe(jo) + "]");
+            Log.goldenBeans("金豆商城⚠️商品列表获取失败#code="
+                    + (jo == null ? "EMPTY" : jo.optString("resultCode", jo.optString("code", "UNKNOWN"))));
             return null;
         }
         JSONArray itemList = jo.optJSONArray("itemInfoVOList");
@@ -131,10 +138,10 @@ public final class GoldenBeansMall {
             GoldenBeansMallItemMap.add(name, name);
             added++;
         }
-        if (added > 0 && GoldenBeansMallItemMap.save()) {
-            AlipayGoldenBeansMallItem.clear();
+        if (GoldenBeansMallItemMap.save()) {
+            if (added > 0) AlipayGoldenBeansMallItem.clear();
             Status.flagToday(FLAG_CATALOGUE);
-            Log.goldenBeans("同步权益🉑金豆商城可兑列表[新增" + added + "]");
+            if (added > 0) Log.goldenBeans("同步权益🉑金豆商城可兑列表[新增" + added + "]");
         }
         return added;
     }
@@ -159,9 +166,9 @@ public final class GoldenBeansMall {
         }
         String receiptKey = "goldenBeans.mall.pending::" + spuId + "::" + skuId;
         RuntimeInfo runtime = RuntimeInfo.getInstance();
-        if (!runtime.getString(receiptKey).isEmpty()) {
-            Log.goldenBeans("金豆商城❓已有未确认兑换[" + name + "]#本轮不重复下单，请核对商城订单");
-            return false;
+        String stored = runtime.getString(receiptKey);
+        if (!stored.isEmpty()) {
+            return reconcile(interval, item, receiptKey, MyUtils.newJSONObject(stored));
         }
         if (item.optBoolean("needMoney", false)) {
             Log.goldenBeans("金豆商城⏭️跳过需附加人民币商品[" + name + "]");
@@ -171,6 +178,7 @@ public final class GoldenBeansMall {
             Log.goldenBeans("金豆商城⏭️今日已兑完[" + name + "]");
             return false;
         }
+        if (Status.hasFlagToday(FLAG_EXCHANGE_PREFIX + name + "::rejected")) return false;
         if (dailyLimit > 0) {
             int done = Status.getIntFlagToday(FLAG_EXCHANGE_PREFIX + name);
             if (done >= dailyLimit) {
@@ -186,51 +194,110 @@ public final class GoldenBeansMall {
             }
         }
         try {
-            int before = orderCount(interval);
-            if (before < 0) {
+            JSONArray before = fetchOrders(interval);
+            if (before == null) {
                 Log.goldenBeans("金豆商城⏭️订单基线未确认[" + name + "]#本轮不兑换");
                 return false;
             }
             GoldenBeansSupport.pause(interval);
-            if (!runtime.putVerified(receiptKey, "submitted")) {
+            JSONObject receipt = MyUtils.newJSONObject().put("beforeCount", before.length())
+                    .put("dayLeft", dayLeft).put("day", Math.floorDiv(System.currentTimeMillis() + 28800000L, 86400000L))
+                    .put("doneBefore", Status.getIntFlagToday(FLAG_EXCHANGE_PREFIX + name));
+            if (!runtime.putVerified(receiptKey, receipt.toString())) {
                 Log.goldenBeans("金豆商城⚠️提交前回执保存失败[" + name + "]#本轮未发送兑换请求");
                 return false;
             }
             JSONObject jo = GoldenBeansSupport.parse(goldenbeansRpcCall.mallExchange(spuId, skuId));
             if (!GoldenBeansSupport.ok(jo)) {
-                Log.goldenBeans("金豆商城🎁兑换失败[" + name + "]#" + GoldenBeansSupport.describe(jo));
+                boolean rejected = jo != null && Boolean.FALSE.equals(jo.opt("success"))
+                        && !MessageUtil.isRetryable(jo) && !MessageUtil.isServerBusy(jo);
+                boolean cleared = rejected && runtime.putVerified(receiptKey, "");
+                if (rejected) {
+                    Status.flagToday(FLAG_EXCHANGE_PREFIX + name + "::rejected");
+                }
+                Log.goldenBeans("金豆商城⚠️[" + name + "]#" + (cleared ? "服务端明确拒绝，已解除未确认回执"
+                        : rejected ? "服务端明确拒绝，清理回执失败" : "响应未确认，保留回执待查")
+                        + "#code=" + (jo == null ? "EMPTY" : jo.optString("resultCode", jo.optString("code", "UNKNOWN"))));
                 return false;
             }
             if (!jo.optBoolean("canBuy", false)) {
-                Log.goldenBeans("金豆商城⏭️服务端判定不可兑[" + name + "]");
-                if (Boolean.FALSE.equals(jo.opt("canBuy"))) runtime.putVerified(receiptKey, "");
+                if (Boolean.FALSE.equals(jo.opt("canBuy"))) {
+                    Log.goldenBeans("金豆商城⏭️服务端判定不可兑[" + name + "]");
+                    runtime.putVerified(receiptKey, "");
+                    Status.flagToday(FLAG_EXCHANGE_PREFIX + name + "::rejected");
+                } else {
+                    Log.goldenBeans("金豆商城❓[" + name + "]#缺少可兑确认，保留回执待查");
+                }
                 return false;
             }
-            int after = orderCount(interval);
-            if (after <= before) {
-                Log.record("金豆商城⚠️兑换未落单[" + name + "]#订单数未增加");
-                return false;
-            }
-            Log.goldenBeans("金豆商城🎁兑换[" + name + "]#花费[" + cost + "罐]#订单[" + jo.optString("orderNo", "") + "]");
-            Status.setIntFlagToday(FLAG_EXCHANGE_PREFIX + name, Status.getIntFlagToday(FLAG_EXCHANGE_PREFIX + name) + 1);
-            runtime.putVerified(receiptKey, "");
-            return true;
+            receipt.put("orderNo", jo.optString("orderNo", ""));
+            runtime.putVerified(receiptKey, receipt.toString());
+            return reconcile(interval, item, receiptKey, receipt);
         } catch (Throwable th) {
-            Log.i(GoldenBeansSupport.TAG, "mall exchange err:");
-            Log.printStackTrace(GoldenBeansSupport.TAG, th);
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
+            Log.record("金豆商城[" + name + "]：兑换/回查异常=" + th.getClass().getSimpleName() + "，保留回执待查");
             return false;
         }
     }
 
-    /** 商城订单条数；失败返回 -1，不能用失败查询作为兑换确认基线。 */
-    private static int orderCount(int interval) throws Exception {
-        GoldenBeansSupport.pause(interval);
-        JSONObject jo = GoldenBeansSupport.parse(goldenbeansRpcCall.mallOrders(1, 20));
-        if (!GoldenBeansSupport.ok(jo)) {
-            return -1;
+    private static boolean reconcile(int interval, JSONObject item, String receiptKey, JSONObject receipt) throws Exception {
+        String name = item.optString("spuName");
+        JSONArray orders = fetchOrders(interval);
+        String orderNo = receipt.optString("orderNo");
+        boolean confirmed = false;
+        for (int i = 0; orders != null && i < orders.length() && !orderNo.isEmpty(); i++) {
+            JSONObject order = orders.optJSONObject(i);
+            if (order != null && orderNo.equals(order.optString("orderNo"))) confirmed = true;
         }
-        JSONArray orders = jo.optJSONArray("orderInfos");
-        return orders != null ? orders.length() : -1;
+        long today = Math.floorDiv(System.currentTimeMillis() + 28800000L, 86400000L);
+        boolean sameDay = receipt.optLong("day", -1L) == today;
+        // 无订单号时，需要同日该规格可兑次数减少及完整订单数增加两项证据。
+        if (!confirmed && orders != null && sameDay && receipt.optInt("beforeCount", -1) >= 0
+                && orders.length() > receipt.optInt("beforeCount")) {
+            JSONArray items = fetchItems(interval);
+            for (int i = 0; items != null && i < items.length(); i++) {
+                JSONObject current = items.optJSONObject(i);
+                if (current != null && item.optString("spuId").equals(current.optString("spuId"))
+                        && item.optString("skuId").equals(current.optString("skuId"))
+                        && current.optInt("dayLeft", -1) >= 0
+                        && current.optInt("dayLeft") < receipt.optInt("dayLeft", -1)) confirmed = true;
+            }
+        }
+        if (!confirmed) {
+            Log.goldenBeans("🕓 金豆商城[" + name + "]#已回查订单但兑换结果未确认，不重复下单"
+                    + (receipt.length() == 0 ? "；旧回执无基线，请核对商城订单后清理该商品的未确认回执" : ""));
+            return false;
+        }
+        if (sameDay) {
+            Status.setIntFlagToday(FLAG_EXCHANGE_PREFIX + name,
+                    Math.max(Status.getIntFlagToday(FLAG_EXCHANGE_PREFIX + name), receipt.optInt("doneBefore", 0) + 1));
+        }
+        boolean cleared = RuntimeInfo.getInstance().putVerified(receiptKey, "");
+        Log.goldenBeans("✅ 金豆商城兑换[" + name + "]#订单已确认" + (sameDay ? "，已计入今日次数" : "，属于历史兑换")
+                + (cleared ? "，未确认回执已解除" : "，回执清理失败，下轮只回查"));
+        return true;
+    }
+
+    /** 完整分页才可作为基线；失败/重复页一律保留未确认状态。 */
+    private static JSONArray fetchOrders(int interval) throws Exception {
+        JSONArray all = new JSONArray();
+        Set<String> pages = new HashSet<>();
+        // shortcut: 最多查 100 页，超过时停止兑换；更大订单历史需服务端按订单号查询接口。
+        for (int page = 1; page <= 100; page++) {
+            GoldenBeansSupport.pause(interval);
+            JSONObject jo = GoldenBeansSupport.parse(goldenbeansRpcCall.mallOrders(page, PAGE_SIZE));
+            if (!GoldenBeansSupport.ok(jo)) return null;
+            JSONArray orders = jo.optJSONArray("orderInfos");
+            if (orders == null || !pages.add(orders.toString())) return null;
+            for (int i = 0; i < orders.length(); i++) {
+                JSONObject order = orders.optJSONObject(i);
+                if (order == null) return null;
+                all.put(order);
+            }
+            if (orders.length() < PAGE_SIZE) return all;
+        }
+        Log.goldenBeans("金豆商城⚠️订单超过100页，查询未完整，本轮不兑换");
+        return null;
     }
 
     /** 当前持有的金豆罐数；查询失败返回 -1，此时不提交兑换。 */

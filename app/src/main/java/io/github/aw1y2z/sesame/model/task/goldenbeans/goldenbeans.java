@@ -163,7 +163,7 @@ public class goldenbeans extends ModelTask {
                 GoldenBeansExchange.exchangeSesame(interval, dailyLimit(goldenBeansSesameExchangeLimit));
             }
 
-            // 商城可兑列表无条件同步（供配置页勾选），兑换才受开关控制
+            // 模块运行时每日同步候选；启用兑换时实时查询价格和次数。
             GoldenBeansMall.run(interval, GoldenBeansMallItemList.getValue(), mallEnabled);
 
             if (resyncEnabled) {

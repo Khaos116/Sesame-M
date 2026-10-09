@@ -34,11 +34,16 @@ public final class TaskAward {
     public static boolean confirmReceivedOrBlackList(String logPrefix, TaskAttemptPolicy.StatusProbe probe,
                                                      String key, String title, Runnable blackList,
                                                      Consumer<String> log) {
-        if (probe != null && TaskAttemptPolicy.isReceived(probe.probe(key))) {
-            if (log != null) {
-                log.accept(logPrefix + "[" + title + "]#已按列表确认领取");
+        if (probe != null) {
+            TaskAttemptPolicy.ProbeResult result = probe.probe(key);
+            if (TaskAttemptPolicy.isReceived(result)) {
+                if (log != null) log.accept(logPrefix + "[" + title + "]#已按列表确认领取");
+                return true;
             }
-            return true;
+            if (result == TaskAttemptPolicy.ProbeResult.UNKNOWN) {
+                if (log != null) log.accept(logPrefix + "[" + title + "]#回查失败，领取结果未确认，不自动拉黑");
+                return false;
+            }
         }
         if (blackList != null) {
             blackList.run();

@@ -977,6 +977,8 @@ public class AntSports extends ModelTask {
      */
     private void paceWalk(int useStepCount) {
         long wait = (long) walkPaceMs.getValue() * Math.max(useStepCount, 0);
+        if (wait >= 1000L) Log.record("运动行走⏳本次" + useStepCount + "步，按配置等待约" + (wait / 1000L)
+                + "秒；可停止任务取消等待");
         while (wait > 0) {
             long slice = Math.min(wait, 5000L);
             TimeUtil.sleep(slice);

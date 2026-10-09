@@ -18,7 +18,7 @@ import io.github.aw1y2z.sesame.util.TimeUtil;
 /**
  * 任务尝试策略：服务端没有"保证成功"的完成接口、只能先尝试再以任务列表为准的一类任务（森林活力值、视频观看、
  * 新村木兰市集、神奇海洋、运动任务、游戏中心…）的统一处理。
- * <p><b>核心原则：动作响应不可信——完成 / 领奖 / 拉黑一律以任务列表为准</b>（调用点经 {@link Site#probe} 提供列表状态探针）。
+ * <p>完成申报按列表确认；领奖接受业务成功响应，失败时由探针复核，查询失败不得拉黑。
  * 本类只管**策略**，任务怎么完成、奖励怎么领仍由各模块决定：
  * <ul>
  *   <li><b>完成</b>：尝试后重拉列表，{@link #isDone} 才算完成；列表仍待办或拉取失败时，响应说"成功"也不认；</li>
@@ -26,10 +26,9 @@ import io.github.aw1y2z.sesame.util.TimeUtil;
  *   <li><b>当天只试一次</b>：做不了（{@link Outcome#UNABLE}）打当日标记，次日随 status.json 重置；</li>
  *   <li><b>失败分级</b>：{@link Outcome#RETRY}（102 / 限流 / 异常）不打标记，留待下一轮；</li>
  *   <li><b>兜底升级</b>：{@link Outcome#UNSUPPORTED}（400000040）由本类代为伪申报（{@code TaskAlternative.trigger}，
- *       交易/履约类已内部禁止）；传了 {@link Forge} 时优先做真实行为。伪申报后同一天仍在待办 ⇒ 交自动黑名单
- *       （{@link MessageUtil#MarkTaskBlackList}，照走"3 天解禁、累计 3 次永久"）。</li>
+ *       交易/履约类已内部禁止）；传了 {@link Forge} 时优先做真实行为。同日仍待办只防重，不据此拉黑。</li>
  * </ul>
- * <p>列表未确认完成时，响应触发的拉黑会被丢弃（延迟落盘），单次响应无法拉黑真任务。
+ * <p>列表已完成、查询失败或仍需走后备完成路径时，丢弃普通尝试产生的拉黑记录。
  * <p>周期/持续型任务（见 {@link #isCyclicTask}）由真实行为推进、常驻列表，调用点应跳过。
  * <p>带同轮核对（{@code TaskAlternative.verify}）的调用点自行伪申报并返回 {@link Outcome#FORGED}，
  * {@link Site} 传 null 即可。
@@ -157,7 +156,7 @@ public class TaskAttemptPolicy {
         final String version;
         /** 行为伪造动作；null 表示该任务没有可用的行为接口 */
         final Forge forge;
-        /** 列表状态探针；null 表示调用点自行判定（沿用响应），非 null 时**完成 / 领奖 / 拉黑**都以列表为准 */
+        /** 列表状态探针；null 表示调用点自行判定，领奖动作已经回查时不重复传入。 */
         final StatusProbe probe;
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode) {
@@ -211,7 +210,7 @@ public class TaskAttemptPolicy {
      */
     public static Outcome handle(String key, String title, Award award, Attempt attempt,
                                  Consumer<String> log, Site site) {
-        // 领奖不受当日标记约束（否则当日漏领就没了）；成败以任务列表"已领到"为准，响应不可信（102/限流可能已发放）
+        // 领奖不受尝试标记约束；成功响应不被异步列表覆盖，失败才回查。
         if (award != null) {
             boolean claimed = false;
             boolean blacklistAllowed = site == null || site.probe == null;
@@ -219,7 +218,7 @@ public class TaskAttemptPolicy {
 
             try {
                 claimed = award.run();
-                if (site != null && site.probe != null) {
+                if (!claimed && site != null && site.probe != null) {
                     TimeUtil.sleep(1500);
                     ProbeResult result = site.probe.probe(key);
                     blacklistAllowed = result != ProbeResult.UNKNOWN;
@@ -243,27 +242,17 @@ public class TaskAttemptPolicy {
             return Outcome.SKIPPED;
         }
         String flag = FLAG_PREFIX + sanitize(key);
-        // 交易/履约类（识别依据见 TaskAlternative.TRANSACTION_KEYWORDS）：**一律不发任何申报/伪造请求**
-        // （伪申报会被服务端判风险操作、回 1009），并当场交自动黑名单停掉。
-        // 不能指望下面"🧊兜底未生效"那条：跳过路径的 outcome 多为 UNABLE，永远不会 markTriggered，
-        // 于是任务只会在每轮被反复跳过、永远进不了黑名单（实测农场饲料任务即如此）。
+        // 关键词只能用于阻止交易申报，不能作为修改用户黑名单的证据。
         if (site != null && site.bizKey != null && TaskAlternative.isTransactionTask(site.bizKey)) {
-            // 底线：交易/支付类一次即**永久**拉黑（不进入"满 N 天解禁重试"的生命周期），绝不伪造
-            boolean blacklisted = autoBlackList(site, title, true);
             Status.flagToday(flag);
-            log.accept("任务尝试⏭️交易/履约类[" + title + "]"
-                    + (blacklisted ? "#不申报，已永久拉黑" : "#不申报（自动黑名单列表未登记）"));
+            log.accept("任务尝试⏭️交易/履约类[" + title + "]#不申报，不修改黑名单");
             return Outcome.UNABLE;
         }
-        // **同一天内**又见到它（上次已伪申报、这轮仍在待办）⇒ 兜底没写成 ⇒ 按自动黑名单规则停掉。
-        // 必须限定同一天：日任务次日会重新回到待办，那是新实例，据此拉黑会误伤能做的任务。
-        // 可靠性依据：伪申报被服务端接受后任务会很快判定完成，故"同一天内再次出现"才是兜底没写成的可靠证据；
-        // 跨天出现一律按新实例处理。
-        if (isSameDayTriggered(key) && autoBlackList(site, title)) {
-            clearTriggered(key);
+        // 同日再次看到 TODO 可能只是异步结算；保留当日防重，不据此自动拉黑。
+        if (isSameDayTriggered(key)) {
             Status.flagToday(flag);
-            log.accept("任务尝试🧊兜底未生效[" + title + "]#已交自动黑名单");
-            return Outcome.UNABLE;
+            log.accept("任务尝试🕓上报后仍待确认[" + title + "]#今日不重复上报，不修改黑名单");
+            return Outcome.TRIED_TODAY;
         }
         if (Status.hasFlagToday(flag)) {
             Log.i(TAG, "今日已试[" + title + "]#跳过");
@@ -292,7 +281,9 @@ public class TaskAttemptPolicy {
                 }
             }
         } finally {
-            MessageUtil.endDeferBlackList(!listDone && blacklistAllowed);
+            MessageUtil.endDeferBlackList(!listDone && blacklistAllowed
+                    && outcome != Outcome.UNSUPPORTED
+                    && !(outcome == Outcome.UNABLE && site != null && site.forge != null));
         }
         if (listDone) {
             log.accept("任务尝试✅列表已确认完成[" + title + "]");
@@ -330,32 +321,6 @@ public class TaskAttemptPolicy {
         }
         Status.flagToday(flag);
         return outcome;
-    }
-
-    /** 按自动黑名单规则记账（{@link MessageUtil#MarkTaskBlackList} 会跳过用户手动加入的条目与白名单项） */
-    private static boolean autoBlackList(Site site, String title) {
-        return autoBlackList(site, title, false);
-    }
-
-    /**
-     * @param permanent true=交易/支付类：立即**永久**拉黑、永不自动解禁
-     *                  （见 {@link MessageUtil#MarkTaskBlackListPermanent}）
-     */
-    private static boolean autoBlackList(Site site, String title, boolean permanent) {
-        if (site == null || site.listField == null || site.listField.isEmpty()) {
-            return false;
-        }
-        String[] target = MessageUtil.autoBlackListTarget(site.listField);
-        if (target == null) {
-            Log.i(TAG, "自动拉黑列表未登记:" + site.listField);
-            return false;
-        }
-        if (permanent) {
-            MessageUtil.MarkTaskBlackListPermanent(target[0], site.listField, target[1], title);
-        } else {
-            MessageUtil.MarkTaskBlackList(target[0], site.listField, target[1], title);
-        }
-        return true;
     }
 
     /**

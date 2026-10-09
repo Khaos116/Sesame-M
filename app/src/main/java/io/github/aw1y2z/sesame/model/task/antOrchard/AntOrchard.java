@@ -62,6 +62,27 @@ public class AntOrchard extends ModelTask {
     private String[] wuaList;
     private String userId;
 
+    // 任务黑名单：某些广告/外跳类任务后端不支持 finishTask 或需要前端行为配合
+    //groupId或者title
+    private static final Set<String> ORCHARD_TASK_BLACKLIST = new HashSet<>();
+
+    static {
+        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_KUAISHOU_MAX");  // 逛一逛快手
+        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_DIAOYU1");       // 钓鱼1次
+        ORCHARD_TASK_BLACKLIST.add("ZHUFANG3IN1");                  // 添加农场小组件并访问
+        ORCHARD_TASK_BLACKLIST.add("逛助农好货得肥料");                        // 逛助农好货得肥料
+        ORCHARD_TASK_BLACKLIST.add("12173");                        // 买好货
+        ORCHARD_TASK_BLACKLIST.add("70000");                        // 逛好物最高得1500肥料（XLIGHT）
+        ORCHARD_TASK_BLACKLIST.add("TOUTIAO");                      // 逛一逛今日头条
+        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_ZADAN10_3000");  // 农场对对碰
+        ORCHARD_TASK_BLACKLIST.add("TAOBAO2");                      // 逛一逛闲鱼
+        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_JIUYIHUISHOU_VISIT");  // 旧衣服回收
+        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_SHOUJISHUMAHUISHOU");  // 数码回收
+        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_AQ_XIAZAI");           // 下载AQ
+        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_WAIMAIMIANDAN");      // 逛一逛闪购外卖
+        ORCHARD_TASK_BLACKLIST.add("逛一逛签到领现金");      // 逛一逛签到领现金
+    }
+
     // 模型字段定义
     private IntegerModelField executeInterval;
     private BooleanModelField orchardListTask;
@@ -1467,26 +1488,27 @@ public class AntOrchard extends ModelTask {
                 JSONObject displayConfig = jo.optJSONObject("taskDisplayConfig");
                 String title = displayConfig != null ? displayConfig.optString("title", "未知任务") : "未知任务";
                 if (AntOrchardTaskList.getValue().contains(title) || AntOrchardTaskList.getValue().contains(taskId) || AntOrchardTaskList.getValue().contains(groupId)) continue;
+                boolean staticBlocked = ORCHARD_TASK_BLACKLIST.contains(title) || ORCHARD_TASK_BLACKLIST.contains(taskId)
+                        || ORCHARD_TASK_BLACKLIST.contains(groupId);
                 if (TaskStatus.TODO.name().equals(taskStatus)) {
-                    // 底线：交易/支付类任务一律不申报、一次即**永久**拉黑。
                     // taskId 与 groupId 都查（服务端两处键名不统一，实测 ORCHARD_NORMAL_CHONGZHI9 /
                     // ORCHARD_NCLY_CHARGE1_XDDQ 这类"充值"任务正是靠这两个键识别的）。
                     if (TaskAlternative.isTransactionTask(jo.optString("taskId"))
                             || TaskAlternative.isTransactionTask(groupId)) {
-                        MessageUtil.MarkTaskBlackListPermanent("AntOrchard", "AntOrchardTaskList",
-                                "农场肥料任务", title);
-                        Log.farm("肥料任务⏭️交易/履约类[" + title + "]#不申报，已永久拉黑");
+
+                        Log.farm("肥料任务⏭️交易/履约类[" + title + "]#不申报，不修改黑名单");
                         continue;
                     }
                 }
                 if (orchardFloatBallTask.getValue() && displayConfig != null && displayConfig.optJSONObject("floatBallConfig") != null) {
-                    AntOrchardVisitTask.floatBall(jo, orchardVisitDailyBudget.getValue());
+                    if (!staticBlocked) AntOrchardVisitTask.floatBall(jo, orchardVisitDailyBudget.getValue());
                     continue;
                 }
                 if (isExtraOrchardBrowse(jo)) {
                     runExtraOrchardTask(jo, false);
                     continue;
                 }
+                if (staticBlocked) continue;
 
                 if (TaskStatus.TODO.name().equals(taskStatus)) {
                     if (!finishOrchardTask(jo)) {

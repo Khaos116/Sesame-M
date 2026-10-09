@@ -100,6 +100,7 @@ python checks/check_sj_activities.py
 python checks/check_sj_native_tasks.py
 python checks/check_task_attempt_policy.py
 python checks/check_goldenbeans_mall.py
+python checks/check_merge_review.py
 python checks/check_dodo_collect.py
 python checks/check_remaining_business.py
 java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin --console=plain

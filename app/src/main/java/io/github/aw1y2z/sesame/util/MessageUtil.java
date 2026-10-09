@@ -35,7 +35,8 @@ public class MessageUtil {
 
     public static JSONObject newJSONObject(String str) {
         try {
-            return MyUtils.newJSONObject(str);
+            JSONObject result = MyUtils.newJSONObject(str);
+            return result.length() == 0 && (str == null || !str.trim().matches("\\{\\s*}")) ? null : result;
         } catch (Throwable t) {
             Log.err(TAG, "newJSONObject err:", t);
         }
@@ -341,12 +342,17 @@ public class MessageUtil {
     private static final Map<String, Set<String>> PRESET_BLACKLIST = new LinkedHashMap<>();
 
     static {
+        PRESET_BLACKLIST.put("AntForestV2|AntForestVitalityTaskList", setOf(
+                "邀请1位好友助力", "添加组件及时收能量", "到店支付得50g能量", "践行绿色行为",
+                "连续7天收自己能量", "去淘宝花花乐领红包", "去蚂蚁阿福健康问答"));
+        PRESET_BLACKLIST.put("AntDodo|AntDodoTaskList", setOf(
+                "惊喜任务：添加森林组件", "连续访问并主动抽卡7天", "每日任务：帮好友抽卡"));
         PRESET_BLACKLIST.put("AntFarm|AntFarmDoFarmTaskList", setOf(
-                "线上支付", "用花呗完成一笔支付"));
+                "到店付款", "线上支付", "逛闪购外卖1元起吃", "用花呗完成一笔支付"));
         PRESET_BLACKLIST.put("AntFarm|AntFarmDrawMachineTaskList", setOf(
                 "伸出援手，点亮希望", "消耗饲料换机会"));
         PRESET_BLACKLIST.put("AntOrchard|AntOrchardTaskList", setOf(
-                "完成1笔旧衣回收", "完成1单手机数码回收"));
+                "完成1笔旧衣回收", "完成1单手机数码回收", "下载蚂蚁阿福看健康攻略", "逛一逛快手", "逛一逛签到领现金"));
         // 芝麻粒：仍预置拉黑的只剩真实交易/履约类（下单/租赁/订酒店/回收/雇佣/付钱/查车）
         PRESET_BLACKLIST.put("AntMember|MemberCreditSesameTaskList", setOf(
                 "用额度免押金下单", "去租赁下单", "芝麻租赁下单得芝麻粒", "去飞猪订酒店",

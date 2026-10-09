@@ -7,6 +7,8 @@
 
 # Java class files
 *.class
+__pycache__/
+*.py[cod]
 
 # Generated files
 bin/

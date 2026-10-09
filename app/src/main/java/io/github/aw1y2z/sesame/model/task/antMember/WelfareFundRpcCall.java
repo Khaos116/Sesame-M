@@ -1,6 +1,9 @@
 package io.github.aw1y2z.sesame.model.task.antMember;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
+import io.github.aw1y2z.sesame.util.MyUtils;
+import org.json.JSONArray;
+import org.json.JSONException;
 
 /**
  * 网商银行福利金接口。固定参数（appletId / playId / sceneCode）取自官方页面实际调用。
@@ -40,8 +43,16 @@ public class WelfareFundRpcCall {
 
     /** 任务报名（stageCode=signup）与任务完成领奖（stageCode=send） */
     public static String taskTrigger(String appletId, String stageCode) {
-        return ApplicationHook.requestString("com.alipay.loanpromoweb.promo.task.taskTrigger",
-                "[{\"appletId\":\"" + appletId + "\",\"stageCode\":\"" + stageCode + "\",\"taskCenId\":\""
-                        + TASK_CENTER_APPLET_ID + "\"}]");
+        if (appletId == null || appletId.isEmpty()
+                || !("signup".equals(stageCode) || "send".equals(stageCode) || "receive".equals(stageCode))) {
+            throw new IllegalArgumentException("taskTrigger missing or invalid fields");
+        }
+        try {
+            return ApplicationHook.requestString("com.alipay.loanpromoweb.promo.task.taskTrigger",
+                    new JSONArray().put(MyUtils.newJSONObject().put("appletId", appletId)
+                            .put("stageCode", stageCode).put("taskCenId", TASK_CENTER_APPLET_ID)).toString());
+        } catch (JSONException e) {
+            throw new IllegalArgumentException("taskTrigger invalid request");
+        }
     }
 }

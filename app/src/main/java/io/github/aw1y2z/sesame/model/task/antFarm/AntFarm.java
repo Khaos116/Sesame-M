@@ -2890,26 +2890,6 @@ public class AntFarm extends ModelTask {
         return MessageUtil.isRetryable(jo) || MessageUtil.isServerBusy(jo) ? Outcome.RETRY : Outcome.UNABLE;
     }
 
-    /** 视频任务的普通完成尝试：饲料任务的通用申报接口对它无效，失败即交给行为伪造（doVideoTask）接手 */
-    private Outcome attemptVideoTask(String title, String bizKey) {
-        try {
-            JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.doFarmTask(bizKey));
-            //检查并标记黑名单任务（此处是庄园饲料任务，应写入饲料黑名单而非抽抽乐）
-            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDoFarmTaskList", title, jo);
-            if (MessageUtil.checkResultCode(TAG, jo)) {
-                return Outcome.DONE;
-            }
-            if (MessageUtil.isRetryable(jo) || MessageUtil.isServerBusy(jo)) {
-                return Outcome.RETRY;
-            }
-        } catch (Throwable t) {
-            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
-            Log.err(TAG, "attemptVideoTask err:", t);
-            return Outcome.RETRY;
-        }
-        return Outcome.UNSUPPORTED;
-    }
-
     /** 饲料任务普通完成尝试：完成与否以任务列表为准（probeFarmStatus 复核），故此处只转译响应。 */
     private Outcome attemptFarmTask(String title, String bizKey, String route) {
         try {
@@ -3089,14 +3069,10 @@ public class AntFarm extends ModelTask {
             // 注意视频任务的标题实际是「看庄园小视频」——原先写的是 equals("庄园小视频")，
             // 少一个"看"字，导致这两类任务**从来没有走对过接口**（一直落到通用 doFarmTask 分支）
             if ("VIDEO_TASK".equals(taskId)) {
-                // 视频任务：普通申报接口做不了，必须把"观看行为"伪造出来（见 doVideoTask）。
-                // 完成判定以任务列表为准（探针复核），响应不可信。
-                // 由 TaskAttemptPolicy 管节流与失败分类：同一天同一任务只伪造一次，失败不再每轮白等 15 秒
-                Outcome outcome = TaskAttemptPolicy.handle("farm::video::" + title, title, null,
-                        () -> attemptVideoTask(title, bizKey), Log::farm,
+                // 沿用 M 已验证的观看流程；普通申报失败不能先把视频任务拉黑。
+                Outcome outcome = TaskAttemptPolicy.handle("farm::video::" + bizKey, title, null,
+                        () -> doVideoTask(title), Log::farm,
                         new TaskAttemptPolicy.Site("AntFarmDoFarmTaskList", "庄园饲料任务", bizKey, "",
-                                TaskAlternative.DEFAULT_VERSION,
-                                () -> doVideoTask(title) == Outcome.DONE,
                                 (k) -> probeFarmStatus(bizKey)));
                 isDoTask = outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
             } else if ("ANSWER".equals(taskId)) {
@@ -4826,14 +4802,10 @@ public class AntFarm extends ModelTask {
                     // 这里改为全部尝试，确实做不了的交给自动拉黑机制剔除
                     if (!matched) {
                         String bizKey = jo.optString("bizKey");
-                        // 交易/履约类：finishTask 与 doFarmTask 都会被服务端判风险，直接不申报并交自动黑名单
-                        // （本路径不经 TaskAttemptPolicy.handle，拉黑只能在这里做）
+                        // 交易/履约类：finishTask 与 doFarmTask 都会被服务端判风险，直接不申报
                         if (TaskAlternative.isTransactionTask(bizKey)) {
-                            // 底线：交易/支付类一次即永久拉黑，绝不伪造
-                            MessageUtil.MarkTaskBlackListPermanent("AntFarm", "AntFarmDrawMachineTaskList",
-                                    "庄园装扮抽抽乐任务", title);
                             todoSkipped++;
-                            Log.farm("抽抽乐⏭️交易/履约类[" + title + "]#不申报，已永久拉黑");
+                            Log.farm("抽抽乐⏭️交易/履约类[" + title + "]#不申报，不修改黑名单");
                             continue;
                         }
                         // 服务端偶发返回 limit==times 的 TODO 任务，此时仍尝试一次，避免有任务却整轮不执行

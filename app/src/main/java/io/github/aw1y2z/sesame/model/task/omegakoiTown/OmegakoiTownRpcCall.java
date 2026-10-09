@@ -3,6 +3,9 @@ package io.github.aw1y2z.sesame.model.task.omegakoiTown;
 import java.util.UUID;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
+import io.github.aw1y2z.sesame.util.MyUtils;
+import org.json.JSONArray;
+import org.json.JSONException;
 
 public class OmegakoiTownRpcCall {
     private static final String version = "2.0";
@@ -43,9 +46,17 @@ public class OmegakoiTownRpcCall {
     }
 
     public static String completeQuest(String questId, String scenarioId) {
-        return ApplicationHook.requestString("com.alipay.omegakoi.town.v2.scenario.completeQuest",
-                "[{\"optionIndex\":0,\"outBizNo\":\"" + UUID.randomUUID().toString() + "\",\"questId\":\"" + questId
-                        + "\",\"scenarioId\":\"" + scenarioId + "\",\"showType\":\"mayor\"}]");
+        if (questId == null || questId.isEmpty() || scenarioId == null || scenarioId.isEmpty()) {
+            throw new IllegalArgumentException("completeQuest missing fields");
+        }
+        try {
+            return ApplicationHook.requestString("com.alipay.omegakoi.town.v2.scenario.completeQuest",
+                    new JSONArray().put(MyUtils.newJSONObject().put("optionIndex", 0)
+                            .put("outBizNo", UUID.randomUUID().toString()).put("questId", questId)
+                            .put("scenarioId", scenarioId).put("showType", "mayor")).toString());
+        } catch (JSONException e) {
+            throw new IllegalArgumentException("completeQuest invalid request");
+        }
     }
 
     public static String groundBuy(String groundId) {

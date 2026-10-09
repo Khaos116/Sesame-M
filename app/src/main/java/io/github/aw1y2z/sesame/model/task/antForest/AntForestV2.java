@@ -2305,6 +2305,7 @@ public class AntForestV2 extends ModelTask {
             // 可继续添加更多黑名单任务
 
             Set<String> whiteList = new HashSet<>();
+            whiteList.add("逛农场得落叶肥料");
             // 可继续添加更多白名单任务
             for (String task : blackList) {
                 AntForestVitalityTaskListMap.add(task, task);
@@ -2387,6 +2388,7 @@ public class AntForestV2 extends ModelTask {
             // 可继续添加更多黑名单任务
 
             whiteList = new HashSet<>();
+            whiteList.add("消耗活力值得机会");
             // 可继续添加更多白名单任务
             for (String task : blackList) {
                 AntForestHuntTaskListMap.add(task, task);
@@ -3635,9 +3637,7 @@ public class AntForestV2 extends ModelTask {
                 Outcome outcome;
                 if (TaskStatus.FINISHED.name().equals(taskStatus)) {
                     outcome = TaskAttemptPolicy.handle(sceneCode + "/" + taskType, taskTitle,
-                            () -> receiveTaskAward(sceneCode, taskType, taskTitle), null, Log::forest,
-                            new TaskAttemptPolicy.Site("AntForestVitalityTaskList", "森林任务", taskType, sceneCode,
-                                    (k) -> probeForestVitalityStatus(sceneCode, taskType)));
+                            () -> receiveTaskAward(sceneCode, taskType, taskTitle), null, Log::forest, null);
                 } else if (allowAttempt && TaskStatus.TODO.name().equals(taskStatus)) {
                     outcome = TaskAttemptPolicy.handle(sceneCode + "/" + taskType, taskTitle, null,
                             () -> attemptSceneTask(sceneCode, taskType, taskTitle), Log::forest,
@@ -5538,12 +5538,9 @@ public class AntForestV2 extends ModelTask {
                 return false;
             }
             TimeUtil.sleep(TimeUnit.SECONDS.toMillis(seconds));
-            // 交易/履约类：不申报（伪申报会被服务端判风险），直接交自动黑名单
+            // 交易/履约类：不申报，不修改用户黑名单
             if (TaskAlternative.isTransactionTask(taskType)) {
-                // 底线：交易/支付类一次即永久拉黑，绝不伪造
-                Log.forest("新版保护地🌲⏭️交易/履约类[" + title + "]#不申报，已永久拉黑");
-                MessageUtil.MarkTaskBlackListPermanent("AntForestV2", "MonopolyTaskList", "新版保护地任务",
-                        blackTaskKey(title));
+                Log.forest("新版保护地🌲⏭️交易/履约类[" + title + "]#不申报，不修改黑名单");
                 return false;
             }
             JSONObject jo = monopolyResponse(AntForestRpcCall.finishMonopolyTask(taskType, sceneCode));

@@ -87,7 +87,7 @@ public class MergePolicyCheck {
    logs::add,site(TaskAttemptPolicy.ProbeResult.TODO));assert triggered==TaskAttemptPolicy.Outcome.TRIGGERED;
   assert ApplicationHook.writes==1;
   TaskAttemptPolicy.handle("fallback","fallback",null,()->TaskAttemptPolicy.Outcome.DONE,
-   logs::add,site(TaskAttemptPolicy.ProbeResult.TODO));assert MessageUtil.marks==2;
+   logs::add,site(TaskAttemptPolicy.ProbeResult.TODO));assert MessageUtil.marks==1;
   System.now+=120000;Status.INSTANCE.flagLogList.clear();
   var tomorrow=TaskAttemptPolicy.handle("fallback","fallback",null,()->TaskAttemptPolicy.Outcome.DONE,
    logs::add,site(TaskAttemptPolicy.ProbeResult.FINISHED));assert tomorrow==TaskAttemptPolicy.Outcome.DONE;
@@ -96,12 +96,20 @@ public class MergePolicyCheck {
    site(TaskAttemptPolicy.ProbeResult.TODO))==TaskAttemptPolicy.Outcome.RETRY;
   assert !Status.hasFlagToday("attempt::bad");
   before=attempts;TaskAttemptPolicy.handle("pay","pay",null,()->attempt(TaskAttemptPolicy.Outcome.DONE),logs::add,
-   new TaskAttemptPolicy.Site("field","task","OFFLINE_PAY","scene"));assert attempts==before&&MessageUtil.permanent==1;
-  assert TaskAttemptPolicy.handle("award","award",()->true,null,logs::add,site(TaskAttemptPolicy.ProbeResult.FINISHED))
-   ==TaskAttemptPolicy.Outcome.FAILED;
+   new TaskAttemptPolicy.Site("field","task","OFFLINE_PAY","scene"));assert attempts==before&&MessageUtil.permanent==0;
+  int[] probes={0};
+  assert TaskAttemptPolicy.handle("award","award",()->true,null,logs::add,
+   new TaskAttemptPolicy.Site("field","task","browse","scene",k->{probes[0]++;return TaskAttemptPolicy.ProbeResult.FINISHED;}))
+   ==TaskAttemptPolicy.Outcome.AWARDED;
+  assert probes[0]==0;
   assert TaskAttemptPolicy.handle("award","award",()->false,null,logs::add,site(TaskAttemptPolicy.ProbeResult.RECEIVED))
    ==TaskAttemptPolicy.Outcome.AWARDED;
-  assert !TaskAward.confirmReceivedOrBlackList("task",k->TaskAttemptPolicy.ProbeResult.UNKNOWN,"k","title",null,logs::add);
+  int marksBefore=MessageUtil.marks;
+  assert !TaskAward.confirmReceivedOrBlackList("task",k->TaskAttemptPolicy.ProbeResult.UNKNOWN,"k","title",()->MessageUtil.marks++,logs::add);
+  assert MessageUtil.marks==marksBefore;
+  TaskAttemptPolicy.handle("video","video",null,()->attempt(TaskAttemptPolicy.Outcome.UNSUPPORTED),logs::add,
+   new TaskAttemptPolicy.Site("field","task","video","scene","source",()->true,k->TaskAttemptPolicy.ProbeResult.TODO));
+  assert MessageUtil.marks==marksBefore;
   JSONObject parent=task("parent","RECEIVED").put("childTaskTypeList",new JSONArray().put(task("child","TODO")));
   assert forestVitalityStatus(new JSONArray().put(parent),"scene","child")==TaskAttemptPolicy.ProbeResult.TODO;
   assert forestVitalityStatus(new JSONArray().put(parent),"scene","missing")==TaskAttemptPolicy.ProbeResult.GONE;
@@ -116,6 +124,10 @@ public class MergePolicyCheck {
   Locale.setDefault(Locale.forLanguageTag("tr-TR"));
   assert TaskAlternative.isTransactionTask("OFFLINE_PAY")&&!TaskAlternative.isTransactionTask("ORCHARD_NORMAL_TAOBAOTAOLIPAI_VISIT");
   assert !TaskAlternative.isTransactionTask("2060170000359285");
+  for(String key:List.of("ALIPAY_BROWSE","ORCHARD_NORMAL_YUEBAO_VISIT","KUAIDI_VISIT","HUISHOU_BROWSE","rechargeable_view","x_czz_view"))
+   assert !TaskAlternative.isTransactionTask(key):key;
+  for(String key:List.of("OFFLINE_PAY","MYZY_pay_1","ORCHARD_NCLY_CHARGE1_XDDQ","GOLDENBEAN_GAME_CZ_XDDQ_AI","2026cc_cz6ylyb_fz"))
+   assert TaskAlternative.isTransactionTask(key):key;
   System.out.println("PASS real policy/list confirmation, deferred blacklist, retries, GMT+8 rollover, account counts, nested children, quest states and escaped payload");
  }
 }

@@ -598,6 +598,16 @@ public class AntMember extends ModelTask {
             // 可继续添加更多黑名单任务
             
             whiteList = new HashSet<>();
+            whiteList.add("逛一逛芝麻树");
+            whiteList.add("浏览15秒视频广告");
+            whiteList.add("逛15秒商品橱窗");
+            whiteList.add("逛一逛集汗滴找现金");
+            whiteList.add("去体验先用后付");
+            whiteList.add("去抛竿钓鱼");
+            whiteList.add("去参与花呗活动");
+            whiteList.add("坚持攒保障金");
+            whiteList.add("去领支付宝积分");
+            whiteList.add("去浏览租赁大促会场");
             // 可继续添加更多白名单任务
             for (String task : blackList) {
                 MemberCreditSesameTaskListMap.add(task, task);
@@ -689,28 +699,27 @@ public class AntMember extends ModelTask {
     
     /**
      * 列表状态探针：重拉积分凭证列表（该列表是"待领"清单），按 id 逐页匹配——
-     * 仍在列表＝确实没领到；消失了＝已领到。一次都没拉到则返回 UNKNOWN（不据此判"已领到"）。
+     * 仍在列表＝确实没领到；完整查询此前所在页及前页后消失＝已领到。任一页失败返回 UNKNOWN。
      */
     private static TaskAttemptPolicy.ProbeResult probePointCertStatus(int page, int pageSize, String certId) {
         try {
-            boolean anyFetched = false;
+            if (page < 1 || pageSize < 1 || certId == null || certId.isEmpty()) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
             for (int p = 1; p <= page; p++) {
                 JSONObject jo = MyUtils.newJSONObject(AntMemberRpcCall.queryPointCert(p, pageSize));
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
-                    continue;
+                    return TaskAttemptPolicy.ProbeResult.UNKNOWN;
                 }
-                anyFetched = true;
                 JSONArray certList = jo.optJSONArray("certList");
                 if (certList == null) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
                 for (int i = 0; i < certList.length(); i++) {
                     JSONObject cert = certList.optJSONObject(i);
-                    if (cert != null && certId.equals(cert.optString("id"))) {
+                    if (cert == null || cert.optString("id").isEmpty()) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+                    if (certId.equals(cert.optString("id"))) {
                         return TaskAttemptPolicy.ProbeResult.TODO;
                     }
                 }
             }
-            // 凭证已不在待领清单里：视为已领到；但一次都没拉到列表时不可据此判定
-            return anyFetched ? TaskAttemptPolicy.ProbeResult.RECEIVED : TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            return TaskAttemptPolicy.ProbeResult.RECEIVED;
         } catch (Throwable t) {
             Log.err(TAG, "probePointCertStatus err:", t);
             return TaskAttemptPolicy.ProbeResult.UNKNOWN;
@@ -1861,16 +1870,12 @@ public class AntMember extends ModelTask {
             if (AntMemberTaskList.getValue().contains(subTitle)) {
                 return;
             }
-            // 底线：交易/支付类任务一律不申报、一次即**永久**拉黑（不进"满 N 天解禁重试"生命周期）。
-            // 本调用点的 TaskAttemptPolicy.Site 未带 bizKey/listField，handle 顶部那条通用判定到不了这里，
-            // 故在此显式拦；bizKey 取值与 attemptDoTask 伪申报时一致。
             String txBizKey = taskObj.optString("bizKey", "").trim();
             if (txBizKey.isEmpty()) {
                 txBizKey = taskId;
             }
             if (TaskAlternative.isTransactionTask(txBizKey)) {
-                MessageUtil.MarkTaskBlackListPermanent("AntMember", "AntMemberTaskList", "会员任务", subTitle);
-                Log.other("游戏中心⏭️交易/履约类[" + subTitle + "]#不申报，已永久拉黑");
+                Log.other("游戏中心⏭️交易/履约类[" + subTitle + "]#不申报，不修改黑名单");
                 return;
             }
             // 任务未完成且需要报名（needSignUp 可能缺字段，用 optBoolean 避免整条任务被异常打断）

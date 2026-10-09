@@ -5,12 +5,15 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.Set;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import io.github.aw1y2z.sesame.entity.AlipayWelfareFundTaskList;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.TimeUtil;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.idMap.WelfareFundTaskListMap;
 
 /**
@@ -25,8 +28,7 @@ public class WelfareFund {
     /** 当日签到标记：服务端已签后不再重复调用 */
     private static final String FLAG_SIGN = "member::welfareFundSign";
 
-    /** 任务候选与列表同步时机：随每次任务列表请求顺带刷新，活动换任务时自动跟随 */
-    private static final String FLAG_INIT_LIST = "BlackList::initWelfareFund";
+    private static final String FLAG_TASK = "member::welfareFundTask::";
 
     /**
      * 福利金系接口只回 {@code success:true}（无 desc / resultCode），
@@ -90,6 +92,7 @@ public class WelfareFund {
                 Log.record("福利金签到未生效");
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "signIn err:", t);
         }
     }
@@ -109,6 +112,7 @@ public class WelfareFund {
             JSONObject result = jo.optJSONObject("result");
             return result != null ? result.optJSONArray("taskDetailList") : null;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "queryTaskDetailList err:", t);
             return null;
         }
@@ -126,6 +130,7 @@ public class WelfareFund {
                 return;
             }
             syncCandidates(list);
+            Map<String, String> submitted = new LinkedHashMap<>();
             for (int i = 0; i < list.length(); i++) {
                 JSONObject item = list.optJSONObject(i);
                 if (item == null) {
@@ -138,22 +143,62 @@ public class WelfareFund {
                 if (appletId.isEmpty() || title.isEmpty()) {
                     continue;
                 }
-                if ("RECEIVE_SUCCESS".equalsIgnoreCase(item.optString("taskProcessStatus"))) {
+                String state = item.optString("taskProcessStatus");
+                if ("RECEIVE_SUCCESS".equals(state)) {
+                    if (!Status.hasFlagToday(FLAG_TASK + appletId + "::done")) {
+                        boolean sent = Status.hasFlagToday(FLAG_TASK + appletId + "::submitted");
+                        Log.other((sent ? "✅ " : "☑️ ") + "福利金任务[" + title + "]｜列表已确认领奖");
+                        Status.flagToday(FLAG_TASK + appletId + "::done");
+                    }
                     continue;
                 }
                 if (blackList != null && blackList.contains(title)) {
                     Log.record("福利金任务⏭️跳过[" + title + "]#黑名单");
                     continue;
                 }
-                // NONE_SIGNUP 先报名再完成；SIGNUP_COMPLETE 直接领奖
-                if ("NONE_SIGNUP".equalsIgnoreCase(item.optString("taskProcessStatus"))) {
-                    triggerTask(appletId, "signup", title);
+                String triggerType = item.optString("sendCampTriggerType");
+                if (!("USER_TRIGGER".equals(triggerType) || "EVENT_TRIGGER".equals(triggerType))) {
+                    Log.record("福利金任务⏭️[" + title + "]#未支持的触发类型=" + triggerType);
+                    continue;
+                }
+                // AG 的报名/发奖状态分派；SJ 的 USER_TRIGGER 另支持 TO_RECEIVE。
+                if (!("NONE_SIGNUP".equals(state) || "SIGNUP_COMPLETE".equals(state)
+                        || ("TO_RECEIVE".equals(state) && "USER_TRIGGER".equals(triggerType)))) {
+                    Log.record("福利金任务⏭️[" + title + "]#未知状态=" + state + "，未提交请求");
+                    continue;
+                }
+                if (Status.hasFlagToday(FLAG_TASK + appletId + "::done")) continue;
+                int progress = item.optInt("periodCurrentCompleteNum", item.optInt("taskCompleteTimes", -1));
+                if ("NONE_SIGNUP".equals(state)) {
+                    if (!triggerTask(appletId, "signup", title, autoBlackList, progress)) continue;
                     TimeUtil.sleep(500);
                 }
-                triggerTask(appletId, "send", title);
+                if (triggerTask(appletId, "TO_RECEIVE".equals(state) ? "receive" : "send", title, autoBlackList, progress)) {
+                    Status.flagToday(FLAG_TASK + appletId + "::submitted");
+                    submitted.put(appletId, title);
+                }
                 TimeUtil.sleep(500);
             }
+            // 一轮统一回查，避免每个任务单独重拉整张列表。
+            if (!submitted.isEmpty()) {
+                JSONArray after = queryTaskDetailList();
+                for (int i = 0; after != null && i < after.length(); i++) {
+                    JSONObject item = after.optJSONObject(i);
+                    if (item == null || !"RECEIVE_SUCCESS".equals(item.optString("taskProcessStatus"))) continue;
+                    String id = item.optString("taskId");
+                    String title = submitted.remove(id);
+                    if (title != null) {
+                        Status.flagToday(FLAG_TASK + id + "::done");
+                        Log.other("✅ 福利金任务[" + title + "]｜已按列表确认领奖");
+                    }
+                }
+                for (String title : submitted.values()) {
+                    Log.record("🕓 福利金任务[" + title + "]｜" + (after == null ? "回查失败" : "列表尚未显示已领奖")
+                            + "，已受理阶段今日不重发；后续按列表状态继续");
+                }
+            }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "runTasks err:", t);
         }
     }
@@ -181,6 +226,7 @@ public class WelfareFund {
                 Log.record("同步任务🉑福利金任务列表[新增" + count + "]");
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "syncCandidates err:", t);
         }
     }
@@ -195,29 +241,42 @@ public class WelfareFund {
         try {
             return MyUtils.newJSONObject(raw);
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             return MyUtils.newJSONObject();
         }
     }
 
-    private static void triggerTask(String appletId, String stageCode, String title) {
+    private static boolean triggerTask(String appletId, String stageCode, String title, boolean autoBlackList, int progress) {
+        String flag = FLAG_TASK + appletId + "::" + stageCode + "::" + progress;
+        if (Status.hasFlagToday(flag + "::rejected")) return false;
+        if (Status.hasFlagToday(flag)) {
+            Log.record("福利金📋[" + title + "]#" + stageCode + "今日该进度已受理，等待列表状态更新");
+            return "signup".equals(stageCode);
+        }
         try {
             JSONObject jo = parse(WelfareFundRpcCall.taskTrigger(appletId, stageCode));
             if (!ok(jo)) {
-                MessageUtil.checkResultCodeAndMarkTaskBlackList("WelfareFundTaskList", title, jo);
-                return;
+                if (autoBlackList) MessageUtil.checkResultCodeAndMarkTaskBlackList("WelfareFundTaskList", title, jo);
+                if (jo != null && !MessageUtil.isRetryable(jo) && !MessageUtil.isServerBusy(jo)) Status.flagToday(flag + "::rejected");
+                Log.record("福利金📋[" + title + "]#" + stageCode + "未成功，code="
+                        + (jo == null ? "EMPTY" : jo.optString("errorCode", jo.optString("resultCode", "UNKNOWN"))));
+                return false;
             }
             JSONObject result = jo.optJSONObject("result");
             JSONObject order = result != null ? result.optJSONObject("campOrder") : null;
             String status = order != null ? order.optString("status") : "";
-            // success:true 但 campOrder 非 SUCCESS 时不能算完成，否则该任务永远进不了黑名单生命周期
             if (!status.isEmpty() && !"SUCCESS".equalsIgnoreCase(status)) {
-                MessageUtil.checkResultCodeAndMarkTaskBlackList("WelfareFundTaskList", title, jo);
+                Status.flagToday(flag + "::rejected");
                 Log.record("福利金📋" + stageCode + "[" + title + "]#未完成[" + status + "]");
-                return;
+                return false;
             }
-            Log.other("福利金📋" + stageCode + "[" + title + "]" + (status.isEmpty() ? "" : "#" + status) + rewardText(result));
+            Status.flagToday(flag);
+            Log.other("📤 福利金[" + title + "]#" + stageCode + "已受理，待列表确认" + rewardText(result));
+            return true;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "taskTrigger err:", t);
+            return false;
         }
     }
 

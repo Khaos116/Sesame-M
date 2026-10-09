@@ -306,13 +306,10 @@ public final class GoldenBeansTasks {
                 }
 
                 if (STATUS_TODO.equals(taskStatus)) {
-                    // 底线：付款类/交易类一律不申报、一次即**永久**拉黑
-                    // （原先只"跳过"：不写黑名单，解禁周期外还会反复回到待办）
                     if (isPayTask(taskId) || TaskAlternative.isTransactionTask(taskId)) {
-                        MessageUtil.MarkTaskBlackListPermanent("goldenbeans", "GoldenBeansTaskList",
-                                "金豆夺宝任务", taskName);
+
                         Log.goldenBeans("金豆[" + entry.alias + "]任务⏭️[" + taskName
-                                + "]交易/支付类#不申报，已永久拉黑");
+                                + "]交易/支付类#不申报，不修改黑名单");
                         continue;
                     }
                     if (goldenbeansRpcCall.TASK_TYPE_EXCHANGE.equals(taskId)) {
