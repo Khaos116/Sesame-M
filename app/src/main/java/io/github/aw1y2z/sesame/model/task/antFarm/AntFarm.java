@@ -2807,7 +2807,7 @@ public class AntFarm extends ModelTask {
     }
 
     private Boolean sign(JSONObject SignList) {
-        if (Status.hasFlagToday("farm::sign")) {
+        if (DailyTask.skipFlag("farm::sign", "庄园签到")) {
             return false;
         }
         boolean signed = false;
@@ -6563,6 +6563,7 @@ public class AntFarm extends ModelTask {
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.familyReceiveFarmTaskAward(taskId));
             if (MessageUtil.checkMemo(TAG, jo)) {
                 Log.farm("亲密家庭🏠提交任务[" + title + "]");
+                if ("FAMILY_SIGN_TASK".equals(taskId)) DailyTask.done("farm::familySign");
             }
         } catch (Throwable t) {
             Log.err(TAG, "familyReceiveFarmTaskAward err:", t);
@@ -6602,6 +6603,7 @@ public class AntFarm extends ModelTask {
     }
 
     private void familySign() {
+        if (DailyTask.skip("farm::familySign", "庄园家庭签到")) return;
         familyReceiveFarmTaskAward("FAMILY_SIGN_TASK", "每日签到");
     }
 

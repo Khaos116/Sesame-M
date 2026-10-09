@@ -83,5 +83,7 @@ public final class WeeklyWelfare extends IsolatedRewardTask {
         Log.record(getName() + "：本轮状态=" + result.name());
         if (result == WeeklyWelfareFlow.Result.UNKNOWN_STATE || result == WeeklyWelfareFlow.Result.SIGN_NOT_CONFIRMED)
             run.stop("签到资料或回查状态未确认");
+        if (result == WeeklyWelfareFlow.Result.SIGNED || result == WeeklyWelfareFlow.Result.ALREADY_SIGNED
+                || result == WeeklyWelfareFlow.Result.PRIZE_COLLECTED) run.completed();
     }
 }

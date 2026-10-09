@@ -26,6 +26,8 @@ stubs = {
     pkg + ".util.Status": '''import java.util.*; import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
         public class Status {public static Set<String> flags=new HashSet<>();
         public static boolean hasFlagToday(String k){return flags.contains(UserIdMap.uid+k);}
+        public static void clearFlag(String k){flags.remove(UserIdMap.uid+k);}
+        public static void flagToday(String k){flags.add(UserIdMap.uid+k);}
         public static void flagToday(String k,String uid){assert uid.equals(UserIdMap.uid); flags.add(uid+k);}}
     ''',
     pkg + ".util.TimeUtil": '''import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
@@ -279,7 +281,7 @@ with tempfile.TemporaryDirectory(prefix="sesame-forest-read-") as temp:
         path.write_text("package " + name.rsplit(".", 1)[0] + ";\n" + body, encoding="utf-8")
     for relative in ("model/task/forestRead/ReadForestTask", "model/task/forestRead/ReadForestRpcCall",
                      "hook/AuthCodeHelper", "data/task/TaskLifecycle", "util/RunGeneration",
-                     "util/TaskCancelledException", "util/RandomUtil", "rpc/intervallimit/RpcFailurePolicy"):
+                     "util/TaskCancelledException", "util/RandomUtil", "util/DailyTask", "rpc/intervallimit/RpcFailurePolicy"):
         path = out / (pkg.replace(".", "/") + "/" + relative + ".java")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text((source / pkg.replace(".", "/") / (relative + ".java")).read_text(encoding="utf-8"), encoding="utf-8")

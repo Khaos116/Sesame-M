@@ -18,6 +18,7 @@ import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.idMap.GoldenBeansTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -70,6 +71,9 @@ public final class GoldenBeansTasks {
     public boolean processEntry(GoldenBeansEntry entry, int interval,
                                 boolean signEnabled, boolean popupEnabled, boolean taskEnabled) {
         try {
+            signEnabled = signEnabled && !DailyTask.skipFlag(signFlag(entry), "金豆[" + entry.alias + "]签到");
+            taskEnabled = taskEnabled && !DailyTask.skip("goldenBeansTasks::" + entry.bizType, "金豆[" + entry.alias + "]每日任务");
+            if (!signEnabled && !popupEnabled && !taskEnabled) return true;
             JSONObject indexJo = GoldenBeansSupport.parse(
                     goldenbeansRpcCall.homeOf(entry.bizType, entry.source));
             if (!GoldenBeansSupport.ok(indexJo)) {
@@ -244,6 +248,7 @@ public final class GoldenBeansTasks {
      */
     private boolean runTaskList(GoldenBeansEntry entry, int interval) {
         boolean unresolved = false;
+        boolean allReceived = true;
         try {
             JSONObject syncJo = GoldenBeansSupport.parse(goldenbeansRpcCall.pullOf(
                     entry.bizType, entry.source, "FARM_TASK", "TASK_LIST"));
@@ -264,15 +269,20 @@ public final class GoldenBeansTasks {
             for (int i = 0; i < taskList.length(); i++) {
                 JSONObject task = taskList.optJSONObject(i);
                 if (task == null) {
+                    unresolved = true;
+                    allReceived = false;
                     continue;
                 }
                 // 两个入口的任务场景不同，只处理属于当前入口的任务
+                if (task.optString("sceneCode", "").trim().isEmpty()) { unresolved = true; continue; }
                 if (!entry.taskSceneCode.equals(task.optString("sceneCode", "").trim())) {
                     continue;
                 }
                 total++;
                 String taskId = task.optString("taskId", "").trim();
+                if (taskId.isEmpty()) { unresolved = true; continue; }
                 String taskStatus = task.optString("taskStatus", "").trim().toUpperCase(java.util.Locale.ROOT);
+                if (!STATUS_RECEIVED.equals(taskStatus) && !STATUS_DONE.equals(taskStatus)) allReceived = false;
                 String actionType = task.optString("actionType", "").trim();
                 String blacklistKey = blacklistKey(task);
                 String taskName = displayName(task);
@@ -362,6 +372,7 @@ public final class GoldenBeansTasks {
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
             return false;
         }
+        if (!unresolved && allReceived) DailyTask.done("goldenBeansTasks::" + entry.bizType);
         return !unresolved;
     }
 

@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.model.task.forestRead;
 
+import io.github.aw1y2z.sesame.util.DailyTask;
 import android.os.SystemClock;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -40,7 +41,7 @@ public final class ReadForestTask {
                 log("无纸阅读：跳过，当前账号标识为空");
                 return;
             }
-            if (Status.hasFlagToday(DONE)) {
+            if (DailyTask.skipFlag(DONE, "无纸阅读")) {
                 log("无纸阅读：跳过，今日已成功达到满额");
                 return;
             }

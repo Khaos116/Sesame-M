@@ -8,6 +8,7 @@ from run import method, SOURCE
 code = r'''
 import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
 public class ManualTaskCheck {
+ static class Status {static boolean hasFlagToday(String k){return false;}static void flagToday(String k){}static void clearFlag(String k){}}
  static class UserIdMap {static String uid="A";static String getCurrentUid(){return uid;}}
  static class NotificationUtil {static int rounds;static void startRound(){rounds++;}}
  static class Model {}
@@ -40,6 +41,10 @@ ui=(SOURCE/'ui/miuix/MiuixGroupFieldsActivity.kt').read_text(encoding='utf-8')
 assert '.putExtra("model", modelCode)' in ui and '.putExtra("userId", userId)' in ui and '.putExtra("taskAction", action)' in ui
 assert '.setPackage("com.eg.android.AlipayGphone")' in ui
 assert 'ModelTask' not in ui and 'ApplicationHook' not in ui.replace('ApplicationHook/hook.Toast/NotificationUtil','')
+daily_source = (SOURCE / 'util/DailyTask.java').read_text(encoding='utf-8')
+daily_body = daily_source[daily_source.index('public final class DailyTask'):].replace('public final class DailyTask', 'static final class DailyTask', 1)
+start = code.index('{', code.index('public class ')) + 1
+code = code[:start] + '\n' + daily_body + '\n' + code[start:]
 with tempfile.TemporaryDirectory(prefix='sesame-manual-') as tmp:
  f=Path(tmp)/'ManualTaskCheck.java';f.write_text(code,encoding='utf-8')
  subprocess.run(['javac','-encoding','UTF-8','-d',tmp,str(f),str(SOURCE/'data/task/TaskLifecycle.java')],check=True)

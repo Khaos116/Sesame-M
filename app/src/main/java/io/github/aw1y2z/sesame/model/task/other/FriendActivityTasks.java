@@ -9,6 +9,7 @@ import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 import static io.github.aw1y2z.sesame.model.task.other.SjActivityTasks.text;
@@ -23,6 +24,7 @@ final class FriendActivityTasks {
     private static final String RECEIPT = "sjActivityReceipt::";
     private final SjActivityTasks sj;
     private final Set<String> checkedCards = new HashSet<>();
+    private boolean luckyRowsComplete;
 
     FriendActivityTasks(SjActivityTasks sj) { this.sj = sj; }
 
@@ -93,19 +95,24 @@ final class FriendActivityTasks {
     }
 
     void p2eBrowse() throws Exception {
+        if (DailyTask.skip("p2eBrowse", "赚金币浏览")) return;
         if (!sj.enabled("p2eBrowse")) return;
         Log.record("赚金币浏览：开始查询，仅处理VIEW_TASK，不兑换现金");
         JSONArray rows = p2eRows();
         if (rows == null) return;
         expireTaskReceipts("p2eBrowse::");
         int eligible = 0, completed = 0;
+        boolean completeList = true;
+        Set<String> unfinished = new HashSet<>();
         for (int i = 0; i < rows.length(); i++) {
             sj.current();
             JSONObject row = rows.optJSONObject(i);
             String id = text(row, "taskId"), title = label(row, "title"), state = text(row, "taskStatus");
+            if ("VIEW_TASK".equals(text(row, "actionType")) && text(row, "taskToken").isEmpty()) completeList = false;
             if (!"VIEW_TASK".equals(text(row, "actionType")) || text(row, "taskToken").isEmpty()
                     || SjActivityTasks.unsafe(title.replace("支付宝", "").replaceAll("(?i)alipay", ""))) continue;
             eligible++;
+            unfinished.add(id);
             String domain = "p2eBrowse::" + id, done = "other::p2eBrowseDone::" + id;
             String signup = "other::p2eBrowseSignup::" + id, sent = "other::p2eBrowseSent::" + id;
             if (Status.hasFlagToday(done)) continue;
@@ -153,6 +160,10 @@ final class FriendActivityTasks {
             } else Log.record("赚金币[" + title + "]：领奖未成功确认，后续从列表核对；明确拒绝已解除回执");
         }
         Log.record("赚金币浏览：本轮候选" + eligible + "项，确认领奖" + completed + "项");
+        if (!completeList) return;
+        for (String id : unfinished) if (!Status.hasFlagToday("other::p2eBrowseDone::" + id) || !sj.pending("p2eBrowse::" + id).isEmpty()) return;
+        sj.current();
+        DailyTask.done("p2eBrowse");
     }
 
     private JSONObject rebate(String play, String scene, String action, String domain) throws Exception {
@@ -230,7 +241,9 @@ final class FriendActivityTasks {
         }
         openCards();
         String domain = "luckySign";
-        JSONObject consult = rebate(SIGN_PLAY, "HAOYUNKA_SIGN_IN", null, domain);
+        JSONObject consult = Status.hasFlagToday("other::luckySign") && !DailyTask.isManual() ? null
+                : rebate(SIGN_PLAY, "HAOYUNKA_SIGN_IN", null, domain);
+        if (consult == null && Status.hasFlagToday("other::luckySign")) Log.record("好运卡签到：当天已经成功执行");
         if (consult != null && !Status.hasFlagToday("other::luckySign")) {
             if (signToday(consult)) {
                 if (sj.pending(domain).isEmpty() || saveCards(prizeTickets(consult)) && sj.accepted(domain, "好运卡签到回查"))
@@ -252,7 +265,7 @@ final class FriendActivityTasks {
 
     private void luckyProgress() throws Exception {
         String domain = "luckyProgress", done = "other::luckyProgress";
-        if (Status.hasFlagToday(done)) return;
+        if (Status.hasFlagToday(done)) { Log.record("好运卡进度：当天已经成功执行"); return; }
         // 来源仅使用 trigger；额外进度 consult 在实机失败，不能把外推接口设为执行前提。
         if (!sj.pending(domain).isEmpty()) {
             Log.record("好运卡进度：上次推进结果未确认，来源无进度查询接口；核对后可手动恢复，今日不重发"); return;
@@ -285,6 +298,7 @@ final class FriendActivityTasks {
     }
 
     private JSONArray luckyRows() throws Exception {
+        luckyRowsComplete = false;
         JSONObject result = result(sj.call(CARD + "sdk.task.query", MyUtils.newJSONObject().put("appletId", APPLET)
                 .put("bizScene", "HAOYUNKA_DAILY").put("bizSceneFrom", "creditCard").put("extInfo", MyUtils.newJSONObject().put("version", 1))
                 .put("requestFrom", "pccp"), false));
@@ -319,6 +333,7 @@ final class FriendActivityTasks {
         Log.record("好运卡任务：查询成功，原始条目=" + rows.length() + "，有效唯一任务=" + unique.length()
                 + "，重复条目=" + duplicate + "，无有效ID=" + missing + "，冲突ID=" + conflicts.size()
                 + "；重复仅处理一次，无效或冲突仅跳过对应项，其余任务继续");
+        luckyRowsComplete = missing == 0 && conflicts.isEmpty();
         return unique;
     }
 
@@ -342,13 +357,16 @@ final class FriendActivityTasks {
     }
 
     private void luckyTasks() throws Exception {
+        if (DailyTask.skip("luckyTasks", "好运卡每日任务")) return;
         JSONArray rows = luckyRows();
         if (rows == null) return;
+        Set<String> unfinished = new HashSet<>();
         expireTaskReceipts("luckyTask::");
         for (int i = 0; i < rows.length(); i++) {
             JSONObject row = rows.optJSONObject(i);
             String id = text(row, "taskId"), show = text(row, "taskShowInfo"), state = text(row, "taskStatus");
             String domain = "luckyTask::" + id, done = "other::luckyTask::" + id;
+            if (!sj.pending(domain).isEmpty()) unfinished.add(id);
             if (Status.hasFlagToday(done + "::notReady")) continue;
             JSONObject pending = MyUtils.newJSONObject(sj.pending(domain));
             if ("send".equals(text(pending, "action")) && saveCards(taskTickets(row.opt("taskShowInfo")))) {
@@ -363,6 +381,8 @@ final class FriendActivityTasks {
                 if (value instanceof String) title += " " + value;
             }
             if (!title.contains("好运卡") || SjActivityTasks.unsafe(title.replace("支付宝", "").replaceAll("(?i)alipay", "") + " " + text(row, "taskType")) || Status.hasFlagToday(done)) continue;
+            if (oneOf(state, "RECEIVED", "RECEIVE_SUCCESS", "DONE", "SUCCESS")) continue;
+            unfinished.add(id);
             title = title.replaceAll("[\\r\\n\\t]", " ");
             title = title.substring(0, Math.min(title.length(), 80));
             if ("signup".equals(text(pending, "action")) && oneOf(state, "NOT_DONE", "IN_COMPLETE", "SIGNUP_COMPLETE", "TODO"))
@@ -382,6 +402,11 @@ final class FriendActivityTasks {
                 if (sj.accepted(domain, "好运卡[" + title + "]未达成任务，服务端未发卡")) Status.flagToday(done + "::notReady");
             } else Log.record("好运卡[" + title + "]：领卡未确认；如有未确认回执，核对后可在其他任务手动恢复");
         }
+        if (!luckyRowsComplete) return;
+        for (String id : unfinished) if (!Status.hasFlagToday("other::luckyTask::" + id)
+                && !Status.hasFlagToday("other::luckyTask::" + id + "::notReady") || !sj.pending("luckyTask::" + id).isEmpty()) return;
+        sj.current();
+        DailyTask.done("luckyTasks");
     }
 
     private void openCards() throws Exception {

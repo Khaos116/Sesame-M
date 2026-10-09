@@ -49,6 +49,8 @@ code=code.replace('@@WORKER@@','static String TAG="check";\n'+'\n'.join(method(s
 code=code.replace('@@RPC@@','\n'.join(method(rpc,'public static String '+s+'(') for s in ('querySignInProcess','signInTrigger','queryGuardianGradeAwards','guardianAwardSend','queryAccountSummaryPoint')))
 cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1/org.json/json'
 jar=sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar','-javadoc.jar')))[-1]
+from daily_task_fixture import with_daily_task
+code = with_daily_task(code)
 with tempfile.TemporaryDirectory(prefix='sesame-bean-sign-') as tmp:
  f=Path(tmp)/'BeanSignCheck.java';f.write_text(code,encoding='utf-8')
  subprocess.run(['javac','-encoding','UTF-8','-cp',str(jar),'-d',tmp,str(f),str(SOURCE/'util/TaskCancelledException.java')],check=True)

@@ -13,7 +13,7 @@ public class DodoCollectCheck {
  static class MyUtils {static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
  static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}
  static class TaskAttemptPolicy {enum ProbeResult {TODO,FINISHED,RECEIVED,GONE,UNKNOWN}}
- static class Log {static void forest(String s){}static void err(String t,String s,Throwable e){}static long timeToStamp(String s){try{java.text.SimpleDateFormat f=new java.text.SimpleDateFormat("yyyy.MM.dd HH:mm:ss");f.setTimeZone(TimeZone.getTimeZone("GMT+8"));return f.parse(s).getTime();}catch(Exception e){return System.currentTimeMillis();}}}
+ static class Log { static void record(String s) {}static void forest(String s){}static void err(String t,String s,Throwable e){}static long timeToStamp(String s){try{java.text.SimpleDateFormat f=new java.text.SimpleDateFormat("yyyy.MM.dd HH:mm:ss");f.setTimeZone(TimeZone.getTimeZone("GMT+8"));return f.parse(s).getTime();}catch(Exception e){return System.currentTimeMillis();}}}
  static class AntDodoRpcCall {
   static String taskList(){throw new TaskCancelledException();}
   static Queue<String> states=new ArrayDeque<>();static boolean fail,cancel,homeFail;static int queries,draws;static int quota=1;static String date="";
@@ -58,6 +58,8 @@ public class DodoCollectCheck {
 code = code.replace("@@METHODS@@", "\n".join(method("model/task/antDodo/AntDodo.java", s) for s in ("private void collect()", "private void collectAnimalCard()", "private long getEndDateTime()", "private boolean isLastDay()", "private void propList()", "private TaskAttemptPolicy.ProbeResult probeDodoStatus(")))
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches/modules-2/files-2.1/org.json/json"
 jar = sorted(p for p in cache.glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar", "-javadoc.jar")))[-1]
+from daily_task_fixture import with_daily_task
+code = with_daily_task(code)
 with tempfile.TemporaryDirectory(prefix="sesame-dodo-collect-") as tmp:
     java = Path(tmp) / "DodoCollectCheck.java"
     java.write_text(code, encoding="utf-8")

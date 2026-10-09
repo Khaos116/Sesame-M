@@ -35,7 +35,7 @@ class TaskCancelledException extends RuntimeException {}
 class ThreadUtil { static void shutdownAndWait(Thread t, long n, java.util.concurrent.TimeUnit u) {
  if(t != null) { t.interrupt(); if(n >= 0) try { t.join(u.toMillis(n)); } catch(InterruptedException e) { Thread.currentThread().interrupt(); } } } }
 class StringUtil { static boolean isEmpty(String s) { return s == null || s.isEmpty(); } }
-class Status { static boolean hasFlagToday(String s) { return true; } static void flagToday(String s) {} }
+class Status { static boolean hasFlagToday(String s) { return true; } static void flagToday(String s) {} static void clearFlag(String s) {} }
 class UserIdMap { static String getCurrentUid() { return "account"; } }
 class FileUtil { static void backupConfigV2WithRolling(String s) {} }
 class TimeUtil { static void sleep(long millis) { try { Thread.sleep(millis); }
@@ -73,6 +73,8 @@ with tempfile.TemporaryDirectory(prefix="sesame-account-check-") as directory:
             """)
         (out / f"{name}.java").write_text(source, encoding="utf-8")
     (out / "Stubs.java").write_text(STUBS, encoding="utf-8")
+    daily = (SOURCE.parents[1] / "util/DailyTask.java").read_text(encoding="utf-8")
+    (out / "DailyTask.java").write_text(daily.replace("package io.github.aw1y2z.sesame.util;", "package io.github.aw1y2z.sesame.data.task;"), encoding="utf-8")
     shutil.copy(Path(__file__).with_name("AccountLifecycleCheck.java"), out)
     shutil.copy(Path(__file__).with_name("TaskCompletionCheck.java"), out)
     # Compile the actual async entry methods with deterministic queued/rejected workers.
@@ -91,7 +93,7 @@ with tempfile.TemporaryDirectory(prefix="sesame-account-check-") as directory:
     # Exercise real executor completion paths with deterministic inline/queued submissions.
     child_out = out / "children"
     child_out.mkdir()
-    for name in ("TaskLifecycle", "ModelTask", "ChildTaskExecutor"):
+    for name in ("TaskLifecycle", "ModelTask", "ChildTaskExecutor", "DailyTask"):
         shutil.copy(out / f"{name}.java", child_out)
     child_stubs = STUBS[:STUBS.index("class ProgramChildTaskExecutor")]
     child_stubs = child_stubs.replace("class ThreadUtil {", """class ThreadUtil {

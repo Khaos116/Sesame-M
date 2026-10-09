@@ -95,7 +95,8 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
    worker(30).luckyCard();assert sends==0:"conflicting duplicate was submitted: "+field;
   }
   luckyOverride=null;
-  reset();worker(30).p2eBrowse();assert signups==1&&completes==1&&receives==1&&TimeUtil.waited==15;assert Log.lines.stream().anyMatch(s->s.contains("获得12金币"));worker(30).p2eBrowse();assert writes==3;
+  reset();worker(30).p2eBrowse();assert signups==1&&completes==1&&receives==1&&TimeUtil.waited==15;assert Log.lines.stream().anyMatch(s->s.contains("获得12金币"));int dailyQueries=queries;worker(30).p2eBrowse();assert writes==3&&queries==dailyQueries;
+  DailyTask.manual(()->{try{worker(30).p2eBrowse();}catch(Exception e){throw new RuntimeException(e);}return null;});assert queries>dailyQueries&&writes==3:"manual P2E must refresh without duplicate rewards";
   reset();worker(1).p2eBrowse();assert signups==1&&completes==0;worker(30).p2eBrowse();assert signups==1&&completes==1&&receives==1:"budget resume";
   reset();pstate="COMPLETED";worker(30).p2eBrowse();assert receives==1&&signups==0&&completes==0;
   reset();failReceive=true;worker(30).p2eBrowse();assert receives==1;worker(30).p2eBrowse();assert receives==1&&RuntimeInfo.data.keySet().stream().noneMatch(k->k.startsWith("sjActivityReceipt::p2eBrowse::"));
@@ -107,7 +108,8 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
   reset();malformed=true;worker(30).p2eBrowse();assert writes==0;
   reset();TimeUtil.switchWait=true;try{worker(30).p2eBrowse();throw new AssertionError();}catch(TaskCancelledException expected){}assert signups==1&&completes==0;
   reset();TimeUtil.crossWait=true;try{worker(30).p2eBrowse();throw new AssertionError();}catch(TaskCancelledException expected){}assert completes==0;
-  reset();worker(30).luckyCard();assert signs==1&&progress==4&&sends==1&&opens==4:"normal lucky chain: "+signs+","+progress+","+sends+","+opens;int before=writes;worker(30).luckyCard();assert writes==before:"same day duplicated";
+  reset();worker(30).luckyCard();assert signs==1&&progress==4&&sends==1&&opens==4:"normal lucky chain: "+signs+","+progress+","+sends+","+opens;int before=writes;dailyQueries=queries;worker(30).luckyCard();assert writes==before&&queries==dailyQueries:"same day duplicated";
+  DailyTask.manual(()->{try{worker(30).luckyCard();}catch(Exception e){throw new RuntimeException(e);}return null;});assert queries>dailyQueries&&writes==before:"manual lucky must refresh without duplicate cards";
   assert Log.lines.stream().filter(s->s.startsWith("✅ 好运卡开卡成功")).count()==8;
   assert Log.lines.stream().noneMatch(s->s.contains("SECRET_TOKEN"));
   reset();worker(1).luckyCard();assert signs==1&&opens==0;worker(30).luckyCard();assert signs==1&&progress==4&&opens==4:"queue survives budget exhaustion";
@@ -214,6 +216,10 @@ assert '.setTitle("已核对赚金币和好运卡记录？")' in ui
 code = code.replace('@@FAILURE@@', guard[guard.index('public static boolean isFailure('):guard.index('    public static boolean isNonFriend(')])
 cache = Path(os.environ.get('GRADLE_USER_HOME', Path.home() / '.gradle')) / 'caches/modules-2/files-2.1/org.json/json'
 jar = sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar', '-javadoc.jar')))[-1]
+daily_source = (SOURCE / 'util/DailyTask.java').read_text(encoding='utf-8')
+daily_body = daily_source[daily_source.index('public final class DailyTask'):].replace('public final class DailyTask', 'static final class DailyTask', 1)
+start = code.index('{', code.index('public class ')) + 1
+code = code[:start] + '\n' + daily_body + '\n' + code[start:]
 with tempfile.TemporaryDirectory(prefix='sesame-friend-activities-') as tmp:
     java = Path(tmp) / 'FriendActivityCheck.java'
     java.write_text(code, encoding='utf-8')

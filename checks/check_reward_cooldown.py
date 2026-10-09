@@ -83,6 +83,15 @@ def check_reward_cooldown() -> None:
         write(out, "io/github/aw1y2z/sesame/model/base/TaskCommon.java", """
             package io.github.aw1y2z.sesame.model.base; public final class TaskCommon { public static boolean IS_ENERGY_TIME=false; }
         """)
+        copy(out, "io/github/aw1y2z/sesame/util/DailyTask.java")
+        write(out, "io/github/aw1y2z/sesame/util/Status.java", """
+            package io.github.aw1y2z.sesame.util; public class Status {
+                static java.util.Set<String> flags=new java.util.HashSet<>();
+                public static boolean hasFlagToday(String key){return flags.contains(key);}
+                public static void flagToday(String key){flags.add(key);}
+                public static void clearFlag(String key){flags.remove(key);}
+            }
+        """)
         write(out, "io/github/aw1y2z/sesame/util/Log.java", """
             package io.github.aw1y2z.sesame.util; public final class Log { public static String messages=""; public static void record(String value) {messages+=value;} }
         """)
@@ -108,13 +117,14 @@ def check_reward_cooldown() -> None:
                 private static void require(boolean value,String message){if(!value)throw new AssertionError(message);}
                 private static final class Probe extends IsolatedRewardTask {
                     public String getName(){return "probe";} protected void addFields(ModelFields f){}
-                    boolean claim, stopAfterQuery, unclearAfterQuery, noQuery, switchAfterQuery;
+                    boolean claim, stopAfterQuery, unclearAfterQuery, noQuery, switchAfterQuery, complete;
                     protected void execute(Run run)throws Exception {
                         if(noQuery)return;
                         if(claim)run.onceToday("claim","method","[]",()->true); else run.query("method","[]");
                         if(stopAfterQuery)throw new java.io.IOException();
                         if(unclearAfterQuery)run.stop("必要字段缺失");
                         if(switchAfterQuery)io.github.aw1y2z.sesame.util.idMap.UserIdMap.uid="B";
+                        if(complete)run.completed();
                     }
                 }
                 public static void main(String[] args) {
@@ -152,6 +162,16 @@ def check_reward_cooldown() -> None:
                     task.switchAfterQuery=true; task.run(); task.switchAfterQuery=false;
                     require(state.getLong("Probe.nextConfirmedQuery",0L)==0L,"old-account interval written after switch");
                     io.github.aw1y2z.sesame.util.idMap.UserIdMap.uid="A";
+                    state.reset(); task.complete=true; task.run();
+                    require(io.github.aw1y2z.sesame.util.Status.hasFlagToday("dailyTask::Probe"),"verified completion was not saved");
+                    state.reset(); int completedCalls=ApplicationHook.calls; task.run();
+                    require(ApplicationHook.calls==completedCalls,"completed daily flow queried again");
+                    io.github.aw1y2z.sesame.util.DailyTask.manual(()->{task.run();return null;});
+                    require(ApplicationHook.calls==completedCalls+1,"manual run did not bypass daily completion");
+                    ApplicationHook.fail=true;
+                    io.github.aw1y2z.sesame.util.DailyTask.manual(()->{task.run();return null;});
+                    require(!io.github.aw1y2z.sesame.util.Status.hasFlagToday("dailyTask::Probe"),"failed manual run retained completion");
+                    ApplicationHook.fail=false; task.complete=false;
                     state.reset(); task.claim=true; ApplicationHook.response="{\"error\":1009}"; task.run();
                     require(state.getString("Probe.attempt.claim")!=null,"uncertain mutation reservation was cleared");
                     require(state.getLong("Probe.nextConfirmedQuery",0L)==0L,"failed mutation scheduled interval");

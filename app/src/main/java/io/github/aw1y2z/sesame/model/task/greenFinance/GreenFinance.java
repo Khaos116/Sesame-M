@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.model.task.greenFinance;
 
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.MyUtils;
 
 import org.json.JSONArray;
@@ -161,7 +162,7 @@ public class GreenFinance extends ModelTask {
      */
     private void signIn(final String sceneId) {
         String signFlag = "greenFinance::signIn::" + sceneId;
-        if (Status.hasFlagToday(signFlag)) {
+        if (DailyTask.skipFlag(signFlag, "绿色经营签到[" + sceneId + "]")) {
             return;
         }
         try {
@@ -202,31 +203,31 @@ public class GreenFinance extends ModelTask {
      */
     private void behaviorTick() {
         //绿色行动
-        if (greenFinanceLsxd.getValue() && !Status.hasFlagToday("greenFinance::tick::lsxd")) {
+        if (greenFinanceLsxd.getValue() && !DailyTask.skipFlag("greenFinance::tick::lsxd", "绿色经营打卡[lsxd]")) {
             TimeUtil.sleep(1000);
             doTick("lsxd");
             TimeUtil.sleep(1500);
         }
         //绿色采购
-        if (greenFinanceLscg.getValue() && !Status.hasFlagToday("greenFinance::tick::lscg")) {
+        if (greenFinanceLscg.getValue() && !DailyTask.skipFlag("greenFinance::tick::lscg", "绿色经营打卡[lscg]")) {
             TimeUtil.sleep(1000);
             doTick("lscg");
             TimeUtil.sleep(1500);
         }
         //绿色物流
-        if (greenFinanceLswl.getValue() && !Status.hasFlagToday("greenFinance::tick::lswl")) {
+        if (greenFinanceLswl.getValue() && !DailyTask.skipFlag("greenFinance::tick::lswl", "绿色经营打卡[lswl]")) {
             TimeUtil.sleep(1000);
             doTick("lswl");
             TimeUtil.sleep(1500);
         }
         //绿色办公
-        if (greenFinanceLsbg.getValue() && !Status.hasFlagToday("greenFinance::tick::lsbg")) {
+        if (greenFinanceLsbg.getValue() && !DailyTask.skipFlag("greenFinance::tick::lsbg", "绿色经营打卡[lsbg]")) {
             TimeUtil.sleep(1000);
             doTick("lsbg");
             TimeUtil.sleep(1500);
         }
         //绿色销售
-        if (greenFinanceWdxd.getValue() && !Status.hasFlagToday("greenFinance::tick::wdxd")) {
+        if (greenFinanceWdxd.getValue() && !DailyTask.skipFlag("greenFinance::tick::wdxd", "绿色经营打卡[wdxd]")) {
             TimeUtil.sleep(1000);
             doTick("wdxd");
             TimeUtil.sleep(1500);
@@ -240,7 +241,7 @@ public class GreenFinance extends ModelTask {
      */
     private void doTick(final String type) {
         String tickFlag = "greenFinance::tick::" + type;
-        if (Status.hasFlagToday(tickFlag)) {
+        if (DailyTask.skipFlag(tickFlag, "绿色经营打卡[" + type + "]")) {
             return;
         }
         try {

@@ -1,6 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.omegakoiTown;
 
 import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.util.DailyTask;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -208,14 +209,18 @@ public class OmegakoiTown extends ModelTask {
     }
 
     private void getSignInStatus() {
+        if (DailyTask.skip("town::sign", "小镇签到")) return;
         try {
             String s = OmegakoiTownRpcCall.getSignInStatus();
             JSONObject jo = MyUtils.newJSONObject(s);
             if (jo.optBoolean("success")) {
                 JSONObject result = jo.optJSONObject("result");
-                boolean signed = result != null && result.optBoolean("signed");
+                if (result == null || !(result.opt("signed") instanceof Boolean)) return;
+                boolean signed = result.optBoolean("signed");
+                if (signed) { DailyTask.done("town::sign"); return; }
                 if (!signed) {
                     jo = MyUtils.newJSONObject(OmegakoiTownRpcCall.signIn());
+                    if (!Boolean.TRUE.equals(jo.opt("success"))) return;
                     JSONObject signResult = jo.optJSONObject("result");
                     JSONArray diffItems = signResult != null ? signResult.optJSONArray("diffItems") : null;
                     JSONObject diffItem = diffItems != null ? diffItems.optJSONObject(0) : null;
@@ -226,6 +231,7 @@ public class OmegakoiTown extends ModelTask {
                     String itemId = diffItem.optString("itemId");
                     RewardType rewardType = RewardType.valueOf(itemId);
                     Log.other("小镇签到[" + rewardType.rewardName() + "]#" + amount);
+                    DailyTask.done("town::sign");
                 }
             }
         } catch (Throwable t) {

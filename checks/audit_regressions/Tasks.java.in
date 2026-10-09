@@ -14,6 +14,11 @@ public static void main(String[]a){
  blacklisted=true;
  assert !new Review().runTaskList(new GoldenBeansEntry(),0);
  regressionFlows();
+ Status.flags.clear();goldenbeansRpcCall.cancelPull=false;blacklisted=false;
+ goldenbeansRpcCall.snapshot="{success:true,taskList:[{sceneCode:'scene',taskId:'task',taskStatus:'RECEIVED'}]}";
+ assert new Review().runTaskList(new GoldenBeansEntry(),0)&&Status.hasFlagToday("dailyTask::goldenBeansTasks::MASTER");
+ Status.flags.clear();goldenbeansRpcCall.snapshot="{success:true,taskList:[{taskId:'task',taskStatus:'RECEIVED'}]}";
+ assert !new Review().runTaskList(new GoldenBeansEntry(),0)&&Status.flags.isEmpty():"missing scene cached as complete";
  System.out.println("PASS finish then claim, retry failed claims including blacklisted finished tasks");
 }
 @@TASKS@@

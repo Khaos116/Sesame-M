@@ -28,23 +28,32 @@ public class MerchantService {
 
     private static void sign() throws JSONException {
         TimeUtil.sleep(0);
-        JSONObject zcj = response(AntMemberRpcCall.merchantZcj(false));
+        JSONObject zcj = DailyTask.skip("merchantZcjSign", "商家招财金签到") ? null : response(AntMemberRpcCall.merchantZcj(false));
         JSONObject button = zcj == null ? null : zcj.optJSONObject("button");
+        if ("RECEIVED".equals(text(button, "status"))) DailyTask.done("merchantZcjSign");
         String flag = "member::merchantZcjAttempt";
         if ("UNRECEIVED".equals(text(button, "status")) && !Status.hasFlagToday(flag)) {
             Status.flagToday(flag);
             JSONObject signed = response(AntMemberRpcCall.merchantZcj(true));
             JSONObject after = response(AntMemberRpcCall.merchantZcj(false));
             JSONObject fresh = after == null ? null : after.optJSONObject("button");
-            if (signed != null && "RECEIVED".equals(text(fresh, "status"))) Log.other("商家服务🏪招财金签到回查成功");
+            if (signed != null && "RECEIVED".equals(text(fresh, "status"))) {
+                DailyTask.done("merchantZcjSign");
+                Log.other("商家服务🏪招财金签到回查成功");
+            }
         }
+        if (DailyTask.skip("merchantSign", "商家每日签到")) return;
         JSONObject home = response(AntMemberRpcCall.merchantHomePage());
+        if (home != null && Boolean.FALSE.equals(home.opt("signIn"))) DailyTask.done("merchantSign");
         flag = "member::merchantSignAttempt";
         if (home == null || !Boolean.TRUE.equals(home.opt("signIn")) || Status.hasFlagToday(flag)) return;
         Status.flagToday(flag);
         JSONObject signed = response(AntMemberRpcCall.merchantSign());
         JSONObject after = response(AntMemberRpcCall.merchantHomePage());
-        if (signed != null && after != null && Boolean.FALSE.equals(after.opt("signIn"))) Log.other("商家服务🏪每日签到回查成功");
+        if (signed != null && after != null && Boolean.FALSE.equals(after.opt("signIn"))) {
+            DailyTask.done("merchantSign");
+            Log.other("商家服务🏪每日签到回查成功");
+        }
     }
 
     private static void kmdk() throws JSONException {

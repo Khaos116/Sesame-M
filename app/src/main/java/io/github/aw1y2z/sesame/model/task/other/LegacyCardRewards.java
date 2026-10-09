@@ -10,6 +10,7 @@ import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -154,8 +155,10 @@ final class LegacyCardRewards {
     }
 
     private void sign() throws Exception {
+        if (DailyTask.skip("hundred::sign", "百次立减卡签到")) return;
         JSONObject before = todaySign();
-        if (before == null || "RECEIVED".equals(text(before, "status"))) return;
+        if (before == null) return;
+        if ("RECEIVED".equals(text(before, "status"))) { DailyTask.done("hundred::sign"); return; }
         String status = text(before, "status"), id = text(before, "taskId");
         boolean send = Set.of("NOT_DONE", "TODO", "NONE_SIGNUP").contains(status);
         if (!send && !Set.of("TO_RECEIVE", "WAIT_RECEIVE", "WAIT_AWARD").contains(status)) return;
@@ -168,12 +171,15 @@ final class LegacyCardRewards {
                     || !Set.of("TO_RECEIVE", "WAIT_RECEIVE", "WAIT_AWARD", "HAS_COMPLETED", "COMPLETED", "RECEIVED").contains(text(after, "status")) || !confirm("hundred")) return;
             before = after;
         }
-        if ("RECEIVED".equals(text(before, "status"))) return;
+        if ("RECEIVED".equals(text(before, "status"))) { DailyTask.done("hundred::sign"); return; }
         if (!reserve("hundred", "sign-receive::" + id)) return;
         JSONObject ack = call(HUNDRED + "task.receive", MyUtils.newJSONObject().put("chInfo", "signInTask").put("taskId", id));
         JSONObject after = todaySign();
         if (ack != null && after != null && id.equals(text(after, "taskId")) && text(before, "_center").equals(text(after, "_center"))
-                && "RECEIVED".equals(text(after, "status")) && confirm("hundred")) Log.other("百次立减卡🎁今日签到奖励状态回查已领取");
+                && "RECEIVED".equals(text(after, "status")) && confirm("hundred")) {
+            DailyTask.done("hundred::sign");
+            Log.other("百次立减卡🎁今日签到奖励状态回查已领取");
+        }
     }
 
     private JSONArray taskList() throws Exception {

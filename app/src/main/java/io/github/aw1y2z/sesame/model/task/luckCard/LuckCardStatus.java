@@ -40,6 +40,7 @@ public final class LuckCardStatus extends IsolatedRewardTask {
             else other++;
         }
         Log.record(getName() + "：任务=" + total + "，已完成=" + done + "，待处理=" + signup + "，其他=" + other);
+        if (total == done && other == 0) run.completed();
         if (triggerTasks.getValue()) {
             for (int i = 0; i < Math.min(tasks.length(), 30); i++) {
                 JSONObject task = tasks.optJSONObject(i);

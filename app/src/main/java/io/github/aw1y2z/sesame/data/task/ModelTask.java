@@ -4,6 +4,7 @@ import static io.github.aw1y2z.sesame.model.normal.base.BaseModel.taskRpcRequest
 
 import io.github.aw1y2z.sesame.util.FileUtil;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 import lombok.Getter;
 import io.github.aw1y2z.sesame.data.Model;
@@ -233,7 +234,7 @@ public abstract class ModelTask extends Model {
         }
         mainPending.set(true);
         long admittedGeneration = generation;
-        Runnable admitted = () -> {
+        Runnable admitted = DailyTask.capture(() -> {
             try {
                 if (generation == admittedGeneration) runMainTask(admittedGeneration);
                 else running.set(false);
@@ -242,7 +243,7 @@ public abstract class ModelTask extends Model {
                 mainPending.set(false);
                 work.close();
             }
-        };
+        });
         try {
             if (synchronous) {
                 admitted.run();
@@ -431,7 +432,7 @@ public abstract class ModelTask extends Model {
             NotificationUtil.startRound();
             int count = 0;
             for (Model model : targets) {
-                if (((ModelTask) model).startTask(false)) {
+                if (DailyTask.manual(() -> ((ModelTask) model).startTask(false))) {
                     count++;
                 }
             }
@@ -458,7 +459,7 @@ public abstract class ModelTask extends Model {
                     if (action == null || !action.isEmpty() && (!task.supportsManualAction(action) || !task.isEnable() || !task.checkManualAction(action))) return false;
                     stopAllTask();
                     NotificationUtil.startRound();
-                    if (action.isEmpty()) return task.startTask(false);
+                    if (action.isEmpty()) return DailyTask.manual(() -> task.startTask(false));
                     long generation = task.taskGeneration();
                     return task.addChildTask(new ChildModelTask("MANUAL|" + code + "|" + System.nanoTime(), task.getGroup().getCode(), () -> {
                         if (!uid.equals(UserIdMap.getCurrentUid())) return;

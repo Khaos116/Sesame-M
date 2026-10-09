@@ -12,6 +12,7 @@ import io.github.aw1y2z.sesame.rpc.intervallimit.RequestBudgetPolicy;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcFailurePolicy;
 public class LegacyCardRewardsCheck {
  static class MyUtils{static int day=7;static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.clear();c.set(2026,9,day);return c;}static JSONObject newJSONObject(){return new JSONObject();}static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
+ static class Status { static Set<String> flags=new HashSet<>(); static String key(String k){return UserIdMap.uid+MyUtils.day+k;} static boolean hasFlagToday(String k){return flags.contains(key(k));} static void flagToday(String k){flags.add(key(k));} static void clearFlag(String k){flags.remove(key(k));}}
  static class UserIdMap{static String uid="self";static String getCurrentUid(){return uid;}}
  static class System{static long nanos;static final java.io.PrintStream out=java.lang.System.out;static long nanoTime(){return nanos;}static long currentTimeMillis(){return java.lang.System.currentTimeMillis();}}
  static class TimeUtil{static boolean cancelled,cancelWait,switchWait,dayWait;static long waited;static void sleep(long n){if(cancelled)throw new TaskCancelledException();System.nanos+=n*1000000L;if(n==1000||n==600){if(n==1000)waited+=n;if(cancelWait)throw new TaskCancelledException();if(switchWait)UserIdMap.uid="other";if(dayWait)MyUtils.day++;}}}
@@ -41,7 +42,7 @@ public class LegacyCardRewardsCheck {
   else throw new AssertionError(method);
   if(mutation){int writes=signups+sends+receives+flips+merges;if(writeDay!=MyUtils.day){writeDay=MyUtils.day;writesBeforeDay=writes-1;}assert RuntimeInfo.data.keySet().stream().anyMatch(k->k.endsWith("Receipt"));assert new JSONObject(RuntimeInfo.data.get("legacyCardAttempts")).optInt("count")==writes-writesBeforeDay;if(switchUid)UserIdMap.uid="other";if(cancelAfter)TimeUtil.cancelled=true;}
   JSONObject root=success(d);if(mutation&&(badAck||!flowerStages.isEmpty()&&flowerStages.get(flowerStages.size()-1).equals(failStage)))root.put("success",false);if(risk)root.put("errorCode","1009");return root.toString();}}
- static void reset(){flowerRows=null;flowerQueries=0;failStage="";flowerStages.clear();writeDay=7;writesBeforeDay=0;signups=0;signupResult="NOT_DONE";signupMode="";RuntimeInfo.data.clear();RuntimeInfo.writable=true;UserIdMap.uid="self";MyUtils.day=7;TimeUtil.cancelled=TimeUtil.cancelWait=TimeUtil.switchWait=TimeUtil.dayWait=false;System.nanos=TimeUtil.waited=0;requiredWait=20_000;selectedRow=null;driftKey=null;driftValue=null;requests=sends=receives=flips=merges=Log.ok=listQueries=driftAt=0;Log.records.clear();directoryRows=remaining=1;signStatus="NOT_DONE";taskStatus=sendResult="TO_RECEIVE";receiveResult="RECEIVED";opened=fragments=badAck=switchUid=cancelAfter=duplicate=missing=wrongCount=wrongCard=risk=duplicateTask=sendStateBad=fallbackStatus=false;change=true;}
+ static void reset(){Status.flags.clear();flowerRows=null;flowerQueries=0;failStage="";flowerStages.clear();writeDay=7;writesBeforeDay=0;signups=0;signupResult="NOT_DONE";signupMode="";RuntimeInfo.data.clear();RuntimeInfo.writable=true;UserIdMap.uid="self";MyUtils.day=7;TimeUtil.cancelled=TimeUtil.cancelWait=TimeUtil.switchWait=TimeUtil.dayWait=false;System.nanos=TimeUtil.waited=0;requiredWait=20_000;selectedRow=null;driftKey=null;driftValue=null;requests=sends=receives=flips=merges=Log.ok=listQueries=driftAt=0;Log.records.clear();directoryRows=remaining=1;signStatus="NOT_DONE";taskStatus=sendResult="TO_RECEIVE";receiveResult="RECEIVED";opened=fragments=badAck=switchUid=cancelAfter=duplicate=missing=wrongCount=wrongCard=risk=duplicateTask=sendStateBad=fallbackStatus=false;change=true;}
  static void run(boolean sign,boolean rewards,boolean flip,boolean merge,int budget){LegacyCardRewards.run(new OtherRequestGate(),sign,rewards,flip,merge,budget,false,"[]",false);}
  static String target(){return new JSONArray().put(new JSONObject().put("taskId","reward\"\\").put("taskCenId","center")).toString();}
  static void select(){reset();taskStatus="NOT_DONE";selectedRow=new JSONObject().put("taskId","reward\"\\").put("taskCenId","center").put("taskTitle","活动介绍").put("taskExtProps",new JSONObject().put("browseTime",20));}
@@ -199,6 +200,8 @@ def body(path,marker):
 code=code.replace('@@GATE@@',body('model/task/other/OtherRequestGate.java','final class OtherRequestGate')).replace('@@WORKER@@',body('model/task/other/LegacyCardRewards.java','final class LegacyCardRewards'))
 cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1/org.json/json'
 jar=sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar','-javadoc.jar')))[-1]
+from daily_task_fixture import with_daily_task
+code=with_daily_task(code)
 with tempfile.TemporaryDirectory(prefix='sesame-legacy-card-') as temp:
  p=Path(temp)/'LegacyCardRewardsCheck.java';p.write_text(code,encoding='utf-8')
  extra=['util/TaskCancelledException.java','rpc/intervallimit/RequestBudgetPolicy.java','rpc/intervallimit/RpcFailurePolicy.java']

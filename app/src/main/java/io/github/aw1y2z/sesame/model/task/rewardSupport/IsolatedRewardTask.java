@@ -20,6 +20,7 @@ import io.github.aw1y2z.sesame.rpc.intervallimit.RequestBudgetPolicy;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcFailurePolicy;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 /**
@@ -57,8 +58,9 @@ public abstract class IsolatedRewardTask extends ModelTask {
             Log.record(getName() + "：本轮未启动，" + (ApplicationHook.isOffline() ? "支付宝离线" : "当前为只收能量时段"));
             return false;
         }
+        if (DailyTask.skip(getClass().getSimpleName(), getName())) return false;
         long next = state.getLong(nextKey(), 0L);
-        if (!RewardRunPolicy.mayQuery(now, next)) {
+        if (!DailyTask.isManual() && !RewardRunPolicy.mayQuery(now, next)) {
             Log.record(getName() + "：本轮未启动，查询间隔剩余" + Math.max(1, (next - now) / 1000) + "秒，未调用RPC");
             return false;
         }
@@ -89,6 +91,7 @@ public abstract class IsolatedRewardTask extends ModelTask {
             execute(run);
             run.requireCurrent();
             if (run.requests > 0) run.state.put(nextKey(), System.currentTimeMillis() + intervalHours.getValue() * 3_600_000L);
+            if (run.completed) DailyTask.done(getClass().getSimpleName());
         } catch (Stopped ignored) {
             // A bounded, failed or interrupted run has already logged its reason.
         } catch (InterruptedException e) {
@@ -104,6 +107,7 @@ public abstract class IsolatedRewardTask extends ModelTask {
         private final String account;
         private final RuntimeInfo state;
         private int requests;
+        private boolean completed;
         private long lastCallNanos;
 
         private Run(String account, RuntimeInfo state) { this.account = account; this.state = state; }
@@ -116,6 +120,8 @@ public abstract class IsolatedRewardTask extends ModelTask {
         public JSONObject query(String method, String args) throws Exception {
             return call(method, args, () -> true);
         }
+
+        public void completed() throws Exception { requireCurrent(); completed = true; }
 
         public void stop(String reason) throws Exception {
             Log.record(getName() + "：" + reason + "，停止本轮，未新增查询间隔");

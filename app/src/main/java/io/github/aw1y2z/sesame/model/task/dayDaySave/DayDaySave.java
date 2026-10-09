@@ -27,10 +27,10 @@ public final class DayDaySave extends IsolatedRewardTask {
                     + "，result结构=" + responseShape(result) + "，degradePage="
                     + (result != null && result.opt("degradePage") instanceof Boolean ? result.optBoolean("degradePage") : "缺失或类型异常")); return;
         }
-        if (result.optBoolean("hasSignIn")) { Log.record(getName() + "：已经签到"); return; }
+        if (result.optBoolean("hasSignIn")) { Log.record(getName() + "：已经签到"); run.completed(); return; }
         if (!checkIn.getValue()) { Log.record(getName() + "：未签到，签到开关未开启"); return; }
         JSONObject signed = run.onceToday("signIn",
                 "com.alipay.ficcscenepromobff.needle.daydaysave.signIn", "[null]", () -> checkIn.getValue());
-        if (signed != null) Log.record(getName() + "：签到接口返回成功");
+        if (signed != null) { Log.record(getName() + "：签到接口返回成功"); run.completed(); }
     }
 }

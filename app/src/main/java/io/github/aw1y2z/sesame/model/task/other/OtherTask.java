@@ -17,6 +17,8 @@ import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.util.DailyTask;
+import io.github.aw1y2z.sesame.util.TimeUtil;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 
@@ -186,8 +188,10 @@ public class OtherTask extends ModelTask {
     }
 
     private void runHaoJia() {
+        if (DailyTask.skip("haojiaLegacy", "好家无忧卡")) return;
         Log.record("好家无忧卡开始执行");
         try {
+            boolean done = false;
             JSONObject sign = MyUtils.newJSONObject(gate.call("查询好家无忧卡签到", HaoJiaRpcCall::querySignIn));
             Log.record("好家无忧卡签到查询：根成功校验=" + ok(sign) + "，resultCode=" + SjActivityTasks.responseField(sign, "resultCode")
                     + "，error=" + SjActivityTasks.responseField(sign, "error") + "，errorCode=" + SjActivityTasks.responseField(sign, "errorCode"));
@@ -195,6 +199,7 @@ public class OtherTask extends ModelTask {
                 JSONObject component = component(sign, "independent_component_sign_in_00966139_independent_component_sign_in_recall");
                 JSONObject content = component == null ? null : component.optJSONObject("content");
                 JSONArray orders = content == null ? null : content.optJSONArray("playSignInOrderInfoList");
+                done = orders != null && orders.length() == 0;
                 Log.record("好家无忧卡签到资料：组件有效=" + (component != null) + "，content对象=" + (content != null)
                         + "，签到订单数=" + (orders == null ? -1 : orders.length()));
                 if (orders != null && orders.length() > 0) {
@@ -202,6 +207,7 @@ public class OtherTask extends ModelTask {
                     JSONObject template = order == null ? null : order.optJSONObject("playSignInTemplateInfo");
                     String code = template == null ? "" : template.optString("code");
                     JSONArray records = order == null ? null : order.optJSONArray("signInRecordInfoList");
+                    done = orders.length() == 1 && !code.isEmpty() && hasSignedToday(records);
                     Log.record("好家无忧卡签到资格：模板code有效=" + !code.isEmpty() + "，签到记录数=" + (records == null ? -1 : records.length())
                             + "，今日已签到=" + hasSignedToday(records));
                     if (!code.isEmpty() && !hasSignedToday(records)) {
@@ -215,14 +221,17 @@ public class OtherTask extends ModelTask {
             JSONObject component = component(tasks, "independent_component_task_reward_00793835_independent_component_task_reward_query");
             JSONObject content = component == null ? null : component.optJSONObject("content");
             JSONArray list = content == null ? null : content.optJSONArray("playTaskOrderInfoList");
+            done &= ok(tasks) && list != null;
             Log.record("好家无忧卡任务查询：根成功校验=" + ok(tasks) + "，resultCode=" + SjActivityTasks.responseField(tasks, "resultCode")
                     + "，组件有效=" + (component != null) + "，content对象=" + (content != null) + "，任务数=" + (list == null ? -1 : list.length()));
             if (list != null) for (int i = 0; i < list.length(); i++) {
                 JSONObject task = list.optJSONObject(i);
+                if (task == null || !java.util.Set.of("init", "finish").contains(task.optString("taskStatus"))) done = false;
                 if (task == null || !"init".equals(task.optString("taskStatus")) || "eventPush".equals(task.optString("advanceType"))) continue;
                 JSONObject display = task.optJSONObject("displayInfo");
                 String name = display == null ? "" : display.optString("activityName");
                 if (containsRisk(name)) continue;
+                done = false;
                 String code = task.optString("code");
                 int browseTime = display == null ? 0 : display.optInt("browseTime", 0);
                 if (browseTime > 0) sleep(browseTime * 1000L);
@@ -232,6 +241,7 @@ public class OtherTask extends ModelTask {
                             + "，resultCode=" + SjActivityTasks.responseField(result, "resultCode") + "，记录终态尚未回查");
                 }
             }
+            if (done) { TimeUtil.sleep(0); DailyTask.done("haojiaLegacy"); }
         } catch (OtherRequestGate.BudgetExhausted | OtherRequestGate.Denied stopped) {
             // gate 已经记录过原因，这里不重复打日志。
         } catch (TaskCancelledException cancelled) {

@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.model.task.antDodo;
 
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.MyUtils;
 
 import org.json.JSONArray;
@@ -235,7 +236,7 @@ public class AntDodo extends ModelTask {
     }
 
     private void collect() {
-        if (Status.hasFlagToday("dodo::collect")) {
+        if (DailyTask.skipFlag("dodo::collect", "神奇物种每日收卡")) {
             return;
         }
         try {

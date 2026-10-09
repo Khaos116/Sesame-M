@@ -98,6 +98,8 @@ code=code.replace("@@METHODS@@","\n".join(method(member,s) for s in ("static JSO
 code=code.replace("@@RPC@@","\n".join(method(rpc,s) for s in ("public static String queryStickerCanReceiveList(","public static String receiveSticker(","public static String queryStickerHomePage(","public static String upgradeStickerBatch(","public static String queryStickerDetailPage(","public static String triggerStickerUpgradePrize(","public static String queryStickerPrizeHomePage(","public static String triggerStickerDrawing(")))
 cache=Path(os.environ.get("GRADLE_USER_HOME",Path.home()/".gradle"))/"caches/modules-2/files-2.1/org.json/json"
 jar=sorted(p for p in cache.glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar","-javadoc.jar")))[-1]
+from daily_task_fixture import with_daily_task
+code = with_daily_task(code)
 with tempfile.TemporaryDirectory(prefix="sesame-sticker-") as tmp:
  java=Path(tmp)/"StickerCheck.java";java.write_text(code,encoding="utf-8")
  subprocess.run(["javac","-encoding","UTF-8","-cp",str(jar),"-d",tmp,str(java),str(SOURCE/"util/TaskCancelledException.java")],check=True)

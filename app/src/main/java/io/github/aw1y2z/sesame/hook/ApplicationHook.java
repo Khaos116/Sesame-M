@@ -1333,7 +1333,7 @@ public class ApplicationHook extends XposedModule {
                                     initHandler(false);
                                 } else if (ModelGroup.BASE == ModelGroup.getByCode(groupCode)) {
                                     ModelTask.stopAllTask();
-                                    ModelTask.startAllTask(false);
+                                    io.github.aw1y2z.sesame.util.DailyTask.manual(() -> { ModelTask.startAllTask(false); return null; });
                                     Log.record("开始执行全部任务");
                                 } else {
                                     ModelTask.stopAllTask();

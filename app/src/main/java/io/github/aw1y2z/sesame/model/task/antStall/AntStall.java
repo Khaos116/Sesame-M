@@ -674,7 +674,7 @@ public class AntStall extends ModelTask {
             if (signListModel != null && signListModel.opt("currentKeySigned") instanceof Boolean) {
                 if (signListModel.optBoolean("currentKeySigned")) {
                     Status.flagToday("antstall::signToday");
-                } else if (!Status.hasFlagToday("antstall::signToday")) {
+                } else if (!DailyTask.skipFlag("antstall::signToday", "新村签到")) {
                     signToday();
                 }
             }
@@ -834,7 +834,7 @@ public class AntStall extends ModelTask {
     }
     
     private void signToday() {
-        if (Status.hasFlagToday("antstall::signToday")) {
+        if (DailyTask.skipFlag("antstall::signToday", "新村签到")) {
             return;
         }
         try {
@@ -860,6 +860,7 @@ public class AntStall extends ModelTask {
                     }
                 }
                 Log.farm("新村任务📅签到#获得[" + signReward + "]");
+                Status.flagToday("antstall::signToday");
             }
         }
         catch (Throwable t) {

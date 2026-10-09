@@ -69,6 +69,8 @@ code=code.replace('@@SERVICE@@','static '+body).replace('@@HELPER@@',method(memb
 cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1/org.json/json'
 jar=sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar','-javadoc.jar')))[-1]
 env=dict(os.environ,JAVA_TOOL_OPTIONS='-Xms16m -Xmx192m')
+from daily_task_fixture import with_daily_task
+code=with_daily_task(code)
 with tempfile.TemporaryDirectory(prefix='sesame-yeb-tasks-') as tmp:
  f=Path(tmp)/'YebTasksCheck.java';f.write_text(code,encoding='utf-8')
  subprocess.run(['javac','-encoding','UTF-8','-cp',str(jar),'-d',tmp,str(f),str(SOURCE/'util/TaskCancelledException.java')],check=True,env=env)

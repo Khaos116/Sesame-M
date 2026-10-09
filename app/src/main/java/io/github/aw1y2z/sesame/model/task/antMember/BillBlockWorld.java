@@ -19,6 +19,7 @@ import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 
@@ -48,7 +49,7 @@ final class BillBlockWorld {
     private record Action(String operation, JSONObject args, List<Block> positions, Block main, Block merged, Chapter chapter) {}
 
     static void run(boolean enabled) {
-        if (!enabled || Status.hasFlagToday(DONE)) return;
+        if (!enabled || DailyTask.skipFlag(DONE, "账单拼贴世界")) return;
         TimeUtil.sleep(0);
         String day = day();
         RuntimeInfo runtime = RuntimeInfo.getInstance();

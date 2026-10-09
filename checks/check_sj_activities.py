@@ -17,7 +17,7 @@ public class SjActivityCheck {
  static class System{static long nanos;static final java.io.PrintStream out=java.lang.System.out;static long nanoTime(){return nanos;}static long currentTimeMillis(){return java.lang.System.currentTimeMillis();}}
  static class TimeUtil{static boolean cancel,switchWait,crossWait;static long waited;static void sleep(long n){if(cancel)throw new TaskCancelledException();System.nanos+=n*1000000L;if(n==1000){waited++;if(switchWait)UserIdMap.uid="other";if(crossWait)MyUtils.day++;}}}
  static class RuntimeInfo{static Map<String,String> data=new HashMap<>();static boolean writable=true;static RuntimeInfo instance=new RuntimeInfo();static RuntimeInfo getInstance(){return instance;}String getString(String k){return data.getOrDefault(k,"");}long getLong(String k,long d){try{return Long.parseLong(getString(k));}catch(Exception e){return d;}}void put(String k,Object v){data.put(k,String.valueOf(v));}boolean putVerified(String k,String v){if(!writable)return false;if(v==null)data.remove(k);else data.put(k,v);return true;}}
- static class Status{static Set<String> flags=new HashSet<>();static boolean hasFlagToday(String k){return flags.contains(k);}static void flagToday(String k){flags.add(k);}}
+ static class Status{static Set<String> flags=new HashSet<>();static boolean hasFlagToday(String k){return flags.contains(k);}static void flagToday(String k){flags.add(k);}static void clearFlag(String k){flags.remove(k);}}
  static class Log{static int confirmed;static List<String> lines=new ArrayList<>();static void other(String s){confirmed++;lines.add(s);}static void record(String s){lines.add(s);}}
   static class RpcRequestGuard{@@FAILURE@@}
   static class MessageUtil{@@RETRY_HELPERS@@}
@@ -70,8 +70,13 @@ public class SjActivityCheck {
    reset();taskState="RECEIVED";signed=true;remaining=0;consumed=9;lottery(true,true,true,5);
    assert writes==0&&Log.lines.stream().anyMatch(s->s.contains("本轮新完成并领奖=0项，此前已完成并领奖=1项")) : "previously done tasks were reported as new success";
    assert Log.lines.stream().anyMatch(s->s.contains("剩余机会为0"));
+   int previousQueries=queries;
+   lottery(true,true,true,5);assert queries==previousQueries&&writes==0:"completed shenquan queried again";
+   DailyTask.manual(()->{try{lottery(true,true,true,5);}catch(Exception e){throw new RuntimeException(e);}return null;});
+   assert queries>previousQueries&&writes==0:"manual shenquan did not refresh";
    assert Log.lines.stream().anyMatch(s->s.startsWith("☑️ ")&&s.contains("此前已完成并领奖"))&&Log.lines.stream().noneMatch(s->s.contains("进入查询RPC调用")||s.contains("响应 success=true")) : "completed read-only flow is cluttered by successful RPC diagnostics";
    reset();queryFailure=true;lottery(false,true,false,5);
+   assert !Status.hasFlagToday("dailyTask::shenQuan:falsetruefalse"):"failed query counted as daily completion";
    assert writes==0&&Log.lines.stream().anyMatch(s->s.contains("camp.query")&&s.contains("success=false")&&s.contains("error=3000")) : "failed read lost the interface/business evidence";
    reset();signUnconfirmed=signError=true;lottery(true,true,true,10);
    assert writes==7&&draws==4&&!signed&&taskState.equals("RECEIVED")&&pending("shenQuan") : "unconfirmed sign blocked independent tasks or existing free draws";
@@ -162,7 +167,7 @@ public class SjActivityCheck {
    assert Log.lines.stream().anyMatch(s->s.contains("error=3000"))&&Log.lines.stream().anyMatch(s->s.contains("提交响应未通过")&&s.contains("回查"));
    reset();advance=false;signError=true;lottery(true,false,false,5);assert writes==1&&pending("shenQuan")&&Log.confirmed==0;
    reset();signError=missingAfterWrite=true;lottery(true,true,true,5);assert writes==1&&pending("shenQuan")&&Log.confirmed==0 : "invalid immediate readback cleared the sign receipt";
-  reset();lottery(true,true,true,1);assert writes==1&&!pending("shenQuan");lottery(true,true,true,1);assert writes==1;
+  reset();lottery(true,true,true,1);assert writes==1&&!pending("shenQuan");assert !Status.hasFlagToday("dailyTask::shenQuan:truetruetrue"):"budget exhaustion counted as daily completion";lottery(true,true,true,1);assert writes==1;
   reset();worker(1).p2eSign();assert writes==1&&days==3&&Log.confirmed==1&&!pending("p2e");worker(1).p2eSign();assert writes==1;
   reset();duplicate=true;worker(1).p2eSign();assert writes==0;
   reset();advance=false;worker(1).p2eSign();assert writes==1&&pending("p2e")&&Log.confirmed==0;
@@ -200,6 +205,10 @@ code = code.replace('@@RETRY_HELPERS@@', '\n'.join(helpers))
 code = code.replace('@@FAILURE@@', guard[guard.index('public static boolean isFailure('):guard.index('    public static boolean isNonFriend(')])
 cache = Path(os.environ.get('GRADLE_USER_HOME', Path.home() / '.gradle')) / 'caches/modules-2/files-2.1/org.json/json'
 jar = sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar', '-javadoc.jar')))[-1]
+daily_source = (SOURCE / 'util/DailyTask.java').read_text(encoding='utf-8')
+daily_body = daily_source[daily_source.index('public final class DailyTask'):].replace('public final class DailyTask', 'static final class DailyTask', 1)
+start = code.index('{', code.index('public class ')) + 1
+code = code[:start] + '\n' + daily_body + '\n' + code[start:]
 with tempfile.TemporaryDirectory(prefix='sesame-sj-activities-') as tmp:
     java = Path(tmp) / 'SjActivityCheck.java'
     java.write_text(code, encoding='utf-8')

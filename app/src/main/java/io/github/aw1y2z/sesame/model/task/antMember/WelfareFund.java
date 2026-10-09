@@ -12,6 +12,7 @@ import io.github.aw1y2z.sesame.entity.AlipayWelfareFundTaskList;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.idMap.WelfareFundTaskListMap;
@@ -68,7 +69,8 @@ public class WelfareFund {
     }
 
     private static void signIn() {
-        if (Status.hasFlagToday(FLAG_SIGN)) {
+        if (Status.hasFlagToday(FLAG_SIGN) && !DailyTask.isManual()) {
+            Log.record("福利金签到：当天已经成功执行");
             return;
         }
         try {
@@ -119,6 +121,7 @@ public class WelfareFund {
     }
 
     private static void runTasks(boolean autoBlackList, Set<String> blackList) {
+        if (DailyTask.skip("welfareFundTasks", "福利金每日任务")) return;
         try {
             JSONArray list = queryTaskDetailList();
             if (list == null) {
@@ -127,6 +130,7 @@ public class WelfareFund {
             }
             if (list.length() == 0) {
                 Log.record("福利金任务：今日无可做任务");
+                DailyTask.done("welfareFundTasks");
                 return;
             }
             syncCandidates(list);
@@ -203,6 +207,15 @@ public class WelfareFund {
                             + "，已受理阶段今日不重发；后续按列表状态继续");
                 }
             }
+            boolean complete = true;
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject item = list.optJSONObject(i);
+                if (item == null || item.optString("taskId").isEmpty()) { complete = false; continue; }
+                String title = morphDetail(item).optString("title");
+                if (!Status.hasFlagToday(FLAG_TASK + item.optString("taskId") + "::done")
+                        && !(blackList != null && !title.isEmpty() && blackList.contains(title))) complete = false;
+            }
+            if (complete) { TimeUtil.sleep(0); DailyTask.done("welfareFundTasks"); }
         } catch (Throwable t) {
             if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "runTasks err:", t);

@@ -13,6 +13,7 @@ import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -259,13 +260,16 @@ final class SjActivityTasks {
     }
 
     void shenQuan(boolean sign, boolean tasks, boolean draw, String location) throws Exception {
-        Log.record("神券团购：开始，签到=" + sign + "，任务=" + tasks + "，抽奖=" + draw + "，每日操作预算=" + budget);
         if (!(sign || tasks || draw) || budget <= 0 || uid == null || uid.isEmpty()) return;
+        String daily = "shenQuan:" + sign + tasks + draw;
+        if (DailyTask.skip(daily, "神券团购")) return;
+        Log.record("神券团购：开始，签到=" + sign + "，任务=" + tasks + "，抽奖=" + draw + "，每日操作预算=" + budget);
         if (!reconcileShenQuan() || !enabled("shenQuan")) return;
         // SJ checks sign, tasks and free draws independently; an unknown sign must only prevent another sign.
         boolean signReady = reconcileShenQuan("shenQuanSign") && enabled("shenQuanSign");
         JSONObject camp = camp();
         if (camp == null) return;
+        boolean settled = !sign || checked(camp) && pending("shenQuanSign").isEmpty();
         if (sign && signReady && !checked(camp)) {
             JSONObject consult = lottery("checkInConsult", MyUtils.newJSONObject(), false);
             Log.record("神券团购签到资格：triggerCheckIn=" + responseField(consult, "triggerCheckIn"));
@@ -281,6 +285,7 @@ final class SjActivityTasks {
                         Log.record("神券团购签到：提交响应未通过，但本账号今日有效回查已签到；不重发签到，按回查结果继续");
                     }
                     if (!confirmed("shenQuanSign", "神券团购签到")) return;
+                    settled = true;
                 }
             } else {
                 Log.record("神券团购：签到资格未允许提交，本轮未发送签到请求");
@@ -299,18 +304,21 @@ final class SjActivityTasks {
             }
             Log.record("神券团购：查询到任务数=" + list.length());
             int completed = 0, previouslyCompleted = 0;
+            Set<String> unfinished = new java.util.HashSet<>();
             for (int i = 0; i < list.length(); i++) {
                 JSONObject initial = list.optJSONObject(i);
                 String label = "神券团购任务[" + lotteryTaskTitle(initial) + "]";
                 String id = text(initial, "playId");
                 JSONObject row = id.isEmpty() ? null : unique(list, "playId", id);
                 if (row == null || !lotterySafe(row)) {
+                    if (row == null || text(row.optJSONObject("taskExtProps"), "taskTitle").isEmpty()) settled = false;
                     Log.record(label + "：跳过第" + (i + 1) + "项任务，原因=" + (id.isEmpty() ? "playId缺失"
                             : row == null ? "playId重复" : "不满足免费浏览/搜索规则")
                             + "，类型=" + responseField(initial, "taskType") + "，状态=" + responseField(initial, "taskStatus")
                             + "，标题字段=" + !text(initial == null ? null : initial.optJSONObject("taskExtProps"), "taskTitle").isEmpty());
                     continue;
                 }
+                unfinished.add(id);
                 if (Status.hasFlagToday("sjActivityShenQuanUnconfirmed::" + id)) {
                     Log.record(label + "：旧回执尚未确认，仅跳过该任务，继续其他操作");
                     continue;
@@ -322,6 +330,7 @@ final class SjActivityTasks {
                 }
                 if (Set.of("RECEIVED", "DONE").contains(row.optString("taskStatus"))) {
                     previouslyCompleted++;
+                    unfinished.remove(id);
                     Log.record("☑️ " + label + "：此前已完成并领奖，本轮无需提交");
                     continue;
                 }
@@ -356,6 +365,7 @@ final class SjActivityTasks {
                     row = after;
                     if (Set.of("RECEIVED", "DONE").contains(row.optString("taskStatus"))) {
                         completed++;
+                        unfinished.remove(id);
                         String message = "✅ " + label + "：本轮完成并领奖，服务端状态回查已确认，未提供奖励名称";
                         Log.other(message);
                         Log.record(message);
@@ -372,11 +382,13 @@ final class SjActivityTasks {
                             || !confirmed(taskDomain, "神券团购完成任务[" + lotteryTaskTitle(row) + "]得["
                             + lotteryPrizeNames(ack.optJSONArray("prizeInfoList")) + "]")) continue;
                     completed++;
+                    unfinished.remove(id);
                 }
             }
             Log.record("📊 神券团购任务结果：本轮新完成并领奖=" + completed + "项，此前已完成并领奖=" + previouslyCompleted + "项");
+            settled &= unfinished.isEmpty();
         }
-        if (!draw) return;
+        if (!draw) { if (settled) { current(); DailyTask.done(daily); } return; }
         JSONObject args = drawLocation(location);
         if (args == null) { Log.record("神券团购抽奖：定位JSON缺少必要字段或格式不正确，本轮跳过"); return; }
         for (int i = 0; i < budget; i++) {
@@ -385,6 +397,7 @@ final class SjActivityTasks {
             if (remaining <= 0 || consumed < 0) {
                 Log.record("神券团购：" + (remaining == 0 && consumed >= 0 ? "剩余机会为0，抽奖处理已结束"
                         : "抽奖次数字段无效，停止抽奖（remaining=" + remaining + "，consumed=" + consumed + "）"));
+                if (remaining == 0 && consumed >= 0 && settled) { current(); DailyTask.done(daily); }
                 return;
             }
             args.put("timestamp", System.currentTimeMillis());
@@ -395,6 +408,7 @@ final class SjActivityTasks {
             if (ack == null || !"10000001".equals(ack.optString("code")) || ack.optJSONObject("data") == null || count(after, "remainingCount") != remaining - 1
                     || count(after, "dayConsumeCount") != consumed + 1 || !confirmed("shenQuan", "神券团购第" + (consumed + 1)
                     + "抽得[" + lotteryPrizeNames(ack.optJSONObject("data").optJSONArray("prizeList")) + "]")) return;
+            if (count(after, "remainingCount") == 0 && settled) { current(); DailyTask.done(daily); return; }
         }
     }
 
@@ -596,7 +610,10 @@ final class SjActivityTasks {
     }
 
     void p2eSign() throws Exception {
-        if (!enabled("p2e") || Status.hasFlagToday("other::sjP2ESign")) return;
+        if (Status.hasFlagToday("other::sjP2ESign") && !DailyTask.isManual()) {
+            Log.record("游戏中心玩赚签到：当天已经成功执行"); return;
+        }
+        if (!enabled("p2e")) return;
         JSONObject before = p2eHome(), sign = before == null ? null : before.optJSONObject("signUpModuleVO");
         JSONObject today = todaySign(sign);
         if (today == null) return;

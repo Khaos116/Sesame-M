@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.model.task.antSports;
 
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.MyUtils;
 
 import org.json.JSONArray;
@@ -797,7 +798,7 @@ public class AntSports extends ModelTask {
     }
 
     private void signInCoinTask() {
-        if (Status.hasFlagToday(FLAG_SIGN_IN_COIN_TASK)) {
+        if (DailyTask.skipFlag(FLAG_SIGN_IN_COIN_TASK, "运动币签到")) {
             return;
         }
         try {
@@ -2607,7 +2608,7 @@ public class AntSports extends ModelTask {
      * 处理签到逻辑
      */
     public static void processSignIn() {
-        if (Status.hasFlagToday("NeverLand::SIGN")) {
+        if (DailyTask.skipFlag("NeverLand::SIGN", "运动乐园签到")) {
             return;
         }
 
@@ -2625,6 +2626,10 @@ public class AntSports extends ModelTask {
             JSONArray days = data.optJSONArray("days");
             for (int i = 0; days != null && i < days.length(); i++) {
                 JSONObject day = days.optJSONObject(i);
+                if (day != null && Boolean.TRUE.equals(day.opt("current")) && Boolean.TRUE.equals(day.opt("signIn"))) {
+                    Status.flagToday("NeverLand::SIGN");
+                    return;
+                }
                 if (day != null && day.optBoolean("current") && !day.optBoolean("signIn")) {
                     if (signIn()) {
                         Status.flagToday("NeverLand::SIGN");

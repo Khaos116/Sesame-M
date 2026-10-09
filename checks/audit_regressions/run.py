@@ -9,8 +9,11 @@ import re
 import shutil
 import subprocess
 import tempfile
+import sys
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent))
+from daily_task_fixture import with_daily_task
 ROOT = HERE.parents[1]
 SOURCE = ROOT / "app/src/main/java/io/github/aw1y2z/sesame"
 
@@ -45,7 +48,7 @@ def main():
             for key, value in replacements.items():
                 assert key in text
                 text = text.replace(key, value)
-            (folder / filename).write_text(text, encoding="utf-8")
+            (folder / filename).write_text(with_daily_task(text), encoding="utf-8")
             compile_run(folder, filename.removesuffix(".java"))
 
         def compile_run(folder, main_class):

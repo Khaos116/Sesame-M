@@ -21,11 +21,13 @@ import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 
 final class YebExpGold {
     static void run(boolean sign, boolean rewards, Set<String> blacklist) {
+        if (sign && DailyTask.skip("member::yebSign", "余额宝体验金签到")) sign = false;
         if (!sign && !rewards) return;
         String uid = UserIdMap.getCurrentUid();
         int day = businessDay();
@@ -358,11 +360,12 @@ final class YebExpGold {
 
     private static void signIn(JSONObject main) throws Exception {
         String key = "member::yebSignAttempt";
-        if (Status.hasFlagToday(key)) return;
         int day = businessDay();
         String uid = UserIdMap.getCurrentUid();
         JSONObject today = todaySign(main);
         String status = today == null ? "" : today.optString("signStatus");
+        if ("SIGNED".equals(status)) { DailyTask.done("member::yebSign"); return; }
+        if (Status.hasFlagToday(key)) return;
         if (!"TO_SIGNED".equals(status) && !"UNSIGNED".equals(status)) return;
         TimeUtil.sleep(0);
         if (businessDay() != day || !uid.equals(UserIdMap.getCurrentUid())) return;
@@ -371,6 +374,7 @@ final class YebExpGold {
         JSONObject after = todaySign(queryMain(null));
         if (!uid.equals(UserIdMap.getCurrentUid())) return;
         if (success(accepted) && businessDay() == day && after != null && "SIGNED".equals(after.optString("signStatus"))) {
+            DailyTask.done("member::yebSign");
             Log.other("余额宝体验金💰签到已回查确认");
         } else Log.record("余额宝体验金签到未确认，本日不重复尝试");
     }

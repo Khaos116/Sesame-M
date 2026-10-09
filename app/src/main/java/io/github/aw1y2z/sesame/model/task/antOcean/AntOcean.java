@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.model.task.antOcean;
 
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.MyUtils;
 
 import org.json.JSONArray;
@@ -1170,7 +1171,7 @@ public class AntOcean extends ModelTask {
     // 海洋答题任务
     private static Boolean answerQuestion() {
         // 与海洋其它任务一致：当天成功过就不再重复请求（服务端的 answered 只作兜底）
-        if (Status.hasFlagToday("Ocean::ANSWER_QUESTION")) {
+        if (DailyTask.skipFlag("Ocean::ANSWER_QUESTION", "海洋答题")) {
             return false;
         }
         try {
@@ -1179,6 +1180,7 @@ public class AntOcean extends ModelTask {
                 return false;
             }
             if (jo.optBoolean("answered")) {
+                Status.flagToday("Ocean::ANSWER_QUESTION");
                 Log.record("问题已经被回答过，跳过答题流程");
                 return false;
             }

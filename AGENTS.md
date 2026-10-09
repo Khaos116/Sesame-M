@@ -83,6 +83,8 @@ python checks/check_bill_world.py
 python checks/check_yeb_exp_gold_tasks.py
 python checks/check_webdav_backup.py
 python checks/check_manual_task.py
+python checks/check_daily_task.py
+python checks/check_daily_modules.py
 python checks/check_cache_maintenance.py
 python checks/check_forest_prop_support.py
 python checks/check_farm_ranking.py

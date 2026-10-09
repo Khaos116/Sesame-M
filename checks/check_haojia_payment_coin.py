@@ -16,7 +16,7 @@ public class HaoJiaPaymentCoinCheck {
  static class UserIdMap {static String uid="self";static String getCurrentUid(){return uid;}}
  static class TimeUtil {static int waited,cancelAt;static boolean cancel;static void sleep(long n){if(cancel)throw new TaskCancelledException();if(n==1000){waited++;if(cancelAt>0&&waited==cancelAt)throw new TaskCancelledException();}}}
  static class RuntimeInfo {static Map<String,String> data=new HashMap<>();static boolean writable=true;static RuntimeInfo runtime=new RuntimeInfo();static RuntimeInfo getInstance(){return runtime;}String getString(String k){return data.getOrDefault(k,"");}long getLong(String k,long fallback){try{return Long.parseLong(getString(k));}catch(Exception e){return fallback;}}void put(String k,Object v){data.put(k,String.valueOf(v));}boolean putVerified(String k,String v){if(!writable)return false;if(v==null)data.remove(k);else data.put(k,v);return true;}}
- static class Status {static Map<String,Integer> values=new HashMap<>();static Set<String> flags=new HashSet<>();static int getIntFlagToday(String k){return values.getOrDefault(MyUtils.day+":"+k,0);}static void setIntFlagToday(String k,int n){values.put(MyUtils.day+":"+k,n);}static boolean hasFlagToday(String k){return flags.contains(MyUtils.day+":"+k);}static void flagToday(String k){flags.add(MyUtils.day+":"+k);}}
+ static class Status {static Map<String,Integer> values=new HashMap<>();static Set<String> flags=new HashSet<>();static int getIntFlagToday(String k){return values.getOrDefault(MyUtils.day+":"+k,0);}static void setIntFlagToday(String k,int n){values.put(MyUtils.day+":"+k,n);}static boolean hasFlagToday(String k){return flags.contains(MyUtils.day+":"+k);}static void flagToday(String k){flags.add(MyUtils.day+":"+k);}static void clearFlag(String k){flags.remove(MyUtils.day+":"+k);}}
  static class Log {static int ok;static String messages="",otherMessages="";static void other(String s){ok++;otherMessages+=s;}static void record(String s){messages+=s;}static void err(String t,String s,Throwable e){throw new AssertionError(e);}static void i(String t,String s){}static void printStackTrace(String t,Throwable e){throw new AssertionError(e);}}
  @@GATE@@
  @@WORKER@@
@@ -73,7 +73,9 @@ public class HaoJiaPaymentCoinCheck {
    assert Log.messages.contains("浏览完成 · 待领奖（已回查）")&&Log.messages.contains("领奖成功 · 余额=11→12（已回查）") : "human result state missing";
    assert !Log.messages.contains("查询调用，根成功校验=true") : "successful component queries still spam runtime";
    assert Log.messages.contains("本轮新完成浏览任务=1项") : "new task success was not summarized";
-   run(true,true,true,4);assert Log.messages.contains("本轮新完成浏览任务=0项")&&mutations==4 : "previous completion was counted or submitted again";
+   int previousRequests=requests;
+   run(true,true,true,4);assert Log.messages.contains("当天已经成功执行")&&mutations==4&&requests==previousRequests : "completed daily flow sent requests again";
+   DailyTask.manual(()->{run(true,true,true,4);return null;});assert requests>previousRequests&&mutations==4:"manual run failed to refresh completed task";
    reset();
    for(int i=0;i<15;i++)extraRows.add(task().put("code","extra"+i).put("taskStatus",i<8?"finish":"init").put("rewardStatus",i<6?"success":"init").put("recordNo","").put("advanceType","eventPush"));
    run(false,true,true,3);
@@ -168,6 +170,10 @@ code = code.replace('@@RPC_FAILURE@@', method('rpc/intervallimit/RpcRequestGuard
 code = code.replace('@@RESPONSE_FIELD@@', method('model/task/other/SjActivityTasks.java', 'static String responseField('))
 cache = Path(os.environ.get('GRADLE_USER_HOME', Path.home()/'.gradle'))/'caches/modules-2/files-2.1/org.json/json'
 jar = sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar', '-javadoc.jar')))[-1]
+daily_source = (SOURCE / 'util/DailyTask.java').read_text(encoding='utf-8')
+daily_body = daily_source[daily_source.index('public final class DailyTask'):].replace('public final class DailyTask', 'static final class DailyTask', 1)
+start = code.index('{', code.index('public class ')) + 1
+code = code[:start] + '\n' + daily_body + '\n' + code[start:]
 with tempfile.TemporaryDirectory(prefix='sesame-haojia-coin-') as tmp:
     source = Path(tmp)/'HaoJiaPaymentCoinCheck.java'
     source.write_text(code, encoding='utf-8')

@@ -130,6 +130,10 @@ stubs = {
 }
 cache = Path(os.environ.get('GRADLE_USER_HOME', Path.home() / '.gradle')) / 'caches/modules-2/files-2.1/org.json/json'
 jar = sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar', '-javadoc.jar')))[-1]
+daily_source = (SOURCE / 'util/DailyTask.java').read_text(encoding='utf-8')
+daily_body = daily_source[daily_source.index('public final class DailyTask'):].replace('public final class DailyTask', 'static final class DailyTask', 1)
+start = code.index('{', code.index('public class ')) + 1
+code = code[:start] + '\n' + daily_body + '\n' + code[start:]
 with tempfile.TemporaryDirectory(prefix='sesame-sj-native-') as tmp:
     files = []
     for filename, text in {'SjNativeCheck.java': code, **stubs}.items():

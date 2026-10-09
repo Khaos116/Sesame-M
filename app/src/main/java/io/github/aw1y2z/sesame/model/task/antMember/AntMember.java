@@ -458,7 +458,7 @@ public class AntMember extends ModelTask {
     }
 
     private void collectBillStickers() {
-        if (!collectStickers.getValue() || Status.hasFlagToday("member::billStickersDone")) return;
+        if (!collectStickers.getValue() || DailyTask.skipFlag("member::billStickersDone", "账单贴纸")) return;
         try {
             TimeUtil.sleep(0);
             java.util.Calendar date = MyUtils.getInstance();
@@ -681,7 +681,7 @@ public class AntMember extends ModelTask {
     
     private void memberSign() {
         try {
-            if (!Status.hasFlagToday("member::sign")) {
+            if (!DailyTask.skipFlag("member::sign", "会员签到")) {
                 JSONObject jo = MyUtils.newJSONObject(AntMemberRpcCall.queryMemberSigninCalendar());
                 TimeUtil.sleep(500);
                 if (MessageUtil.checkResultCode(TAG, jo)) {
@@ -1053,9 +1053,9 @@ public class AntMember extends ModelTask {
             if (!doSignIn && !doConsume) {
                 return;
             }
-            boolean needSignIn = doSignIn && !Status.hasFlagToday("goldTicket::sign");
-            boolean needHomeCheck = doSignIn && !Status.hasFlagToday("goldTicket::home");
-            boolean needWelfare = doSignIn && !Status.hasFlagToday("goldTicket::welfare");
+            boolean needSignIn = doSignIn && !DailyTask.skipFlag("goldTicket::sign", "黄金票签到");
+            boolean needHomeCheck = doSignIn && !DailyTask.skipFlag("goldTicket::home", "黄金票首页任务");
+            boolean needWelfare = doSignIn && !DailyTask.skipFlag("goldTicket::welfare", "黄金票福利任务");
             boolean needConsume = doConsume && !Status.hasFlagToday("goldTicket::consume");
             if (!needSignIn && !needHomeCheck && !needWelfare && !needConsume) {
                 Log.i("黄金票🙈[今日已处理，跳过]");
@@ -2198,7 +2198,7 @@ public class AntMember extends ModelTask {
      * 检查并执行签到
      */
     public static void checkAndDoSignIn() {
-        if (Status.hasFlagToday("gameCenterSignIn")) {
+        if (DailyTask.skipFlag("gameCenterSignIn", "游戏中心签到")) {
             return;
         }
         
@@ -2208,7 +2208,9 @@ public class AntMember extends ModelTask {
                 JSONObject dataObj = jsonObject.optJSONObject("data");
                 if (dataObj != null && dataObj.has("signInBallModule")) {
                     JSONObject signInModule = dataObj.optJSONObject("signInBallModule");
-                    if (signInModule != null && !signInModule.optBoolean("signInStatus")) {
+                    if (signInModule != null && Boolean.TRUE.equals(signInModule.opt("signInStatus"))) {
+                        Status.flagToday("gameCenterSignIn");
+                    } else if (signInModule != null && Boolean.FALSE.equals(signInModule.opt("signInStatus"))) {
                         if (dailySignIn()) {
                             Status.flagToday("gameCenterSignIn");
                         }
@@ -2956,11 +2958,11 @@ public class AntMember extends ModelTask {
     }
 
     private void CheckInTaskRpcManager() {
-        if (Status.hasFlagToday("AntMember::zmlCheckIn")) {
+        if (DailyTask.skipFlag("AntMember::zmlCheckIn", "芝麻粒签到")) {
             return;
         }
         // 领取是否失败：失败时不置今日标记，留给下一轮重试（否则当天不再重试 → 漏领）
-        boolean claimFailed = false;
+        boolean claimFailed = true;
         try {
             
             String checkInRes = AntMemberRpcCall.alchemyQueryCheckIn("zml");
@@ -2977,6 +2979,7 @@ public class AntMember extends ModelTask {
                             try {
                                 JSONObject completeJo = MyUtils.newJSONObject(completeRes);
                                 if (MessageUtil.checkResultCode(TAG, completeJo)) {
+                                    claimFailed = false;
                                     JSONObject prize = completeJo.optJSONObject("data");
                                     int num = 0;
                                     if (prize != null) {

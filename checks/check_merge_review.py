@@ -23,7 +23,7 @@ public class MergeReviewCheck {
   static void forest(String s){lines.add(s);}
   static void other(String s){lines.add(s);}static void err(String a,String b,Throwable t){throw new AssertionError(t);}}
  static class Status {static Set<String> flags=new HashSet<>();static boolean hasFlagToday(String k){return flags.contains(k);}
-  static void flagToday(String k){flags.add(k);}}
+  static void flagToday(String k){flags.add(k);}static void clearFlag(String k){flags.remove(k);}}
  static class MessageUtil {static int marks;static boolean checkResultCode(String t,JSONObject j){return j!=null&&j.optBoolean("success");}
   static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}
   static boolean isRetryable(JSONObject j){return j.optBoolean("retryable");}static boolean isServerBusy(JSONObject j){return "102".equals(j.optString("code"));}
@@ -232,6 +232,10 @@ code = code.replace("@@ORCHARD_BLACK@@", re.search(
 jar = next(p for p in (Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) /
     "caches/modules-2/files-2.1/org.json/json").glob("*/*/json-*.jar")
     if not p.name.endswith(("-sources.jar", "-javadoc.jar")))
+daily_source = (SOURCE / 'util/DailyTask.java').read_text(encoding='utf-8')
+daily_body = daily_source[daily_source.index('public final class DailyTask'):].replace('public final class DailyTask', 'static final class DailyTask', 1)
+start = code.index('{', code.index('public class ')) + 1
+code = code[:start] + '\n' + daily_body + '\n' + code[start:]
 with tempfile.TemporaryDirectory(prefix="sesame-review-") as tmp:
     java = Path(tmp) / "MergeReviewCheck.java"
     java.write_text(code, encoding="utf-8")

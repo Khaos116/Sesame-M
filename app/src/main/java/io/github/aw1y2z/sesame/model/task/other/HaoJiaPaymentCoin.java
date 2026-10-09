@@ -13,6 +13,7 @@ import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -34,8 +35,9 @@ final class HaoJiaPaymentCoin {
 
     static void run(OtherRequestGate gate, boolean sign, boolean browse, boolean rewards, int budget) {
         String uid = UserIdMap.getCurrentUid();
-        Log.record("好家缴费金：开始，签到=" + sign + "，浏览=" + browse + "，领奖=" + rewards + "，每日操作预算=" + budget);
         if (gate == null || uid == null || uid.isEmpty() || budget <= 0 || !sign && !browse && !rewards) return;
+        if (DailyTask.skip("haojiaCoin:" + sign + browse + rewards, "好家缴费金")) return;
+        Log.record("好家缴费金：开始，签到=" + sign + "，浏览=" + browse + "，领奖=" + rewards + "，每日操作预算=" + budget);
         try { new HaoJiaPaymentCoin(gate, uid, date(), budget).work(sign, browse, rewards); }
         catch (TaskCancelledException e) { throw e; }
         catch (OtherRequestGate.BudgetExhausted | OtherRequestGate.Denied stopped) { }
@@ -131,10 +133,19 @@ final class HaoJiaPaymentCoin {
                 Log.other(message);
                 Log.record(message);
             }
+            rows.put(code, row);
         }
         BigDecimal endingBalance = balance();
         Log.record("📊 好家缴费金本轮结果：本轮新完成浏览任务=" + completed + "项，本轮新领奖=" + newlyRewarded + "项\n💰 余额=" + startingBalance.toPlainString() + "→"
                 + (endingBalance == null ? "未取得有效回查" : endingBalance.toPlainString()));
+        boolean done = endingBalance != null && current() && RuntimeInfo.getInstance().getString(RECEIPT).isEmpty();
+        for (JSONObject row : rows.values()) {
+            String state = text(row, "taskStatus");
+            if (!Set.of("init", "claim", "finish").contains(state)
+                    || browse && browse(row) && !"finish".equals(state)
+                    || rewards && "finish".equals(state) && !"success".equals(row.optString("rewardStatus"))) done = false;
+        }
+        if (done) DailyTask.done("haojiaCoin:" + sign + browse + rewards);
     }
 
     private boolean signIn() throws Exception {

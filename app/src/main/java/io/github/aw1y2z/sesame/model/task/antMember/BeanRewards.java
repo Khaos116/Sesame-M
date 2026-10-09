@@ -51,6 +51,7 @@ final class BeanRewards {
     }
 
     private static void sign() throws Exception {
+        if (DailyTask.skip("beanSign", "安心豆签到")) return;
         TimeUtil.sleep(0);
         JSONObject state = response(AntMemberRpcCall.querySignInProcess("AP16242232", "INS_BLUE_BEAN_SIGN"));
         String flag = "member::beanSignAttempt";
@@ -60,7 +61,10 @@ final class BeanRewards {
         JSONObject accepted = response(AntMemberRpcCall.signInTrigger("AP16242232", "INS_BLUE_BEAN_SIGN"));
         TimeUtil.sleep(0);
         JSONObject after = response(AntMemberRpcCall.querySignInProcess("AP16242232", "INS_BLUE_BEAN_SIGN"));
-        if (accepted != null && after != null && Boolean.FALSE.equals(after.opt("canPush"))) Log.other("安心豆🫘签到状态回查成功");
+        if (accepted != null && after != null && Boolean.FALSE.equals(after.opt("canPush"))) {
+            DailyTask.done("beanSign");
+            Log.other("安心豆🫘签到状态回查成功");
+        }
         else Log.record("安心豆：签到未确认，当天不重复");
     }
 

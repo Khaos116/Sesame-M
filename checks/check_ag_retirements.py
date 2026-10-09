@@ -84,7 +84,7 @@ public class StallCheck {
     }
     enum TaskStatus {TODO,RECEIVED}
     static class TimeUtil {static void sleep(long ms){}}
-    static class Status { static boolean hasFlagToday(String s){return false;}static void flagToday(String s){}}
+    static class Status { static java.util.Set<String> flags=new java.util.HashSet<>(); static boolean hasFlagToday(String s){return flags.contains(s);}static void flagToday(String s){flags.add(s);}}
     static class Field<T> {T value;Field(T v){value=v;}T getValue(){return value;}}
     Field<Set<String>> AntStallTaskList=new Field<>(new HashSet<>());
     Field<Boolean> doTaskOnce=new Field<>(false);
@@ -117,6 +117,8 @@ public class StallCheck {
 code=code.replace("public class StallCheck {", "public class StallCheck {\n"+POLICY+award(method))
 code=code.replace("    public static void main", method(path,"private static Outcome attemptFinishTask(")+method(path,"private static TaskAttemptPolicy.ProbeResult probeStallStatus(")+"\n    public static void main")
 
+from daily_task_fixture import with_daily_task
+code = with_daily_task(code)
 with tempfile.TemporaryDirectory(prefix="sesame-ag-retirements-") as tmp:
     java = Path(tmp) / "StallCheck.java"
     java.write_text(code, encoding="utf-8")

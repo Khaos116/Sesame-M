@@ -7,6 +7,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.DailyTask;
 
 /** 网商银行福利金查询与会员签到，各动作独立开关。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class MyBankWelfare extends IsolatedRewardTask {
@@ -58,10 +59,14 @@ public final class MyBankWelfare extends IsolatedRewardTask {
             }
         }
         if (!signIn.getValue()) { Log.record(getName() + "：签到开关未开启"); return; }
+        if (DailyTask.skip("myBank::signinPlay", "网商银行会员签到")) return;
         JSONObject result = run.onceToday("signinPlay", "com.alipay.loanpromoweb.member.play.signinPlay",
                 "[{\"channel\":\"miniApp\",\"needMultiple\":false,\"operation\":\"signApply\",\"playId\":\"PLAY100177545\"}]",
                 () -> signIn.getValue());
-        if (result != null) Log.record(getName() + "：签到接口返回成功");
+        if (result != null) {
+            DailyTask.done("myBank::signinPlay");
+            Log.record(getName() + "：签到接口返回成功");
+        }
     }
 
     private static String presence(Long amount) {

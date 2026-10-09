@@ -1429,7 +1429,7 @@ public class AntOrchard extends ModelTask {
      * 处理签到任务
      */
     private void handleSignTask(JSONObject signInfo) {
-        if (Status.hasFlagToday("orchardSign")) {
+        if (DailyTask.skipFlag("orchardSign", "农场签到")) {
             return;
         }
 
@@ -1733,7 +1733,7 @@ public class AntOrchard extends ModelTask {
      * 领取七日礼包
      */
     private void drawLotteryPlus(JSONObject lotteryInfo) {
-        if (Status.hasFlagToday("orchardLotteryPlus")) {
+        if (DailyTask.skipFlag("orchardLotteryPlus", "农场七日礼包")) {
             return;
         }
 
@@ -1789,7 +1789,7 @@ public class AntOrchard extends ModelTask {
      * 获取额外信息（每日肥料包）
      */
     private void extraInfoGet() {
-        if (Status.hasFlagToday("orchard::fertilizerPacket")) {
+        if (DailyTask.skipFlag("orchard::fertilizerPacket", "农场肥料礼包")) {
             return;
         }
         try {

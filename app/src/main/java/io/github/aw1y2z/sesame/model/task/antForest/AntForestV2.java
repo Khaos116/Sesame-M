@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.model.task.antForest;
 
+import io.github.aw1y2z.sesame.util.DailyTask;
 import static io.github.aw1y2z.sesame.model.normal.base.BaseModel.taskRpcRequest;
 
 import org.json.JSONArray;
@@ -3125,7 +3126,7 @@ public class AntForestV2 extends ModelTask {
     }
 
     private void vantiepSign() {
-        if (Status.hasFlagToday("forest::vantiepSign")) {
+        if (DailyTask.skipFlag("forest::vantiepSign", "森林签到")) {
             return;
         }
         try {
@@ -3186,6 +3187,7 @@ public class AntForestV2 extends ModelTask {
     }
 
     private void queryCommonSign() {
+        if (DailyTask.skip("forest::sevenDaySign", "森林七日签到")) return;
         try {
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryCommonSign("ANTFOREST_GIFT7TH_SIGN_202506"));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -3217,13 +3219,14 @@ public class AntForestV2 extends ModelTask {
                 JSONObject extInfo = signRecord.optJSONObject("extInfo");
                 String awardName = extInfo != null ? extInfo.optString("awardName") : "";
                 if (signKey.equals(currentSignKey) && Boolean.TRUE.equals(signRecord.opt("signed"))) {
-                    Status.flagToday("forest::vantiepSign");
+                    DailyTask.done("forest::sevenDaySign");
                     break;
                 }
                 if (signKey.equals(currentSignKey) && !signRecord.optBoolean("signed")) {
                     JSONObject joSign = MyUtils.newJSONObject(AntForestRpcCall.antiepSign(signId, UserIdMap.getCurrentUid(), sceneCode));
                     TimeUtil.sleep(300); // 等待300毫秒
                     if (MessageUtil.checkSuccess(TAG + "森林7日签到:", joSign)) {
+                        DailyTask.done("forest::sevenDaySign");
                         int continuousCount = joSign.optInt("continuousCount");
                         Log.forest("森林签到📆第" + continuousCount + "天#7日签到[" + awardName + "*" + awardCount + "]");
                         if (awardType.equals("ENERGY")) {
@@ -3240,6 +3243,7 @@ public class AntForestV2 extends ModelTask {
     }
 
     private void vitalitySign() {
+        if (DailyTask.skip("forest::vitalitySign", "森林活力值签到")) return;
         try {
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.vitalitySign());
             TimeUtil.sleep(300);
@@ -3247,6 +3251,7 @@ public class AntForestV2 extends ModelTask {
                 int continuousCount = jo.optInt("continuousCount");
                 int signAwardCount = jo.optInt("signAwardCount");
                 Log.forest("森林任务📆签到[" + continuousCount + "天]奖励[" + signAwardCount + "活力值]");
+                DailyTask.done("forest::vitalitySign");
             }
         } catch (Throwable t) {
             Log.err(TAG, "vitalitySign err:", t);

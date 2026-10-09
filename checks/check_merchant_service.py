@@ -61,6 +61,8 @@ public class MerchantCheck {
   reset();run(true,true,false,Collections.emptySet());assert ApplicationHook.signed&&ApplicationHook.zcj&&ApplicationHook.kmdk&&ApplicationHook.enrolled&&ApplicationHook.ball;
   assert count("homepage.signin.v1")==1&&count("kmdk.signIn")==1&&count("kmdk.signUp")==1;
   run(true,true,false,Collections.emptySet());assert count("homepage.signin.v1")==1&&count("kmdk.signIn")==1;
+  int finishedCalls=ApplicationHook.calls.size();sign();assert ApplicationHook.calls.size()==finishedCalls:"completed sign queried again";
+  DailyTask.manual(()->{sign();return null;});assert ApplicationHook.calls.size()>finishedCalls&&count("homepage.signin.v1")==1:"manual sign should refresh without duplicate mutation";
   reset();hour=12;run(false,true,false,Collections.emptySet());assert count("kmdk.signIn")==0&&count("kmdk.signUp")==1;
   reset();ApplicationHook.changed=false;run(true,true,false,Collections.emptySet());run(true,true,false,Collections.emptySet());assert count("homepage.signin.v1")==1&&count("kmdk.signIn")==1&&count("kmdk.signUp")==1&&Log.ok==0;
   reset();run(false,false,true,Collections.emptySet());assert ApplicationHook.taskStatus.equals("RECEIVED")&&count("task.receive")==1&&count("action.produce")==1;
@@ -82,6 +84,8 @@ signatures=("merchantTranscodeCheck", "merchantHomePage", "merchantSign", "merch
 code=code.replace("@@RPC@@","\n".join(method(rpc,"public static String "+s+"(") for s in signatures))
 cache=Path(os.environ.get("GRADLE_USER_HOME",Path.home()/".gradle"))/"caches/modules-2/files-2.1/org.json/json"
 jar=sorted(p for p in cache.glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar","-javadoc.jar")))[-1]
+from daily_task_fixture import with_daily_task
+code = with_daily_task(code)
 with tempfile.TemporaryDirectory(prefix="sesame-merchant-") as tmp:
  java=Path(tmp)/"MerchantCheck.java";java.write_text(code,encoding="utf-8")
  subprocess.run(["javac","-encoding","UTF-8","-cp",str(jar),"-d",tmp,str(java),str(SOURCE/"util/TaskCancelledException.java")],check=True)

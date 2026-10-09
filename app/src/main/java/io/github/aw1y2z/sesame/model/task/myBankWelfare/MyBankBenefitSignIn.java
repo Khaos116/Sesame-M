@@ -28,6 +28,6 @@ public final class MyBankBenefitSignIn extends IsolatedRewardTask {
         }
         JSONObject signed = run.onceToday("welfareSignIn", MyBankBenefitProtocol.SIGN_METHOD,
                 MyBankBenefitProtocol.SIGN_ARGS, () -> signIn.getValue());
-        if (signed != null) Log.record(getName() + "：签到接口返回成功，请核对官方福利记录");
+        if (signed != null) { Log.record(getName() + "：签到接口返回成功，请核对官方福利记录"); run.completed(); }
     }
 }

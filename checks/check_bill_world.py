@@ -12,7 +12,7 @@ stubs = {
  public static JSONObject newJSONObject(){return new JSONObject();}public static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}''',
     'util.TimeUtil': '''public class TimeUtil {public static boolean cancel;public static void sleep(long n){if(cancel)throw new TaskCancelledException();}}''',
     'util.Log': '''public class Log {public static int confirmed;public static String messages="";public static void other(String s){confirmed++;messages+=s;}public static void record(String s){}public static void err(String t,String s,Throwable e){throw new AssertionError(e);}}''',
-    'util.Status': '''import java.util.*;public class Status {public static Set<String> flags=new HashSet<>();public static boolean hasFlagToday(String s){return flags.contains(io.github.aw1y2z.sesame.hook.ApplicationHook.uid+MyUtils.offset+s);}public static void flagToday(String s){flags.add(io.github.aw1y2z.sesame.hook.ApplicationHook.uid+MyUtils.offset+s);}}''',
+    'util.Status': '''import java.util.*;public class Status {public static void clearFlag(String s){flags.remove(io.github.aw1y2z.sesame.hook.ApplicationHook.uid+MyUtils.offset+s);}public static Set<String> flags=new HashSet<>();public static boolean hasFlagToday(String s){return flags.contains(io.github.aw1y2z.sesame.hook.ApplicationHook.uid+MyUtils.offset+s);}public static void flagToday(String s){flags.add(io.github.aw1y2z.sesame.hook.ApplicationHook.uid+MyUtils.offset+s);}}''',
     'rpc.intervallimit.RpcRequestGuard': '''import org.json.*;public class RpcRequestGuard {public static boolean isFailure(JSONObject j){return Boolean.FALSE.equals(j.opt("success"))||"FAIL".equals(j.opt("resultCode"));}}''',
     'data.RuntimeInfo': '''import java.util.*;public class RuntimeInfo {public static boolean writable=true;public static Map<String,RuntimeInfo> users=new HashMap<>();private Map<String,String> values=new HashMap<>();public static RuntimeInfo getInstance(){return users.computeIfAbsent(io.github.aw1y2z.sesame.hook.ApplicationHook.uid,k->new RuntimeInfo());}public String getString(String k){return values.getOrDefault(k,"");}public boolean putVerified(String k,String v){if(!writable)return false;values.put(k,v);return true;}}''',
     'hook.ApplicationHook': '''import org.json.*;import java.util.*;public class ApplicationHook {
@@ -116,7 +116,7 @@ if not android_jar.exists():
     android_jar = Path(sdk_path) / 'platforms' / ('android-' + compile_sdk + '.0') / 'android.jar'
 if sdk_path and android_jar.exists():
     with tempfile.TemporaryDirectory(prefix='sesame-bill-world-api-') as tmp:
-        files = [str(worker), str(source / pkg.replace('.', '/') / 'util/TaskCancelledException.java')]
+        files = [str(worker), str(source / pkg.replace('.', '/') / 'util/TaskCancelledException.java'), str(source / pkg.replace('.', '/') / 'util/DailyTask.java')]
         for suffix, body in stubs.items():
             if suffix == 'hook.ApplicationHook':
                 body = 'public class ApplicationHook {public static String uid="A";public static String requestString(String m,String a){return "";}public static String requestString(String m,String a,int n,int d){return "";}}'
@@ -127,7 +127,7 @@ if sdk_path and android_jar.exists():
         subprocess.run(['javac', '-encoding', 'UTF-8', '-cp', str(android_jar), '-d', tmp] + files, check=True, env=env)
         print('PASS actual worker Android org.json checked-exception signatures')
 with tempfile.TemporaryDirectory(prefix='sesame-bill-world-') as tmp:
-    files = [str(worker), str(source / pkg.replace('.', '/') / 'util/TaskCancelledException.java')]
+    files = [str(worker), str(source / pkg.replace('.', '/') / 'util/TaskCancelledException.java'), str(source / pkg.replace('.', '/') / 'util/DailyTask.java')]
     for suffix, body in stubs.items():
         f = Path(tmp) / ((pkg + '.' + suffix).replace('.', '/') + '.java')
         f.parent.mkdir(parents=True, exist_ok=True)
