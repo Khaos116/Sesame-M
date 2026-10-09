@@ -451,8 +451,11 @@ public class AntForestV2 extends ModelTask {
             }
 
             if (youthPrivilege.getValue()) {
-                Privilege.youthPrivilege();
-                //Privilege.studentSignInRedEnvelope();
+                // 青春特权道具（大学生双击卡/能量罩/加速器）与「森林任务」共用同一套实现，
+                // 由 queryTaskList 内部按 vitalityTask::<firstTaskType> 逐任务标记
+                Log.forest("青春特权道具🔍开始查询[校验用]");
+                queryVitalityYouthTaskList();
+                Log.forest("青春特权道具🔍查询结束[校验用]");
             }
             //连续兑换使用道具卡片
             continuousUseCardOptions();
@@ -2339,10 +2342,40 @@ public class AntForestV2 extends ModelTask {
         }
     }
 
+    /**
+     * 青春特权森林道具路由。
+     * <p>
+     * firstTaskType 是查询用的分组标识，与要领取的 awardTaskType 不同；
+     * source 需与 firstTaskType 配对传入，不可随意替换。
+     */
+    private static final class YouthForestRoute {
+        final String firstTaskType;
+        final String source;
+        final String awardTaskType;
+        final String displayName;
+
+        YouthForestRoute(String firstTaskType, String source, String awardTaskType, String displayName) {
+            this.firstTaskType = firstTaskType;
+            this.source = source;
+            this.awardTaskType = awardTaskType;
+            this.displayName = displayName;
+        }
+    }
+
+    private static final YouthForestRoute[] YOUTH_FOREST_ROUTES = {
+            new YouthForestRoute("DNHZ_SL_college", "DNHZ_SL_college", "DAXUESHENG_SJK", "双击卡"),
+            new YouthForestRoute("DXS_BHZ", "202212TJBRW", "NENGLIANGZHAO_20230807", "能量罩"),
+            new YouthForestRoute("DXS_JSQ", "202212TJBRW", "JIASUQI_20230808", "加速器"),
+    };
+
+    private void queryVitalityYouthTaskList() {
+        for (YouthForestRoute route : YOUTH_FOREST_ROUTES) {
+            queryYouthForestTask(route);
+        }
+    }
+
     private void queryTaskList() {
-        queryTaskList("DNHZ_SL_college", "DAXUESHENG_SJK");
-        queryTaskList("DXS_BHZ", "NENGLIANGZHAO_20230807");
-        queryTaskList("DXS_JSQ", "JIASUQI_20230808");
+        queryVitalityYouthTaskList();
         try {
             boolean doubleCheck = true;
             while (doubleCheck) {
@@ -2466,50 +2499,91 @@ public class AntForestV2 extends ModelTask {
     }
 
 
-    private void queryTaskList(String firstTaskType, String taskType) {
-        if (Status.hasFlagToday("vitalityTask::" + firstTaskType)) {
+    private void queryYouthForestTask(YouthForestRoute route) {
+        if (Status.hasFlagToday("vitalityTask::" + route.firstTaskType)) {
             return;
         }
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryTaskList(new JSONObject().put("firstTaskType", firstTaskType)));
-            if (!MessageUtil.checkResultCode(TAG, jo)) {
+            String status = queryYouthForestTaskStatus(route);
+            if (status.isEmpty()) {
+                Log.forest("青春特权道具[跳过]" + route.displayName + " 未匹配到 taskType=" + route.awardTaskType);
                 return;
             }
-            // 添加安全的空值判断
-            if (!jo.has("forestTasksNew")) {
-                return;
+            boolean isReceived = TaskStatus.RECEIVED.name().equals(status);
+            if (!isReceived && TaskStatus.FINISHED.name().equals(status)) {
+                String award = AntForestRpcCall.receiveYouthPrivilegeTaskAward(route.source, route.awardTaskType);
+                Log.forest("青春特权道具[" + route.displayName + "]领奖请求 " + award);
+                TimeUtil.sleep(1000);
+                status = queryYouthForestTaskStatus(route);
+                isReceived = TaskStatus.RECEIVED.name().equals(status);
             }
-            JSONArray forestTasksNew = jo.optJSONArray("forestTasksNew");
-            if (forestTasksNew == null || forestTasksNew.length() == 0) {
-                return;
-            }
-            JSONObject firstTask = forestTasksNew.optJSONObject(0);
-            if (firstTask == null || !firstTask.has("taskInfoList")) {
-                return;
-            }
-            JSONArray taskInfoList = firstTask.optJSONArray("taskInfoList");
-            if (taskInfoList == null || taskInfoList.length() == 0) {
-                return;
-            }
-            for (int i = 0; i < taskInfoList.length(); i++) {
-                jo = taskInfoList.getJSONObject(i).getJSONObject("taskBaseInfo");
-                if (!Objects.equals(taskType, jo.getString("taskType"))) {
-                    continue;
-                }
-                boolean isReceived = TaskStatus.RECEIVED.name().equals(jo.getString("taskStatus"));
-                if (!isReceived && TaskStatus.FINISHED.name().equals(jo.getString("taskStatus"))) {
-                    String sceneCode = jo.getString("sceneCode");
-                    String taskTitle = new JSONObject(jo.getString("bizInfo")).getString("taskTitle");
-                    isReceived = receiveTaskAward(sceneCode, taskType, taskTitle);
-                    TimeUtil.sleep(1000);
-                }
-                if (isReceived) {
-                    Status.flagToday("vitalityTask::" + firstTaskType);
-                }
-                return;
+            if (isReceived) {
+                Status.flagToday("vitalityTask::" + route.firstTaskType);
+                Log.forest("青春特权道具[" + route.displayName + "]已领取");
+            } else {
+                Log.forest("青春特权道具[" + route.displayName + "]未领取 状态=" + status);
             }
         } catch (Throwable t) {
-            Log.err(TAG, "queryTaskList err:", t);
+            Log.err(TAG, "queryYouthForestTask err:", t);
+        }
+    }
+
+    /**
+     * 查询单个青春特权道具任务状态，返回 taskStatus；查不到返回空串。
+     */
+    private String queryYouthForestTaskStatus(YouthForestRoute route) throws JSONException {
+        JSONObject jo = new JSONObject(AntForestRpcCall.queryYouthPrivilegeTaskList(route.firstTaskType, route.source));
+        JSONObject payload = jo.optJSONObject("resData");
+        if (payload == null) {
+            payload = jo;
+        }
+        for (JSONObject taskInfo : collectOpenGreenTaskInfos(payload)) {
+            JSONObject taskBaseInfo = taskInfo.optJSONObject("taskBaseInfo");
+            if (taskBaseInfo == null || !Objects.equals(route.awardTaskType, taskBaseInfo.optString("taskType"))) {
+                continue;
+            }
+            return taskBaseInfo.optString("taskStatus");
+        }
+        return "";
+    }
+
+    /**
+     * 收集 listTaskopengreen 响应中所有层级的 taskInfo，兼容多种嵌套结构。
+     */
+    private static List<JSONObject> collectOpenGreenTaskInfos(JSONObject payload) {
+        List<JSONObject> taskInfos = new ArrayList<>();
+        appendTaskInfoList(taskInfos, payload.optJSONArray("taskInfoList"));
+        appendTaskGroups(taskInfos, payload.optJSONArray("taskGroupList"));
+        appendTaskGroups(taskInfos, payload.optJSONArray("forestTasksNew"));
+        JSONObject result = payload.optJSONObject("result");
+        if (result != null) {
+            appendTaskInfoList(taskInfos, result.optJSONArray("taskInfoList"));
+            appendTaskGroups(taskInfos, result.optJSONArray("taskGroupList"));
+        }
+        return taskInfos;
+    }
+
+    private static void appendTaskInfoList(List<JSONObject> taskInfos, JSONArray taskInfoList) {
+        if (taskInfoList == null) {
+            return;
+        }
+        for (int i = 0; i < taskInfoList.length(); i++) {
+            JSONObject taskInfo = taskInfoList.optJSONObject(i);
+            if (taskInfo != null) {
+                taskInfos.add(taskInfo);
+            }
+        }
+    }
+
+    private static void appendTaskGroups(List<JSONObject> taskInfos, JSONArray groups) {
+        if (groups == null) {
+            return;
+        }
+        for (int i = 0; i < groups.length(); i++) {
+            JSONObject group = groups.optJSONObject(i);
+            if (group != null) {
+                appendTaskInfoList(taskInfos, group.optJSONArray("taskInfoList"));
+            }
         }
     }
 
