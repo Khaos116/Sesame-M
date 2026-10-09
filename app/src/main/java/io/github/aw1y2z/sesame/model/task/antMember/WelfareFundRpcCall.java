@@ -32,7 +32,10 @@ public class WelfareFundRpcCall {
         if (size != null) {
             args.append(",\"size\":").append(size);
         }
-        return ApplicationHook.requestString("com.alipay.loanpromoweb.member.play.signinPlay", args.append("}]").toString());
+        String body = args.append("}]").toString();
+        return "signConsult".equals(operation)
+                ? ApplicationHook.requestString("com.alipay.loanpromoweb.member.play.signinPlay", body, 1, 0)
+                : ApplicationHook.requestString("com.alipay.loanpromoweb.member.play.signinPlay", body);
     }
 
     /** 任务列表（含已完成，completedBottom 与官方一致） */
@@ -50,7 +53,7 @@ public class WelfareFundRpcCall {
         try {
             return ApplicationHook.requestString("com.alipay.loanpromoweb.promo.task.taskTrigger",
                     new JSONArray().put(MyUtils.newJSONObject().put("appletId", appletId)
-                            .put("stageCode", stageCode).put("taskCenId", TASK_CENTER_APPLET_ID)).toString());
+                            .put("stageCode", stageCode).put("taskCenId", TASK_CENTER_APPLET_ID)).toString(), 1, 0);
         } catch (JSONException e) {
             throw new IllegalArgumentException("taskTrigger invalid request");
         }

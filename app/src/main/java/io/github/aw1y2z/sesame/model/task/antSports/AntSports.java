@@ -790,6 +790,7 @@ public class AntSports extends ModelTask {
             // 任务已从列表消失：视为已完成且已领
             return TaskAttemptPolicy.ProbeResult.GONE;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "probeBrowseStatus err:", t);
             return TaskAttemptPolicy.ProbeResult.UNKNOWN;
         }
@@ -1100,6 +1101,7 @@ public class AntSports extends ModelTask {
             Log.record("行走路线：准备提交，服务端可用步数=" + remainStepCount + "，本次步数=" + useStepCount + "，最低步数=" + minGoStepCount + "，今日限额=" + dayLimit);
             return walkGo(pathName, pathId, useStepCount);
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "walkGo err:", t);
         }
         return false;
@@ -1125,6 +1127,7 @@ public class AntSports extends ModelTask {
                         + (code.matches("[A-Z0-9_]{1,80}") ? code : "缺失或格式无效") + "；本轮停止该路线，未新增业务冷却");
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "walkGo err:", t);
         }
         return result;
@@ -2323,6 +2326,7 @@ public class AntSports extends ModelTask {
                 return true;
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.err(TAG, "energyReceive err:", e);
         }
         return false;
@@ -2728,7 +2732,8 @@ public class AntSports extends ModelTask {
                 Outcome outcome = TaskAttemptPolicy.handle("sports::browse::" + taskName, taskName, null,
                         () -> {
                             TimeUtil.sleep(viewMillis);
-                            return receiveBrowseReward(task) ? Outcome.DONE : Outcome.UNABLE;
+                            // boolean 失败无法证明任务不可执行；临时/未知失败留待下轮，不写当日失败标记。
+                            return receiveBrowseReward(task) ? Outcome.DONE : Outcome.RETRY;
                         },
                         Log::other, new TaskAttemptPolicy.Site("AntSportsTaskList", "运动任务", taskName, "",
                                 (k) -> probeBrowseStatus(taskName)));
@@ -2741,6 +2746,7 @@ public class AntSports extends ModelTask {
                 processBrowseTasks();
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.err(TAG, "processBrowseTasks err:", e);
         }
     }
@@ -2788,6 +2794,7 @@ public class AntSports extends ModelTask {
                 queryMapListSwitch();
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.err(TAG, "run err:", e);
         }
     }

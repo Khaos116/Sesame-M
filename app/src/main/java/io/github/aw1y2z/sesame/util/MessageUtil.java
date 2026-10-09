@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import io.github.aw1y2z.sesame.data.ConfigV2;
+import io.github.aw1y2z.sesame.data.ModelField;
 import io.github.aw1y2z.sesame.data.ModelFields;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.model.task.antMember.AntMember;
@@ -352,7 +353,8 @@ public class MessageUtil {
         PRESET_BLACKLIST.put("AntFarm|AntFarmDrawMachineTaskList", setOf(
                 "伸出援手，点亮希望", "消耗饲料换机会"));
         PRESET_BLACKLIST.put("AntOrchard|AntOrchardTaskList", setOf(
-                "完成1笔旧衣回收", "完成1单手机数码回收", "下载蚂蚁阿福看健康攻略", "逛一逛快手", "逛一逛签到领现金"));
+                "完成1笔旧衣回收", "完成1单手机数码回收", "下载蚂蚁阿福看健康攻略", "逛一逛快手", "逛一逛签到领现金",
+                "逛好物最高得1500肥料"));
         // 芝麻粒：仍预置拉黑的只剩真实交易/履约类（下单/租赁/订酒店/回收/雇佣/付钱/查车）
         PRESET_BLACKLIST.put("AntMember|MemberCreditSesameTaskList", setOf(
                 "用额度免押金下单", "去租赁下单", "芝麻租赁下单得芝麻粒", "去飞猪订酒店",
@@ -605,6 +607,7 @@ public class MessageUtil {
 
     private static void doMarkTaskBlackList(String ModelFieldsType, String listTitle, String TaskListName,
                                             String taskTitle, boolean permanent) {
+        if (!isAutoBlackListEnabled(ModelFieldsType, listTitle)) return;
         ConfigV2 config = ConfigV2.INSTANCE;
         ModelFields TaskModelFields = config.getModelFieldsMap().get(ModelFieldsType);
         if (TaskModelFields == null) {
@@ -648,6 +651,7 @@ public class MessageUtil {
      * 避免一次性的临时故障（活动当天未配置等）被永久跳过。
      */
     public static void MarkTaskBlackListConfirm(String ModelFieldsType, String listTitle, String TaskListName, String taskTitle) {
+        if (!isAutoBlackListEnabled(ModelFieldsType, listTitle)) return;
         try {
             String key = autoBlackKey(ModelFieldsType, listTitle, taskTitle);
             // 必须先确保已从磁盘载入：AutoBlackListMap 是懒加载的，新进程里不调 ensureLoaded
@@ -755,14 +759,14 @@ public class MessageUtil {
         RELEASED_DEFAULTS.put("AntOcean|AntOceanFishBlackList", new String[]{
                 "玩一玩向僵尸开炮"});
         RELEASED_DEFAULTS.put("AntForestV2|AntForestVitalityTaskList", new String[]{
-                "三国大冒险过1关征战", "到店支付得50g能量"});
+                "三国大冒险过1关征战"});
         RELEASED_DEFAULTS.put("AntForestV2|AntForestHuntTaskList", new String[]{
                 "【限时】玩游戏得2次机会", "去乐园开宝箱得机会"});
         RELEASED_DEFAULTS.put("AntFarm|AntFarmDrawMachineTaskList", new String[]{
                 "【限时】玩游戏得新机会", "【限时】玩游戏得3次机会", "限时玩游戏得新机会",
                 "【限时】开宝箱得2次机会", "【限时】开宝箱得3次机会"});
         RELEASED_DEFAULTS.put("AntOrchard|AntOrchardTaskList", new String[]{
-                "逛助农好货得肥料", "钓鱼1次", "逛一逛闪购外卖", "逛好物最高得1500肥料"});
+                "逛助农好货得肥料", "钓鱼1次", "逛一逛闪购外卖"});
         // 芝麻粒游戏/浏览/签到类：服务端对 taskFeedback 不校验是否真参与过，未报名任务一发即 success
         // ⇒ 原先"预置拉黑"的这些条目全部释放，交给任务循环自动完成；
         // 保留预置的只剩真实交易/履约类（下单/租赁/订酒店/回收/雇佣/付钱/查车）
@@ -773,8 +777,6 @@ public class MessageUtil {
                 "玩任意1个游戏", "添加桌面小组件", "坚持签到领奖励", "坚持逛裹酱领福利", "坚持看直播领福利",
                 "坚持种水果", "每日施肥领水果", "逛淘宝签到", "头条刷热点领现金", "618去淘金币赢20亿",
                 "去点淘逛一逛", "去淘金币逛一逛", "逛逛淘金币", "来淘金币赢20亿", "去逛一逛消消乐"});
-        RELEASED_DEFAULTS.put("AntFarm|AntFarmDoFarmTaskList", new String[]{
-                "到店付款"});
         RELEASED_DEFAULTS.put("AntSports|AntSportsTaskList", new String[]{
                 "下载登录AI健康管家"});
         RELEASED_DEFAULTS.put("goldenbeans|GoldenBeansTaskList", new String[]{
@@ -881,6 +883,12 @@ public class MessageUtil {
             default:
                 return isPresetBlackListItem(module, listTitle, taskTitle) ? ORIGIN_PRESET : ORIGIN_MANUAL;
         }
+    }
+
+    private static boolean isAutoBlackListEnabled(String module, String listTitle) {
+        ModelFields fields = ConfigV2.INSTANCE.getModelFieldsMap().get(module);
+        ModelField<?> enabled = fields == null ? null : fields.get("Auto" + listTitle);
+        return enabled == null || Boolean.TRUE.equals(enabled.getValue());
     }
 
     private static SelectModelField findTaskListField(String module, String listTitle) {

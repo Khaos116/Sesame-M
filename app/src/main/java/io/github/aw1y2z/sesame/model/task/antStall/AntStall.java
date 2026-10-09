@@ -182,6 +182,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "AntStall.start.run err:", t);
         }
     }
@@ -711,6 +712,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "taskList err:", t);
         }
     }
@@ -774,6 +776,7 @@ public class AntStall extends ModelTask {
             }
         }
         catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "doStallTask err:", t);
         }
         return false;
@@ -783,36 +786,48 @@ public class AntStall extends ModelTask {
     private Outcome attemptXlightTask(String title) {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.xlightPlugin());
+            if (MessageUtil.isRetryable(jo) || MessageUtil.isServerBusy(jo)) return Outcome.RETRY;
+            if (Boolean.FALSE.equals(jo.opt("success"))) return Outcome.UNABLE;
             if (!jo.has("playingResult")) {
                 Log.i(TAG, "taskList.xlightPlugin err:" + jo.optString("resultDesc"));
-                return Outcome.UNABLE;
+                return Outcome.RETRY;
             }
             jo = jo.optJSONObject("playingResult");
-            if (jo == null) return Outcome.UNABLE;
+            if (jo == null) return Outcome.RETRY;
             String pid = jo.optString("playingBizId");
-            if (pid.isEmpty()) return Outcome.UNABLE;
+            if (pid.isEmpty()) return Outcome.RETRY;
             JSONArray jsonArray = (JSONArray) JsonUtil.getValueByPathObject(jo, "eventRewardDetail.eventRewardInfoList");
             if (jsonArray == null || jsonArray.length() == 0) {
-                return Outcome.UNABLE;
+                return Outcome.RETRY;
             }
             TimeUtil.sleep(5000);
+            Outcome outcome = Outcome.DONE;
             for (int j = 0; j < jsonArray.length(); j++) {
                 try {
                     JSONObject jsonObject = jsonArray.optJSONObject(j);
-                    if (jsonObject == null) continue;
+                    if (jsonObject == null) { outcome = Outcome.RETRY; continue; }
                     TimeUtil.sleep(5000);
                     JSONObject finishJo = MyUtils.newJSONObject(AntStallRpcCall.finish(pid, jsonObject));
-                    if (!finishJo.optBoolean("success")) {
+                    if (!Boolean.TRUE.equals(finishJo.opt("success"))) {
                         Log.i(TAG, "taskList.finish err:" + finishJo.optString("resultDesc"));
+                        if (MessageUtil.isRetryable(finishJo) || MessageUtil.isServerBusy(finishJo)
+                                || !(finishJo.opt("success") instanceof Boolean)) {
+                            outcome = Outcome.RETRY;
+                        } else if (outcome != Outcome.RETRY) {
+                            outcome = Outcome.UNABLE;
+                        }
                     }
                 }
                 catch (Throwable t) {
+                    if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
+                    outcome = Outcome.RETRY;
                     Log.err(TAG, "taskList for err:", t);
                 }
             }
-            return Outcome.DONE;
+            return outcome;
         }
         catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "attemptXlightTask err:", t);
         }
         return Outcome.RETRY;
@@ -946,6 +961,7 @@ public class AntStall extends ModelTask {
             // 任务已从列表消失：视为已完成且已领
             return TaskAttemptPolicy.ProbeResult.GONE;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "probeStallStatus err:", t);
             return TaskAttemptPolicy.ProbeResult.UNKNOWN;
         }

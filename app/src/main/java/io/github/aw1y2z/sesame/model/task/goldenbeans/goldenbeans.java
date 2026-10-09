@@ -28,6 +28,20 @@ import io.github.aw1y2z.sesame.util.TaskCancelledException;
  * 两个入口（芭芭农场 / 芝麻炼金）由 {@link GoldenBeansEntry} 描述，bizType / source / sceneCode 不可混用。
  */
 public class goldenbeans extends ModelTask {
+    @Override
+    protected boolean supportsManualAction(String action) {
+        return "clearMallReceipts".equals(action);
+    }
+
+    @Override
+    protected void runManualAction(String action) {
+        if (supportsManualAction(action)) {
+            Integer configuredInterval = executeInterval.getValue();
+            GoldenBeansMall.clearSelectedReceipts(Math.max(500, configuredInterval != null ? configuredInterval : 500),
+                    GoldenBeansMallItemList.getValue());
+        }
+    }
+
     private BooleanModelField goldenBeansGamePlay;
     private IntegerModelField goldenBeansGamePlayLimit;
 

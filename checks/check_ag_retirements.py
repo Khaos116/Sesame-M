@@ -55,6 +55,7 @@ code = r'''
 import org.json.*; import java.util.*; import java.util.function.Consumer;
 public class StallCheck {
     static final String TAG="Stall";
+    static class TaskCancelledException extends RuntimeException { }
     static class MyUtils {
         static boolean skip=true;
         static boolean closeUnRpc(){return skip;}

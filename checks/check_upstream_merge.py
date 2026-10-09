@@ -385,10 +385,12 @@ public class FlowCheck {
         AntFarmRpcCall.detail="broken"; assert !mall.getAllSkuInfo();
         mall.list=null; assert !mall.getAllSkuInfo();
         Set<String> pending=new HashSet<>();
-        for (String bad : new String[]{"broken","{}","{\"data\":{}}","{\"data\":{\"taskModuleList\":[{}]}}",
-                "{\"data\":{\"taskModuleList\":[{\"taskList\":[1]}]}}"}) assert !Member.collectNotDoneIds(bad,pending);
-        assert Member.collectNotDoneIds("{\"data\":{\"taskModuleList\":[]}}",pending) && pending.isEmpty();
-        assert Member.collectNotDoneIds("{\"data\":{\"taskModuleList\":[{\"taskList\":[{\"taskId\":\"T\",\"taskStatus\":\"NOT_DONE\"}]}]}}",pending) && pending.contains("T");
+        for (String bad : new String[]{"broken","{}","{\"data\":{}}","{\"data\":{\"taskModuleList\":[]}}",
+                "{\"success\":false,\"data\":{\"taskModuleList\":[]}}",
+                "{\"success\":true,\"data\":{\"taskModuleList\":[{}]}}",
+                "{\"success\":true,\"data\":{\"taskModuleList\":[{\"taskList\":[1]}]}}"}) assert !Member.collectNotDoneIds(bad,pending,new HashMap<>());
+        assert Member.collectNotDoneIds("{\"success\":true,\"data\":{\"taskModuleList\":[]}}",pending,new HashMap<>()) && pending.isEmpty();
+        assert Member.collectNotDoneIds("{\"success\":true,\"data\":{\"taskModuleList\":[{\"taskList\":[{\"taskId\":\"T\",\"taskStatus\":\"NOT_DONE\"}]}]}}",pending,new HashMap<>()) && pending.contains("T");
         for (JSONObject taskModule : new JSONObject[]{new JSONObject(),new JSONObject().put("needReceive","true"),
                 new JSONObject().put("needReceiveTaskCertCnt","1"),new JSONObject().put("needReceiveTaskCertCnt",1.5),
                 new JSONObject().put("needReceive",true).put("reachTaskCertLimit",true)}) {

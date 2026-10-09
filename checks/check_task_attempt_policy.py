@@ -1,7 +1,6 @@
 """Replay merged production policy, blacklist buffering, ownership, quest and nested-list checks."""
 from pathlib import Path
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -15,7 +14,8 @@ import org.json.*; import java.util.*; import java.util.function.*; import java.
 public class MergePolicyCheck {
  static class System {static long now=java.time.Instant.parse("2026-10-09T15:59:00Z").toEpochMilli();
   static long currentTimeMillis(){return now;}static final java.io.PrintStream out=java.lang.System.out;}
- static class TimeUtil {static void sleep(long n){}static boolean isLessThanSecondOfDays(long a,long b){
+ static class TaskCancelledException extends RuntimeException {}
+ static class TimeUtil {static boolean cancel;static void sleep(long n){if(cancel)throw new TaskCancelledException();}static boolean isLessThanSecondOfDays(long a,long b){
   return java.time.Instant.ofEpochMilli(a).atZone(java.time.ZoneOffset.ofHours(8)).toLocalDate()
     .isBefore(java.time.Instant.ofEpochMilli(b).atZone(java.time.ZoneOffset.ofHours(8)).toLocalDate());}}
  static class MyUtils {static JSONObject newJSONObject(){return new JSONObject();}static JSONObject newJSONObject(String s){
@@ -37,23 +37,16 @@ public class MergePolicyCheck {
   void put(String k,String v){map.put(k,v);}}
  static class MessageUtil {
   static int marks,permanent;static final String TAG="black";
+  static boolean isUnsupportedRpc(JSONObject jo){return jo!=null&&"400000040".equals(jo.optString("code"));}
   static final ThreadLocal<List<Runnable>> DEFER_BLACKLIST=new ThreadLocal<>();
   @@BUFFER@@
   static String[] autoBlackListTarget(String k){return new String[]{"model","list"};}
   static void MarkTaskBlackList(String a,String b,String c,String d){if(!deferBlackList(()->marks++))marks++;}
   static void MarkTaskBlackListPermanent(String a,String b,String c,String d){permanent++;}
  }
- static class ApplicationHook {static int writes;static String args,reply="{\"resultCode\":\"102\"}";
-  static String requestString(String rpc,String body){writes++;args=body;return reply;}}
- static class TaskAlternative {
-  static String DEFAULT_VERSION="source";
-  @@KEYWORDS@@
-  @@TRANSACTION@@
-  @@REQUEST@@
-  @@PARSE@@
-  static JSONObject trigger(Map<String,String> p,String id,String title,String key,String scene,String version,
-    String prefix,Consumer<String> log){try{return doFarmTask(key,scene,version);}catch(Exception e){return null;}}
- }
+ static class ApplicationHook {static int writes;static boolean cancel;static String args,reply="{\"resultCode\":\"102\"}";
+  static String requestString(String rpc,String body){if(cancel)throw new TaskCancelledException();writes++;args=body;return reply;}}
+ @@ALTERNATIVE@@
  @@POLICY@@
  @@AWARD@@
  @@FOREST@@
@@ -98,6 +91,12 @@ public class MergePolicyCheck {
   before=attempts;TaskAttemptPolicy.handle("pay","pay",null,()->attempt(TaskAttemptPolicy.Outcome.DONE),logs::add,
    new TaskAttemptPolicy.Site("field","task","OFFLINE_PAY","scene"));assert attempts==before&&MessageUtil.permanent==0;
   int[] probes={0};
+  int logCount=logs.size();TaskAttemptPolicy.handle("pay","pay",null,()->attempt(TaskAttemptPolicy.Outcome.DONE),logs::add,
+   new TaskAttemptPolicy.Site("field","task","OFFLINE_PAY","scene"));assert logs.size()==logCount;
+  int unsupportedMarks=MessageUtil.marks;
+  TaskAttemptPolicy.handle("noFallback","noFallback",null,()->attempt(TaskAttemptPolicy.Outcome.UNSUPPORTED),logs::add,
+   new TaskAttemptPolicy.Site("field","task",null,"scene",k->TaskAttemptPolicy.ProbeResult.TODO));
+  assert MessageUtil.marks==unsupportedMarks+1;
   assert TaskAttemptPolicy.handle("award","award",()->true,null,logs::add,
    new TaskAttemptPolicy.Site("field","task","browse","scene",k->{probes[0]++;return TaskAttemptPolicy.ProbeResult.FINISHED;}))
    ==TaskAttemptPolicy.Outcome.AWARDED;
@@ -128,11 +127,27 @@ public class MergePolicyCheck {
    assert !TaskAlternative.isTransactionTask(key):key;
   for(String key:List.of("OFFLINE_PAY","MYZY_pay_1","ORCHARD_NCLY_CHARGE1_XDDQ","GOLDENBEAN_GAME_CZ_XDDQ_AI","2026cc_cz6ylyb_fz"))
    assert TaskAlternative.isTransactionTask(key):key;
+  ApplicationHook.cancel=true;
+  try {TaskAlternative.trigger(null,"id","title","browse","scene","prefix",logs::add);throw new AssertionError("trigger swallowed cancellation");}
+  catch(TaskCancelledException expected){}finally{ApplicationHook.cancel=false;}
+  Map<String,String> pending=new HashMap<>();pending.put("id","title");TimeUtil.cancel=true;
+  try {TaskAlternative.verify(pending,new TaskAlternative.VerifyConfig("model","field","display","prefix","done",true,logs::add),unknownStates->new HashSet<>());
+   throw new AssertionError("verify swallowed cancellation");}
+  catch(TaskCancelledException expected){}finally{TimeUtil.cancel=false;}
+  int previousMarks=MessageUtil.marks;
+  try {TaskAttemptPolicy.handle("cancelAttempt","title",null,()->{
+   MessageUtil.MarkTaskBlackList("a","b","c","d");throw new TaskCancelledException();},logs::add,null);throw new AssertionError();}
+  catch(TaskCancelledException expected){}
+  assert MessageUtil.marks==previousMarks&&MessageUtil.DEFER_BLACKLIST.get()==null:"cancelled attempt committed blacklist";
+  assert !Status.hasFlagToday("attempt::cancelAttempt");
+  try {TaskAttemptPolicy.handle("cancelAward","title",()->{
+   MessageUtil.MarkTaskBlackList("a","b","c","d");throw new TaskCancelledException();},null,logs::add,null);throw new AssertionError();}
+  catch(TaskCancelledException expected){}
+  assert MessageUtil.marks==previousMarks&&MessageUtil.DEFER_BLACKLIST.get()==null:"cancelled award committed blacklist";
   System.out.println("PASS real policy/list confirmation, deferred blacklist, retries, GMT+8 rollover, account counts, nested children, quest states and escaped payload");
  }
 }
 '''
-alt = (SOURCE / "model/base/TaskAlternative.java").read_text(encoding="utf-8")
 replacements = {
     "@@STATUS@@": "\n".join(method("util/Status.java", s) for s in (
         "private static void ensureLoadedForCurrentUid(", "public static synchronized Boolean hasFlagToday(",
@@ -141,10 +156,8 @@ replacements = {
     "@@BUFFER@@": "\n".join(method("util/MessageUtil.java", s) for s in (
         "public static void beginDeferBlackList(", "public static void endDeferBlackList(",
         "private static boolean deferBlackList(")),
-    "@@KEYWORDS@@": re.search(r"private static final String\[\] TRANSACTION_KEYWORDS = \{[\s\S]*?\};", alt)[0],
-    "@@TRANSACTION@@": method("model/base/TaskAlternative.java", "public static boolean isTransactionTask("),
-    "@@REQUEST@@": method("model/base/TaskAlternative.java", "public static String request("),
-    "@@PARSE@@": method("model/base/TaskAlternative.java", "public static JSONObject doFarmTask("),
+    "@@ALTERNATIVE@@": method("model/base/TaskAlternative.java", "public final class TaskAlternative").replace(
+        "public final class TaskAlternative", "static final class TaskAlternative", 1),
     "@@POLICY@@": method("data/task/TaskAttemptPolicy.java", "public class TaskAttemptPolicy").replace(
         "public class TaskAttemptPolicy", "static class TaskAttemptPolicy", 1),
     "@@AWARD@@": method("data/task/TaskAward.java", "public final class TaskAward").replace(

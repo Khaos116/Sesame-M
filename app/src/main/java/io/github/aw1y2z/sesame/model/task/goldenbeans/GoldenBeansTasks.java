@@ -18,6 +18,7 @@ import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.idMap.GoldenBeansTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
@@ -99,6 +100,7 @@ public final class GoldenBeansTasks {
             }
             return resolved;
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.i(GoldenBeansSupport.TAG, "processEntry err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
             return false;
@@ -183,6 +185,7 @@ public final class GoldenBeansTasks {
             }
             Log.i("金豆[" + entry.alias + "]签到📅今日已签到");
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             signFailed = true;
             Log.i(GoldenBeansSupport.TAG, "doSign err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
@@ -227,6 +230,7 @@ public final class GoldenBeansTasks {
             }
             return true;
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.i(GoldenBeansSupport.TAG, "clickPopup err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
             return false;
@@ -308,8 +312,12 @@ public final class GoldenBeansTasks {
                 if (STATUS_TODO.equals(taskStatus)) {
                     if (isPayTask(taskId) || TaskAlternative.isTransactionTask(taskId)) {
 
-                        Log.goldenBeans("金豆[" + entry.alias + "]任务⏭️[" + taskName
-                                + "]交易/支付类#不申报，不修改黑名单");
+                        String skipFlag = "transactionSkip::goldenBeans::" + entry.alias + "::" + taskId;
+                        if (!Status.hasFlagToday(skipFlag)) {
+                            Status.flagToday(skipFlag);
+                            Log.goldenBeans("金豆[" + entry.alias + "]任务⏭️[" + taskName
+                                    + "]交易/支付类#不申报，不修改黑名单");
+                        }
                         continue;
                     }
                     if (goldenbeansRpcCall.TASK_TYPE_EXCHANGE.equals(taskId)) {
@@ -349,6 +357,7 @@ public final class GoldenBeansTasks {
                 goldenbeansRpcCall.pullOf(entry.bizType, entry.source, "FARM_TASK", "TASK_LIST");
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.i(GoldenBeansSupport.TAG, "runTaskList err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
             return false;
@@ -434,15 +443,16 @@ public final class GoldenBeansTasks {
             // 另一种实现方案（见 TaskAlternative）；乐园游戏类任务会被 finishTaskantorchard 以 400000040 拒绝。
             // 本模块自行伪申报并登记同轮核对（verifyPendingTasks），故返回 FORGED 而不是交给通用类
             if (TaskAlternative.hit(jo, entry.taskSceneCode)) {
-                TaskAlternative.trigger(pendingVerifyTasks, taskId, taskName, taskId, entry.taskSceneCode,
+                JSONObject triggered = TaskAlternative.trigger(pendingVerifyTasks, taskId, taskName, taskId, entry.taskSceneCode,
                         goldenbeansRpcCall.VERSION, "金豆[" + entry.alias + "]任务", msg -> Log.goldenBeans(msg));
-                return Outcome.FORGED;
+                return triggered == null ? Outcome.RETRY : Outcome.FORGED;
             }
             // 其它错误码（支付/配置类）= 真做不了，仍计入自动拉黑
             MessageUtil.checkResultCodeAndMarkTaskBlackList("GoldenBeansTaskList", taskId, jo);
             Log.goldenBeans("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]完成失败[" + failMessage + "]");
             return Outcome.UNABLE;
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.i(GoldenBeansSupport.TAG, "finishTask err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
         }
@@ -460,7 +470,7 @@ public final class GoldenBeansTasks {
         TaskAlternative.VerifyConfig cfg = new TaskAlternative.VerifyConfig(
                 "goldenbeans", "GoldenBeansTaskList", "金豆夺宝任务",
                 "金豆[" + entry.alias + "]任务", "🧾完成", false, msg -> Log.goldenBeans(msg));
-        return TaskAlternative.verify(pendingVerifyTasks, cfg, () -> {
+        return TaskAlternative.verify(pendingVerifyTasks, cfg, unknown -> {
             JSONObject syncJo = GoldenBeansSupport.parse(goldenbeansRpcCall.pullOf(
                     entry.bizType, entry.source, "FARM_TASK", "TASK_LIST"));
             if (!GoldenBeansSupport.ok(syncJo)) {
@@ -473,14 +483,14 @@ public final class GoldenBeansTasks {
             Set<String> stillTodo = new LinkedHashSet<>();
             for (int i = 0; i < taskList.length(); i++) {
                 JSONObject task = taskList.optJSONObject(i);
-                if (task == null
-                        || !STATUS_TODO.equals(task.optString("taskStatus", "").trim().toUpperCase(java.util.Locale.ROOT))) {
-                    continue;
-                }
+                if (task == null || !(task.opt("taskId") instanceof String)) return null;
                 String taskId = task.optString("taskId", "").trim();
-                if (!taskId.isEmpty()) {
+                if (taskId.isEmpty()) return null;
+                String status = task.optString("taskStatus").trim().toUpperCase(java.util.Locale.ROOT);
+                if (STATUS_TODO.equals(status)) {
                     stillTodo.add(taskId);
-                }
+                } else if (!(STATUS_FINISHED.equals(status) || STATUS_TO_RECEIVE.equals(status)
+                        || STATUS_RECEIVED.equals(status) || STATUS_DONE.equals(status) || "HAS_RECEIVED".equals(status))) unknown.put(taskId, task.optString("taskStatus").trim());
             }
             return stillTodo;
         });
@@ -500,7 +510,8 @@ public final class GoldenBeansTasks {
             }
             for (int i = 0; i < taskList.length(); i++) {
                 JSONObject task = taskList.optJSONObject(i);
-                if (task == null) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+                if (task == null || !(task.opt("taskId") instanceof String) || !(task.opt("taskStatus") instanceof String)
+                        || task.optString("taskId").trim().isEmpty()) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
                 if (!taskId.equals(task.optString("taskId", "").trim())) {
                     continue;
                 }
@@ -517,6 +528,7 @@ public final class GoldenBeansTasks {
             // 任务已从列表消失：视为已完成且已领
             return TaskAttemptPolicy.ProbeResult.GONE;
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.i(GoldenBeansSupport.TAG, "probeGoldenBeansStatus err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
             return TaskAttemptPolicy.ProbeResult.UNKNOWN;
@@ -546,6 +558,7 @@ public final class GoldenBeansTasks {
             Log.goldenBeans("金豆[" + entry.alias + "]任务⚠️领取[" + taskName + "]失败["
                     + GoldenBeansSupport.describe(jo) + "]");
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.i(GoldenBeansSupport.TAG, "claimAward err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
         }
@@ -615,6 +628,7 @@ public final class GoldenBeansTasks {
             Set<String> whiteList = new LinkedHashSet<>();
             MessageUtil.syncTaskBlackList("金豆夺宝任务", "GoldenBeansTaskList", defaultKeys, whiteList, taskListField);
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.i(GoldenBeansSupport.TAG, "initTaskListMap err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);
         }

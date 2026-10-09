@@ -4805,7 +4805,11 @@ public class AntFarm extends ModelTask {
                         // 交易/履约类：finishTask 与 doFarmTask 都会被服务端判风险，直接不申报
                         if (TaskAlternative.isTransactionTask(bizKey)) {
                             todoSkipped++;
-                            Log.farm("抽抽乐⏭️交易/履约类[" + title + "]#不申报，不修改黑名单");
+                            String skipFlag = "transactionSkip::farmDraw::" + bizKey;
+                            if (!Status.hasFlagToday(skipFlag)) {
+                                Status.flagToday(skipFlag);
+                                Log.farm("抽抽乐⏭️交易/履约类[" + title + "]#不申报，不修改黑名单");
+                            }
                             continue;
                         }
                         // 服务端偶发返回 limit==times 的 TODO 任务，此时仍尝试一次，避免有任务却整轮不执行

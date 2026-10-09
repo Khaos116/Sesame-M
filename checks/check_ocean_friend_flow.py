@@ -21,7 +21,18 @@ public class OceanFriendCheck {
  static class UserIdMap {static String getCurrentUid(){return "self";}static String getMaskName(String s){return s;}}
  static class TimeUtil {static boolean cancel;static void sleep(long n){if(cancel)throw new TaskCancelledException();}}
  static class MyUtils {static JSONObject newJSONObject(){return new JSONObject();}static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
- static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}
+ static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}
+  static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}static boolean isRetryable(JSONObject j){return false;}static boolean isServerBusy(JSONObject j){return false;}
+  static void checkResultCodeAndMarkTaskBlackList(String field,String title,JSONObject j){}}
+ static class TaskAttemptPolicy {enum ProbeResult {TODO,FINISHED,RECEIVED,GONE,UNKNOWN}enum Outcome {DONE,RETRY,UNABLE,UNSUPPORTED}
+  interface StatusProbe {ProbeResult probe(String k);}interface Attempt {Outcome run();}static class Site {Site(String a,String b,String c,String d,StatusProbe p){}}
+  static boolean isCyclicTask(JSONObject j){return false;}static boolean isReceived(ProbeResult r){return r==ProbeResult.RECEIVED||r==ProbeResult.GONE;}
+  static Outcome handle(String a,String b,Object award,Attempt attempt,java.util.function.Consumer<String> log,Site s){return attempt.run();}}
+ static class TaskAlternative {static boolean hit(JSONObject j,String scene){return false;}}
+ @@AWARD@@
+ ListField AntOceanAntiepTaskList=new ListField(),AntOceanFishBlackList=new ListField();Field antfishAutoTask=new Field();
+ static boolean answerQuestion(){return false;}boolean helpCleanOneFriend(){return false;}
+ boolean antfishQueryStatus(){return true;}void antfishQueryHomePage(){}boolean antfishReceiveTaskAward(String t){return false;}
  static class RpcRequestGuard {static boolean isFailure(JSONObject j){return Boolean.FALSE.equals(j.opt("success"));}}
  static class Log {static void i(String s){}static void other(String s){}static void record(String s){}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
  static class Toast {static void show(String s){}}
@@ -39,6 +50,11 @@ public class OceanFriendCheck {
   }
  }
  static class AntOceanRpcCall {
+  static String queryTaskList(){throw new TaskCancelledException();}
+  static String antfishListTask(){throw new TaskCancelledException();}
+  static String finishTask(String scene,String type){throw new TaskCancelledException();}
+  static String receiveTaskAward(String scene,String type){throw new TaskCancelledException();}
+  static String antfishFinishTask(String type){throw new TaskCancelledException();}
   static String getUniqueId(){return "unique";}
   static Queue<String> fishPages=new ArrayDeque<>();static int fishReads;static boolean propFail;static List<JSONArray> uses=new ArrayList<>();
   static String queryOceanPropList(String type){return new JSONObject().put("resultCode","SUCCESS").put("oceanPropVOByTypeList",new JSONArray().put(new JSONObject().put("holdsNum",3))).toString();}
@@ -55,6 +71,13 @@ public class OceanFriendCheck {
  static String fishPage(boolean more,JSONObject... rows){return new JSONObject().put("resultCode","SUCCESS").put("hasMore",more).put("fishVOS",new JSONArray(Arrays.asList(rows))).toString();}
  static void resetPieces(){AntOceanRpcCall.fishPages.clear();AntOceanRpcCall.fishReads=0;AntOceanRpcCall.uses.clear();AntOceanRpcCall.propFail=false;TimeUtil.cancel=false;}
  public static void main(String[] args) throws Exception {
+  try{probeOceanStatus("scene","task");throw new AssertionError("Ocean task probe swallowed cancellation");}catch(TaskCancelledException expected){}
+  try{probeAntfishStatus("task");throw new AssertionError("Fish task probe swallowed cancellation");}catch(TaskCancelledException expected){}
+  OceanFriendCheck taskFlow=new OceanFriendCheck();
+  try{taskFlow.finishOceanTask(new JSONObject().put("sceneCode","scene").put("taskType","browse").put("bizInfo","{\"taskTitle\":\"browse\"}"));throw new AssertionError("Ocean completion wrapper swallowed cancellation");}catch(TaskCancelledException expected){}
+  try{receiveTaskAward("scene","type","browse");throw new AssertionError("Ocean award wrapper swallowed cancellation");}catch(TaskCancelledException expected){}
+  try{taskFlow.antfishFinishTask("browse","type");throw new AssertionError("Fish completion swallowed cancellation");}catch(TaskCancelledException expected){}
+  taskFlow.antfishAutoTask.on=true;try{taskFlow.antfishRun();throw new AssertionError("Fish task/run chain swallowed cancellation");}catch(TaskCancelledException expected){}
   OceanFriendCheck f=new OceanFriendCheck();reset(f);f.recommendedSailing.on=false;assert !f.helpCleanRecommendedFriend()&&ApplicationHook.calls.isEmpty();
   reset(f);f.cleanOceanType.n=0;assert !f.helpCleanRecommendedFriend()&&ApplicationHook.calls.isEmpty();
   reset(f);ApplicationHook.friends.addAll(Arrays.asList("self","blocked","allowed"));f.cleanOceanList.ids.add("allowed");assert f.helpCleanRecommendedFriend();assert calls("cleanFriendOcean")==1&&calls("giveFriendPiece")==0;
@@ -77,7 +100,9 @@ public class OceanFriendCheck {
  }
 }
 '''
-code=code.replace("@@METHODS@@","\n".join(method(ocean,s) for s in ("private boolean helpCleanRecommendedFriend(","private void giveOceanFriendPiece(","private Boolean cleanFriendOcean(String userId, boolean recommended)","private static void useUniversalPiece()","private static int useUniversalPiece(JSONArray fishVOS","private static int useUniversalPiece(JSONObject fishVO","private static Boolean useUniversalPiece(JSONArray assetsDetails","private void touchfish()")))
+code=code.replace("@@METHODS@@","\n".join(method(ocean,s) for s in ("private boolean helpCleanRecommendedFriend(","private void giveOceanFriendPiece(","private Boolean cleanFriendOcean(String userId, boolean recommended)","private static void useUniversalPiece()","private static int useUniversalPiece(JSONArray fishVOS","private static int useUniversalPiece(JSONObject fishVO","private static Boolean useUniversalPiece(JSONArray assetsDetails","private void touchfish()","private static TaskAttemptPolicy.ProbeResult probeOceanStatus(","private static TaskAttemptPolicy.ProbeResult probeAntfishStatus(","private Boolean finishOceanTask(","private static Outcome attemptFinishOceanTask(","private static void receiveTaskAward(","private boolean antfishFinishTask(","private Outcome attemptAntfishFinishTask(","private void antfishHandleTasks()","private void antfishRun()"))).replace("Outcome", "TaskAttemptPolicy.Outcome")
+code=code.replace("enum TaskAttemptPolicy.Outcome", "enum Outcome")
+code=code.replace("@@AWARD@@",method("data/task/TaskAward.java","public final class TaskAward").replace("public final class TaskAward","static final class TaskAward",1)).replace("Consumer<String>","java.util.function.Consumer<String>").replace("java.util.function.java.util.function.Consumer","java.util.function.Consumer")
 code=code.replace("@@RPC@@","\n".join(method(rpc,s) for s in ("public static String sailingAway(","public static String giveFriendPiece(","public static String queryFriendPage(String userId, boolean recommended)","public static String cleanFriendOcean("))).replace("io.github.aw1y2z.sesame.util.idMap.UserIdMap.getCurrentUid()", "UserIdMap.getCurrentUid()")
 cache=Path(os.environ.get("GRADLE_USER_HOME",Path.home()/".gradle"))/"caches/modules-2/files-2.1/org.json/json"
 jar=sorted(p for p in cache.glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar","-javadoc.jar")))[-1]

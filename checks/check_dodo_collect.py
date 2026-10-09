@@ -12,8 +12,10 @@ public class DodoCollectCheck {
  static class Status {static Set<String> flags=new HashSet<>();static boolean hasFlagToday(String s){return flags.contains(s);}static void flagToday(String s){flags.add(s);}}
  static class MyUtils {static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
  static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}
+ static class TaskAttemptPolicy {enum ProbeResult {TODO,FINISHED,RECEIVED,GONE,UNKNOWN}}
  static class Log {static void forest(String s){}static void err(String t,String s,Throwable e){}static long timeToStamp(String s){try{java.text.SimpleDateFormat f=new java.text.SimpleDateFormat("yyyy.MM.dd HH:mm:ss");f.setTimeZone(TimeZone.getTimeZone("GMT+8"));return f.parse(s).getTime();}catch(Exception e){return System.currentTimeMillis();}}}
  static class AntDodoRpcCall {
+  static String taskList(){throw new TaskCancelledException();}
   static Queue<String> states=new ArrayDeque<>();static boolean fail,cancel,homeFail;static int queries,draws;static int quota=1;static String date="";
   static String queryAnimalStatus(){queries++;return states.remove();}
   static String homePage(){return new JSONObject().put("resultCode",homeFail?"FAIL":"SUCCESS").put("data",new JSONObject().put("animalBook",new JSONObject().put("endDate",date)).put("limit",new JSONArray().put(new JSONObject().put("actionCode","DAILY_COLLECT").put("leftFreeQuota",quota)))).toString();}
@@ -33,6 +35,7 @@ public class DodoCollectCheck {
  static String state(boolean done){return new JSONObject().put("resultCode","SUCCESS").put("data",new JSONObject().put("collect",done)).toString();}
  static void reset(){Status.flags.clear();AntDodoRpcCall.states.clear();AntDodoRpcCall.fail=AntDodoRpcCall.cancel=false;AntDodoRpcCall.queries=AntDodoRpcCall.draws=0;AntDodoRpcCall.quota=1;}
  public static void main(String[] args){DodoCollectCheck d=new DodoCollectCheck();
+  try{d.probeDodoStatus("scene","task");throw new AssertionError("Task probe swallowed cancellation");}catch(TaskCancelledException expected){}
   reset();AntDodoRpcCall.states.add(state(true));d.collect();d.collect();assert Status.hasFlagToday("dodo::collect")&&AntDodoRpcCall.queries==1&&AntDodoRpcCall.draws==0;
   reset();AntDodoRpcCall.fail=true;AntDodoRpcCall.quota=3;AntDodoRpcCall.states.addAll(Arrays.asList(state(false),state(false)));d.collect();assert !Status.hasFlagToday("dodo::collect"):"Failed draw must not suppress daily collection";assert AntDodoRpcCall.draws==1:"First failed draw stops the remaining quota";
   AntDodoRpcCall.fail=false;AntDodoRpcCall.quota=1;AntDodoRpcCall.states.addAll(Arrays.asList(state(false),state(true)));d.collect();assert Status.hasFlagToday("dodo::collect")&&AntDodoRpcCall.draws==2;
@@ -52,7 +55,7 @@ public class DodoCollectCheck {
  }
 }
 '''
-code = code.replace("@@METHODS@@", "\n".join(method("model/task/antDodo/AntDodo.java", s) for s in ("private void collect()", "private void collectAnimalCard()", "private long getEndDateTime()", "private boolean isLastDay()", "private void propList()")))
+code = code.replace("@@METHODS@@", "\n".join(method("model/task/antDodo/AntDodo.java", s) for s in ("private void collect()", "private void collectAnimalCard()", "private long getEndDateTime()", "private boolean isLastDay()", "private void propList()", "private TaskAttemptPolicy.ProbeResult probeDodoStatus(")))
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches/modules-2/files-2.1/org.json/json"
 jar = sorted(p for p in cache.glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar", "-javadoc.jar")))[-1]
 with tempfile.TemporaryDirectory(prefix="sesame-dodo-collect-") as tmp:

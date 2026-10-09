@@ -1875,7 +1875,11 @@ public class AntMember extends ModelTask {
                 txBizKey = taskId;
             }
             if (TaskAlternative.isTransactionTask(txBizKey)) {
-                Log.other("游戏中心⏭️交易/履约类[" + subTitle + "]#不申报，不修改黑名单");
+                String skipFlag = "transactionSkip::memberGame::" + txBizKey;
+                if (!Status.hasFlagToday(skipFlag)) {
+                    Status.flagToday(skipFlag);
+                    Log.other("游戏中心⏭️交易/履约类[" + subTitle + "]#不申报，不修改黑名单");
+                }
                 return;
             }
             // 任务未完成且需要报名（needSignUp 可能缺字段，用 optBoolean 避免整条任务被异常打断）
@@ -1898,6 +1902,7 @@ public class AntMember extends ModelTask {
                             (k) -> probeMemberStatus(taskId)));
         }
         catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "doTask err:", t);
         }
     }
@@ -1922,15 +1927,16 @@ public class AntMember extends ModelTask {
                 if (bizKey.isEmpty()) {
                     bizKey = taskId;
                 }
-                TaskAlternative.trigger(pendingVerifyTasks, taskId, subTitle, bizKey, sceneCode,
+                JSONObject triggered = TaskAlternative.trigger(pendingVerifyTasks, taskId, subTitle, bizKey, sceneCode,
                         AntMemberRpcCall.DO_FARM_TASK_VERSION, "游戏中心", msg -> Log.other(msg));
-                return Outcome.FORGED;
+                return triggered == null ? Outcome.RETRY : Outcome.FORGED;
             }
             Log.other("游戏中心⚠️未上报已受理[" + subTitle + "]#actionType=" + actionType);
             //检查并标记黑名单任务
             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntMemberTaskList", subTitle, doTaskjo);
             return Outcome.UNABLE;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "doTaskSend err:", t);
         }
         return Outcome.RETRY;
@@ -1942,9 +1948,9 @@ public class AntMember extends ModelTask {
      * 服务端是异步推进状态的，只有列表里的 {@code taskStatus} 才是最终判据。
      */
     private void verifyPendingTasks() {
-        TaskAlternative.verify(pendingVerifyTasks, VERIFY_CFG, () -> {
+        TaskAlternative.verify(pendingVerifyTasks, VERIFY_CFG, unknown -> {
             Set<String> notDone = new LinkedHashSet<>();
-            if (!collectNotDoneIds(AntMemberRpcCall.queryModularTaskList(), notDone)) {
+            if (!collectNotDoneIds(AntMemberRpcCall.queryModularTaskList(), notDone, unknown)) {
                 return null;
             }
             return notDone;
@@ -1954,7 +1960,9 @@ public class AntMember extends ModelTask {
     /** 列表状态探针：重拉游戏中心任务列表，按 taskId 匹配；仅 NOT_DONE 视为未完成（消失即已完成）。 */
     private static TaskAttemptPolicy.ProbeResult probeMemberStatus(String taskId) {
         try {
-            JSONObject data = MyUtils.newJSONObject(AntMemberRpcCall.queryModularTaskList()).optJSONObject("data");
+            JSONObject root = MyUtils.newJSONObject(AntMemberRpcCall.queryModularTaskList());
+            if (!MessageUtil.checkSuccess(TAG, root)) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            JSONObject data = root.optJSONObject("data");
             if (data == null) {
                 return TaskAttemptPolicy.ProbeResult.UNKNOWN;
             }
@@ -1968,7 +1976,8 @@ public class AntMember extends ModelTask {
                 if (tasks == null) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
                 for (int j = 0; j < tasks.length(); j++) {
                     JSONObject task = tasks.optJSONObject(j);
-                    if (task == null) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+                    if (task == null || !(task.opt("taskId") instanceof String) || !(task.opt("taskStatus") instanceof String)
+                            || task.optString("taskId").trim().isEmpty()) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
                     if (!taskId.equals(task.optString("taskId", "").trim())) {
                         continue;
                     }
@@ -1985,6 +1994,7 @@ public class AntMember extends ModelTask {
             // 任务已从列表消失：视为已完成且已领
             return TaskAttemptPolicy.ProbeResult.GONE;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "probeMemberStatus err:", t);
             return TaskAttemptPolicy.ProbeResult.UNKNOWN;
         }
@@ -1995,9 +2005,11 @@ public class AntMember extends ModelTask {
      * （{@code data.taskModuleList[].taskList[]}）。
      * <p>原先还会解析 v4 的 {@code data.gameTaskModule.gameTaskList}，该接口实测恒空、已弃用。
      */
-    private static boolean collectNotDoneIds(String response, Set<String> out) {
+    private static boolean collectNotDoneIds(String response, Set<String> out, Map<String, String> unknown) {
         try {
-            JSONObject data = MyUtils.newJSONObject(response).optJSONObject("data");
+            JSONObject root = MyUtils.newJSONObject(response);
+            if (!MessageUtil.checkSuccess(TAG, root)) return false;
+            JSONObject data = root.optJSONObject("data");
             if (data == null) {
                 return false;
             }
@@ -2007,25 +2019,30 @@ public class AntMember extends ModelTask {
                 JSONObject module = modules.optJSONObject(i);
                 JSONArray tasks = module == null ? null : module.optJSONArray("taskList");
                 if (tasks == null) return false;
-                if (!collectNotDoneFromArray(tasks, out)) return false;
+                if (!collectNotDoneFromArray(tasks, out, unknown)) return false;
             }
             return true;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "collectNotDoneIds err:", t);
             return false;
         }
     }
 
 
-    private static boolean collectNotDoneFromArray(JSONArray tasks, Set<String> out) {
+    private static boolean collectNotDoneFromArray(JSONArray tasks, Set<String> out, Map<String, String> unknown) {
         if (tasks == null) {
             return false;
         }
         for (int i = 0; i < tasks.length(); i++) {
             JSONObject task = tasks.optJSONObject(i);
-            if (task == null || !(task.opt("taskStatus") instanceof String) || !(task.opt("taskId") instanceof String)
+            if (task == null || !(task.opt("taskId") instanceof String)
                     || task.optString("taskId").trim().isEmpty()) return false;
-            if (!"NOT_DONE".equals(task.optString("taskStatus", "").trim())) {
+            String status = task.optString("taskStatus", "").trim();
+            if (!"NOT_DONE".equals(status)) {
+                if (!("DONE".equals(status) || "FINISHED".equals(status) || "RECEIVED".equals(status))) {
+                    unknown.put(task.optString("taskId").trim(), status);
+                }
                 continue;
             }
             String taskId = task.optString("taskId", "").trim();
@@ -2064,6 +2081,7 @@ public class AntMember extends ModelTask {
             verifyPendingTasks();
         }
         catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "queryModularTaskList err:", t);
         }
     }

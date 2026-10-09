@@ -1,4 +1,5 @@
 import org.json.*;
+import java.util.*;import java.util.function.Consumer;import java.util.regex.Pattern;
 public class Review {
 static String STATUS_FINISHED="FINISHED",STATUS_TO_RECEIVE="TO_RECEIVE",STATUS_RECEIVED="RECEIVED",STATUS_DONE="DONE",STATUS_TODO="TODO";
 static int finishes,claims;static boolean claimSuccess=true,blacklisted=false;
@@ -12,15 +13,99 @@ public static void main(String[]a){
  assert !new Review().runTaskList(new GoldenBeansEntry(),0);
  blacklisted=true;
  assert !new Review().runTaskList(new GoldenBeansEntry(),0);
+ regressionFlows();
  System.out.println("PASS finish then claim, retry failed claims including blacklisted finished tasks");
 }
 @@TASKS@@
 
+static class GoldenFlow {
+ Map<String,String> pendingVerifyTasks=new LinkedHashMap<>();
+ @@GOLDEN_FLOW@@
+}
+static class MemberFlow {
+ static final String TAG="member";
+ Map<String,String> pendingVerifyTasks=new LinkedHashMap<>();
+ TaskAlternative.VerifyConfig VERIFY_CFG=new TaskAlternative.VerifyConfig("member","list","display","member","done",true,Log::other);
+ static class Field {Set<String> getValue(){return Set.of();}}
+ Field AntMemberTaskList=new Field();
+ @@MEMBER_FLOW@@
+}
+static void resetFlow(){Status.flags.clear();Log.confirmed=0;Log.unknown=0;MessageUtil.marks=0;RuntimeInfo.instance=new RuntimeInfo();ApplicationHook.calls=0;ApplicationHook.reply=null;
+ goldenbeansRpcCall.primary=0;goldenbeansRpcCall.cancelSubmit=false;goldenbeansRpcCall.cancelPull=false;
+ goldenbeansRpcCall.snapshot=new JSONObject().put("success",true).put("taskList",new JSONArray().put(new JSONObject().put("taskId","task").put("taskStatus","TODO"))).toString();
+ AntMemberRpcCall.primary=0;AntMemberRpcCall.cancelSend=false;AntMemberRpcCall.cancelRead=false;
+ AntMemberRpcCall.snapshot=memberRows(new JSONArray().put(new JSONObject().put("taskId","task").put("taskStatus","NOT_DONE")));}
+static String memberRows(JSONArray tasks){return new JSONObject().put("success",true).put("data",new JSONObject().put("taskModuleList",new JSONArray().put(new JSONObject().put("taskList",tasks)))).toString();}
+static void regressionFlows(){
+ GoldenBeansEntry e=new GoldenBeansEntry();JSONObject input=new JSONObject().put("taskId","task").put("taskStatus","NOT_DONE").put("sceneCode","scene").put("subTitle","task");
+ resetFlow();GoldenFlow gold=new GoldenFlow();gold.finishTask(e,"task","task");gold.finishTask(e,"task","task");
+ assert goldenbeansRpcCall.primary==2&&!Status.hasFlagToday("attempt::goldenbeans::farm/task"):"null fallback incorrectly blocks golden retry";
+ resetFlow();MemberFlow member=new MemberFlow();member.processTask(input);member.processTask(input);
+ assert AntMemberRpcCall.primary==2&&!Status.hasFlagToday("attempt::member::game::task"):"null fallback incorrectly blocks member retry";
+ resetFlow();ApplicationHook.reply="{\"resultCode\":\"102\"}";gold=new GoldenFlow();gold.finishTask(e,"task","task");gold.finishTask(e,"task","task");
+ assert goldenbeansRpcCall.primary==1&&ApplicationHook.calls==1&&gold.pendingVerifyTasks.containsKey("task");
+ resetFlow();ApplicationHook.reply="{\"resultCode\":\"102\"}";member=new MemberFlow();member.processTask(input);member.processTask(input);
+ assert AntMemberRpcCall.primary==1&&ApplicationHook.calls==1&&member.pendingVerifyTasks.containsKey("task");
+ for(boolean isGold:List.of(true,false)) {
+  resetFlow();gold=new GoldenFlow();member=new MemberFlow();
+  JSONArray rows=new JSONArray().put(new JSONObject().put("taskId","unknown").put("taskStatus","NEW_STATE"))
+    .put(new JSONObject().put("taskId","done").put("taskStatus","FINISHED"))
+    .put(new JSONObject().put("taskId","todo").put("taskStatus",isGold?"TODO":"NOT_DONE"));
+  goldenbeansRpcCall.snapshot=new JSONObject().put("success",true).put("taskList",rows).toString();AntMemberRpcCall.snapshot=memberRows(rows);
+  Map<String,String> pending=isGold?gold.pendingVerifyTasks:member.pendingVerifyTasks;
+  for(int round=0;round<2;round++) {
+   pending.put("unknown","unknown");pending.put("done","done");pending.put("todo","todo");
+   if(isGold)assert gold.verifyPendingTasks(e);else member.verifyPendingTasks();
+  }
+  assert Log.confirmed==2&&Log.unknown==1&&MessageUtil.marks==2:"unknown row contaminated valid tasks";
+  Status.flags.clear();pending.put("unknown","unknown");if(isGold)assert !gold.verifyPendingTasks(e);else member.verifyPendingTasks();
+  assert Log.unknown==2&&Log.confirmed==2&&MessageUtil.marks==2;
+ }
+ for(Object row:List.of(7,new JSONObject().put("taskStatus","TODO"),new JSONObject().put("taskId","task").put("taskStatus","NEW_STATE"))){
+  resetFlow();gold=new GoldenFlow();gold.pendingVerifyTasks.put("task","task");
+  goldenbeansRpcCall.snapshot=new JSONObject().put("success",true).put("taskList",new JSONArray().put(row)).toString();
+  assert !gold.verifyPendingTasks(e):"malformed golden verification declared completion";
+  resetFlow();member=new MemberFlow();member.pendingVerifyTasks.put("task","task");AntMemberRpcCall.snapshot=memberRows(new JSONArray().put(row));
+  member.verifyPendingTasks();assert Log.confirmed==0:"unknown member verification declared completion";
+ }
+ resetFlow();AntMemberRpcCall.snapshot=new JSONObject(memberRows(new JSONArray())).put("success",false).toString();
+ assert MemberFlow.probeMemberStatus("task")==TaskAttemptPolicy.ProbeResult.UNKNOWN:"failed member response treated task as gone";
+ resetFlow();AntMemberRpcCall.snapshot=memberRows(new JSONArray().put(new JSONObject().put("taskStatus","NOT_DONE")));
+ assert MemberFlow.probeMemberStatus("task")==TaskAttemptPolicy.ProbeResult.UNKNOWN;
+ resetFlow();goldenbeansRpcCall.snapshot=new JSONObject().put("success",true).put("taskList",new JSONArray().put(new JSONObject().put("taskStatus","TODO"))).toString();
+ assert new GoldenFlow().probeGoldenBeansStatus(e,"task")==TaskAttemptPolicy.ProbeResult.UNKNOWN;
+ resetFlow();goldenbeansRpcCall.cancelSubmit=true;try{new GoldenFlow().finishTask(e,"task","task");throw new AssertionError("gold attempt swallowed cancellation");}catch(TaskCancelledException expected){}
+ resetFlow();goldenbeansRpcCall.cancelPull=true;try{new GoldenFlow().probeGoldenBeansStatus(e,"task");throw new AssertionError("gold probe swallowed cancellation");}catch(TaskCancelledException expected){}
+ resetFlow();goldenbeansRpcCall.cancelPull=true;try{new Review().runTaskList(e,0);throw new AssertionError("gold task boundary swallowed cancellation");}catch(TaskCancelledException expected){}
+ resetFlow();AntMemberRpcCall.cancelSend=true;try{new MemberFlow().processTask(input);throw new AssertionError("member attempt swallowed cancellation");}catch(TaskCancelledException expected){}
+ resetFlow();AntMemberRpcCall.cancelRead=true;try{MemberFlow.probeMemberStatus("task");throw new AssertionError("member probe swallowed cancellation");}catch(TaskCancelledException expected){}
+ resetFlow();AntMemberRpcCall.cancelRead=true;try{new MemberFlow().queryAndProcessTaskList();throw new AssertionError("member query boundary swallowed cancellation");}catch(TaskCancelledException expected){}
+ System.out.println("PASS actual member/golden fallback retry admission, malformed snapshots and cancellation boundaries");
+}
+@@POLICY@@
 }
 class GoldenBeansEntry {String alias="farm",bizType="MASTER",source="babafarm",taskSceneCode="scene";static GoldenBeansEntry ALCHEMY=new GoldenBeansEntry();}
 class GoldenBeansSupport {static String TAG="";static JSONObject parse(String s){return new JSONObject(s);}static boolean ok(JSONObject j){return j.optBoolean("success");}static String describe(JSONObject j){return "";}static void pause(int i){}}
-class Log {static void goldenBeans(String s){}static void record(String s){}static void i(String a,String b){}static void printStackTrace(String a,Throwable b){throw new RuntimeException(b);}static void err(String a,String b,Throwable t){}}
-class goldenbeansRpcCall {static String TASK_TYPE_EXCHANGE="exchange";static int syncs;static String pullOf(String a,String b,String...c){syncs++;return new JSONObject().put("success",true).put("taskList",new JSONArray().put(new JSONObject().put("sceneCode","scene").put("taskId","task").put("taskStatus",syncs==1?"TODO":"FINISHED"))).toString();}}
+class Log {static int confirmed,unknown;static void goldenBeans(String s){if(s.contains("已按任务列表核对"))confirmed++;if(s.contains("未知任务状态[NEW_STATE]"))unknown++;}static void other(String s){goldenBeans(s);}static void record(String s){}static void i(String s){}static void i(String a,String b){}static void printStackTrace(String a,Throwable b){}static void err(String a,String b,Throwable t){}}
+class goldenbeansRpcCall {static String TASK_TYPE_EXCHANGE="exchange",VERSION="v",snapshot;static int syncs,primary;static boolean cancelSubmit,cancelPull;
+ static String submitTaskOf(String a,String b,String c,String d){if(cancelSubmit)throw new TaskCancelledException();primary++;return "{\"success\":false,\"code\":\"400000040\"}";}
+ static String pullOf(String a,String b,String...c){if(cancelPull)throw new TaskCancelledException();if(snapshot!=null)return snapshot;syncs++;return new JSONObject().put("success",true).put("taskList",new JSONArray().put(new JSONObject().put("sceneCode","scene").put("taskId","task").put("taskStatus",syncs==1?"TODO":"FINISHED"))).toString();}}
 
-class TaskAlternative {static boolean isTransactionTask(String s){return false;}}
-class MessageUtil {static void MarkTaskBlackListPermanent(String a,String b,String c,String d){}}
+@@ALTERNATIVE@@
+class Status {static java.util.Set<String> flags=new java.util.HashSet<>();static boolean hasFlagToday(String s){return flags.contains(s);}static void flagToday(String s){flags.add(s);}}
+class MessageUtil {static int marks;static void MarkTaskBlackListPermanent(String a,String b,String c,String d){}static void MarkTaskBlackList(String a,String b,String c,String d){marks++;}
+ static void beginDeferBlackList(){}static void endDeferBlackList(boolean keep){}
+ static boolean isUnsupportedRpc(JSONObject j){return "400000040".equals(j.optString("code"));}
+ static boolean checkSuccess(String tag,JSONObject j){return j.optBoolean("success");}
+ static boolean isRetryable(JSONObject j){return false;}static boolean isServerBusy(JSONObject j){return "102".equals(j.optString("code"));}
+ static void checkResultCodeAndMarkTaskBlackList(String a,String b,JSONObject c){}
+}
+class AntMemberRpcCall {static final String DO_FARM_TASK_VERSION="v";static String snapshot;static int primary;static boolean cancelSend,cancelRead;
+ static String doTaskSend(String id){if(cancelSend)throw new TaskCancelledException();primary++;return "{\"success\":false,\"code\":\"400000040\"}";}
+ static String doTaskSignup(String id){throw new AssertionError();}static String queryModularTaskList(){if(cancelRead)throw new TaskCancelledException();return snapshot;}}
+class ApplicationHook {static String reply;static int calls;static String requestString(String method,String body){calls++;return reply;}}
+class RuntimeInfo {static RuntimeInfo instance=new RuntimeInfo();Map<String,String> values=new HashMap<>();static RuntimeInfo getInstance(){return instance;}
+ String getString(String key){return values.getOrDefault(key,"");}void put(String key,String value){values.put(key,value);}}
+class MyUtils {static JSONObject newJSONObject(){return new JSONObject();}static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
+class TimeUtil {static void sleep(long ms){}static boolean isLessThanSecondOfDays(long a,long b){return false;}}
+class TaskCancelledException extends RuntimeException {}

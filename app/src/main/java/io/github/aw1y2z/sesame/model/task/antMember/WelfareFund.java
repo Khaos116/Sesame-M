@@ -158,13 +158,19 @@ public class WelfareFund {
                 }
                 String triggerType = item.optString("sendCampTriggerType");
                 if (!("USER_TRIGGER".equals(triggerType) || "EVENT_TRIGGER".equals(triggerType))) {
-                    Log.record("福利金任务⏭️[" + title + "]#未支持的触发类型=" + triggerType);
+                    if (!Status.hasFlagToday(FLAG_TASK + appletId + "::type::" + triggerType)) {
+                        Log.record("福利金任务⏭️[" + title + "]#未支持的触发类型=" + triggerType);
+                        Status.flagToday(FLAG_TASK + appletId + "::type::" + triggerType);
+                    }
                     continue;
                 }
                 // AG 的报名/发奖状态分派；SJ 的 USER_TRIGGER 另支持 TO_RECEIVE。
                 if (!("NONE_SIGNUP".equals(state) || "SIGNUP_COMPLETE".equals(state)
                         || ("TO_RECEIVE".equals(state) && "USER_TRIGGER".equals(triggerType)))) {
-                    Log.record("福利金任务⏭️[" + title + "]#未知状态=" + state + "，未提交请求");
+                    if (!Status.hasFlagToday(FLAG_TASK + appletId + "::state::" + state)) {
+                        Log.record("福利金任务⏭️[" + title + "]#未知状态=" + state + "，未提交请求");
+                        Status.flagToday(FLAG_TASK + appletId + "::state::" + state);
+                    }
                     continue;
                 }
                 if (Status.hasFlagToday(FLAG_TASK + appletId + "::done")) continue;
@@ -250,7 +256,6 @@ public class WelfareFund {
         String flag = FLAG_TASK + appletId + "::" + stageCode + "::" + progress;
         if (Status.hasFlagToday(flag + "::rejected")) return false;
         if (Status.hasFlagToday(flag)) {
-            Log.record("福利金📋[" + title + "]#" + stageCode + "今日该进度已受理，等待列表状态更新");
             return "signup".equals(stageCode);
         }
         try {
@@ -266,6 +271,7 @@ public class WelfareFund {
             JSONObject order = result != null ? result.optJSONObject("campOrder") : null;
             String status = order != null ? order.optString("status") : "";
             if (!status.isEmpty() && !"SUCCESS".equalsIgnoreCase(status)) {
+                // 非 SUCCESS 也可能是异步处理中；当天不重发，次日按列表状态继续，不据此拉黑。
                 Status.flagToday(flag + "::rejected");
                 Log.record("福利金📋" + stageCode + "[" + title + "]#未完成[" + status + "]");
                 return false;

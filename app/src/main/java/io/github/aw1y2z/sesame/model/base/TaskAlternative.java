@@ -1,6 +1,8 @@
 package io.github.aw1y2z.sesame.model.base;
 
 import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
+import io.github.aw1y2z.sesame.util.Status;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -170,6 +172,7 @@ public final class TaskAlternative {
             }
             return doFarmJo;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err("TaskAlternative", "trigger err:", t);
             return null;
         }
@@ -199,9 +202,9 @@ public final class TaskAlternative {
         }
     }
 
-    /** 重拉任务列表并返回仍未完成的 id；拉取失败返回 null。 */
+    /** 返回仍待办的 id，未知状态按 id 写入 unknown；结构异常/拉取失败返回 null。 */
     public interface TaskListSnapshot {
-        Set<String> stillTodo() throws Exception;
+        Set<String> stillTodo(Map<String, String> unknown) throws Exception;
     }
 
     /**
@@ -217,14 +220,24 @@ public final class TaskAlternative {
         pending.clear();
         try {
             TimeUtil.sleep(3000);
-            Set<String> stillTodo = snapshot.stillTodo();
+            Map<String, String> unknown = new LinkedHashMap<>();
+            Set<String> stillTodo = snapshot.stillTodo(unknown);
             if (stillTodo == null) {
                 return false;
+            }
+            for (String status : unknown.values()) {
+                String display = status != null && status.matches("[A-Za-z0-9_-]{1,80}") ? status : "空或格式异常";
+                String flag = "taskVerifyUnknown::" + cfg.moduleName + "::" + cfg.taskListField + "::" + display;
+                if (!Status.hasFlagToday(flag)) {
+                    Status.flagToday(flag);
+                    cfg.sink.log(cfg.logPrefix + "❓未知任务状态[" + display + "]#仅该任务未确认，其余任务继续核对");
+                }
             }
             boolean changed = false;
             for (Map.Entry<String, String> item : batch.entrySet()) {
                 String key = item.getKey();
                 String title = item.getValue();
+                if (unknown.containsKey(key)) continue;
                 if (stillTodo.contains(key)) {
                     cfg.sink.log(cfg.logPrefix + "⚠️未完成[" + title + "]#doFarmTask 未生效，已交给自动拉黑机制");
                     MessageUtil.MarkTaskBlackList(cfg.moduleName, cfg.taskListField, cfg.listDisplay,
@@ -236,6 +249,7 @@ public final class TaskAlternative {
             }
             return changed;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err("TaskAlternative", "verify err:", t);
             return false;
         }

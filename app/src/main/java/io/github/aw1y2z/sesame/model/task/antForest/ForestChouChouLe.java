@@ -19,6 +19,7 @@ import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Statistics;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 import io.github.aw1y2z.sesame.util.idMap.ForestHuntIdMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -56,6 +57,7 @@ public class ForestChouChouLe {
                 chouChouLescene(ForestHuntDraw, activityId, drawScenename, sceneCode, ForestHuntHelp, shareIds, NORMALForestHuntHelp, ACTIVITYForestHuntHelp, AntForestHuntTaskList);
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.printStackTrace(e);
         }
     }
@@ -260,6 +262,7 @@ public class ForestChouChouLe {
             // ==============================================
 
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.printStackTrace(e);
         }
     }
@@ -365,6 +368,7 @@ public class ForestChouChouLe {
             // 任务已从列表消失：视为已完成且已领
             return TaskAttemptPolicy.ProbeResult.GONE;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "probeChouChouLeStatus err:", t);
             return TaskAttemptPolicy.ProbeResult.UNKNOWN;
         }
@@ -397,6 +401,7 @@ public class ForestChouChouLe {
             Log.other("森林寻宝⚠️未上报已受理[" + taskName + "]#taskType=" + taskType);
             return Outcome.UNABLE;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "chouChouLeFinishTask err:", t);
         }
         return Outcome.RETRY;

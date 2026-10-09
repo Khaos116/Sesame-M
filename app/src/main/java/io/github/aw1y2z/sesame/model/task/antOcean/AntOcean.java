@@ -1039,6 +1039,7 @@ public class AntOcean extends ModelTask {
                     () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOceanAntiepTaskList", taskTitle, jo),
                     msg -> Log.other(msg));
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "receiveTaskAward err:", t);
         }
     }
@@ -1099,6 +1100,7 @@ public class AntOcean extends ModelTask {
                             (k) -> probeOceanStatus(sceneCode, taskType)));
             return outcome == Outcome.DONE;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "finishOceanTask err:", t);
         }
         return false;
@@ -1159,6 +1161,7 @@ public class AntOcean extends ModelTask {
             // 任务已从列表消失：视为已完成且已领
             return TaskAttemptPolicy.ProbeResult.GONE;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "probeOceanStatus err:", t);
             return TaskAttemptPolicy.ProbeResult.UNKNOWN;
         }
@@ -1399,6 +1402,7 @@ public class AntOcean extends ModelTask {
 
 
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "antfishRun err:", t);
         }
     }
@@ -1631,6 +1635,7 @@ public class AntOcean extends ModelTask {
                 }
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "antfishHandleTasks err:", t);
         }
     }
@@ -1663,6 +1668,7 @@ public class AntOcean extends ModelTask {
                 return Outcome.UNSUPPORTED;
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "attemptAntfishFinishTask err:", t);
             return Outcome.RETRY;
         }
@@ -1699,6 +1705,7 @@ public class AntOcean extends ModelTask {
             // 任务已从列表消失：视为已完成且已领
             return TaskAttemptPolicy.ProbeResult.GONE;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "probeAntfishStatus err:", t);
             return TaskAttemptPolicy.ProbeResult.UNKNOWN;
         }

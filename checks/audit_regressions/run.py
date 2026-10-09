@@ -58,8 +58,21 @@ def main():
             for name in ("marathonQueryActivity", "carbonQueryActivity"))})
         run("pagination", "GreenCurrent.java", "Pagination.java.in", {"@@PAGINATION@@": method(
             "model/task/greenFinance/GreenFinance.java", "    private void batchStealFriend")})
-        run("tasks", "Review.java", "Tasks.java.in", {"@@TASKS@@": method(
-            "model/task/goldenbeans/GoldenBeansTasks.java", "    private boolean runTaskList")})
+        run("tasks", "Review.java", "Tasks.java.in", {
+            "@@TASKS@@": method("model/task/goldenbeans/GoldenBeansTasks.java", "    private boolean runTaskList"),
+            "@@GOLDEN_FLOW@@": re.sub(r"\bOutcome\b", "TaskAttemptPolicy.Outcome", "\n".join(
+                method("model/task/goldenbeans/GoldenBeansTasks.java", signature) for signature in (
+                    "private boolean finishTask(", "private Outcome attemptFinishTask(",
+                    "private boolean verifyPendingTasks(", "private TaskAttemptPolicy.ProbeResult probeGoldenBeansStatus("))),
+            "@@MEMBER_FLOW@@": re.sub(r"\bOutcome\b", "TaskAttemptPolicy.Outcome", "\n".join(
+                method("model/task/antMember/AntMember.java", signature) for signature in (
+                    "public void processTask(", "public void queryAndProcessTaskList(", "private Outcome attemptDoTask(", "private void verifyPendingTasks(",
+                    "private static TaskAttemptPolicy.ProbeResult probeMemberStatus(",
+                    "private static boolean collectNotDoneIds(", "private static boolean collectNotDoneFromArray("))),
+            "@@POLICY@@": method("data/task/TaskAttemptPolicy.java", "public class TaskAttemptPolicy")
+                .replace("public class TaskAttemptPolicy", "static class TaskAttemptPolicy", 1),
+            "@@ALTERNATIVE@@": method("model/base/TaskAlternative.java", "public final class TaskAlternative")
+                .replace("public final class TaskAlternative", "class TaskAlternative", 1)})
         run("answers", "AnswerCheck.java", "Answers.java.in", {"@@ANSWER@@": method(
             "model/normal/answerAI/GeminiAI.java", "    public Integer getAnswer(")})
         run("scheduler", "SchedulerCheck.java", "Scheduler.java.in", {

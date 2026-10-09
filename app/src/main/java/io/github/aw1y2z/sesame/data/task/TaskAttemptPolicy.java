@@ -213,6 +213,7 @@ public class TaskAttemptPolicy {
         // 领奖不受尝试标记约束；成功响应不被异步列表覆盖，失败才回查。
         if (award != null) {
             boolean claimed = false;
+            boolean checked = false;
             boolean blacklistAllowed = site == null || site.probe == null;
             MessageUtil.beginDeferBlackList(); // 领奖触发的拉黑先入缓冲，列表确认已领到则丢弃
 
@@ -228,8 +229,9 @@ public class TaskAttemptPolicy {
                         claimed = true;
                     }
                 }
+                checked = true;
             } finally {
-                MessageUtil.endDeferBlackList(!claimed && blacklistAllowed);
+                MessageUtil.endDeferBlackList(checked && !claimed && blacklistAllowed);
             }
             if (claimed) {
                 clearTriggered(key);
@@ -242,6 +244,9 @@ public class TaskAttemptPolicy {
             return Outcome.SKIPPED;
         }
         String flag = FLAG_PREFIX + sanitize(key);
+        if (Status.hasFlagToday(flag)) {
+            return Outcome.TRIED_TODAY;
+        }
         // 关键词只能用于阻止交易申报，不能作为修改用户黑名单的证据。
         if (site != null && site.bizKey != null && TaskAlternative.isTransactionTask(site.bizKey)) {
             Status.flagToday(flag);
@@ -254,12 +259,9 @@ public class TaskAttemptPolicy {
             log.accept("任务尝试🕓上报后仍待确认[" + title + "]#今日不重复上报，不修改黑名单");
             return Outcome.TRIED_TODAY;
         }
-        if (Status.hasFlagToday(flag)) {
-            Log.i(TAG, "今日已试[" + title + "]#跳过");
-            return Outcome.TRIED_TODAY;
-        }
         // 响应触发的自动拉黑先入缓冲：等列表核对后决定落盘/丢弃（列表确认完成就不该拉黑）
         boolean listDone = false;
+        boolean checked = false;
         boolean blacklistAllowed = site == null || site.probe == null;
         Outcome outcome = Outcome.RETRY;
         MessageUtil.beginDeferBlackList();
@@ -280,9 +282,12 @@ public class TaskAttemptPolicy {
                     outcome = pr == ProbeResult.TODO ? Outcome.UNABLE : Outcome.RETRY;
                 }
             }
+            checked = true;
         } finally {
-            MessageUtil.endDeferBlackList(!listDone && blacklistAllowed
-                    && outcome != Outcome.UNSUPPORTED
+            MessageUtil.endDeferBlackList(checked && !listDone && blacklistAllowed
+                    && !(outcome == Outcome.UNSUPPORTED && site != null
+                        && (site.forge != null || (site.bizKey != null && !site.bizKey.isEmpty()
+                            && site.taskSceneCode != null && site.version != null && !site.version.isEmpty())))
                     && !(outcome == Outcome.UNABLE && site != null && site.forge != null));
         }
         if (listDone) {
@@ -297,7 +302,8 @@ public class TaskAttemptPolicy {
             return Outcome.TRIGGERED;
         }
         if (outcome == Outcome.UNSUPPORTED) {
-            if (site == null || site.bizKey == null) {
+            if (site == null || site.bizKey == null || site.bizKey.isEmpty()
+                    || site.taskSceneCode == null || site.version == null || site.version.isEmpty()) {
                 outcome = Outcome.UNABLE;
             } else {
                 // 伪申报：doFarmTask 响应不可信（常回 102 而任务已生效），成败一律以任务列表为准

@@ -333,6 +333,7 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                         "AntForestV2" -> listOf("能量雨" to "energyRain", "打地鼠" to "whackMole")
                         "AntFarm" -> listOf("遣返小鸡" to "sendBack", "庄园游戏" to "game", "抽抽乐" to "chouchoule", "特殊美食" to "specialFood", "使用道具" to "useTool")
                         "FishTask" -> listOf("仅钓鱼" to "angle", "仅兑换" to "exchange")
+                        "goldenbeans" -> listOf("清理所选商品回执" to "clearMallReceipts")
                         else -> emptyList()
                     }
                     if (actions.isNotEmpty()) {
@@ -342,7 +343,29 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             actions.forEach { (name, action) ->
-                                TextButton(text = name, onClick = { activity.executeModule(fields.first().modelCode, action) })
+                                TextButton(text = name, onClick = {
+                                    if (action == "clearMallReceipts") {
+                                        val mallField = Model.getGroupModelConfig(group).values
+                                            .firstOrNull { it.getCode() == fields.first().modelCode }
+                                            ?.fields?.get("GoldenBeansMallItemList")
+                                        val selectedNames = (mallField?.value as? Map<*, *>)?.keys
+                                            ?.filterIsInstance<String>()?.sorted().orEmpty()
+                                        if (selectedNames.isEmpty()) {
+                                            ToastUtil.show(activity, "请先在商城可兑列表中选择要清理的商品")
+                                        } else android.app.AlertDialog.Builder(activity)
+                                            .setTitle("已核对商城订单？")
+                                            .setMessage("将检查以下 ${selectedNames.size} 个已勾选商品，仅清理当前商品列表中存在的未确认回执：\n\n"
+                                                + selectedNames.joinToString("\n")
+                                                + "\n\n若只需清理一个，请取消并调整商城可兑列表。请逐项核对支付宝商城订单和扣豆记录；错误清理可能重复兑换。清理本身不下单，后续按兑换开关和次数恢复。")
+                                            .setPositiveButton("已逐项核对，清理") { _, _ ->
+                                                val currentNames = (mallField?.value as? Map<*, *>)?.keys
+                                                    ?.filterIsInstance<String>()?.sorted().orEmpty()
+                                                if (currentNames != selectedNames) ToastUtil.show(activity, "商品选择已变化，请重新确认")
+                                                else activity.executeModule(fields.first().modelCode, action)
+                                            }
+                                            .setNegativeButton("取消", null).show()
+                                    } else activity.executeModule(fields.first().modelCode, action)
+                                })
                             }
                         }
                     }

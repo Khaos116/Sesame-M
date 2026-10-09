@@ -84,6 +84,7 @@ public class goldenbeansRpcCall {
                 || "com.alipay.antieptask.receiveTaskAwardantorchard".equals(method)
                 || "com.alipay.goldenbean.miner.grab".equals(method)
                 || "com.alipay.charitygamecenter.drawGameCenterAward".equals(method)
+                || "com.alipay.antcommonweal.exchange.h5.exchangeBenefit".equals(method)
                 || "com.alipay.goldenbean.manureExchange".equals(method);
         return write ? ApplicationHook.requestString(method, body, 1, 0)
                 : ApplicationHook.requestString(method, body);

@@ -426,6 +426,7 @@ public class AntDodo extends ModelTask {
             // 任务已从列表消失：视为已完成且已领
             return TaskAttemptPolicy.ProbeResult.GONE;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "probeDodoStatus err:", t);
             return TaskAttemptPolicy.ProbeResult.UNKNOWN;
         }

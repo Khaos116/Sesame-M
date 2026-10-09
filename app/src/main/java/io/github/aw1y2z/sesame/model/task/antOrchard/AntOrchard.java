@@ -68,18 +68,14 @@ public class AntOrchard extends ModelTask {
 
     static {
         ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_KUAISHOU_MAX");  // 逛一逛快手
-        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_DIAOYU1");       // 钓鱼1次
         ORCHARD_TASK_BLACKLIST.add("ZHUFANG3IN1");                  // 添加农场小组件并访问
-        ORCHARD_TASK_BLACKLIST.add("逛助农好货得肥料");                        // 逛助农好货得肥料
         ORCHARD_TASK_BLACKLIST.add("12173");                        // 买好货
-        ORCHARD_TASK_BLACKLIST.add("70000");                        // 逛好物最高得1500肥料（XLIGHT）
         ORCHARD_TASK_BLACKLIST.add("TOUTIAO");                      // 逛一逛今日头条
         ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_ZADAN10_3000");  // 农场对对碰
         ORCHARD_TASK_BLACKLIST.add("TAOBAO2");                      // 逛一逛闲鱼
         ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_JIUYIHUISHOU_VISIT");  // 旧衣服回收
         ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_SHOUJISHUMAHUISHOU");  // 数码回收
         ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_AQ_XIAZAI");           // 下载AQ
-        ORCHARD_TASK_BLACKLIST.add("ORCHARD_NORMAL_WAIMAIMIANDAN");      // 逛一逛闪购外卖
         ORCHARD_TASK_BLACKLIST.add("逛一逛签到领现金");      // 逛一逛签到领现金
     }
 
@@ -1496,7 +1492,11 @@ public class AntOrchard extends ModelTask {
                     if (TaskAlternative.isTransactionTask(jo.optString("taskId"))
                             || TaskAlternative.isTransactionTask(groupId)) {
 
-                        Log.farm("肥料任务⏭️交易/履约类[" + title + "]#不申报，不修改黑名单");
+                        String skipFlag = "transactionSkip::orchard::" + taskId + "::" + groupId;
+                        if (!Status.hasFlagToday(skipFlag)) {
+                            Status.flagToday(skipFlag);
+                            Log.farm("肥料任务⏭️交易/履约类[" + title + "]#不申报，不修改黑名单");
+                        }
                         continue;
                     }
                 }
@@ -1597,6 +1597,7 @@ public class AntOrchard extends ModelTask {
             }
             return true;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "finishOrchardTask err:", t);
             return false;
         }
@@ -1641,6 +1642,7 @@ public class AntOrchard extends ModelTask {
             Log.i("肥料任务🕓已触发[" + taskTitle + "]#finishTask=" + finishResponse.optString("code")
                     + "#doFarmTask=" + TaskAlternative.describe(doFarmResponse) + "，结果以任务列表为准");
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "finishTaskTwice err:", t);
         }
         return null;
@@ -1652,7 +1654,7 @@ public class AntOrchard extends ModelTask {
      * 服务端是异步推进状态的，只有任务列表的 {@code taskStatus} 才是最终判据。
      */
     private void verifyPendingTasksByList() {
-        TaskAlternative.verify(pendingVerifyTasks, VERIFY_CFG, () -> {
+        TaskAlternative.verify(pendingVerifyTasks, VERIFY_CFG, unknown -> {
             JSONObject jo = MyUtils.newJSONObject(AntOrchardRpcCall.orchardListTask());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return null;
@@ -1664,11 +1666,17 @@ public class AntOrchard extends ModelTask {
             Set<String> stillTodo = new HashSet<>();
             for (int i = 0; i < taskArray.length(); i++) {
                 JSONObject task = taskArray.optJSONObject(i);
-                if (task == null || !TaskStatus.TODO.name().equals(task.optString("taskStatus"))) {
+                if (task == null || !(task.opt("taskId") instanceof String)) return null;
+                String taskId = task.optString("taskId", "");
+                String taskStatus = task.optString("taskStatus");
+                if (taskId.isEmpty()) return null;
+                if (!(TaskStatus.TODO.name().equals(taskStatus)
+                        || TaskStatus.FINISHED.name().equals(taskStatus)
+                        || TaskStatus.RECEIVED.name().equals(taskStatus))) {
+                    unknown.put(taskId, taskStatus);
                     continue;
                 }
-                String taskId = task.optString("taskId", "");
-                if (!taskId.isEmpty()) {
+                if (TaskStatus.TODO.name().equals(taskStatus)) {
                     stillTodo.add(taskId);
                 }
             }
