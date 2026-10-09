@@ -2204,10 +2204,8 @@ public class AntForestV2 extends ModelTask {
     private void vitalityExchangeBenefit() {
         try {
             // 清单当日拉一次即可：单轮最多 5 个分类共 20 多次请求，且它同时是配置页兑换选项的来源，
-            // 不能完全不拉；拉不到 SKU 就不打标记，留给下一轮重试
-            if (!Status.hasFlagToday("forest::vitalitySkuList") && getAllSkuInfo()) {
-                Status.flagToday("forest::vitalitySkuList");
-            }
+            // 不能完全不拉；当日标记与重试逻辑都在 getAllSkuInfo() 内部
+            getAllSkuInfo();
             Map<String, Integer> exchangeList = vitality_ExchangeBenefitList.getValue();
             for (Map.Entry<String, Integer> entry : exchangeList.entrySet()) {
                 String skuId = entry.getKey();
@@ -4568,10 +4566,15 @@ public class AntForestV2 extends ModelTask {
      * 获取活力值商店所有商品信息。
      * <p>原先只查 SC_ASSETS 的第一页 ⇒ 权益列表只有一小部分；改为按官方实测的 5 个 labelType
      * 分别拉取，并用响应里的 hasMore 翻页。
+     * <p>当日标记的判断放在方法内部，因为除了 vitalityExchangeBenefit() 外，
+     * useEnergyRainCard()/兑换道具等路径也会直接调用它，那些路径同样需要"当日只拉一次"。
      */
-    /** @return 是否真的取到 SKU（调用方据此决定要不要打当日标记，取不到时留给下一轮重试） */
+    /** @return 是否真的取到 SKU（取不到时留给下一轮重试） */
     private boolean getAllSkuInfo() {
         try {
+            if (Status.hasFlagToday("forest::vitalitySkuList")) {
+                return true;
+            }
             int got = 0;
             for (String labelType : VITALITY_LABEL_TYPES) {
                 int cnt = 0;
@@ -4597,6 +4600,10 @@ public class AntForestV2 extends ModelTask {
             }
             VitalityBenefitIdMap.save(UserIdMap.getCurrentUid());
             Log.i("活力值商店列表：共取" + got + "条，清单共" + VitalityBenefitIdMap.getMap().size() + "条");
+            if (got > 0) {
+                // 拉到了才打当日标记；拉不到留给下一轮重试
+                Status.flagToday("forest::vitalitySkuList");
+            }
             return got > 0;
         } catch (Throwable th) {
             Log.err(TAG, "getAllSkuInfo err:", th);
