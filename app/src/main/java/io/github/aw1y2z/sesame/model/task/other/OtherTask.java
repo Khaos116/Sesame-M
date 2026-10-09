@@ -38,6 +38,7 @@ public class OtherTask extends ModelTask {
     private BooleanModelField shenQuanSign, shenQuanTasks, shenQuanDraw, mileageExchange, huaBeiIntimacy, gameCenterP2E, leiYouJiTasks, leiYouJiRide;
     private StringModelField shenQuanLocation, mileageExchangeCodes, mileageCityCode;
     private IntegerModelField sjActivityDailyBudget;
+    private BooleanModelField gameCenterP2EBrowse, luckyCard;
 
     private OtherRequestGate gate;
 
@@ -88,6 +89,10 @@ public class OtherTask extends ModelTask {
         fields.addField(huaBeiIntimacy = new BooleanModelField("huaBeiIntimacy", "花呗亲密度 | 明确浏览任务", false)
                 .setDescription("仅当前APPLET浏览/搜索任务，要求服务端提供1～300秒时长；完整等待后上报并回查。开通、借款、支付、外部App真实交互等任务不执行。"));
         fields.addField(gameCenterP2E = new BooleanModelField("gameCenterP2E", "游戏中心玩赚 | 每日签到", false));
+        fields.addField(gameCenterP2EBrowse = new BooleanModelField("gameCenterP2EBrowse", "游戏中心玩赚 | 赚金币浏览任务", false)
+                .setDescription("移植朋友源码，仅VIEW_TASK；报名、完整等待、上报、领金币。默认等待15秒，服务端明确提供时长时优先使用。共用SJ每日操作预算，不兑换现金。"));
+        fields.addField(luckyCard = new BooleanModelField("luckyCard", "好运卡 | 签到、进度领卡与任务开卡", false)
+                .setDescription("移植朋友源码，保留红包卡片；每次报名、领卡、推进、开卡占一次SJ每日操作预算。卡片持久保存，未知开卡回执不重复发送；不处理支付、开通、邀请任务。"));
         fields.addField(leiYouJiTasks = new BooleanModelField("leiYouJiTasks", "芝麻粒乐游记 | 明确浏览任务", false));
         fields.addField(leiYouJiRide = new BooleanModelField("leiYouJiRide", "芝麻粒乐游记 | 前台自动骑行", false)
                 .setDescription("会打开乐游记页面，通过实际页面DOM骑行；仅亮屏解锁且游戏窗口处于前台时操作，每轮最多30步。关卡外跳/终点领奖需人工处理；不伪造页面会话或设备指纹。"));
@@ -129,10 +134,13 @@ public class OtherTask extends ModelTask {
                 if (mileageExchange.getValue()) sj.mileage(mileageExchangeCodes.getValue(), mileageCityCode.getValue());
                 if (huaBeiIntimacy.getValue()) sj.intimacy();
                 if (gameCenterP2E.getValue()) sj.p2eSign();
+                if (gameCenterP2EBrowse.getValue()) new FriendActivityTasks(sj).p2eBrowse();
+                if (luckyCard.getValue()) new FriendActivityTasks(sj).luckyCard();
                 if (leiYouJiTasks.getValue()) sj.leiYouJiTasks();
                 if (leiYouJiRide.getValue()) SjGamePlay.ride(sj);
             } else if (shenQuanSign.getValue() || shenQuanTasks.getValue() || shenQuanDraw.getValue() || mileageExchange.getValue()
-                    || huaBeiIntimacy.getValue() || gameCenterP2E.getValue() || leiYouJiTasks.getValue() || leiYouJiRide.getValue()) {
+                    || huaBeiIntimacy.getValue() || gameCenterP2E.getValue() || gameCenterP2EBrowse.getValue() || luckyCard.getValue()
+                    || leiYouJiTasks.getValue() || leiYouJiRide.getValue()) {
                 Log.record("SJ新增活动：功能已开启，但每日操作尝试预算为0，本轮未执行");
             }
             if (haojiaWuyou.getValue()) {

@@ -122,7 +122,27 @@ final class SjActivityTasks {
         return call(method, args, write, null, null);
     }
 
+    JSONObject write(String domain, String action, String method, JSONObject args) throws Exception {
+        return call(method, args, true, action, null, domain);
+    }
+
+    String pending(String domain) {
+        current();
+        return RuntimeInfo.getInstance().getString(RECEIPT + domain);
+    }
+
+    boolean accepted(String domain, String label) {
+        current();
+        if (!RuntimeInfo.getInstance().putVerified(RECEIPT + domain, null)) return false;
+        Log.record("📤 " + label + "：接口已确认受理");
+        return true;
+    }
+
     private JSONObject call(String method, JSONObject args, boolean write, String action, JSONObject context) throws Exception {
+        return call(method, args, write, action, context, null);
+    }
+
+    private JSONObject call(String method, JSONObject args, boolean write, String action, JSONObject context, String domain) throws Exception {
         current();
         String prefix = "SJ活动[" + method + "]：";
         boolean[] invoked = {false};
@@ -133,8 +153,8 @@ final class SjActivityTasks {
                 String body = new JSONArray().put(args).toString();
                 // Reserve only after the shared gate admits this write; rejected requests leave no receipt or quota charge.
                 if (action != null) {
-                    if (!reserve(shenQuanDomain(action), action, null, context)) return null;
-                    Log.record("神券团购：尝试提交" + shenQuanAction(action));
+                    if (!reserve(domain == null ? shenQuanDomain(action) : domain, action, null, context)) return null;
+                    Log.record(domain == null ? "神券团购：尝试提交" + shenQuanAction(action) : "活动[" + domain + "]：尝试提交" + action);
                 }
                 invoked[0] = true;
                 if (write) Log.record(prefix + "进入写RPC调用（单次发送）");

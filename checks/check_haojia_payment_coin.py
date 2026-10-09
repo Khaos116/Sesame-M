@@ -25,6 +25,7 @@ public class HaoJiaPaymentCoinCheck {
  static class OtherTask {static final String TAG="OtherTask";OtherRequestGate gate=new OtherRequestGate();boolean isEnable(){return true;}@@FIELDS@@ @@CHECK@@ @@RUN@@ @@LEGACY@@}
  static class LegacyCardRewards {static void run(OtherRequestGate gate,Object... fields)throws Exception{if(!fillPrevious)return;for(int i=0;i<80;i++)gate.call("preceding activity",()->"{}");}}
  static class SjGamePlay {static void ride(SjActivityTasks worker){}}
+ static class FriendActivityTasks {FriendActivityTasks(SjActivityTasks worker){}void p2eBrowse(){}void luckyCard(){}}
   static class RpcRequestGuard {@@RPC_FAILURE@@}
  static class SjActivityTasks {OtherRequestGate gate;SjActivityTasks(OtherRequestGate gate,int budget){this.gate=gate;}void shenQuan(boolean sign,boolean tasks,boolean draw,String location)throws Exception{gate.call("next activity",()->{nextActivityCalls++;return "{}";});}void mileage(String codes,String city){}void intimacy(){}void p2eSign(){}void leiYouJiTasks(){}@@RESPONSE_FIELD@@}
  static boolean fillPrevious,transportError,queryFailure;static int nextActivityCalls;
