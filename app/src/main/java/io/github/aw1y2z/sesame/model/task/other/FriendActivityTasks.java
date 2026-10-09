@@ -253,23 +253,13 @@ final class FriendActivityTasks {
     private void luckyProgress() throws Exception {
         String domain = "luckyProgress", done = "other::luckyProgress";
         if (Status.hasFlagToday(done)) return;
-        JSONObject before = rebate(PROGRESS_PLAY, "HAOYUNKA", null, domain);
-        if (before == null) { Log.record("好运卡进度：查询未通过，未提交推进"); return; }
-        long recent = before.has("recentProcess") ? count(before, "recentProcess") : "NONE_SIGNUP".equals(text(before, "status")) ? 0 : -1;
-        if ("REWARDED".equals(text(before, "status"))) {
-            if (sj.pending(domain).isEmpty() || saveCards(prizeTickets(before)) && sj.accepted(domain, "好运卡进度回查")) Status.flagToday(done);
-            Log.record("好运卡进度：已领取，跳过重复推进"); return;
+        // 来源仅使用 trigger；额外进度 consult 在实机失败，不能把外推接口设为执行前提。
+        if (!sj.pending(domain).isEmpty()) {
+            Log.record("好运卡进度：上次推进结果未确认，来源无进度查询接口；核对后可手动恢复，今日不重发"); return;
         }
-        if (recent < 0 || recent >= 4) { Log.record("好运卡进度：进度无效或已满格，未提交推进"); return; }
-        if (!oneOf(text(before, "status"), "NONE_SIGNUP", "SIGNED_UP")) {
-            Log.record("好运卡进度：未知状态=" + SjActivityTasks.responseField(before, "status")); return;
-        }
-        JSONObject pending = MyUtils.newJSONObject(sj.pending(domain));
-        String previous = text(pending, "action");
-        if (count(pending, "day") == SjActivityTasks.date() && previous.matches("progress:[0-3]")
-                && recent > Integer.parseInt(previous.substring(9))) {
-            if (!sj.accepted(domain, "好运卡进度回查" + recent + "/4")) return;
-        }
+        JSONObject saved = MyUtils.newJSONObject(RuntimeInfo.getInstance().getString("other::luckyProgressCount"));
+        long recent = count(saved, "day") == SjActivityTasks.date() ? count(saved, "count") : 0;
+        if (recent < 0 || recent >= 4) { Log.record("好运卡进度：当日已确认满格或记录无效，停止推进"); return; }
         for (int i = 0; i < 4 && recent < 4; i++) {
             JSONObject ack = rebate(PROGRESS_PLAY, "HAOYUNKA", "progress:" + recent, domain);
             if (ack == null) return;
@@ -283,7 +273,11 @@ final class FriendActivityTasks {
                 return;
             }
             if (!"SIGNED_UP".equals(text(ack, "status")) || next <= recent || next > 4) {
-                Log.record("好运卡进度：提交后未确认进度增加，保留回执，下轮查询"); return;
+                Log.record("好运卡进度：提交后未确认进度增加，保留回执；来源无查询接口，需核对后手动恢复"); return;
+            }
+            if (!RuntimeInfo.getInstance().putVerified("other::luckyProgressCount",
+                    MyUtils.newJSONObject().put("day", SjActivityTasks.date()).put("count", next).toString())) {
+                Log.record("好运卡进度：服务端已推进，但本地进度保存失败，保留回执"); return;
             }
             if (!sj.accepted(domain, "好运卡进度" + recent + "→" + next + "/4")) return;
             recent = next;
@@ -295,7 +289,20 @@ final class FriendActivityTasks {
                 .put("bizScene", "HAOYUNKA_DAILY").put("bizSceneFrom", "creditCard").put("extInfo", MyUtils.newJSONObject().put("version", 1))
                 .put("requestFrom", "pccp"), false));
         JSONArray rows = result == null ? null : result.optJSONArray("taskListResult");
-        if (!validRows(rows, "taskId")) { Log.record("好运卡任务：列表缺失、重复或结构异常，未提交任务"); return null; }
+        if (!validRows(rows, "taskId")) {
+            Set<String> ids = new HashSet<>();
+            int missing = 0, duplicate = 0;
+            if (rows != null) for (int i = 0; i < Math.min(rows.length(), 100); i++) {
+                String id = text(rows.optJSONObject(i), "taskId");
+                if (id.isEmpty()) missing++; else if (!ids.add(id)) duplicate++;
+            }
+            Log.record("好运卡任务：列表校验失败，data.result对象=" + (result != null)
+                    + "，taskListResult类型=" + (result == null || result.opt("taskListResult") == null ? "缺失" : result.opt("taskListResult").getClass().getSimpleName())
+                    + "，条目数=" + (rows == null ? -1 : rows.length()) + "，前100项无有效ID=" + missing + "，重复ID=" + duplicate
+                    + "；未提交任务");
+            return null;
+        }
+        Log.record("好运卡任务：查询成功，共" + rows.length() + "项");
         return rows;
     }
 

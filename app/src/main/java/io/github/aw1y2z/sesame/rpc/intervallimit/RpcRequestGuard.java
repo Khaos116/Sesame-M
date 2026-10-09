@@ -26,6 +26,7 @@ public final class RpcRequestGuard {
     private final java.io.File reportDirectory;
     private final RuntimeInfo state;
     private final String key;
+    private final String unsupportedRoute;
     private final boolean core;
     private final boolean knownUnsupported;
     private final boolean unsupportedTaskFinish;
@@ -113,31 +114,59 @@ public final class RpcRequestGuard {
         }
         if ("com.alipay.pcreditcardweb.activity.LuckCard.consult".equals(method))
             identity.put("objectArgument").put(hasObjectArgument);
+        // 好运卡签到与进度共用方法，但属于不同玩法；随机 bizNo 不参与隔离。
+        if ("com.alipay.pcreditbfweb.gameplay.rebate".equals(method))
+            identity.put("playId").put(args.optString("playId")).put("bizScene").put(args.optString("bizScene"));
         // enterFarm serves own farm and every friend farm; a friend's failure must not pause own farm.
         if ("com.alipay.antfarm.enterFarm".equals(method)) {
             identity.put("userId").put(args.optString("userId")).put("farmId").put(args.optString("farmId"));
         }
         // v2：换前缀让旧版本写入的 24 小时暂停（风控/验证、人气大爆发误判等）整体作废，不再读取
         key = "RpcRequestGuard.v2." + identity;
-        unsupportedTaskFinish = MyUtils.closeUnRpc() && "com.alipay.antiep.finishTask".equals(method)
-                && isKnownUnsupportedFinishTask(scene, args.optString("taskType"));
+        // 同一方法可能承载查询/提交等不同动作，不把一个动作的能力判断扩散到其他动作。
+        for (String field : new String[]{"action", "actionType", "operationType", "opType", "type"}) {
+            identity.put(field).put(args.optString(field));
+        }
+        unsupportedRoute = hasObjectArgument ? identity.toString() : "";
+        unsupportedTaskFinish = MyUtils.closeUnRpc() && (
+                "com.alipay.antiep.finishTask".equals(method) && isKnownUnsupportedFinishTask(scene, args.optString("taskType"))
+                || "com.alipay.antieptask.finishTaskantorchard".equals(method) && "GOLDEN_BEAN_MASTER_TASK".equals(scene)
+                && ("GOLDENBEAN_GAME_ZH_BWXRK".equals(args.optString("taskType"))
+                || "GOLDENBEAN_GAME_ZH0_NCJYG".equals(args.optString("taskType"))));
         knownTaskFallback = "com.alipay.antfarm.doFarmTask".equals(method) && "ANTFARM".equals(scene)
                 && isKnownUnsupportedFinishTask(args.optString("taskSceneCode"), args.optString("bizKey"));
         knownUnsupported = unsupportedTaskFinish || isKnownUnsupported(method, args);
     }
 
-    /** 2026-10-06 C158 日报确认主完成接口不支持；仅跳过该接口，保留备用完成与领奖。 */
+    /** C158/C176 实机确认的主完成接口；按场景/任务精确匹配，保留备用完成与领奖。 */
     private static boolean isKnownUnsupportedFinishTask(String scene, String task) {
         switch (scene) {
             case "ANTFOREST_VITALITY_TASK":
                 return "LSHS_huisho20_202508".equals(task);
             case "ANTSTALL_TASK":
                 return "ANTSTALL_TASK_XCXYX_zhuzhaishijie".equals(task)
-                        || "ANTSTALL_TASK_XCXYX_zslxx".equals(task);
+                        || "ANTSTALL_TASK_XCXYX_zslxx".equals(task)
+                        || "ANTSTALL_XCXYX_mhxcz".equals(task);
             case "ANTFARM_DAILY_DRAW_TASK":
                 return "cclyx_wdhysj_3c_10".equals(task)
                         || "cclyx_sgbhsd_3c_zm10c".equals(task)
-                        || "cclyx_3bei_zslxx_2".equals(task);
+                        || "cclyx_3bei_zslxx_2".equals(task)
+                        || "cclyx_3bei_xjcmx_2".equals(task);
+            case "ANTAIFISH":
+                return "LHS_QDRW_AIFISH".equals(task);
+            case "ANTFARM_IP_DRAW_TASK":
+                return "ipccl_sgbhsd_zm3c".equals(task) || "ipccl_wdhysj_10".equals(task);
+            case "ANTFARM_ORCHARD_TASK_V2":
+                return "ANTFARM_ORCHARD_NORMAL_CAINIAO_DUAN".equals(task)
+                        || "ANTFARM_ORCHARD_P2P_SHARER".equals(task)
+                        || "goldenbean_receive3000bean".equals(task)
+                        || "ORCHARD_NCLY_ZH_CNXDY".equals(task)
+                        || "ORCHARD_NCLY_ZH_NLGJ".equals(task)
+                        || "ORCHARD_NCLY_ZH_SJHH".equals(task)
+                        || "ORCHARD_NCLY_ZH_XDNSR".equals(task)
+                        || "ORCHARD_NORMAL_SHANGOUMIANDAN".equals(task)
+                        || "ORCHARD_NORMAL_TAOBAOZHIBO_NEW".equals(task)
+                        || "ORCHARD_TEAM_SPREAD_PERSON_2".equals(task);
             default:
                 return false;
         }
@@ -172,20 +201,22 @@ public final class RpcRequestGuard {
 
     public boolean shouldSkip() {
         synchronized (RpcRequestGuard.class) {
+            boolean learnedUnsupported = MyUtils.closeUnRpc() && !unsupportedRoute.isEmpty()
+                    && MyUtils.isUnsupportedRpcRecorded(io.github.aw1y2z.sesame.hook.ApplicationHook.getContext(), unsupportedRoute);
             JSONObject saved = MyUtils.newJSONObject(state.getString(key));
             long until = Math.max(saved.optLong("until"), verifyUntil());
-            if (!knownUnsupported && until <= System.currentTimeMillis()) return false;
-            String reason = unsupportedTaskFinish ? "跳过已确认不支持的完成接口，保留备用完成与列表核对"
+            if (!knownUnsupported && !learnedUnsupported && until <= System.currentTimeMillis()) return false;
+            String reason = unsupportedTaskFinish || learnedUnsupported ? "本地跳过已确认不支持的完成接口，未发送RPC；保留备用完成与列表核对"
                     : knownUnsupported ? "跳过GR已知异常任务" : "请求异常暂停中，剩余"
                     + Math.max(1, (until - System.currentTimeMillis()) / 1000) + "秒";
-            if (!knownUnsupported && saved.optLong("until") > System.currentTimeMillis())
+            if (!knownUnsupported && !learnedUnsupported && saved.optLong("until") > System.currentTimeMillis())
                 reason += saved.has("causeCode") ? "，原始错误码=" + saved.optString("causeCode") : "，旧暂停记录未保存错误码";
             reason = request.getRequestMethod() + "：" + reason;
             JSONObject result = MyUtils.newJSONObject("{\"success\":false,\"error\":\"RPC_SKIPPED\",\"resultCode\":\"RPC_SKIPPED\"}");
             try {
                 result.put("resultDesc", reason).put("errorMessage", reason).put("memo", reason);
                 // 备用完成按 code 判断接口不支持；error 仍为 RPC_SKIPPED，不能计入失败或拉黑。
-                if (unsupportedTaskFinish) result.put("code", "400000040");
+                if (unsupportedTaskFinish || learnedUnsupported) result.put("code", "400000040");
             } catch (Exception ignored) { }
             request.setResponseObject(result, result.toString());
             request.setError();
@@ -267,6 +298,16 @@ public final class RpcRequestGuard {
 
     public void record(JSONObject result) {
         synchronized (RpcRequestGuard.class) {
+            if (!unsupportedRoute.isEmpty() && !result.optBoolean("success") && !result.optBoolean("isSuccess")
+                    && !"RPC_SKIPPED".equals(result.optString("error"))
+                    && !"TRANSPORT_ERROR".equals(result.optString("error"))
+                    && (io.github.aw1y2z.sesame.util.MessageUtil.isUnsupportedRpc(result)
+                    || "400000040".equals(result.optString("resultCode"))
+                    || "不支持rpc调用".equals(errorMessage(result).trim()))
+                    && MyUtils.recordUnsupportedRpc(io.github.aw1y2z.sesame.hook.ApplicationHook.getContext(), unsupportedRoute)) {
+                Log.record("RPC能力记录📌" + request.getRequestMethod()
+                        + "#服务端明确不支持RPC，已加入全账号本地规则；后续同任务不再发送（跳过不支持RPC开关开启时）");
+            }
             long now = System.currentTimeMillis();
             try {
                 RpcFailureJournal.record(reportDirectory, request.getRequestMethod(),

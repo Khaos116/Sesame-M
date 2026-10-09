@@ -27,7 +27,7 @@ public class HaoJiaPaymentCoinCheck {
  static class SjGamePlay {static void ride(SjActivityTasks worker){}}
  static class FriendActivityTasks {FriendActivityTasks(SjActivityTasks worker){}void p2eBrowse(){}void luckyCard(){}}
   static class RpcRequestGuard {@@RPC_FAILURE@@}
- static class SjActivityTasks {OtherRequestGate gate;SjActivityTasks(OtherRequestGate gate,int budget){this.gate=gate;}void shenQuan(boolean sign,boolean tasks,boolean draw,String location)throws Exception{gate.call("next activity",()->{nextActivityCalls++;return "{}";});}void mileage(String codes,String city){}void intimacy(){}void p2eSign(){}void leiYouJiTasks(){}@@RESPONSE_FIELD@@}
+ static class SjActivityTasks {OtherRequestGate gate;SjActivityTasks(OtherRequestGate gate,int budget){this.gate=gate;}SjActivityTasks(OtherRequestGate gate,int budget,String key){this.gate=gate;}void shenQuan(boolean sign,boolean tasks,boolean draw,String location)throws Exception{gate.call("next activity",()->{nextActivityCalls++;return "{}";});}void mileage(String codes,String city){}void intimacy(){}void p2eSign(){}void leiYouJiTasks(){}@@RESPONSE_FIELD@@}
  static boolean fillPrevious,transportError,queryFailure;static int nextActivityCalls;
  static int legacySigns,legacyApplies;static boolean legacyRootFailure,legacyComponentFailure,legacyConflict;static String legacyResultCode="",legacyError="",legacyRetCode="",legacyComponentCode="";
  static final String PROGRAM="independent_component_program2026062903615094",SIGN="independent_component_sign_in_03386004_independent_component_sign_in",TASK="independent_component_task_reward_v2_03385041_independent_component_task_reward_",RECEIPT="otherHaoJiaPaymentCoinReceipt";
@@ -158,7 +158,7 @@ fields=[]
 for kind,names in re.findall(r'private (BooleanModelField|IntegerModelField|StringModelField) ([^;]+);',other_source):
     java_type,default={'BooleanModelField':('Boolean','false'),'IntegerModelField':('Integer','1'),'StringModelField':('String','""')}[kind]
     fields.extend(f'Field<{java_type}> {name.strip()}=new Field<>({default});' for name in names.split(','))
-code=code.replace('@@FIELDS@@','\n'.join(fields)).replace('@@RUN@@',method('model/task/other/OtherTask.java','public void run('))
+code=code.replace('@@FIELDS@@','\n'.join(fields)).replace('@@RUN@@',method('model/task/other/OtherTask.java','public void run(') + '\n' + method('model/task/other/OtherTask.java','private void runFriendActivity('))
 code = code.replace('@@GATE@@', body('OtherRequestGate.java', 'final class OtherRequestGate'))
 code = code.replace('@@WORKER@@', body('HaoJiaPaymentCoin.java', 'final class HaoJiaPaymentCoin'))
 legacy_rpc = '\n'.join(method('model/task/other/HaoJiaRpcCall.java', signature) for signature in ('public static String querySignIn(', 'public static String doSignIn(', 'public static String queryTaskList(', 'public static String applyTask(', 'private static String request('))

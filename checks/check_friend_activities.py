@@ -14,7 +14,7 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
  static String text(JSONObject row,String key){return SjActivityTasks.text(row,key);}
  static long count(JSONObject row,String key){return SjActivityTasks.count(row,key);}
  @@FRIEND@@
- static class OtherTask{@@MANUAL@@}
+ static class OtherTask{@@MANUAL@@ @@RUN_FRIEND@@}
  static int writes,queries,signups,completes,receives,opens,progress,signs,sends;
  static String pstate,title,action,taskState; static boolean sign,failReceive,failOpen,emptyOpen,malformed,duplicate,failProgress,failSend;
  static String rejectTarget="",unknownTarget="",rejectCode="BUSINESS_REJECTED";static boolean noCoins,listedCoins,notReady,noP2eTasks,noLuckyTasks;
@@ -45,12 +45,15 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
    if(op.endsWith("gameplay.rebate")){
     boolean trigger=a.optString("behavior").equals("trigger"),sg=a.optString("bizScene").equals("HAOYUNKA_SIGN_IN");
     if(sg){if(trigger){sign=true;signs++;}JSONObject r=new JSONObject().put("status",sign?"SIGNED_UP":"NONE_SIGNUP");if(sign)r.put("extInfo",new JSONObject().put("lastSignInTime",String.format("2026-10-%02d",MyUtils.day)).toString()).put("prizeDetails",new JSONObject().put("1",new JSONObject().put("tickets",cards("sign"))).toString());return result(r).toString();}
-    if(trigger){progress++;if(failProgress){failProgress=false;return "{}";}}
+    assert trigger : "source has no progress consult: extra query blocked the real flow";
+    boolean advanced=trigger&&progress<4;
+    if(advanced){progress++;if(failProgress){failProgress=false;return "{}";}}
     JSONObject r=new JSONObject().put("status",progress>=4?"REWARDED":progress>0?"SIGNED_UP":"NONE_SIGNUP").put("recentProcess",progress);
-    if(progress>=4)r.put("collection",trigger).put("prizeDetails",new JSONObject().put("tickets",cards("progress")).toString());
+    if(progress>=4)r.put("collection",advanced).put("prizeDetails",new JSONObject().put("tickets",cards("progress")).toString());
     return result(r).toString();
    }
    if(op.endsWith("sdk.task.query")){
+    if(malformed)return result(new JSONObject().put("taskListResult",new JSONArray().put(new JSONObject().put("taskStatus","TODO")))).toString();
     Object show=taskState.equals("RECEIVED")?cards("task1","task2").toString():new JSONObject().put("title","浏览支付宝领好运卡").put("subTitle","免费好运卡").put("url","alipays://safe").toString();
     return result(new JSONObject().put("taskListResult",noLuckyTasks?new JSONArray():new JSONArray().put(new JSONObject().put("taskId","lucky\"\\").put("taskStatus",taskState).put("taskShowInfo",show)))).toString();
    }
@@ -89,7 +92,18 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
   assert Log.lines.stream().filter(s->s.startsWith("✅ 好运卡开卡成功")).count()==8;
   assert Log.lines.stream().noneMatch(s->s.contains("SECRET_TOKEN"));
   reset();worker(1).luckyCard();assert signs==1&&opens==0;worker(30).luckyCard();assert signs==1&&progress==4&&opens==4:"queue survives budget exhaustion";
-  reset();failProgress=true;worker(30).luckyCard();assert progress==1;worker(30).luckyCard();assert progress==4&&opens==4:"progress recovered from consult";
+  reset();failProgress=true;worker(30).luckyCard();assert progress==1;worker(30).luckyCard();assert progress==1&&pending("luckyProgress"):"unknown progress must not be resent";
+  worker(0).clearReceipts();worker(30).luckyCard();assert progress==4&&opens==4:"manual recovery resumes source triggers";
+  reset();OtherTask orchestration=new OtherTask();RuntimeInfo.data.put("sjActivityAttempts",new JSONObject().put("day",SjActivityTasks.date()).put("count",30).toString());
+  orchestration.runFriendActivity(false,30);orchestration.runFriendActivity(true,30);
+  assert signs==1&&progress==4&&opens==4&&receives==1:"shared SJ budget starved independent activities";
+  assert count(new JSONObject(RuntimeInfo.instance.getString("sjActivityAttempts")),"count")==30;
+  reset();orchestration.runFriendActivity(false,0);assert writes+queries==0;
+  orchestration.runFriendActivity(true,1);orchestration.runFriendActivity(false,30);assert receives==0&&signs==1&&opens==4:"browse budget leaked into lucky cards";
+  reset();failOpen=true;orchestration.runFriendActivity(false,30);orchestration.runFriendActivity(true,30);assert opens==1&&receives==1:"one activity exception blocked another";
+  assert Log.lines.stream().noneMatch(s->s.contains("SECRET_TOKEN"));
+  reset();TimeUtil.cancel=true;try{orchestration.runFriendActivity(false,30);throw new AssertionError("cancellation swallowed");}catch(TaskCancelledException expected){}
+  reset();malformed=true;worker(30).luckyCard();assert sends==0&&Log.lines.stream().anyMatch(s->s.contains("无有效ID=1")):"missing task ID diagnostics";
   reset();failSend=true;worker(30).luckyCard();assert sends==1&&opens==2;worker(30).luckyCard();assert sends==1&&opens==4:"task cards recovered from query";
   reset();failOpen=true;try{worker(30).luckyCard();throw new AssertionError();}catch(java.io.IOException expected){assert !expected.getMessage().contains("SECRET_TOKEN");}assert opens==1;worker(30).luckyCard();assert opens==4:"unknown open queried without repeat";
   reset();emptyOpen=true;worker(30).luckyCard();before=writes;worker(30).luckyCard();assert writes==before&&opens==4:"missing card result must not resend";
@@ -125,7 +139,7 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
    if(p2e){worker(50).p2eBrowse();assert receives==1&&!pending("p2eBrowse::task\"\\");}
    else{worker(50).luckyCard();assert sends==1&&opens==4&&!pending("luckyTask::lucky\"\\");}
   }
-  reset();unknownTarget="open";worker(50).luckyCard();assert pending("luckyOpen::sign");nextDay();before=writes;worker(50).luckyCard();assert pending("luckyOpen::sign")&&writes==before:"card receipt expired like a daily task";
+  reset();unknownTarget="open";worker(50).luckyCard();assert pending("luckyOpen::sign");nextDay();before=opens;worker(50).luckyCard();assert pending("luckyOpen::sign")&&opens==before:"card receipt expired like a daily task";
   for(String target:new String[]{"sign","progress","send","open","receive"}){
    reset();unknownTarget=target;if(target.equals("receive"))worker(50).p2eBrowse();else worker(50).luckyCard();
    nextDay();
@@ -173,6 +187,8 @@ for signature in ('protected boolean supportsManualAction(', 'protected void run
     end = other.index('}', start)+1 if signature.startswith('protected boolean') else other.index('\n    }', start)+6
     manual.append(other[start:end])
 code = code.replace('@@MANUAL@@', '\n'.join(manual))
+start = other.index('private void runFriendActivity(')
+code = code.replace('@@RUN_FRIEND@@', other[start:other.index('\n    }', start)+6])
 ui = (SOURCE / 'ui/miuix/MiuixGroupFieldsActivity.kt').read_text(encoding='utf-8')
 assert '"OtherTask" -> listOf("恢复赚金币/好运卡未确认操作" to "clearFriendReceipts")' in ui
 assert '.setTitle("已核对赚金币和好运卡记录？")' in ui

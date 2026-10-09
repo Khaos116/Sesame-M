@@ -101,6 +101,20 @@ public class MyUtils {
         }
     }
 
+    /** RPC能力与账号无关，重启后保留；沿用模块版本隔离，升级后允许重新确认。 */
+    public static boolean isUnsupportedRpcRecorded(@Nullable Context context, @NonNull String route) {
+        if (context == null) return false;
+        SharedPreferences sp = context.getSharedPreferences("sesame_m_unsupported_rpc", Context.MODE_PRIVATE);
+        return sp.getBoolean(io.github.aw1y2z.sesame.BuildConfig.VERSION_NAME + ":" + route, false);
+    }
+
+    public static boolean recordUnsupportedRpc(@Nullable Context context, @NonNull String route) {
+        if (context == null) return false;
+        SharedPreferences sp = context.getSharedPreferences("sesame_m_unsupported_rpc", Context.MODE_PRIVATE);
+        sp.edit().putBoolean(io.github.aw1y2z.sesame.BuildConfig.VERSION_NAME + ":" + route, true).apply();
+        return true;
+    }
+
     public static void cacheUserName(@Nullable String uid, @Nullable String name) {
         if (TextUtils.isEmpty(uid) || TextUtils.isEmpty(name)) return;
         SharedPreferences sp = getMySp();

@@ -136,6 +136,9 @@ package io.github.aw1y2z.sesame.util;
 import org.json.JSONObject;
 public class MyUtils {
     public static boolean enabled = true;
+    public static final java.util.Set<String> unsupported = new java.util.HashSet<>();
+    public static boolean isUnsupportedRpcRecorded(Object context, String route) { return context != null && unsupported.contains(route); }
+    public static boolean recordUnsupportedRpc(Object context, String route) { if(context == null) return false; unsupported.add(route); return true; }
     public static boolean closeUnRpc() { return enabled; }
     public static boolean closeVerification() { return enabled; }
     public static boolean closeErrorFunction() { return enabled; }
@@ -160,6 +163,7 @@ public class Log {
     write("hook/ApplicationHook.java", """
 package io.github.aw1y2z.sesame.hook;
 public class ApplicationHook {
+    public static Object getContext() { return ApplicationHook.class; }
     public static io.github.aw1y2z.sesame.rpc.bridge.RpcBridge bridge;
     public static io.github.aw1y2z.sesame.entity.RpcEntity requestObject(String m, String d, int c, int i) {
         return bridge.requestObject(m, d, c, i);
@@ -249,7 +253,7 @@ public class GuardCheck {
     static JSONObject json(String s) { return new JSONObject(s); }
     static RpcRequestGuard guard(String method, String args) { return new RpcRequestGuard(new RpcEntity(method, args)); }
     static RpcRequestGuard guard(String method) { return guard(method, "[{}]"); }
-    static void reset() { RuntimeInfo.accounts.clear(); RuntimeInfo.account = "A"; MyUtils.enabled = true; }
+    static void reset() { RuntimeInfo.accounts.clear(); RuntimeInfo.account = "A"; MyUtils.enabled = true; MyUtils.unsupported.clear(); }
     public interface Callback { void sendJSONResponse(Reply reply); }
     public static class Reply {
         public String toJSONString() { return payload; }
@@ -452,6 +456,29 @@ public class GuardCheck {
         }
     }
     static void dailyReportRules() {
+        reset();
+        String learnedMethod = "new.task.finish";
+        String learnedArgs = "[{\"sceneCode\":\"NEW_SCENE\",\"taskType\":\"NEW_TASK\",\"action\":\"finish\",\"outBizNo\":\"1\"}]";
+        RpcRequestGuard inFlight = guard(learnedMethod, learnedArgs);
+        assert !inFlight.shouldSkip();
+        guard(learnedMethod, learnedArgs).record(json("{\"code\":\"400000040\"}"));
+        RuntimeInfo.accounts.clear(); RuntimeInfo.account = "B";
+        assert inFlight.shouldSkip() : "already-created guard missed newly learned rule";
+        assert guard(learnedMethod, learnedArgs.replace("1", "2")).shouldSkip();
+        assert !guard(learnedMethod, learnedArgs.replace("NEW_TASK", "OTHER_TASK")).shouldSkip();
+        assert !guard(learnedMethod, learnedArgs.replace("NEW_SCENE", "OTHER_SCENE")).shouldSkip();
+        assert !guard(learnedMethod, learnedArgs.replace("finish", "award")).shouldSkip();
+        assert !guard("new.task.award", learnedArgs).shouldSkip();
+        MyUtils.enabled = false;
+        assert !guard(learnedMethod, learnedArgs).shouldSkip();
+        for (String failure : new String[]{"{\"success\":false,\"errorMessage\":\"不支持rpc调用\"}", "{\"resultCode\":\"400000040\"}"}) {
+            reset(); guard(learnedMethod, learnedArgs).record(json(failure));
+            assert guard(learnedMethod, learnedArgs).shouldSkip();
+        }
+        for (String failure : new String[]{"{\"error\":\"RPC_SKIPPED\",\"code\":\"400000040\"}", "{\"success\":true,\"code\":\"400000040\"}", "{\"error\":\"TRANSPORT_ERROR\",\"errorMessage\":\"不支持rpc调用\"}", "{\"success\":false,\"errorMessage\":\"系统繁忙\"}"}) {
+            reset(); guard(learnedMethod, learnedArgs).record(json(failure));
+            assert MyUtils.unsupported.isEmpty() : "transient/local/success response learned as unsupported";
+        }
         String method = "com.alipay.antiep.finishTask";
         String[][] routes = {
             {"ANTFOREST_VITALITY_TASK", "LSHS_huisho20_202508"},
@@ -459,7 +486,22 @@ public class GuardCheck {
             {"ANTSTALL_TASK", "ANTSTALL_TASK_XCXYX_zslxx"},
             {"ANTFARM_DAILY_DRAW_TASK", "cclyx_wdhysj_3c_10"},
             {"ANTFARM_DAILY_DRAW_TASK", "cclyx_sgbhsd_3c_zm10c"},
-            {"ANTFARM_DAILY_DRAW_TASK", "cclyx_3bei_zslxx_2"}
+            {"ANTFARM_DAILY_DRAW_TASK", "cclyx_3bei_zslxx_2"},
+            {"ANTAIFISH", "LHS_QDRW_AIFISH"},
+            {"ANTSTALL_TASK", "ANTSTALL_XCXYX_mhxcz"},
+            {"ANTFARM_DAILY_DRAW_TASK", "cclyx_3bei_xjcmx_2"},
+            {"ANTFARM_IP_DRAW_TASK", "ipccl_sgbhsd_zm3c"},
+            {"ANTFARM_IP_DRAW_TASK", "ipccl_wdhysj_10"},
+            {"ANTFARM_ORCHARD_TASK_V2", "ANTFARM_ORCHARD_NORMAL_CAINIAO_DUAN"},
+            {"ANTFARM_ORCHARD_TASK_V2", "ANTFARM_ORCHARD_P2P_SHARER"},
+            {"ANTFARM_ORCHARD_TASK_V2", "goldenbean_receive3000bean"},
+            {"ANTFARM_ORCHARD_TASK_V2", "ORCHARD_NCLY_ZH_CNXDY"},
+            {"ANTFARM_ORCHARD_TASK_V2", "ORCHARD_NCLY_ZH_NLGJ"},
+            {"ANTFARM_ORCHARD_TASK_V2", "ORCHARD_NCLY_ZH_SJHH"},
+            {"ANTFARM_ORCHARD_TASK_V2", "ORCHARD_NCLY_ZH_XDNSR"},
+            {"ANTFARM_ORCHARD_TASK_V2", "ORCHARD_NORMAL_SHANGOUMIANDAN"},
+            {"ANTFARM_ORCHARD_TASK_V2", "ORCHARD_NORMAL_TAOBAOZHIBO_NEW"},
+            {"ANTFARM_ORCHARD_TASK_V2", "ORCHARD_TEAM_SPREAD_PERSON_2"}
         };
         for (String[] route : routes) {
             reset();
@@ -467,6 +509,9 @@ public class GuardCheck {
                     .put("taskType", route[1])).toString();
             RpcEntity request = new RpcEntity(method, args);
             assert new RpcRequestGuard(request).shouldSkip() : "unsupported primary route still sent: " + route[1];
+            RuntimeInfo.account = "B";
+            assert guard(method, args).shouldSkip() : "another account repeated an unsupported route";
+            RuntimeInfo.account = "A";
             JSONObject response = json(request.getResponseString());
             assert "RPC_SKIPPED".equals(response.optString("error"));
             assert response.optString("resultDesc").contains(method) : "skip reason hides the blocked interface";
@@ -484,6 +529,21 @@ public class GuardCheck {
             assert !folder.exists() || folder.list().length == 0 : "local route skip counted as a failure";
             MyUtils.enabled = false;
             assert !guard(method, args).shouldSkip() : "unsupported-RPC preference must remain configurable";
+        }
+        for (String task : new String[]{"GOLDENBEAN_GAME_ZH_BWXRK", "GOLDENBEAN_GAME_ZH0_NCJYG"}) {
+            reset();
+            String golden = "com.alipay.antieptask.finishTaskantorchard";
+            String args = new JSONArray().put(new JSONObject().put("sceneCode", "GOLDEN_BEAN_MASTER_TASK").put("taskType", task)).toString();
+            RpcEntity request = new RpcEntity(golden, args);
+            assert new RpcRequestGuard(request).shouldSkip();
+            assert "400000040".equals(json(request.getResponseString()).optString("code"));
+            RuntimeInfo.account = "B";
+            assert guard(golden, args).shouldSkip();
+            assert !guard(golden, args.replace(task, "OTHER_TASK")).shouldSkip();
+            assert !guard(golden, args.replace("GOLDEN_BEAN_MASTER_TASK", "OTHER_SCENE")).shouldSkip();
+            assert !guard(method, args).shouldSkip() : "different finish method was blocked";
+            MyUtils.enabled = false;
+            assert !guard(golden, args).shouldSkip();
         }
         for (String[] route : java.util.Arrays.copyOf(routes, 3)) {
             reset();
@@ -689,6 +749,13 @@ public class GuardCheck {
         }
         reset();
         String join = "com.antgroup.zmxy.zmmemberop.biz.rpc.promise.PromiseRpcManager.joinActivity";
+        String rebate = "com.alipay.pcreditbfweb.gameplay.rebate";
+        guard(rebate,"[{\"playId\":\"progress\",\"bizScene\":\"HAOYUNKA\",\"bizNo\":\"first\"}]")
+                .record(json("{\"success\":false,\"resultCode\":\"default\",\"resultView\":\"人气大爆发，请稍后再试\"}"));
+        assert guard(rebate,"[{\"playId\":\"progress\",\"bizScene\":\"HAOYUNKA\",\"bizNo\":\"second\"}]").shouldSkip()
+                : "random business numbers bypassed the same play's pause";
+        assert !guard(rebate,"[{\"playId\":\"sign\",\"bizScene\":\"HAOYUNKA_SIGN_IN\"}]").shouldSkip()
+                : "progress failure paused lucky sign-in";
         guard(join,"[{\"templateId\":\"A\"}]").record(json("{\"error\":1009,\"errorMessage\":\"访问被拒绝\"}"));
         assert guard(join,"[{\"templateId\":\"A\"}]").shouldSkip();
         assert !guard(join,"[{\"templateId\":\"B\"}]").shouldSkip() : "one template paused all member tasks";
