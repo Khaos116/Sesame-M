@@ -31,7 +31,7 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
   static String requestString(String op,String raw,int attempts,int retries)throws Exception{assert attempts==1&&retries==0;return rpc(op,raw,true);}
   static String rpc(String op,String raw,boolean write)throws Exception{
    JSONObject a=new JSONArray(raw).optJSONObject(0);assert a!=null;if(write)writes++;else queries++;
-   String stage=op.endsWith("gameplay.rebate")?(a.optString("bizScene").equals("HAOYUNKA_SIGN_IN")?"sign":"progress"):op.endsWith("sdk.task.trigger")?a.optString("stageCode"):op.endsWith("openLuckyCard")?"open":op.endsWith("gameP2eTaskReceive")?"receive":"";
+   String stage=op.endsWith("gameplay.rebate")?(a.optString("bizScene").equals("HAOYUNKA_SIGN_IN")?"sign":"progress"):op.endsWith("sdk.task.trigger")?a.optString("stageCode"):op.endsWith("openLuckyCard")?"open":op.endsWith("gameP2eTaskReceive")?"receive":op.endsWith("platformTaskSignUp")?"p2eSignup":op.endsWith("platformTaskComplete")?"p2eComplete":"";
    if(write&&!stage.isEmpty()&&stage.equals(rejectTarget)){rejectTarget="";return new JSONObject().put("success",false).put("resultCode",rejectCode).toString();}
    if(write&&!stage.isEmpty()&&stage.equals(unknownTarget)){unknownTarget="";return "{}";}
    if(op.endsWith("p2e.queryTaskList")){
@@ -99,14 +99,33 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
    reset();noCoins=true;listedCoins=listed;worker(30).p2eBrowse();assert receives==1&&!pending("p2eBrowse::task\"\\");
    assert Log.lines.stream().anyMatch(s->s.contains(listed?"任务标示奖励9金币":"金币数未返回"));noP2eTasks=true;worker(30).p2eBrowse();assert receives==1;
   }
-  for(String target:new String[]{"sign","progress","send","open","receive"}){
-   reset();rejectTarget=target;if(target.equals("receive"))worker(50).p2eBrowse();else worker(50).luckyCard();
+  for(String target:new String[]{"sign","progress","signup","send","open","receive","p2eSignup","p2eComplete"}){
+   boolean p2e=target.equals("receive")||target.startsWith("p2e");
+   reset();rejectTarget=target;if(p2e)worker(50).p2eBrowse();else worker(50).luckyCard();
    assert RuntimeInfo.data.keySet().stream().noneMatch(k->k.startsWith("sjActivityReceipt::")):"explicit rejection stuck "+target;
-   if(target.equals("receive")){worker(50).p2eBrowse();assert receives==1;}else{worker(50).luckyCard();assert signs==1&&progress==4&&sends==1&&opens==4:"retry failed "+target;}
+   int submitted=writes;String budget=RuntimeInfo.instance.getString("sjActivityAttempts");
+   if(p2e)worker(50).p2eBrowse();else worker(50).luckyCard();
+   assert writes==submitted&&budget.equals(RuntimeInfo.instance.getString("sjActivityAttempts")):"same-day rejection burned budget "+target;
+   nextDay();if(p2e){worker(50).p2eBrowse();assert receives==1;}else{worker(50).luckyCard();assert signs==1&&progress==4&&sends==1&&opens==4:"next-day retry failed "+target;}
   }
   for(String codeValue:new String[]{"102","3000","SYSTEM_BUSY","429","48","REMOTE_INVOKE_EXCEPTION","timeout","SERVER_BUSY"}){
    reset();rejectTarget="receive";rejectCode=codeValue;worker(30).p2eBrowse();assert pending("p2eBrowse::task\"\\"):"temporary failure discarded "+codeValue;
+   assert Status.flags.stream().noneMatch(k->k.startsWith("other::friendRejected::")):"temporary failure marked as rejection";
   }
+  reset();SjActivityTasks isolated=new SjActivityTasks(new OtherRequestGate(),50);rejectTarget="p2eSignup";
+  JSONObject directArgs=new JSONObject().put("taskId","task\"\\").put("taskToken","SECRET_TOKEN");
+  isolated.write("first","signup","com.alipay.gamecenteruprod.biz.rpc.platformTaskSignUp",directArgs);
+  assert isolated.write("first","receive","com.alipay.gamecenteruprod.biz.rpc.p2e.gameP2eTaskReceive",directArgs)!=null:"rejection blocked another action";
+  assert isolated.write("second","signup","com.alipay.gamecenteruprod.biz.rpc.platformTaskSignUp",directArgs)!=null:"rejection blocked another domain";
+  for(String target:new String[]{"p2eSignup","p2eComplete","receive","signup","send"}){
+   boolean p2e=target.equals("receive")||target.startsWith("p2e");reset();unknownTarget=target;
+   if(p2e)worker(50).p2eBrowse();else worker(50).luckyCard();
+   assert pending(p2e?"p2eBrowse::task\"\\":"luckyTask::lucky\"\\");
+   nextDay();pstate="UN_SIGNUP";taskState="NONE_SIGNUP";
+   if(p2e){worker(50).p2eBrowse();assert receives==1&&!pending("p2eBrowse::task\"\\");}
+   else{worker(50).luckyCard();assert sends==1&&opens==4&&!pending("luckyTask::lucky\"\\");}
+  }
+  reset();unknownTarget="open";worker(50).luckyCard();assert pending("luckyOpen::sign");nextDay();before=writes;worker(50).luckyCard();assert pending("luckyOpen::sign")&&writes==before:"card receipt expired like a daily task";
   for(String target:new String[]{"sign","progress","send","open","receive"}){
    reset();unknownTarget=target;if(target.equals("receive"))worker(50).p2eBrowse();else worker(50).luckyCard();
    nextDay();

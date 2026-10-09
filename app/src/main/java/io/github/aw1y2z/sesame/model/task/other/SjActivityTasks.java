@@ -124,6 +124,11 @@ final class SjActivityTasks {
     }
 
     JSONObject write(String domain, String action, String method, JSONObject args) throws Exception {
+        current();
+        if (Status.hasFlagToday("other::friendRejected::" + domain + "::" + action)) {
+            Log.record("活动[" + domain + "]：动作[" + action + "]今日已被明确拒绝，不重复提交、不扣预算");
+            return null;
+        }
         return call(method, args, true, action, null, domain);
     }
 
@@ -196,7 +201,10 @@ final class SjActivityTasks {
                 if (value.contains("繁忙") || value.contains("稍后") || value.contains("开小差") || value.contains("人气大爆发") || value.contains("限流") || value.contains("超时")
                         || value.contains("busy") || value.contains("timeout") || value.contains("timed out") || value.contains("rate limit") || value.contains("try again")) rejected = false;
             }
-            if (rejected) discard(domain, "服务端明确拒绝，本轮不重试，下轮可重新执行");
+            if (rejected) {
+                Status.flagToday("other::friendRejected::" + domain + "::" + action);
+                discard(domain, "服务端明确拒绝，同一动作今日不再提交，次日重新检查");
+            }
         }
         if (write || failed || !(Boolean.TRUE.equals(result.opt("success")) || Boolean.TRUE.equals(result.opt("isSuccess"))
                 || "alipay.imasp.program.programInvoke".equals(method) && result.optJSONObject("components") != null))

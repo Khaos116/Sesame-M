@@ -48,13 +48,11 @@ final class FriendActivityTasks {
         catch (java.time.DateTimeException invalid) { return false; }
     }
 
-    private void pruneMissingReceipts(String prefix, JSONArray rows) {
-        Set<String> live = new HashSet<>();
-        for (int i = 0; i < rows.length(); i++) live.add(text(rows.optJSONObject(i), "taskId"));
+    private void expireTaskReceipts(String prefix) {
         sj.current();
         for (String key : RuntimeInfo.getInstance().keysStartingWith(RECEIPT + prefix)) {
-            String domain = key.substring(RECEIPT.length()), id = domain.substring(prefix.length());
-            if (!live.contains(id) && oldReceipt(domain)) sj.discard(domain, "跨天任务已不在有效列表，清理失效记录");
+            String domain = key.substring(RECEIPT.length());
+            if (oldReceipt(domain)) sj.discard(domain, "每日任务已跨天，旧回执作废，按今日任务状态继续");
         }
     }
 
@@ -99,7 +97,7 @@ final class FriendActivityTasks {
         Log.record("赚金币浏览：开始查询，仅处理VIEW_TASK，不兑换现金");
         JSONArray rows = p2eRows();
         if (rows == null) return;
-        pruneMissingReceipts("p2eBrowse::", rows);
+        expireTaskReceipts("p2eBrowse::");
         int eligible = 0, completed = 0;
         for (int i = 0; i < rows.length(); i++) {
             sj.current();
@@ -323,7 +321,7 @@ final class FriendActivityTasks {
     private void luckyTasks() throws Exception {
         JSONArray rows = luckyRows();
         if (rows == null) return;
-        pruneMissingReceipts("luckyTask::", rows);
+        expireTaskReceipts("luckyTask::");
         for (int i = 0; i < rows.length(); i++) {
             JSONObject row = rows.optJSONObject(i);
             String id = text(row, "taskId"), show = text(row, "taskShowInfo"), state = text(row, "taskStatus");
