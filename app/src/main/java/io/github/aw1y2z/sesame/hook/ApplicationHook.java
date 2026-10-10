@@ -1146,7 +1146,6 @@ public class ApplicationHook extends XposedModule {
                             String method = intent.getStringExtra("method");
                             String data = intent.getStringExtra("data");
                             String type = intent.getStringExtra("type");
-                            // Log.record("收到测试消息:\n方法:" + method + "\n数据:" + data + "\n类型:" + type);
                             TestRpc.start(method, data, type);
                         } catch (Throwable th) {
                             Log.err(TAG, "sesame rpctest err:", th);

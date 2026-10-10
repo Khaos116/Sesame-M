@@ -103,7 +103,7 @@ public final class TaskAlternative {
     /** 唯一的 doFarmTask payload，返回原始响应。 */
     public static String request(String bizKey, String taskSceneCode, String version) {
         if (isTransactionTask(bizKey)) {
-            Log.i("doFarmTask⏭️跳过交易/履约类任务#bizKey=" + bizKey + "，不自动申报");
+            Log.i("⏭️跳过交易/履约类任务#bizKey=" + bizKey + "，不自动申报");
             return "{}";
         }
         String args = "[{\"bizKey\":\"" + bizKey + "\",\"requestType\":\"RPC\",\"sceneCode\":\"ANTFARM\","
@@ -162,7 +162,7 @@ public final class TaskAlternative {
             if (pending != null && taskId != null && !taskId.isEmpty()) {
                 pending.put(taskId, taskTitle);
             }
-            String message = logPrefix + "🕓已触发[" + taskTitle + "]#doFarmTask=" + describe(doFarmJo)
+            String message = logPrefix + "🕓已触发[" + taskTitle + "]#响应=" + describe(doFarmJo)
                     + "，结果以任务列表为准";
             if (sink != null) {
                 sink.log(message);

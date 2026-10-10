@@ -195,7 +195,6 @@ public class AntMember extends ModelTask {
             AntMemberTaskListMap.load();
             // 预置黑名单登记在 MessageUtil（单一真相，配置页据此标注"默认"）
             Set<String> blackList = MessageUtil.presetBlackList("AntMember", "AntMemberTaskList");
-            //blackList.add("去淘金币逛一逛");
             // 可继续添加更多黑名单任务
             
             Set<String> whiteList = new HashSet<>();// 从黑名单中移除该任务
@@ -1585,7 +1584,7 @@ public class AntMember extends ModelTask {
                         AntMemberRpcCall.DO_FARM_TASK_VERSION, "游戏中心", msg -> Log.other(msg));
                 return Outcome.FORGED;
             }
-            Log.other("游戏中心⚠️未完成[" + subTitle + "]#actionType=" + actionType);
+            Log.other("游戏中心⚠️未完成[" + subTitle + "]");
             //检查并标记黑名单任务
             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntMemberTaskList", subTitle, doTaskjo);
             return Outcome.UNABLE;
@@ -2276,7 +2275,7 @@ public class AntMember extends ModelTask {
                         recordId = lastOperateRecordId(taskTemplateId);
                     }
                     if (!StringUtil.isEmpty(recordId)) {
-                        Log.other("芝麻信用💳[" + taskTitle + "]沿用进行中的记录#recordId=" + recordId);
+                        Log.other("芝麻信用💳[" + taskTitle + "]沿用进行中的记录");
                     }
                 }
             }
@@ -2290,7 +2289,7 @@ public class AntMember extends ModelTask {
             //检查并标记黑名单任务
             MessageUtil.checkResultCodeAndMarkTaskBlackList("MemberCreditSesameTaskList", taskTitle, feedbackJo);
             if (!MessageUtil.checkResultCode(TAG, feedbackJo)) {
-                Log.other("芝麻信用💳上报[" + taskTitle + "]taskFeedback未受理#未发送push");
+                Log.other("芝麻信用💳上报[" + taskTitle + "]未受理#未发送push");
                 return false;
             }
             
@@ -2460,14 +2459,12 @@ public class AntMember extends ModelTask {
                 if ("WELFARE_PLUS_ANT_FOREST".equals(taskCode) || "WELFARE_PLUS_ANT_OCEAN".equals(taskCode)) {
                     if ("WELFARE_PLUS_ANT_FOREST".equals(taskCode)) {
                         //String forestHomePageResponse = AntMemberRpcCall.queryforestHomePage();
-                        //TimeUtil.sleep(2000);
                         String forestTaskResponse = AntMemberRpcCall.forestTask();
                         TimeUtil.sleep(500);
                         String forestreceiveTaskAward = AntMemberRpcCall.forestreceiveTaskAward();
                     }
                     else if ("WELFARE_PLUS_ANT_OCEAN".equals(taskCode)) {
                         //String oceanHomePageResponse = AntMemberRpcCall.queryoceanHomePage();
-                        //TimeUtil.sleep(2000);
                         String oceanTaskResponse = AntMemberRpcCall.oceanTask();
                         TimeUtil.sleep(500);
                         String oceanreceiveTaskAward = AntMemberRpcCall.oceanreceiveTaskAward();

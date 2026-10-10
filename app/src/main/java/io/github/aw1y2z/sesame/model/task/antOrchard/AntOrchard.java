@@ -339,7 +339,7 @@ public class AntOrchard extends ModelTask {
                             Log.farm("农场抽抽乐🧾完成[" + taskName + "]");
                             doublecheck = true;
                         } else {
-                            Log.farm("农场抽抽乐⚠️未完成[" + taskName + "]#taskType=" + taskType);
+                            Log.farm("农场抽抽乐⚠️未完成[" + taskName + "]");
                         }
                     }
                 }
@@ -647,9 +647,6 @@ public class AntOrchard extends ModelTask {
                 if ("main".equals(scene)) {
                     if (jo.getString("currentPlantScene").equals(scene) || switchPlantScene(PlantScene.main)) {
                         // 处理限时挑战活动
-                        //limitedTimeChallenge();
-                        //querySubplotsActivity("WISH");
-                        //querySubplotsActivity("CAMP_TAKEOVER");
                     }
                 }
 
@@ -1240,8 +1237,8 @@ public class AntOrchard extends ModelTask {
                 // 记下来，由 handleTaskList 在列表处理完后**按任务列表状态核对**
                 pendingVerifyTasks.put(taskId, taskTitle);
             }
-            Log.i("肥料任务🕓已触发[" + taskTitle + "]#finishTask=" + finishResponse.optString("code")
-                    + "#doFarmTask=" + TaskAlternative.describe(doFarmResponse) + "，结果以任务列表为准");
+            Log.i("肥料任务🕓已触发[" + taskTitle + "]#首选=" + finishResponse.optString("code")
+                    + "#兜底=" + TaskAlternative.describe(doFarmResponse) + "，结果以任务列表为准");
         } catch (Throwable t) {
             Log.err(TAG, "finishTaskTwice err:", t);
         }
@@ -1311,7 +1308,6 @@ public class AntOrchard extends ModelTask {
                     if (MessageUtil.checkResultCode(TAG, triggerJo)) {
                         Log.farm("肥料领取🎖️任务[" + title + "]奖励#获得[" + awardCount + "g]");
                     } else {
-                        //Log.farm("领取奖励失败: " + triggerJo.toString());
                     }
                 }
             } else {

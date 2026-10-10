@@ -55,7 +55,6 @@ public class AntStall extends ModelTask {
         // 添加首页
         taskTypeList.add("tianjiashouye");
         // 【木兰市集】逛精选好物
-        //        taskTypeList.add("ANTSTALL_XLIGHT_VARIABLE_AWARD");
         // 去饿了么果园逛一逛
         taskTypeList.add("ANTSTALL_ELEME_VISIT");
         // 去点淘赚元宝提现
@@ -246,7 +245,6 @@ public class AntStall extends ModelTask {
             AntStallTaskListMap.load();
             // 预置黑名单登记在 MessageUtil（单一真相，配置页据此标注"默认"）
             Set<String> blackList = MessageUtil.presetBlackList("AntStall", "AntStallTaskList");
-            //blackList.add("到店付款");
             Set<String> whiteList = new HashSet<>();// 从黑名单中移除该任务
             //whiteList.add("逛一逛树");
             for (String task : blackList) {
