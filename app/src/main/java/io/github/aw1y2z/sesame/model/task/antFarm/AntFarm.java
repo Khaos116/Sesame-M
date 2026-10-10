@@ -1925,7 +1925,7 @@ public class AntFarm extends ModelTask {
             if (bizKey.contains("multistage_gametask")) {
                 Log.record("庄园多阶段游戏任务🎮[" + title + "]#bizKey=" + bizKey);
             }
-            if (bizKey.contains("HEART_DONAT") || bizKey.equals("BAIDUJS_202512") || bizKey.equals("BABAFARM_TB")) {
+            if (bizKey.contains("HEART_DONAT") || bizKey.equals("BAIDUJS_202512")) {
                 return false;
             }
             // 按稳定 taskId 分派（2026-09-22 抓包实测）：
