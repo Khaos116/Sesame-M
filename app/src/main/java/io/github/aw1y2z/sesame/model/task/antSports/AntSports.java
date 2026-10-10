@@ -260,10 +260,6 @@ public class AntSports extends ModelTask {
                 }
             });
 
-            //if (donateCharityCoinType.getValue() != DonateCharityCoinType.ZERO) {
-            //    queryProjectList();
-            //}
-
             //if (coinExchangeDoubleCard.getValue()) {
             //    coinExchangeItem("AMS2024032927086104");
            // }
@@ -819,7 +815,6 @@ public class AntSports extends ModelTask {
                         Log.other("运动任务🧾[做任务得运动币:签到" + subscribeConfig.optString("subscribeExpireDays") + "天]奖励" + data.optString("toast") + "运动币");
                     }
                 } else {
-                    //                        Log.record("没有签到");
                 }
             } else {
                 // 服务端回读确认「今日已签到」：落当日标记，后续运行不再调签到接口
@@ -903,7 +898,6 @@ public class AntSports extends ModelTask {
                         JSONObject theme = themeList.optJSONObject(i);
                         String themeId = theme.optString("themeId");
                         String themeName = theme.optString("themeName");
-                        //Log.other("  " + themeName + "(" + themeId + ")");
                         JSONObject queryWorldMapJo = MyUtils.newJSONObject(AntSportsRpcCall.queryWorldMap(themeId));
                         if (MessageUtil.checkSuccess(TAG, queryWorldMapJo)) {
                             JSONObject queryWorldMapData = queryWorldMapJo.optJSONObject("data");
@@ -921,7 +915,6 @@ public class AntSports extends ModelTask {
                                 } else {
                                     name = null;
                                 }
-                                //Log.other("      " + name + "(" + cityId + ")");
                                 if (cityId.equals("000000") || cityId.equals("232700") || cityId.equals("620900") || cityId.equals("653100") || cityId.equals("710100")) {
                                     continue;
                                 }
@@ -946,16 +939,13 @@ public class AntSports extends ModelTask {
                                             MinCityPathName = queryCityPathName;
                                             minPathId = pathId;
                                             inited = true;
-                                            //Log.other("暂定走第一个主题[" + themeName + "]城市[" + name + "]线路[" + queryCityPathName + "](" + pathId + ")行走" + minCompleteCount + "次");
                                         }
-                                        //Log.other("        " + queryCityPathName + "(" + pathId + ")" + completeCount);
                                         if (completeCount < minCompleteCount && !locked) {
                                             minCompleteCount = completeCount;
                                             minThemeName = themeName;
                                             MinName = name;
                                             MinCityPathName = queryCityPathName;
                                             minPathId = pathId;
-                                            //Log.other("目前查询到主题[" + themeName + "]城市[" + name + "]线路[" + queryCityPathName + "](" + pathId + ")行走" + minCompleteCount + "次");
                                         }
                                     }
                                 }
@@ -2681,7 +2671,6 @@ public class AntSports extends ModelTask {
                             JSONObject logExtMap = task.optJSONObject("logExtMap");
                             //if (TaskHelper.checkTaskCompleted(logExtMap.getString("taskType"), logExtMap.getString("bizId"))) {
                             //
-                            //    TimeUtil.sleep(1000);
                             //    needRetry = true;
                             //}
                         }

@@ -488,7 +488,6 @@ public class AntMember extends ModelTask {
             AntMemberTaskListMap.load();
             // 预置黑名单登记在 MessageUtil（单一真相，配置页据此标注"默认"）
             Set<String> blackList = MessageUtil.presetBlackList("AntMember", "AntMemberTaskList");
-            //blackList.add("去淘金币逛一逛");
             // 可继续添加更多黑名单任务
             
             Set<String> whiteList = new HashSet<>();// 从黑名单中移除该任务
@@ -547,7 +546,6 @@ public class AntMember extends ModelTask {
                 }
                 
                 // 游戏中心任务流里的任务也要进候选，否则用户看不到、也无法手动勾选
-                // （原读取的 v4.queryTaskList 实测恒返回空 data，连带这里一直拿不到任务）
                 for (int feedPage = 0; feedPage < 5; feedPage++) {
                     jo = MyUtils.newJSONObject(AntMemberRpcCall.gameCenterGameFeeds(feedPage, 10));
                     if (!MessageUtil.checkSuccess(TAG, jo)) {
@@ -590,10 +588,8 @@ public class AntMember extends ModelTask {
             }
             //初始化MemberCreditSesameTaskListMap
             MemberCreditSesameTaskListMap.load();
-            // 芝麻粒任务走 taskFeedback 后服务端不校验是否真的参与过，未报名任务一发即 success
-            // ⇒ 游戏/浏览/签到/组件/施肥类不再预置拉黑，交给任务循环自动完成。
-            // 仍预置拉黑的只剩真实交易/履约类（下单/租赁/订酒店/回收/雇佣/付钱/查车）：没真做就申报"完成"属虚假履约，有风控风险
-            // 预置集登记在 MessageUtil（单一真相，配置页据此标注"默认"）
+            // 只预置拉黑真实交易/履约类（下单/租赁/订酒店/回收/雇佣/付钱/查车）：没真做就申报"完成"属虚假履约，有风控风险
+            // 其余任务类型交给任务循环自动完成；预置集登记在 MessageUtil（单一真相，配置页据此标注"默认"）
             blackList = MessageUtil.presetBlackList("AntMember", "MemberCreditSesameTaskList");
             // 可继续添加更多黑名单任务
             
@@ -1892,10 +1888,9 @@ public class AntMember extends ModelTask {
                 }
             }
 
-            // 执行任务：原先只处理 actionType=VIEW，其它类型直接 return（列表拿到了却静默不处理、
-            // 连日志都没有）。现在各类都尝试一次；做不了的当天只试一次（见 TaskAttemptPolicy）
+            // 各类任务都尝试一次；做不了的当天只试一次（见 TaskAttemptPolicy）
             // 完成与否一律以任务列表为准（探针 probeMemberStatus 复核），响应不可信；
-            // 兜底后的核对仍交给本模块的 verifyPendingTasks，故 listField 传 null（黑名单由 verify 管）
+            // 兜底后的核对交给本模块的 verifyPendingTasks，故 listField 传 null（黑名单由 verify 管）
             TaskAttemptPolicy.handle("member::game::" + taskId, subTitle, null,
                     () -> attemptDoTask(taskObj, taskId, subTitle, actionType, prizeAmount), Log::other,
                     new TaskAttemptPolicy.Site(null, "游戏中心", null, taskObj.optString("sceneCode", "").trim(),
@@ -1943,9 +1938,8 @@ public class AntMember extends ModelTask {
     }
 
     /**
-     * 核对「已触发但响应不可信」的游戏中心任务：等几秒后重拉任务列表，**仍为 NOT_DONE** 的才计入自动拉黑。
-     * <p>为什么以列表为准：{@code doFarmTask} 会回 102「服务器正在开小差」等错码但任务其实已生效，
-     * 服务端是异步推进状态的，只有列表里的 {@code taskStatus} 才是最终判据。
+     * 核对「已触发但响应不可信」的游戏中心任务：重拉任务列表，仍为 NOT_DONE 的才计入自动拉黑。
+     * <p>状态由服务端异步推进，只有列表里的 {@code taskStatus} 才是最终判据。
      */
     private void verifyPendingTasks() {
         TaskAlternative.verify(pendingVerifyTasks, VERIFY_CFG, unknown -> {
@@ -2003,7 +1997,6 @@ public class AntMember extends ModelTask {
     /**
      * 从 v3 任务列表响应里收集 {@code taskStatus=NOT_DONE} 的 taskId
      * （{@code data.taskModuleList[].taskList[]}）。
-     * <p>原先还会解析 v4 的 {@code data.gameTaskModule.gameTaskList}，该接口实测恒空、已弃用。
      */
     private static boolean collectNotDoneIds(String response, Set<String> out, Map<String, String> unknown) {
         try {
@@ -2087,14 +2080,9 @@ public class AntMember extends ModelTask {
     }
     
     /**
-     * 游戏中心（会员场景 xlyy_WJCNJT）宝箱领取。
-     * <p>任务流 {@code queryGameFeeds} 里的条目都是「玩游戏得1个宝箱」（只有
-     * gameId/cardId/appId + taskDesc，没有 taskId/taskStatus）；官方客户端在该场景同样只查不写
-     * （query* + batchReceiveTaskPrize），宝箱由游戏侧上报才 +1——实测 doFarmTask 的
-     * bizKey/taskSceneCode 七种组合全回 307「任务不存在」，所以这里不对任务流发完成请求，
-     * 只在首页报有待领时把宝箱领掉；任务名仍进「会员任务」黑名单候选，供手动剔除。
-     * <p>待领判据取官方字段：{@code taskModule.needReceive} / {@code needReceiveTaskCertCnt}，
-     * 上限 {@code reachTaskCertLimit}（{@code dailyTaskCertCntUpperLimit}，30/天）。
+     * 游戏中心（会员场景 xlyy_WJCNJT）宝箱领取：任务流条目无 taskId/taskStatus，不对其发完成请求，
+     * 宝箱由游戏侧上报才 +1，只领首页有待领的（上限 {@code dailyTaskCertCntUpperLimit}）；
+     * 任务名仍进「会员任务」黑名单候选供手动剔除。
      */
     public void gameCenterTaskPrize() {
         try {
@@ -2143,11 +2131,7 @@ public class AntMember extends ModelTask {
         }
     }
 
-    /**
-     * 游戏中心任务流条目在「会员任务｜黑名单列表」里的标题（如「九梦仙域：玩游戏得1个宝箱」）。
-     * <p>字段实测（2026-10-07 抓包）：{@code mainTitle}=游戏名、{@code subTitle}=宣传语、
-     * {@code taskDesc}=「玩游戏得1个宝箱」、{@code taskTagText}=「玩游戏得」。
-     */
+    /** 游戏中心任务流条目在「会员任务｜黑名单列表」里的标题 */
     private static String gameCenterTaskTitle(JSONObject feed) {
         String title = firstNonEmpty(feed, "mainTitle", "subTitle");
         String taskDesc = firstNonEmpty(feed, "taskDesc", "taskTagText");
@@ -2814,7 +2798,7 @@ public class AntMember extends ModelTask {
             if (!StringUtil.isEmpty(recordId)) {
                 Log.record("芝麻信用💳[" + taskTitle + "]任务列表已有进行中记录，跳过重复join");
             } else {
-                JSONObject joinJo = MyUtils.newJSONObject(AntMemberRpcCall.joinSesameTaskNew(taskTemplateId));
+                JSONObject joinJo = MyUtils.newJSONObject(AntMemberRpcCall.joinSesameTask(taskTemplateId));
                 TimeUtil.sleep(500);
                 if (MessageUtil.checkResultCode(TAG, joinJo)) {
                     JSONObject joinData = joinJo.optJSONObject("data");
@@ -3034,7 +3018,6 @@ public class AntMember extends ModelTask {
                 if ("WELFARE_PLUS_ANT_FOREST".equals(taskCode) || "WELFARE_PLUS_ANT_OCEAN".equals(taskCode)) {
                     if ("WELFARE_PLUS_ANT_FOREST".equals(taskCode)) {
                         //String forestHomePageResponse = AntMemberRpcCall.queryforestHomePage();
-                        //TimeUtil.sleep(2000);
                         String forestTaskResponse = AntMemberRpcCall.forestTask();
                         TimeUtil.sleep(500);
                         // 设备日报：KUAIDI_VITALITY 领奖每轮都失败（无原因，每天 11+ 次），失败后当天不再重复领
@@ -3047,7 +3030,6 @@ public class AntMember extends ModelTask {
                     }
                     else if ("WELFARE_PLUS_ANT_OCEAN".equals(taskCode)) {
                         //String oceanHomePageResponse = AntMemberRpcCall.queryoceanHomePage();
-                        //TimeUtil.sleep(2000);
                         String oceanTaskResponse = AntMemberRpcCall.oceanTask();
                         TimeUtil.sleep(500);
                         String oceanreceiveTaskAward = AntMemberRpcCall.oceanreceiveTaskAward();

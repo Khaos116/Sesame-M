@@ -47,7 +47,7 @@ public final class GoldenBeansExchange {
             }
             JSONObject info = indexJo.optJSONObject("manureExchangeInfo");
             if (info == null) {
-                Log.goldenBeans("金豆换豆⚠️响应缺少manureExchangeInfo");
+                Log.goldenBeans("金豆换豆⚠️响应缺少兑换信息");
                 return;
             }
             boolean farmOpened = info.optBoolean("farmOpened", false);
@@ -98,7 +98,7 @@ public final class GoldenBeansExchange {
             }
             int beanDelta = beanDelta(exchangeResponse);
             if (beanDelta <= 0) {
-                Log.goldenBeans("金豆换豆⚠️响应缺少有效beanDelta#保留预留额度");
+                Log.goldenBeans("金豆换豆⚠️响应缺少有效到账信息#保留预留额度");
                 return;
             }
             Log.goldenBeans("金豆换豆🌱请求[" + reserved + "豆]消耗["
@@ -127,7 +127,7 @@ public final class GoldenBeansExchange {
             }
             JSONObject info = indexJo.optJSONObject("manureExchangeInfo");
             if (info == null) {
-                Log.goldenBeans("金豆芝麻粒换豆⚠️响应缺少manureExchangeInfo");
+                Log.goldenBeans("金豆芝麻粒换豆⚠️响应缺少兑换信息");
                 return;
             }
             boolean pageOpened = info.optBoolean("pageOpened", false);
@@ -172,7 +172,7 @@ public final class GoldenBeansExchange {
             }
             int beanDelta = beanDelta(exchangeResponse);
             if (beanDelta <= 0) {
-                Log.goldenBeans("金豆芝麻粒换豆⚠️响应缺少有效beanDelta#保留预留额度");
+                Log.goldenBeans("金豆芝麻粒换豆⚠️响应缺少有效到账信息#保留预留额度");
                 return;
             }
             // 兑换成功即记账，后续回查失败不能恢复已经消耗的单日额度。

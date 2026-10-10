@@ -87,7 +87,7 @@ public final class TaskAlternative {
             throw new IllegalArgumentException("doFarmTask missing request fields");
         }
         if (isTransactionTask(bizKey)) {
-            Log.i("doFarmTask⏭️跳过交易/履约类任务#bizKey=" + bizKey + "，不自动申报");
+            Log.i("⏭️跳过交易/履约类任务#bizKey=" + bizKey + "，不自动申报");
             return "{}";
         }
         String args;
@@ -155,7 +155,7 @@ public final class TaskAlternative {
             if (pending != null && taskId != null && !taskId.isEmpty()) {
                 pending.put(taskId, taskTitle);
             }
-            String message = logPrefix + "🕓已触发[" + taskTitle + "]#doFarmTask=" + describe(doFarmJo)
+            String message = logPrefix + "🕓已触发[" + taskTitle + "]#响应=" + describe(doFarmJo)
                     + "，结果以任务列表为准";
             if (sink != null) {
                 sink.log(message);
@@ -231,11 +231,11 @@ public final class TaskAlternative {
                 String title = item.getValue();
                 if (unknown.containsKey(key)) continue;
                 if (stillTodo.contains(key)) {
-                    cfg.sink.log(cfg.logPrefix + "⚠️未完成[" + title + "]#doFarmTask 未生效，已交给自动拉黑机制");
+                    cfg.sink.log(cfg.logPrefix + "⚠️未完成[" + title + "]，已交给自动拉黑机制");
                     MessageUtil.MarkTaskBlackList(cfg.moduleName, cfg.taskListField, cfg.listDisplay,
                             cfg.blacklistByTitle ? title : key);
                 } else {
-                    cfg.sink.log(cfg.logPrefix + cfg.doneTag + "[" + title + "]#doFarmTask（已按任务列表核对）");
+                    cfg.sink.log(cfg.logPrefix + cfg.doneTag + "[" + title + "]（已按任务列表核对）");
                     changed = true;
                 }
             }

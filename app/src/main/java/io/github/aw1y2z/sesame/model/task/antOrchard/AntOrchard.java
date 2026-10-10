@@ -108,6 +108,13 @@ public class AntOrchard extends ModelTask {
 
     /** 本轮是否已记过「已达次数上限」：主场景额度用完后每轮还会再查一次，只留一行 */
     private static boolean spreadLimitLoggedThisRun = false;
+
+    /** 主账号肥料余额与单次消耗（本轮缓存）：两个场景同池，yeb 复用即可，不再多查一次 */
+    private static int spreadHappyPoint = -1;
+    private static int spreadWateringCost = -1;
+
+    /** 本轮是否已记过「肥料不足」：同池的另一个场景不再重复播报同一事实 */
+    private static boolean spreadShortageLoggedThisRun = false;
     private static final ArrayList<String> enableSceneList = new ArrayList<>();
 
     @Override
@@ -797,9 +804,6 @@ public class AntOrchard extends ModelTask {
                 if ("main".equals(scene)) {
                     if (jo.optString("currentPlantScene").equals(scene) || switchPlantScene(PlantScene.main)) {
                         // 处理限时挑战活动
-                        //limitedTimeChallenge();
-                        //querySubplotsActivity("WISH");
-                        //querySubplotsActivity("CAMP_TAKEOVER");
                     }
                 }
 
@@ -854,6 +858,9 @@ public class AntOrchard extends ModelTask {
     private void orchardSpreadManure() {
         try {
             spreadLimitLoggedThisRun = false;
+            spreadShortageLoggedThisRun = false;
+            spreadHappyPoint = -1;
+            spreadWateringCost = -1;
             // 轮次上限兜底：每轮最多施肥一次，按「上限/批量步长 + 余量」估算并留足两场景的量
             final int MAX_SPREAD_ROUND = (MAIN_SPREAD_DAILY_LIMIT / BATCH_SPREAD_SIZE + 10) * 8;
             int round = 0;
@@ -912,6 +919,9 @@ public class AntOrchard extends ModelTask {
         try {
             String sceneName = scene.name();
             String wua = getWua();
+            // 写请求可能已扣肥料，即使回执丢失也不能继续使用旧余额。
+            spreadHappyPoint = -1;
+            spreadWateringCost = -1;
             String result = AntOrchardRpcCall.orchardSpreadManure(sceneName, spreadUseBatchThisTime, wua);
             JSONObject jo = MyUtils.newJSONObject(result);
 
@@ -1005,6 +1015,15 @@ public class AntOrchard extends ModelTask {
         return usedTimes + BATCH_SPREAD_SIZE <= limit;
     }
 
+    /** 肥料不足只播报一次：两个场景同池，另一个场景不再重复同一事实 */
+    private static void logSpreadShortage(int happyPoint, long needCost) {
+        if (spreadShortageLoggedThisRun) {
+            return;
+        }
+        spreadShortageLoggedThisRun = true;
+        Log.record("农场施肥⏭️肥料不足[" + happyPoint + "/" + needCost + "g]");
+    }
+
     /**
      * 检查是否可以施肥
      */
@@ -1024,6 +1043,8 @@ public class AntOrchard extends ModelTask {
             switch (scene) {
                 case main:
                     // 主场景施肥检查
+                    spreadHappyPoint = -1;
+                    spreadWateringCost = -1;
                     JSONObject mainAccount = MyUtils.newJSONObject(AntOrchardRpcCall.orchardSyncIndex());
                     if (!MessageUtil.checkResultCode(TAG, mainAccount)) {
                         return false;
@@ -1032,9 +1053,15 @@ public class AntOrchard extends ModelTask {
                     if (accountInfo == null) {
                         return false;
                     }
-                    int happyPoint = Integer.parseInt(accountInfo.optString("happyPoint", "0"));
-                    int wateringCost = accountInfo.optInt("wateringCost");
-                    int leftTimes = accountInfo.optInt("wateringLeftTimes");
+                    int happyPoint = accountInfo.optInt("happyPoint", -1);
+                    int wateringCost = accountInfo.optInt("wateringCost", -1);
+                    int leftTimes = accountInfo.optInt("wateringLeftTimes", -1);
+                    if (happyPoint < 0 || wateringCost <= 0 || leftTimes < 0 || leftTimes > MAIN_SPREAD_DAILY_LIMIT) {
+                        Log.record("农场施肥⏭️余额、消耗或剩余次数无效，本轮未发送施肥请求");
+                        return false;
+                    }
+                    spreadHappyPoint = happyPoint;
+                    spreadWateringCost = wateringCost;
                     int usedTimes = MAIN_SPREAD_DAILY_LIMIT - leftTimes;
 
                     // 仅在每日次数配到 200（命中 199+5 漏洞）时才启用批量突破；其余数值精确施肥不批量
@@ -1043,18 +1070,18 @@ public class AntOrchard extends ModelTask {
                     // 计数序列 4,9,…,194,199,204 恰好命中漏洞（199 处批量 +5 = 204），且不会落在 200~203。
                     boolean batch = batchEnabled && shouldBatchSpread(usedTimes, limit);
                     // 一键5次时服务端一次要消耗 5 倍肥料，余额判据必须按批量算，否则会发出注定失败的请求
-                    int needCost = batch ? wateringCost * BATCH_SPREAD_SIZE : wateringCost;
+                    long needCost = batch ? (long) wateringCost * BATCH_SPREAD_SIZE : wateringCost;
                     if (happyPoint < needCost) {
                         if (batch) {
                             // 肥料不足 5 倍：退回单次（若还能施单次）
                             batch = false;
                             needCost = wateringCost;
                             if (happyPoint < needCost) {
-                                Log.record("农场施肥⏭️肥料不足[" + happyPoint + "/" + needCost + "g]");
+                                logSpreadShortage(happyPoint, needCost);
                                 return false;
                             }
                         } else {
-                            Log.record("农场施肥⏭️肥料不足[" + happyPoint + "/" + needCost + "g]");
+                            logSpreadShortage(happyPoint, needCost);
                             return false;
                         }
                     }
@@ -1079,30 +1106,38 @@ public class AntOrchard extends ModelTask {
                     if (progressInfo == null) {
                         return false;
                     }
-                    int currentProgress = progressInfo.optInt("spreadProgress");
+                    int currentProgress = progressInfo.optInt("spreadProgress", -1);
+                    if (currentProgress < 0 || currentProgress >= limit) {
+                        return false;
+                    }
 
                     // 仅在每日次数配到 200（命中 199+5 漏洞）时才启用批量突破；其余数值精确施肥不批量
                     boolean batchEnabledY = Boolean.TRUE.equals(useBatchSpread.getValue());
                     // 余额宝场景同样适用 199+5 漏洞：前 (BATCH_SPREAD_SIZE-1) 次单次补到 ≡4(mod5)，之后持续批量
                     boolean batchY = batchEnabledY && shouldBatchSpread(currentProgress, limit);
-                    // yeb 肥料与主账号同池，仅在批量（需 5 倍）时取主账号余额做判据
-                    if (batchY) {
+                    // 单独启用余额宝或前次已施肥时，先刷新同池余额。
+                    if (spreadHappyPoint < 0 || spreadWateringCost <= 0) {
                         JSONObject yebMain = MyUtils.newJSONObject(AntOrchardRpcCall.orchardSyncIndex());
                         if (!MessageUtil.checkResultCode(TAG, yebMain)) {
-                            // 同步校验失败拿不到余额：保守退回单次，避免发出注定失败的 5 倍批量
-                            batchY = false;
+                            Log.record("农场施肥⏭️余额宝余额查询失败，本轮未发送施肥请求");
+                            return false;
                         } else {
                             JSONObject yai = yebMain.optJSONObject("farmMainAccountInfo");
-                            int happyPointY = yai != null ? yai.optInt("happyPoint") : 0;
-                            int wateringCostY = yai != null ? yai.optInt("wateringCost") : 0;
-                            if (yai == null || happyPointY < wateringCostY * BATCH_SPREAD_SIZE) {
-                                // 肥料不足 5 倍：退回单次（沿用原 yeb 不判肥料，直接允许单次）
-                                batchY = false;
-                            }
+                            int happyPointY = yai != null ? yai.optInt("happyPoint", -1) : -1;
+                            int wateringCostY = yai != null ? yai.optInt("wateringCost", -1) : -1;
+                            spreadHappyPoint = happyPointY;
+                            spreadWateringCost = wateringCostY;
                         }
                     }
-                    // 修正原 `limit < dailyLimit`：允许推进到漏洞上限 204（dailyLimit 名义 200），避免 yeb 完全不施肥
-                    if (currentProgress >= limit) {
+                    if (spreadHappyPoint < 0 || spreadWateringCost <= 0) {
+                        Log.record("农场施肥⏭️余额宝余额或消耗无效，本轮未发送施肥请求");
+                        return false;
+                    }
+                    if (batchY && spreadHappyPoint < (long) spreadWateringCost * BATCH_SPREAD_SIZE) {
+                        batchY = false;
+                    }
+                    if (spreadHappyPoint < spreadWateringCost) {
+                        logSpreadShortage(spreadHappyPoint, spreadWateringCost);
                         return false;
                     }
                     spreadUseBatchThisTime = batchY;
@@ -1571,7 +1606,7 @@ public class AntOrchard extends ModelTask {
                     // taskId 当作 taskType 传给 finishTask（该 RPC 的参数名就叫 taskType）
                     String via = finishTaskTwice(sceneCode, title, taskId);
                     if (via != null) {
-                        Log.farm("肥料任务🧾完成[" + title + "]第" + (rightsTimes + cnt + 1) + "次#" + via);
+                        Log.farm("肥料任务🧾完成[" + title + "]第" + (rightsTimes + cnt + 1) + "次");
                     } else {
                         break;
                     }
@@ -1585,7 +1620,7 @@ public class AntOrchard extends ModelTask {
                 // taskId 当作 taskType 传递
                 String via = finishTaskTwice(sceneCode, title, taskId);
                 if (via != null) {
-                    Log.farm("肥料任务🧾完成[" + title + "]#" + via);
+                    Log.farm("肥料任务🧾完成[" + title + "]");
                 }
                 return true;
             }
@@ -1593,7 +1628,7 @@ public class AntOrchard extends ModelTask {
             //配合黑名单的兜底操作
             String via = finishTaskTwice(sceneCode, title, taskId);
             if (via != null) {
-                Log.farm("肥料任务🧾完成[" + title + "]#" + via);
+                Log.farm("肥料任务🧾完成[" + title + "]");
             }
             return true;
         } catch (Throwable t) {
@@ -1622,7 +1657,11 @@ public class AntOrchard extends ModelTask {
     private String finishTaskTwice(String sceneCode, String taskTitle, String taskId) {
         try {
             JSONObject finishResponse = MyUtils.newJSONObject(AntOrchardRpcCall.finishTask(sceneCode, taskId));
-            if (MessageUtil.checkSuccess(TAG, finishResponse)) {
+            // 首选接口对多数任务必然回错（400000040 不支持调用、400000001 任务未配置），属预期：
+            // 静默判定，交给 doFarmTask 与列表核对；其它错误仍照常记录
+            String finishCode = finishResponse.optString("code", "").trim();
+            boolean expectedFail = MessageUtil.isUnsupportedRpc(finishResponse) || "400000001".equals(finishCode);
+            if (!expectedFail && MessageUtil.checkSuccess(TAG, finishResponse)) {
                 return "finishTask";
             }
             JSONObject doFarmResponse = MyUtils.newJSONObject(AntOrchardRpcCall.doFarmTask(taskId, sceneCode));
@@ -1639,8 +1678,8 @@ public class AntOrchard extends ModelTask {
                 // 记下来，由 handleTaskList 在列表处理完后**按任务列表状态核对**
                 pendingVerifyTasks.put(taskId, taskTitle);
             }
-            Log.i("肥料任务🕓已触发[" + taskTitle + "]#finishTask=" + finishResponse.optString("code")
-                    + "#doFarmTask=" + TaskAlternative.describe(doFarmResponse) + "，结果以任务列表为准");
+            Log.i("肥料任务🕓已触发[" + taskTitle + "]#首选=" + finishResponse.optString("code")
+                    + "#兜底=" + TaskAlternative.describe(doFarmResponse) + "，结果以任务列表为准");
         } catch (Throwable t) {
             if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "finishTaskTwice err:", t);
@@ -1718,7 +1757,6 @@ public class AntOrchard extends ModelTask {
                     if (MessageUtil.checkResultCode(TAG, triggerJo)) {
                         Log.farm("肥料领取🎖️任务[" + title + "]奖励#获得[" + awardCount + "g]");
                     } else {
-                        //Log.farm("领取奖励失败: " + triggerJo.toString());
                     }
                 }
             } else {

@@ -1189,7 +1189,6 @@ public class AntFarm extends ModelTask {
             double foodHaveStolen = jo.optDouble("foodHaveStolen", 0d);
             Log.farm("召回小鸡📣偷吃[" + user + "]饲料" + foodHaveStolen + "g");
             // 这里不需要加
-            // add2FoodStock((int)foodHaveStolen);
         } catch (Throwable t) {
             Log.err(TAG, "recallAnimal err:", t);
         }
@@ -1880,7 +1879,7 @@ public class AntFarm extends ModelTask {
                 JSONObject rjo = MyUtils.newJSONObject(AntFarmRpcCall.receiveDonationLevelReward(rightsId));
                 if (MessageUtil.checkMemo(TAG, rjo)) {
                     claimed++;
-                    Log.farm("爱心鸡结号❤️领取等级奖励[" + item.optString("levelName") + "] rightsId=" + rightsId);
+                    Log.farm("爱心鸡结号❤️领取等级奖励[" + item.optString("levelName") + "]");
                 }
                 TimeUtil.sleep(1000L);
             }
@@ -1933,7 +1932,7 @@ public class AntFarm extends ModelTask {
                 JSONObject rjo = MyUtils.newJSONObject(AntFarmRpcCall.receiveCompetitionTaskAward(taskType, canReceive));
                 if (MessageUtil.checkSuccess(TAG, rjo)) {
                     claimed++;
-                    Log.farm("爱心鸡结号❤️领取任务奖励[" + task.optString("title") + "] taskType=" + taskType);
+                    Log.farm("爱心鸡结号❤️领取任务奖励[" + task.optString("title") + "]");
                 }
                 TimeUtil.sleep(1000L);
             }
@@ -3092,7 +3091,6 @@ public class AntFarm extends ModelTask {
             if (isDoTask) {
                 Log.farm("饲料任务🧾完成[" + title + "]");
             } else {
-                //Log.record("任务执行失败或跳过: " + title);
             }
         } catch (TaskCancelledException e) {
             throw e;
@@ -4962,10 +4960,10 @@ public class AntFarm extends ModelTask {
                         TimeUtil.sleep(2000);
                         if (via != null) {
                             todoDone++;
-                            Log.farm("抽抽乐🧾完成[" + title + "]#" + via);
+                            Log.farm("抽抽乐🧾完成[" + title + "]");
                         } else {
                             todoSkipped++;
-                            Log.farm("抽抽乐⚠️未完成[" + title + "]#taskId=" + taskId + "#remain=" + remain + "，需在支付宝内手动完成");
+                            Log.farm("抽抽乐⚠️未完成[" + title + "]，需在支付宝内手动完成");
                         }
                     } else {
                         todoDone++;
@@ -5037,7 +5035,6 @@ public class AntFarm extends ModelTask {
                         totalCent = holdingCount.optInt("cent", 0);
                     }
                 }
-                //Log.record("当前持有总碎片:" + (totalCent / 100));
                 JSONArray itemVOList = respJson.optJSONArray("itemInfoVOList");
                 if (itemVOList == null) {
                     return true;
@@ -6367,7 +6364,6 @@ public class AntFarm extends ModelTask {
             endTime.set(Calendar.MILLISECOND, 0);
 
             if (now.before(startTime) || now.after(endTime)) {
-                //Log.record("家庭任务🏠道早安#当前时间不在 06:00-10:00，跳过");
                 return;
             }
 
@@ -6378,7 +6374,6 @@ public class AntFarm extends ModelTask {
 
             // 本地去重：一天只发送一次
             if (Status.hasFlagToday("antFarm::deliverMsgSend")) {
-                //Log.record("家庭任务🏠道早安#今日已在本地发送过，跳过");
                 return;
             }
 

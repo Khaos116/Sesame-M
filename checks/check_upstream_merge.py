@@ -166,7 +166,7 @@ public class FlowCheck {
         static String queryCreditFeedback() { return ok().put("creditFeedbackVOS", new JSONArray()).toString(); }
         static String collectCreditFeedback(String id) { throw new AssertionError("unexpected reward"); }
         static String collectAllCreditFeedback() { throw new AssertionError("unexpected reward"); }
-        static String joinSesameTaskNew(String id) { calls.add("join"); return join; }
+        static String joinSesameTask(String id) { calls.add("join"); return join; }
         static String feedBackSesameTaskNew(String id) { calls.add("feedback"); return ok().toString(); }
         static String finishSesameTask(String id) { calls.add("push:" + id); if(losePushReply) throw new IllegalStateException("lost push reply"); return ok().toString(); }
         static String queryLastOperateTask() { calls.add("last"); if(cancelLast) throw new TaskCancelledException(); return last; }
@@ -223,6 +223,7 @@ public class FlowCheck {
     static class Orchard {
         static final int BATCH_SPREAD_SIZE = 5;
         boolean spreadUseBatchThisTime; int fertilizerProgress = 100; String userId = "self";
+        int spreadHappyPoint = -1, spreadWateringCost = -1;
         Map<String,Integer> orchardSpreadManureSceneList = Map.of("MAIN", 10);
         String getWua() { return ""; } static int targetSpreadTimes(Integer n) { return n; }
         @@ORCHARD@@
