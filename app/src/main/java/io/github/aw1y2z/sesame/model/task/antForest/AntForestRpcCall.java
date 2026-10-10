@@ -703,12 +703,6 @@ public class AntForestRpcCall {
      * 森林抽抽乐-活动列表
      */
     public static String enterDrawActivityopengreen(String activityId, String sceneCode, String source) {
-        //JSONObject params = new JSONObject();
-        //params.put("activityId", "2025060301");
-        //params.put("requestType", "RPC");
-        //params.put("sceneCode", "ANTFOREST_NORMAL_DRAW");
-        //params.put("source", source);
-        //String args = "[" + params + "]";
         String requestData = "[{\"activityId\":\"" + activityId + "\",\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\"," + "\"source\":\"" + source + "\"}]";
         return ApplicationHook.requestString("com.alipay.antiepdrawprod.enterDrawActivityopengreen", requestData);
     }
@@ -718,11 +712,6 @@ public class AntForestRpcCall {
      */
     public static String listTaskopengreen(String sceneCode, String source) {
         //        [{"requestType":"RPC","sceneCode":"ANTFOREST_NORMAL_DRAW_TASK","source":"task_entry"}]
-        //JSONObject params = new JSONObject();
-        //params.put("requestType", "RPC");
-        //params.put("sceneCode", sceneCode);
-        //params.put("source", source);
-        //String args = "[" + params + "]";
         String requestData = "[{\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"" + source + "\"}]";
         return ApplicationHook.requestString("com.alipay.antieptask.listTaskopengreen", requestData);
     }
@@ -731,13 +720,6 @@ public class AntForestRpcCall {
      * 森林抽抽乐-签到领取次数-访问即算签到，所以直接领取？？
      */
     public static String receiveTaskAwardopengreen(String source, String sceneCode, String taskType) {
-        //JSONObject params = new JSONObject();
-        //params.put("ignoreLimit", true);
-        //params.put("requestType", "RPC");
-        //params.put("sceneCode", sceneCode);
-        //params.put("source", source);
-        //params.put("taskType", taskType);
-        //String args = "[" + params + "]";
         String requestData = "[{\"ignoreLimit\":true,\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\"," + "\"source\":\"" + source + "\",\"taskType\":\"" + taskType + "\"}]";
         return ApplicationHook.requestString("com.alipay.antieptask.receiveTaskAwardopengreen", requestData);
     }
