@@ -2958,60 +2958,49 @@ public class AntMember extends ModelTask {
     }
 
     private void CheckInTaskRpcManager() {
-        if (DailyTask.skipFlag("AntMember::zmlCheckIn", "芝麻粒签到")) {
-            return;
-        }
-        // 领取是否失败：失败时不置今日标记，留给下一轮重试（否则当天不再重试 → 漏领）
-        boolean claimFailed = true;
+        if (DailyTask.skipFlag("AntMember::zmlCheckIn", "芝麻粒签到")) return;
         try {
-            
-            String checkInRes = AntMemberRpcCall.alchemyQueryCheckIn("zml");
-            JSONObject checkInJo = MyUtils.newJSONObject(checkInRes);
-            if (MessageUtil.checkResultCode(TAG, checkInJo)) {
-                JSONObject data = checkInJo.optJSONObject("data");
-                if (data != null) {
-                    JSONObject currentDay = data.optJSONObject("currentDateCheckInTaskVO");
-                    if (currentDay != null) {
-                        String status = currentDay.optString("status");
-                        String checkInDate = currentDay.optString("checkInDate");
-                        if ("CAN_COMPLETE".equals(status) && !checkInDate.isEmpty()) {
-                            String completeRes = AntMemberRpcCall.zmCheckInCompleteTask(checkInDate, "zml");
-                            try {
-                                JSONObject completeJo = MyUtils.newJSONObject(completeRes);
-                                if (MessageUtil.checkResultCode(TAG, completeJo)) {
-                                    claimFailed = false;
-                                    JSONObject prize = completeJo.optJSONObject("data");
-                                    int num = 0;
-                                    if (prize != null) {
-                                        num = prize.optInt("zmlNum", prize.optJSONObject("prize") != null ? prize.optJSONObject("prize").optInt("num", 0) : 0);
-                                    }
-                                    Log.other("收芝麻粒🙇🏻‍♂️领取[每日签到成功]#获得" + num + "粒");
-                                }
-                                else {
-                                    claimFailed = true;
-                                    Log.error(".doSesameAlchemy#" + "签到失败:" + completeRes);
-                                }
-                            }
-                            catch (Throwable e) {
-                                claimFailed = true;
-                                Log.printStackTrace(TAG + ".doSesameAlchemy.alchemyCheckInComplete", e);
-                            }
-                        }
-                    }
-                }
+            JSONObject response = MyUtils.newJSONObject(AntMemberRpcCall.alchemyQueryCheckIn("zml"));
+            if (!MessageUtil.checkResultCode(TAG, response)) {
+                Log.other("芝麻粒签到：查询未成功，未提交领取，不记今日完成");
+                return;
             }
-            if (claimFailed) {
-                Log.other("收芝麻粒🙇🏻‍♂️签到领取失败#本轮不置今日标记，稍后重试");
+            JSONObject data = response.optJSONObject("data");
+            JSONObject currentDay = data == null ? null : data.optJSONObject("currentDateCheckInTaskVO");
+            if (currentDay == null) {
+                Log.other("芝麻粒签到：查询缺少当日任务，未提交领取，不记今日完成");
+                return;
             }
-            else {
+            String status = currentDay.optString("status").trim();
+            if ("COMPLETED".equals(status)) {
                 Status.flagToday("AntMember::zmlCheckIn");
+                Log.other("芝麻粒签到☑️服务端当日任务已完成，未重复领取");
+                return;
             }
-        }
-        catch (Throwable t) {
+            if (!"CAN_COMPLETE".equals(status)) {
+                Log.other("芝麻粒签到：当日状态=" + status + "，未确认可领取或已完成，不记成功；未提交领取");
+                return;
+            }
+            String checkInDate = currentDay.optString("checkInDate").trim();
+            if (checkInDate.isEmpty()) {
+                Log.other("芝麻粒签到：可领取任务缺少日期，未提交领取，不记今日完成");
+                return;
+            }
+            JSONObject claimed = MyUtils.newJSONObject(AntMemberRpcCall.zmCheckInCompleteTask(checkInDate, "zml"));
+            if (!MessageUtil.checkResultCode(TAG, claimed)) {
+                Log.other("芝麻粒签到：领取响应未确认成功，不记今日完成，稍后重试");
+                return;
+            }
+            JSONObject prize = claimed.optJSONObject("data");
+            JSONObject detail = prize == null ? null : prize.optJSONObject("prize");
+            int num = prize == null ? 0 : prize.optInt("zmlNum", detail == null ? 0 : detail.optInt("num", 0));
+            Status.flagToday("AntMember::zmlCheckIn");
+            Log.other("收芝麻粒🙇🏻‍♂️领取[每日签到成功]#获得" + num + "粒");
+        } catch (Throwable t) {
             Log.printStackTrace(TAG + ".doSesameZmlCheckIn", t);
         }
     }
-    
+
     // 我的快递任务
     private void RecommendTask() {
         try {

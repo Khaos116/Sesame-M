@@ -67,6 +67,12 @@ public class DailyModulesCheck {
   reset("{resultCode:'SUCCESS',data:{currentDateCheckInTaskVO:{status:'CAN_COMPLETE',checkInDate:'20261010'}}}");
   replay(()->new Member().CheckInTaskRpcManager());
   reset("{resultCode:'SUCCESS',data:{}}");new Member().CheckInTaskRpcManager();assert Status.flags.isEmpty():"invalid sign response cached";
+  reset("{resultCode:'SUCCESS',data:{currentDateCheckInTaskVO:{status:'COMPLETED'}}}");
+  replay(()->new Member().CheckInTaskRpcManager());assert Status.hasFlagToday("AntMember::zmlCheckIn");
+  for(String state:new String[]{"","NEW_STATUS","NOT_START","CAN_COMPLETE"}){
+   reset("{resultCode:'SUCCESS',data:{currentDateCheckInTaskVO:{status:'"+state+"'}}}");
+   new Member().CheckInTaskRpcManager();assert calls==1&&Status.flags.isEmpty():"unknown/missing date cached or submitted";
+  }
   System.out.println("PASS daily production entries: forest/member/ocean/stall/family/town, second-auto zero RPC, manual refresh, failed/missing status not completed");
  }
 }
