@@ -10,6 +10,7 @@ SOURCE = ROOT / 'app/src/main/java/io/github/aw1y2z/sesame'
 # Share the existing isolated Android/account fixtures, not a second implementation of the worker.
 tree = ast.parse((ROOT / 'checks/check_sj_activities.py').read_text(encoding='utf-8'))
 base = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'code' for t in n.targets))
+base = base.replace('boolean cancel,switchWait,crossWait;', 'boolean cancel,switchWait,crossWait,cancelWait;').replace('waited++;if(switchWait)', 'waited++;if(cancelWait)cancel=true;if(switchWait)')
 code = base[:base.index('  static int queries,')].replace('public class SjActivityCheck', 'public class FriendActivityCheck') + r'''
  static String text(JSONObject row,String key){return SjActivityTasks.text(row,key);}
  static long count(JSONObject row,String key){return SjActivityTasks.count(row,key);}
@@ -62,6 +63,10 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
    if(op.endsWith("sdk.task.trigger")){
     assert a.optString("appletId").equals("lucky\"\\");
     if(a.optString("stageCode").equals("signup")){taskState="SIGNUP_COMPLETE";return result(new JSONObject().put("taskShowInfo","{\"needSignUp\":\"true\"}")).toString();}
+    if(luckyOverride!=null){
+     JSONObject shown=luckyOverride.optJSONObject(0).optJSONObject("taskShowInfo");
+     if(shown!=null&&"WAITING_TIME".equals(shown.optString("taskType")))assert TimeUtil.waited>=15 : "timed reward requested before 15 seconds";
+    }
     sends++;if(notReady)return result(new JSONObject().put("taskShowInfo","{\"needFinish\":true}")).toString();taskState="RECEIVED";if(failSend){failSend=false;return "{}";}return result(new JSONObject().put("taskShowInfo",cards("task1","task2").toString())).toString();
    }
    if(op.endsWith("openLuckyCard")){
@@ -90,11 +95,74 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
     .put(new JSONObject().put("taskId","conflict").put("taskStatus","RECEIVED")).put(new JSONObject()).put("broken");
   worker(30).luckyCard();assert sends==1&&opens==4:"conflict/invalid rows blocked independent task";
   assert Log.lines.stream().anyMatch(s->s.contains("无有效ID=2，冲突ID=1"));
-  for(String field:new String[]{"taskStatus","taskType","taskShowInfo"}){
+  for(String field:new String[]{"taskStatus","taskType","taskExtProps","taskShowInfo"}){
    reset();luckyOverride=new JSONArray().put(luckyRow).put(new JSONObject(luckyRow.toString()).put(field,"CONFLICT")).put(luckyRow);
    worker(30).luckyCard();assert sends==0:"conflicting duplicate was submitted: "+field;
   }
+  for(boolean sparseFirst:new boolean[]{false,true}){
+   reset();
+   JSONObject full=new JSONObject(luckyRow.toString()).put("taskExtProps",new JSONObject().put("TASK_TYPE","BROWSER"));
+   JSONObject sparse=new JSONObject(full.toString());sparse.remove("taskShowInfo");
+   luckyOverride=sparseFirst?new JSONArray().put(sparse).put(full).put(sparse).put(sparse):new JSONArray().put(full).put(sparse).put(sparse).put(sparse);
+   worker(30).luckyCard();assert sends==1 : "capture sparse display copies blocked browse";
+   assert Log.lines.stream().anyMatch(s->s.contains("有效唯一任务=1，重复条目=3，无有效ID=0，冲突ID=0"));
+  }
+  for(String capturedType:new String[]{"BROWSER","COMMON_COUNT_DOWN_SLIDING_VIEW","TRANSFORMER"}){
+   for(boolean stringProps:new boolean[]{false,true}){
+    reset();JSONObject props=new JSONObject().put("TASK_TYPE",capturedType);
+    JSONObject info=new JSONObject().put("title","逛15s游戏中心 获得好运卡").put("taskType","WAITING_TIME");
+    luckyOverride=new JSONArray().put(new JSONObject(luckyRow.toString()).put("taskExtProps",stringProps?props.toString():props).put("taskShowInfo",info));
+    worker(30).luckyCard();assert sends==1 : "captured browse type blocked: "+capturedType;
+    assert Log.lines.stream().anyMatch(s->s.contains("类型="+capturedType));
+   }
+  }
+  for(String state:new String[]{"NONE_SIGNUP","SIGNUP_COMPLETE","TODO"}){
+   reset();luckyOverride=new JSONArray().put(new JSONObject(luckyRow.toString()).put("taskStatus",state)
+    .put("taskExtProps",new JSONObject().put("TASK_TYPE","TRANSFORMER"))
+    .put("taskShowInfo",new JSONObject().put("title","逛15s游戏中心 获得好运卡").put("taskType","WAITING_TIME")));
+   worker(30).luckyCard();assert sends==1&&TimeUtil.waited==15 : "timed task did not wait before claiming: "+state;
+  }
+  for(int interruption=0;interruption<3;interruption++){
+   reset();TimeUtil.switchWait=interruption==0;TimeUtil.crossWait=interruption==1;TimeUtil.cancelWait=interruption==2;
+   try{worker(30).luckyCard();throw new AssertionError("timed wait did not cancel");}catch(TaskCancelledException expected){}
+   assert sends==0&&TimeUtil.waited==1 : "timed task claimed after account/day changed";
+   assert !Status.hasFlagToday("other::luckyTask::lucky\"\\::notReady") : "cancelled wait marked task unready";
+   TimeUtil.cancelWait=false;
+  }
+  reset();luckyOverride=new JSONArray().put(luckyRow);worker(30).luckyCard();assert sends==1&&TimeUtil.waited==0 : "ordinary browse acquired timed delay";
+  for(String blockedType:new String[]{"TRANSFORMER","UNKNOWN_NEW_TYPE"}){
+   reset();luckyOverride=new JSONArray().put(new JSONObject(luckyRow.toString()).put("taskExtProps",new JSONObject().put("TASK_TYPE",blockedType))
+    .put("taskShowInfo",new JSONObject().put("title","设置宝藏特权优先付 获得好运卡")));
+   worker(30).luckyCard();assert sends==0 : "unsupported business type submitted";
+   assert Log.lines.stream().anyMatch(s->s.contains("类型="+blockedType)&&s.contains("未发送报名/领卡请求"));
+  }
+  reset();luckyOverride=new JSONArray().put(new JSONObject(luckyRow.toString()).put("taskStatus"," none_signup ")
+   .put("taskShowInfo",new JSONObject().put("title","浏览新活动").put("titleList",new JSONArray().put("获得好运卡"))));
+  worker(30).luckyCard();assert sends==1&&opens==4 : "object show info / source case-insensitive states not supported";
+  for(String excluded:new String[]{"去飞猪订国内机票 获得好运卡","去飞猪订门票 获得20张好运卡","订火车票 获得好运卡","订酒店 获得好运卡","办理一张大流量卡 获得好运卡","去还1笔信用卡 获得好运卡","0.01元购券包 获得好运卡","邀请好友 获得好运卡"}){
+   reset();luckyOverride=new JSONArray().put(new JSONObject(luckyRow.toString()).put("taskShowInfo",new JSONObject().put("title",excluded).toString()));
+   worker(30).luckyCard();assert sends==0&&opens==2 : "excluded lucky task was submitted: "+excluded;
+   assert Log.lines.stream().anyMatch(s->s.contains("未发送报名/领卡请求"));
+  }
   luckyOverride=null;
+  reset();luckyOverride=new JSONArray().put(new JSONObject(luckyRow.toString()).put("taskShowInfo",new JSONObject().put("title","去飞猪逛一逛 获得好运卡").toString()));
+  worker(30).luckyCard();assert sends==1 : "unrelated free Fliggy browse was excluded by brand";
+  luckyOverride=null;
+  reset();RuntimeInfo.data.put("luckyCardAttempts","{\"day\":20261008,\"count\":30}");
+  RuntimeInfo.data.put("other::luckyCardQueue","{\"waiting1\":false,\"waiting2\":false}");
+  new FriendActivityTasks(new SjActivityTasks(new OtherRequestGate(),30,"luckyCardAttempts")).luckyCard();
+  assert opens==2&&signs==0 : "task budget blocked pending card opens";
+  assert new JSONObject(RuntimeInfo.instance.getString("luckyCardAttempts")).optInt("count")==30 : "open consumed task budget";
+  assert new JSONObject(RuntimeInfo.instance.getString("luckyCardOpenAttempts")).optInt("count")==2;
+  reset();RuntimeInfo.data.put("luckyCardOpenAttempts","{\"day\":20261008,\"count\":99}");
+  RuntimeInfo.data.put("other::luckyCardQueue","{\"limit1\":false,\"limit2\":false}");
+  worker(30).openCards();assert opens==1&&new JSONObject(RuntimeInfo.instance.getString("luckyCardOpenAttempts")).optInt("count")==100;
+  worker(30).openCards();assert opens==1 : "daily card cap reset on next run";
+  nextDay();worker(30).openCards();assert opens==2 : "daily card cap did not reset";
+  reset();worker(1).luckyCard();
+  assert Log.lines.stream().filter(s->s.contains("每日操作预算已用尽（")).count()==1 : "budget exhaustion loops over every task/card";
+  assert Log.lines.stream().noneMatch(s->s.contains("开卡未取得对应卡片结果")) : "unsubmitted open reported as unknown receipt";
+  assert !Status.hasFlagToday("dailyTask::luckyTasks") : "budget stop marked daily complete";
   reset();worker(30).p2eBrowse();assert signups==1&&completes==1&&receives==1&&TimeUtil.waited==15;assert Log.lines.stream().anyMatch(s->s.contains("获得12金币"));int dailyQueries=queries;worker(30).p2eBrowse();assert writes==3&&queries==dailyQueries;
   DailyTask.manual(()->{try{worker(30).p2eBrowse();}catch(Exception e){throw new RuntimeException(e);}return null;});assert queries>dailyQueries&&writes==3:"manual P2E must refresh without duplicate rewards";
   reset();worker(1).p2eBrowse();assert signups==1&&completes==0;worker(30).p2eBrowse();assert signups==1&&completes==1&&receives==1:"budget resume";
@@ -112,7 +180,7 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
   DailyTask.manual(()->{try{worker(30).luckyCard();}catch(Exception e){throw new RuntimeException(e);}return null;});assert queries>dailyQueries&&writes==before:"manual lucky must refresh without duplicate cards";
   assert Log.lines.stream().filter(s->s.startsWith("✅ 好运卡开卡成功")).count()==8;
   assert Log.lines.stream().noneMatch(s->s.contains("SECRET_TOKEN"));
-  reset();worker(1).luckyCard();assert signs==1&&opens==0;worker(30).luckyCard();assert signs==1&&progress==4&&opens==4:"queue survives budget exhaustion";
+  reset();worker(1).luckyCard();assert signs==1&&opens==1;worker(30).luckyCard();assert signs==1&&progress==4&&opens==4:"queue survives budget exhaustion";
   reset();failProgress=true;worker(30).luckyCard();assert progress==1;worker(30).luckyCard();assert progress==1&&pending("luckyProgress"):"unknown progress must not be resent";
   worker(0).clearReceipts();worker(30).luckyCard();assert progress==4&&opens==4:"manual recovery resumes source triggers";
   reset();OtherTask orchestration=new OtherTask();RuntimeInfo.data.put("sjActivityAttempts",new JSONObject().put("day",SjActivityTasks.date()).put("count",30).toString());

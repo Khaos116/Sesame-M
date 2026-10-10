@@ -103,9 +103,10 @@ public class OtherTask extends ModelTask {
         fields.addField(gameCenterP2EBrowse = new BooleanModelField("gameCenterP2EBrowse", "游戏中心玩赚 | 赚金币浏览任务", false)
                 .setDescription("移植朋友源码，仅VIEW_TASK；报名、完整等待、上报、领金币。默认等待15秒，服务端明确提供时长时优先使用。使用赚金币浏览独立预算，不兑换现金。"));
         fields.addField(luckyCard = new BooleanModelField("luckyCard", "好运卡 | 签到、进度领卡与任务开卡", false)
-                .setDescription("移植朋友源码，保留红包卡片；每次报名、领卡、推进、开卡占一次好运卡独立预算。卡片持久保存，未知开卡回执不重复发送；不处理支付、开通、邀请任务。"));
+                .setDescription("移植朋友源码，保留红包卡片；报名、领卡、签到和推进计入任务预算，开卡不占任务预算，独立每日最多尝试100张。卡片持久保存，未知开卡回执不重复发送；不处理支付、开通、邀请任务。"));
         fields.addField(gameCenterP2EBrowseBudget = new IntegerModelField("gameCenterP2EBrowseBudget", "赚金币浏览 | 每日操作尝试预算（独立，0不执行）", 30, 0, 50));
-        fields.addField(luckyCardBudget = new IntegerModelField("luckyCardBudget", "好运卡 | 每日操作尝试预算（独立，0不执行）", 30, 0, 50));
+        fields.addField(luckyCardBudget = new IntegerModelField("luckyCardBudget", "好运卡 | 每日操作尝试预算（独立，0不执行）", 30, 0, 50)
+                .setDescription("报名、领卡、签到和推进分别计次；开卡不扣此预算，另有每日100张安全上限。0保持整个好运卡不执行。"));
         fields.addField(leiYouJiTasks = new BooleanModelField("leiYouJiTasks", "芝麻粒乐游记 | 明确浏览任务", false));
         fields.addField(leiYouJiRide = new BooleanModelField("leiYouJiRide", "芝麻粒乐游记 | 前台自动骑行", false)
                 .setDescription("会打开乐游记页面，通过实际页面DOM骑行；仅亮屏解锁且游戏窗口处于前台时操作，每轮最多30步。关卡外跳/终点领奖需人工处理；不伪造页面会话或设备指纹。"));

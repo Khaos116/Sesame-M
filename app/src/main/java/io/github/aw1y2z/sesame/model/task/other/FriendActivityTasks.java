@@ -240,6 +240,7 @@ final class FriendActivityTasks {
             if (oldReceipt(daily)) sj.discard(daily, "每日玩法已跨天，旧回执作废，按今日状态继续");
         }
         openCards();
+        if (stopLuckyForBudget()) return;
         String domain = "luckySign";
         JSONObject consult = Status.hasFlagToday("other::luckySign") && !DailyTask.isManual() ? null
                 : rebate(SIGN_PLAY, "HAOYUNKA_SIGN_IN", null, domain);
@@ -257,10 +258,20 @@ final class FriendActivityTasks {
             } else Log.record("好运卡签到：未知状态=" + SjActivityTasks.responseField(consult, "status"));
         }
         openCards();
+        if (stopLuckyForBudget()) return;
         luckyProgress();
         openCards();
+        if (stopLuckyForBudget()) return;
         luckyTasks();
+        if (stopLuckyForBudget()) return;
         openCards();
+    }
+
+    private boolean stopLuckyForBudget() throws Exception {
+        if (!sj.budgetExhausted()) return false;
+        openCards();
+        Log.record("好运卡⏸️任务预算已用尽，停止后续报名、领卡及推进；已领卡继续按独立每日100张上限开卡，待办保留，不记完成，无需因预算清理回执");
+        return true;
     }
 
     private void luckyProgress() throws Exception {
@@ -321,7 +332,12 @@ final class FriendActivityTasks {
             if (previous == null) { tasks.put(id, row); continue; }
             duplicate++;
             // 只有执行所需字段一致才合并，冲突仅隔离该ID，不能阻断其他任务。
-            for (String field : new String[]{"taskStatus", "taskType", "taskShowInfo"}) {
+            for (String field : new String[]{"taskStatus", "taskType", "taskExtProps", "taskShowInfo"}) {
+                // 实际列表同一任务有三条省略展示信息的副本，保留完整条目，不放宽其他冲突。
+                if ("taskShowInfo".equals(field) && (previous.isNull(field) || row.isNull(field))) {
+                    if (previous.isNull(field) && !row.isNull(field)) previous.put(field, row.opt(field));
+                    continue;
+                }
                 if (!java.util.Objects.toString(previous.opt(field), "").equals(java.util.Objects.toString(row.opt(field), "")))
                     conflicts.add(id);
             }
@@ -329,6 +345,7 @@ final class FriendActivityTasks {
         JSONArray unique = new JSONArray();
         for (java.util.Map.Entry<String, JSONObject> task : tasks.entrySet()) {
             if (!conflicts.contains(task.getKey())) unique.put(task.getValue());
+            else Log.record("好运卡⏭️[" + task.getKey() + "]重复条目的状态或执行信息冲突，仅跳过此任务，未提交操作");
         }
         Log.record("好运卡任务：查询成功，原始条目=" + rows.length() + "，有效唯一任务=" + unique.length()
                 + "，重复条目=" + duplicate + "，无有效ID=" + missing + "，冲突ID=" + conflicts.size()
@@ -364,43 +381,81 @@ final class FriendActivityTasks {
         expireTaskReceipts("luckyTask::");
         for (int i = 0; i < rows.length(); i++) {
             JSONObject row = rows.optJSONObject(i);
-            String id = text(row, "taskId"), show = text(row, "taskShowInfo"), state = text(row, "taskStatus");
+            String id = text(row, "taskId"), show = text(row, "taskShowInfo"), state = text(row, "taskStatus").trim().toUpperCase(java.util.Locale.ROOT);
             String domain = "luckyTask::" + id, done = "other::luckyTask::" + id;
             if (!sj.pending(domain).isEmpty()) unfinished.add(id);
-            if (Status.hasFlagToday(done + "::notReady")) continue;
+            if (Status.hasFlagToday(done + "::notReady")) {
+                Log.record("好运卡⏭️[" + id + "]今日已确认条件未达成，未领到卡，本轮不重复提交");
+                continue;
+            }
             JSONObject pending = MyUtils.newJSONObject(sj.pending(domain));
             if ("send".equals(text(pending, "action")) && saveCards(taskTickets(row.opt("taskShowInfo")))) {
                 if (sj.accepted(domain, "好运卡任务领卡回查")) { Status.flagToday(done); success("好运卡任务领卡已回查确认"); }
                 continue;
             }
-            JSONObject info = MyUtils.newJSONObject(show);
+            JSONObject info = row.optJSONObject("taskShowInfo");
+            if (info == null) info = MyUtils.newJSONObject(show);
+            JSONObject props = row.optJSONObject("taskExtProps");
+            if (props == null) props = MyUtils.newJSONObject(text(row, "taskExtProps"));
+            String type = text(props, "TASK_TYPE").trim().toUpperCase(java.util.Locale.ROOT);
+            if (type.isEmpty()) type = text(row, "taskType").trim().toUpperCase(java.util.Locale.ROOT);
+            String subType = text(info, "taskType").trim().toUpperCase(java.util.Locale.ROOT);
+            String typeLog = "，类型=" + type.substring(0, Math.min(type.length(), 64)).replaceAll("[^A-Z0-9_]", "?")
+                    + "，子类型=" + subType.substring(0, Math.min(subType.length(), 64)).replaceAll("[^A-Z0-9_]", "?");
             String title = (text(info, "title") + " " + text(info, "subTitle")).trim();
             JSONArray titles = info.optJSONArray("titleList");
             if (titles != null) for (int j = 0; j < Math.min(20, titles.length()); j++) {
                 Object value = titles.opt(j);
                 if (value instanceof String) title += " " + value;
             }
-            if (!title.contains("好运卡") || SjActivityTasks.unsafe(title.replace("支付宝", "").replaceAll("(?i)alipay", "") + " " + text(row, "taskType")) || Status.hasFlagToday(done)) continue;
-            if (oneOf(state, "RECEIVED", "RECEIVE_SUCCESS", "DONE", "SUCCESS")) continue;
-            unfinished.add(id);
             title = title.replaceAll("[\\r\\n\\t]", " ");
+            String reason = !title.contains("好运卡") ? "未识别到好运卡奖励"
+                    : "TRANSFORMER".equals(type) && !"WAITING_TIME".equals(subType) ? "转化任务需要额外业务动作，跳过"
+                    : !type.isEmpty() && !oneOf(type, "BROWSER", "COMMON_COUNT_DOWN_SLIDING_VIEW", "TRANSFORMER") ? "未支持的任务类型"
+                    : SjActivityTasks.unsafe(title.replace("支付宝", "").replaceAll("(?i)alipay", ""))
+                        || title.matches(".*(还.*信用卡|[0-9]元购|订.*票|订.*酒店|办理.*卡).*") ? "消费、开通或邀请等排除任务" : "";
             title = title.substring(0, Math.min(title.length(), 80));
+            if (!reason.isEmpty()) {
+                Log.record("好运卡⏭️[" + id + "][" + title + "]状态=" + state + typeLog + "#" + reason + "，未发送报名/领卡请求");
+                continue;
+            }
+            if (Status.hasFlagToday(done) || oneOf(state, "RECEIVED", "RECEIVE_SUCCESS", "DONE", "SUCCESS")) {
+                Log.record("好运卡☑️[" + id + "][" + title + "]已完成，不重复领卡" + typeLog);
+                continue;
+            }
+            unfinished.add(id);
             if ("signup".equals(text(pending, "action")) && oneOf(state, "NOT_DONE", "IN_COMPLETE", "SIGNUP_COMPLETE", "TODO"))
                 if (!sj.accepted(domain, "好运卡[" + title + "]报名回查")) continue;
             if ("NONE_SIGNUP".equals(state)) {
                 JSONObject ack = trigger(id, "signup", domain);
+                if (sj.budgetExhausted()) return;
                 if (ack == null || !sj.accepted(domain, "好运卡[" + title + "]报名")) continue;
                 state = "SIGNUP_COMPLETE";
             }
-            if (!oneOf(state, "NOT_DONE", "IN_COMPLETE", "SIGNUP_COMPLETE", "TODO")) continue;
+            if (!oneOf(state, "NOT_DONE", "IN_COMPLETE", "SIGNUP_COMPLETE", "TODO")) {
+                Log.record("好运卡⏭️[" + id + "][" + title + "]未知状态=" + state + "，未发送领卡请求");
+                continue;
+            }
+            if ("WAITING_TIME".equals(subType) && sj.pending(domain).isEmpty()) {
+                // shortcut: 当前抓包仅有15s任务且无独立时长字段，出现其他时长后按实测协议扩展。
+                Log.record("好运卡⏳[" + id + "][" + title + "]限时任务等待15秒后领卡");
+                sj.waitSeconds(15);
+            }
+            Log.record("好运卡📋[" + id + "][" + title + "]状态=" + state + typeLog + "，按任务列表请求领卡");
             JSONObject ack = trigger(id, "send", domain);
+            if (sj.budgetExhausted()) return;
             Object raw = ack == null ? null : ack.opt("taskShowInfo");
             JSONArray tickets = taskTickets(raw);
             if (saveCards(tickets) && sj.accepted(domain, "好运卡[" + title + "]领卡")) {
                 Status.flagToday(done); success("好运卡[" + title + "]获得" + tickets.length() + "张卡");
+                // 沿朋友源码每项领卡后立即开，避免后面的报名把已领卡的额度挤掉。
+                openCards();
+                if (sj.budgetExhausted()) return;
             } else if (raw instanceof String && ((String) raw).trim().startsWith("{") && MyUtils.newJSONObject((String) raw).length() > 0) {
                 if (sj.accepted(domain, "好运卡[" + title + "]未达成任务，服务端未发卡")) Status.flagToday(done + "::notReady");
-            } else Log.record("好运卡[" + title + "]：领卡未确认；如有未确认回执，核对后可在其他任务手动恢复");
+            } else Log.record("好运卡[" + title + "]：" + (sj.pending(domain).isEmpty()
+                    ? "本次未获卡，未留下待核对回执；具体拒绝或未发送原因见前序日志"
+                    : "已提交领卡但结果未确认，保留回执等待列表核对"));
         }
         if (!luckyRowsComplete) return;
         for (String id : unfinished) if (!Status.hasFlagToday("other::luckyTask::" + id)
@@ -410,6 +465,7 @@ final class FriendActivityTasks {
     }
 
     private void openCards() throws Exception {
+        if (sj.openBudgetExhausted()) return;
         sj.current();
         JSONObject queue = cardQueue();
         if (queue == null) return;
@@ -427,6 +483,7 @@ final class FriendActivityTasks {
             } else {
                 JSONObject root = sj.write(domain, "open", "com.alipay.pcreditcardmarket.openLuckyCard",
                         MyUtils.newJSONObject().put("cardIds", new JSONArray().put(id)).put("requestFrom", "pcreditcardweb"));
+                if (sj.openBudgetExhausted()) return;
                 JSONObject result = root == null ? null : root.optJSONObject("result");
                 JSONArray cards = result == null ? null : result.optJSONArray("openCards");
                 card = cards == null || cards.length() != 1 ? null : cards.optJSONObject(0);

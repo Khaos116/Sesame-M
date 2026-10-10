@@ -29,6 +29,12 @@ final class SjActivityTasks {
     private final String attemptsKey;
     private final String uid;
     private final int day, budget;
+    private static final int LUCKY_OPEN_LIMIT = 100;
+    private boolean budgetExhausted;
+    private boolean openBudgetExhausted;
+
+    boolean budgetExhausted() { return budgetExhausted; }
+    boolean openBudgetExhausted() { return openBudgetExhausted; }
 
     SjActivityTasks(OtherRequestGate gate, int budget) {
         this(gate, budget, ATTEMPTS);
@@ -75,7 +81,10 @@ final class SjActivityTasks {
         current();
         RuntimeInfo runtime = RuntimeInfo.getInstance();
         if (acceptedReceipt != null && !acceptedReceipt.equals(runtime.getString(RECEIPT + domain))) return false;
-        String raw = runtime.getString(attemptsKey);
+        boolean luckyOpen = domain.startsWith("luckyOpen::") && "open".equals(action);
+        String ledgerKey = luckyOpen ? "luckyCardOpenAttempts" : attemptsKey;
+        int limit = luckyOpen ? LUCKY_OPEN_LIMIT : budget;
+        String raw = runtime.getString(ledgerKey);
         JSONObject ledger = MyUtils.newJSONObject(raw);
         long used = raw.isEmpty() ? 0 : count(ledger, "count");
         long savedDay = raw.isEmpty() ? day : count(ledger, "day");
@@ -84,11 +93,13 @@ final class SjActivityTasks {
             return false;
         }
         if (savedDay != day) used = 0;
-        if (used >= budget) {
-            Log.record("SJ活动[" + domain + "]：每日操作预算已用尽（" + used + "/" + budget + "），未提交操作");
+        if (used >= limit) {
+            if (luckyOpen) openBudgetExhausted = true; else budgetExhausted = true;
+            Log.record("SJ活动[" + domain + "]：" + (luckyOpen ? "每日开卡安全上限已达" : "每日操作预算已用尽")
+                    + "（" + used + "/" + limit + "），未提交操作");
             return false;
         }
-        if (!runtime.putVerified(attemptsKey, MyUtils.newJSONObject().put("day", day).put("count", used + 1).toString())) {
+        if (!runtime.putVerified(ledgerKey, MyUtils.newJSONObject().put("day", day).put("count", used + 1).toString())) {
             Log.record("SJ活动[" + domain + "]：每日预算保存失败，未提交操作");
             return false;
         }
@@ -99,7 +110,7 @@ final class SjActivityTasks {
             Log.record("SJ活动[" + domain + "]：待核对记录保存失败，未提交操作");
             return false;
         }
-        Log.record("SJ活动[" + domain + "]：已预留每日额度（" + (used + 1) + "/" + budget + "）");
+        Log.record("SJ活动[" + domain + "]：已预留" + (luckyOpen ? "独立开卡额度" : "每日额度") + "（" + (used + 1) + "/" + limit + "）");
         return true;
     }
 
