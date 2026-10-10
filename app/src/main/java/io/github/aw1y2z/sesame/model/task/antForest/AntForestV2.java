@@ -1926,6 +1926,12 @@ public class AntForestV2 extends ModelTask {
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return;
             }
+            // 本轮不发能量时再请求生成会被服务端拒（SYSTEM_ERROR）：先看机会字段，直接跳过
+            JSONObject chance = jo.optJSONObject("resultObject");
+            if (chance != null && !chance.optBoolean("canSendEnergy", true)) {
+                Log.i(TAG, "绿色租赁⏭️本轮无可发能量，跳过");
+                return;
+            }
             TimeUtil.sleep(200);
             jo = new JSONObject(AntForestRpcCall.generateEnergy());
             if (!MessageUtil.checkSuccess(TAG, jo)) {
