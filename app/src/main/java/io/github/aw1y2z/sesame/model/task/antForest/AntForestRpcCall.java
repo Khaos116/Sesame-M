@@ -229,7 +229,29 @@ public class AntForestRpcCall {
         String args = "[{\"extend\":" + extend + ",\"fromAct\":\"home_task_list\"," + "\"source" + "\":\"chInfo_ch_appcenter__chsub_9patch\",\"version\":\"" + VERSION + "\"}]";
         return ApplicationHook.requestString("alipay.antforest.forest.h5.queryTaskList", args);
     }
-    
+
+    /**
+     * 青春特权森林道具（双击卡/能量罩/加速器）任务列表。
+     * <p>
+     * 必须走 {@code com.alipay.antieptask.listTaskopengreen}；
+     * {@code alipay.antforest.forest.h5.queryTaskList} 对本场景返回空
+     * {@code forestTasksNew}，取不到任务。{@code firstTaskType} 与
+     * {@code source} 需成对传入，{@code version} 不能低于宿主支持。
+     */
+    public static String queryYouthPrivilegeTaskList(String firstTaskType, String source) throws org.json.JSONException {
+        JSONObject extend = MyUtils.newJSONObject().put("businessSource", "ANTFOREST-home_task_list")
+                .put("firstTaskType", firstTaskType).put("osType", "android").put("version", "20260109");
+        JSONObject args = MyUtils.newJSONObject().put("extend", extend).put("requestType", "RPC")
+                .put("sceneCode", "ANTFOREST_VITALITY_TASK").put("source", source);
+        return ApplicationHook.requestString("com.alipay.antieptask.listTaskopengreen", new JSONArray().put(args).toString());
+    }
+
+    public static String receiveYouthPrivilegeTaskAward(String source, String taskType) throws org.json.JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("ignoreLimit", false).put("requestType", "RPC")
+                .put("sceneCode", "ANTFOREST_VITALITY_TASK").put("source", source).put("taskType", taskType);
+        return ApplicationHook.requestString("com.alipay.antiep.receiveTaskAward", new JSONArray().put(args).toString());
+    }
+
     public static String queryEnergyRainHome() {
         return ApplicationHook.requestString("alipay.antforest.forest.h5.queryEnergyRainHome", "[{\"version\":\"" + VERSION + "\"}]");
     }
@@ -643,44 +665,6 @@ public class AntForestRpcCall {
     
     public static String settlementWhackMole(String token, List<String> moleIdList, String source) {
         return ApplicationHook.requestString("alipay.antforest.forest.h5.settlementWhackMole", "[{\"moleIdList\":[" + String.join(",", moleIdList) + "],\"settlementScene\":\"NORMAL\",\"source\":\"" + source + "\",\"token\":\"" + token + "\",\"version\":\"" + VERSION + "\"}]");
-    }
-    
-    /*青春特权道具任务状态查询🔍*/
-    public static String queryTaskListV2(String firstTaskType) {
-        String source;
-        if ("DNHZ_SL_college".equals(firstTaskType)) {
-            source = firstTaskType;
-        }
-        else if ("DXS_BHZ".equals(firstTaskType) || "DXS_JSQ".equals(firstTaskType)) {
-            source = "202212TJBRW";
-        }
-        else {
-            // 处理未匹配的情况，可根据实际需求设置默认值或抛出异常
-            source = "";
-        }
-        String args = "[{\"extend\":{\"firstTaskType\":\"" + firstTaskType + "\"}," + "\"fromAct\":\"home_task_list\"," + "\"source\":\"" + source + "\"," + "\"version\":\"" + VERSION + "\"}]";
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryTaskList", args);
-    }
-    
-    /**
-     * 领取青春特权道具
-     */
-    public static String receiveTaskAwardV2(String taskType) {
-        String args = "[{\"ignoreLimit\":false,\"requestType\":\"H5\",\"sceneCode\":\"ANTFOREST_VITALITY_TASK\",\"taskType\":\"" + taskType + "\",\"source\":\"ANTFOREST\"}]";
-        // DAXUESHENG_SJK,NENGLIANGZHAO_20230807,JIASUQI_20230808
-        //[{\"ignoreLimit\":false," + "\"requestType\":\"H5\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"ANTFOREST\",\"taskType\":\"" + taskType + "\"}]");
-        return ApplicationHook.requestString("com.alipay.antiep.receiveTaskAward", args);
-    }
-    
-    public static String studentQqueryCheckInModel() {
-        String args = "[{\"chInfo\":\"ch_appcollect__chsub_my-recentlyUsed\",\"skipTaskModule\":false}]";
-        return ApplicationHook.requestString("alipay.membertangram.biz.rpc.student.queryCheckInModel", args);
-    }
-    
-    /*青春特权领红包*/
-    public static String studentCheckin() {
-        String args = "[{\"source\":\"chInfo_ch_appcenter__chsub_9patch\"}]";
-        return ApplicationHook.requestString("alipay.membertangram.biz.rpc.student.checkIn", args);
     }
     
     public static String closeWhackMole() {

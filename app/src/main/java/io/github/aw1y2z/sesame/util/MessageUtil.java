@@ -111,7 +111,6 @@ public class MessageUtil {
             case "AntDodo":
             case "ProtectEcology":
             case "WhackMole":
-            case "Privilege":
                 Log.forest(s);
                 break;
             case "AntFarm":

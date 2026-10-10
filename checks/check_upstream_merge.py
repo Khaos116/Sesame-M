@@ -24,7 +24,7 @@ for signature in (
 code += method("model/task/antForest/AntForestV2.java", "private static int teamState(") + "\n"
 code += method("model/base/TaskAlternative.java", "public static boolean isTransactionTask(") + "\n"
 code += r'''
-static final String[] TRANSACTION_KEYWORDS = {"xiadan", "zhifu", "pay", "goumai", "jiaofei", "huankuan", "chongzhi", "taobao", "babafarm_tb", "70000"};
+@@TRANSACTION_WORDS@@
 static class MyUtils {
     static JSONObject newJSONObject() { return new JSONObject(); }
     static JSONObject newJSONObject(String raw) { try { return raw == null ? new JSONObject() : new JSONObject(raw); } catch (JSONException e) { return new JSONObject(); } }
@@ -101,12 +101,15 @@ public static void main(String[] args) throws Exception {
     assert teamState(new JSONObject().put("nextAction", "Team").put("teamHomeResult", new JSONObject().put("mainMember", new JSONObject()))) == 1;
     Locale.setDefault(Locale.forLanguageTag("tr-TR"));
     assert isTransactionTask("XIADAN") && !isTransactionTask("BROWSE");
-    assert !isTransactionTask("2060170000359285") && isTransactionTask("x_70000_y");
+    assert !isTransactionTask("2060170000359285") && !isTransactionTask("x_70000_y");
     assert Log.errors == 0;
     System.out.println("PASS: missing/invalid sign-in and consume data, task structure, decimal locale, tri-state teams and transaction guard");
 }
 }
 '''.replace("@@SUBMIT@@", method("model/task/antMember/AntMemberRpcCall.java", "public static String submitConsume("))
+
+transaction_source=(SOURCE / "model/base/TaskAlternative.java").read_text(encoding="utf-8")
+code=code.replace("@@TRANSACTION_WORDS@@", "static final String[] TRANSACTION_KEYWORDS = " + transaction_source.split("private static final String[] TRANSACTION_KEYWORDS = ",1)[1].split(";",1)[0] + ";")
 
 flows = r'''
 import org.json.*; import java.util.*;
@@ -353,9 +356,10 @@ public class FlowCheck {
         Forest f = new Forest(); f.getAllSkuInfo();
         assert AntForestRpcCall.pages.size() == 10 && f.skuInfo.size() == 10 && VitalityBenefitIdMap.saves == 1;
         assert AntForestRpcCall.pages.contains("SKIN:20") && AntForestRpcCall.pages.contains("OTHER:20");
-        AntForestRpcCall.pages.clear(); AntForestRpcCall.forever = true; f.getAllSkuInfo();
+        AntForestRpcCall.pages.clear(); f.getAllSkuInfo(); assert AntForestRpcCall.pages.isEmpty() : "same-day direct call reloaded catalogue";
+        Status.flags.clear(); AntForestRpcCall.forever = true; f.getAllSkuInfo();
         assert AntForestRpcCall.pages.size() == 50;
-        AntForestRpcCall.brokenItems = true; assert !f.getAllSkuInfo() : "old cache cannot confirm a fresh fetch";
+        Status.flags.clear(); AntForestRpcCall.brokenItems = true; assert !f.getAllSkuInfo() : "old cache cannot confirm a fresh fetch";
         f = new Forest(); assert !f.getAllSkuInfo() && f.skuInfo.isEmpty();
         for (String response : new String[]{"broken", "{}", "{\"data\":true}", "{\"success\":\"false\"}", "{\"resultCode\":{}}",
                 "{\"resultCode\":\"REMOTE_INVOKE_EXCEPTION\"}", "{\"resultCode\":\"3000\"}"}) {
@@ -375,10 +379,6 @@ public class FlowCheck {
         try { Forest.loveteam(20); throw new AssertionError("love cancel swallowed"); } catch (TaskCancelledException expected) {}
         assert Status.used == 20 && Status.hasFlagToday(Forest.FLAG_LOVETEAM_WATER) && AntForestRpcCall.waters == 2;
         Locale.setDefault(Locale.forLanguageTag("tr-TR"));
-        assert GameTask.matchTaskType("GAME_DONE_SLJYD") == GameTask.Forest_sljyd;
-        assert GameTask.matchTaskType("game_done_slxcc_xs_3") == GameTask.Forest_slxcc;
-        assert GameTask.matchTaskType("GAME_DONE_DDPLY") == GameTask.Farm_ddply;
-        assert GameTask.matchTaskType("GAME_DONE_UNKNOWN") == null && GameTask.matchTaskType(null) == null;
         Mall mall=new Mall(); AntFarmRpcCall.detail=new JSONObject().put("success",true).put("mallItemDetail",
             new JSONObject().put("mallSubItemDetailList",new JSONArray().put(new JSONObject().put("skuId","sku").put("skuName","name")))).toString();
         assert mall.getAllSkuInfo() && mall.getAllSkuInfo() && mall.skuInfo.size()==1;
@@ -427,7 +427,7 @@ for placeholder, path, signatures in (
         "private static boolean updateUserConfiginTeam(", "private static int teamState(", "private static void loveteam(",
         "private static String getLoveteamName(", "private static boolean hasWaterResult(", "private static void loveteamWater(")),
     ("@@MALL@@", "model/task/antFarm/AntFarm.java", ("private boolean getAllSkuInfo(", "private boolean getSkuInfoByItemInfoVO(")),
-    ("@@GAME_METHODS@@", "model/task/antGame/GameTask.java", ("GameTask(String title,", "public static GameTask matchTaskType(")),
+    ("@@GAME_METHODS@@", "model/task/antGame/GameTask.java", ("GameTask(String title,",)),
     ("@@ORCHARD@@", "model/task/antOrchard/AntOrchard.java", ("private boolean doSpreadManure(",)),
     ("@@FARM@@", "model/task/antFarm/AntFarm.java", ("private void stealRankS2(", "private static int rankingInt(")),
 ):

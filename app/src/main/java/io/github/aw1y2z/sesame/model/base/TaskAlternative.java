@@ -32,7 +32,7 @@ public final class TaskAlternative {
      * 交易/履约类任务关键词：**只认 bizKey**（服务端稳定字段），这类任务只能靠真实交易完成，
      * 用 doFarmTask 伪申报会被判风险操作（服务端回 1009 风控），一律不发；关键词不用于永久拉黑。
      *
-     * <p>交易动作取自已有 bizKey；pay/charge/cz 按字母边界匹配，业务域名称不作交易证据：
+     * <p>交易动作取自已有 bizKey；pay/charge按字母边界、充值cz按game_cz或_cz后数字匹配，业务域名称不作交易证据：
      * <pre>
      * OFFLINE_PAY / ONLINE_PAY / MYZY_pay_* / ORCHARD_NORMAL_XIANXIAZHIFU100  → 支付
      * LSHS_xiadan_202509 / SHANGOU_xiadan / HANGOU_xiadan                   → 下单（回收/闪购）
@@ -51,11 +51,9 @@ public final class TaskAlternative {
             // 充值（拼音 chongzhi + 英文 charge）
             "chongzhi", "charge", "recharge",
             // 游戏内充值（bizKey 用 CZ，如 GOLDENBEAN_GAME_CZ_XDDQ_AI）
-            "cz",
+            "game_cz",
             // 履约：寄件 / 回收
             "kuaidi100", "shoujishumahuishou", "jiuyihuishou_visit",
-            // 既有特殊项
-            "babafarm_tb", "70000",
     };
 
     /** bizKey 命中交易/履约类关键词，即视为交易/履约类。 */
@@ -65,20 +63,14 @@ public final class TaskAlternative {
         }
         String key = bizKey.toLowerCase(java.util.Locale.ROOT);
         for (String keyword : TRANSACTION_KEYWORDS) {
-            // 纯数字关键词按「整段数字」匹配：直接 contains 时 70000 会命中 appId
-            // （如 2060170000359285 里的 "170000"），把「玩游戏」这类任务误判成交易类
-            if (keyword.matches("[0-9]+")) {
-                if (Pattern.compile("(?<![0-9])" + keyword + "(?![0-9])").matcher(key).find()) {
-                    return true;
-                }
-            } else if ("pay".equals(keyword) || "charge".equals(keyword)
-                    || "recharge".equals(keyword) || "cz".equals(keyword)) {
+            // 短词按字母边界匹配，不能把ALIPAY等业务名称当作付款。
+            if ("pay".equals(keyword) || "charge".equals(keyword) || "recharge".equals(keyword)) {
                 if (Pattern.compile("(?<![a-z])" + keyword + "(?![a-z])").matcher(key).find()) return true;
             } else if (key.contains(keyword)) {
                 return true;
             }
         }
-        return false;
+        return Pattern.compile("_cz[0-9]").matcher(key).find();
     }
 
     /** 日志出口（{@code Log.farm/forest/other/goldenBeans}）。 */
