@@ -1961,6 +1961,7 @@ public class AntForestV2 extends ModelTask {
 
             jo = jo.getJSONObject("data");
             if (!jo.has("currentActivity")) {
+                Log.i(TAG, "森林集市⏭️当前无集市活动");
                 return;
             }
             JSONObject currentActivity = jo.getJSONObject("currentActivity");
@@ -1995,25 +1996,37 @@ public class AntForestV2 extends ModelTask {
 
     private static void sendEnergyByAction(String sourceType) {
         try {
-            JSONObject jo = new JSONObject(GreenLifeRpcCall.consultForSendEnergyByAction(sourceType));
-            if (!MessageUtil.checkSuccess(TAG, jo)) {
-                return;
-            }
-            JSONObject data = jo.getJSONObject("data");
-            if (data.optBoolean("canSendEnergy", false)) {
-                jo = new JSONObject(GreenLifeRpcCall.sendEnergyByAction(sourceType));
-                if (MessageUtil.checkSuccess(TAG, jo)) {
-                    data = jo.getJSONObject("data");
-                    if (data.optBoolean("canSendEnergy", false)) {
-                        int receivedEnergyAmount = data.getInt("receivedEnergyAmount");
-                        Log.forest("森林集市🛍️完成[线上逛街]#产生[" + receivedEnergyAmount + "g能量]");
-                        Toast.show("森林集市🛍️完成[线上逛街]#产生[" + receivedEnergyAmount + "g能量]");
-                        if (receivedEnergyAmount > 0) {
-                            totalCollected += receivedEnergyAmount;
-                            Statistics.addData(Statistics.DataType.COLLECTED, receivedEnergyAmount);
-                        }
-                    }
+            // 集市一轮一动作：每次发送前重新问询，最多 3 轮
+            for (int round = 1; round <= 3; round++) {
+                JSONObject jo = new JSONObject(GreenLifeRpcCall.consultForSendEnergyByAction(sourceType));
+                if (!MessageUtil.checkSuccess(TAG, jo)) {
+                    return;
                 }
+                JSONObject data = jo.getJSONObject("data");
+                if (!data.optBoolean("canSendEnergy", false)) {
+                    // 服务端不允许本轮发送（如当日额度用尽 USER_SEND_OVER_LIMIT）：不再请求发送
+                    Log.i(TAG, "森林集市⏭️[" + sourceType + "]第" + round + "轮不可发送能量["
+                            + data.optString("resultCode", "") + "]，跳过");
+                    return;
+                }
+                jo = new JSONObject(GreenLifeRpcCall.sendEnergyByAction(sourceType));
+                if (!MessageUtil.checkSuccess(TAG, jo)) {
+                    return;
+                }
+                data = jo.getJSONObject("data");
+                if (!data.optBoolean("canSendEnergy", false)) {
+                    // 受理但未发能量：记一行响应原文，供定位（额度正常时不会走到）
+                    Log.i(TAG, "森林集市⏭️[" + sourceType + "]第" + round + "轮未发能量#" + data);
+                    return;
+                }
+                int receivedEnergyAmount = data.getInt("receivedEnergyAmount");
+                Log.forest("森林集市🛍️完成[线上逛街]#第" + round + "轮#产生[" + receivedEnergyAmount + "g能量]");
+                Toast.show("森林集市🛍️完成[线上逛街]#第" + round + "轮#产生[" + receivedEnergyAmount + "g能量]");
+                if (receivedEnergyAmount > 0) {
+                    totalCollected += receivedEnergyAmount;
+                    Statistics.addData(Statistics.DataType.COLLECTED, receivedEnergyAmount);
+                }
+                TimeUtil.sleep(500);
             }
         } catch (Throwable t) {
             Log.err(TAG, "sendEnergyByAction err:", t);
