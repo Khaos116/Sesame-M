@@ -1925,7 +1925,7 @@ public class AntFarm extends ModelTask {
             if (bizKey.contains("multistage_gametask")) {
                 Log.record("庄园多阶段游戏任务🎮[" + title + "]#bizKey=" + bizKey);
             }
-            if (bizKey.contains("HEART_DONAT") || bizKey.equals("BAIDUJS_202512") || bizKey.equals("BABAFARM_TB")) {
+            if (bizKey.contains("HEART_DONAT") || bizKey.equals("BAIDUJS_202512")) {
                 return false;
             }
             // 按稳定 taskId 分派（2026-09-22 抓包实测）：
@@ -2746,47 +2746,139 @@ public class AntFarm extends ModelTask {
         }
     }
 
-    //乐园限定活动
+    //乐园限定活动（庄园 → 乐园限定活动，bizType=ANTFARM / sceneCode=ANTFARM_COMMON）
+    //奖励类型 gameCoin（乐园币），场景码 ANTFARM_LEYUAN_DAILY_TASK
     private void queryOptionalPlay() {
         try {
-            JSONObject jo = new JSONObject(AntFarmRpcCall.queryOptionalPlay());
-            if (!MessageUtil.checkSuccess(TAG, jo)) {
-                return;
-            }
-            if (!jo.has("taskTriggerPlayInfo")) {
-                return;
-            }
-            JSONObject taskTriggerPlayInfo = jo.optJSONObject("taskTriggerPlayInfo");
-            if (!taskTriggerPlayInfo.has("taskList")) {
-                return;
-            }
-            JSONArray taskList = taskTriggerPlayInfo.getJSONArray("taskList");
-            for (int j = 0; j < taskList.length(); j++) {
-                JSONObject task = taskList.getJSONObject(j);
-                String taskType = task.getString("taskType");
-                String taskStatus = task.getString("taskStatus");
-                String sceneCode = task.getString("sceneCode");
-                int alreadyReceiveAwardCount = task.optInt("alreadyReceiveAwardCount");
-                int awardCount = task.optInt("awardCount");
-                int awardCountForReceive = awardCount - alreadyReceiveAwardCount;
-                JSONObject bizInfo = task.getJSONObject("bizInfo");
-                String title = bizInfo.getString("title");
-                if (taskStatus.equals("FINISHED")) {
-                    if (awardCountForReceive > 0) {
-                        JSONObject joReceived = new JSONObject(AntFarmRpcCall.receiveTaskAwardantfarm(awardCountForReceive, sceneCode, taskType));
-                        if (MessageUtil.checkSuccess(TAG, joReceived)) {
-                            int incAwardCount = joReceived.optInt("incAwardCount");
-                            JSONObject taskConfigResultVO = joReceived.optJSONObject("taskConfigResultVO");
-                            String awardType = taskConfigResultVO.optString("awardType");
-                            Log.farm("小鸡乐园🎖️领取[" + title + "]奖励[" + awardType + "*" + incAwardCount + "]");
-                        }
+            // 每个任务本轮最多上报一次：同一次运行内响应"成功"不代表服务端真的落态
+            // （实测「抢先试玩爆款新游」这类 COUNT_DOWN 广告任务恒回成功却一直是 TODO），
+            // 若不记已试集合会在一轮内无限领奖+无限申报。跨轮幂等交给 Status 标记。
+            Set<String> attempted = new HashSet<>();
+            int round = 0;
+            while (round++ < MAX_OPTIONAL_PLAY_ROUNDS) {
+                JSONObject jo = new JSONObject(AntFarmRpcCall.queryOptionalPlay());
+                if (!MessageUtil.checkSuccess(TAG, jo)) {
+                    return;
+                }
+                if (!jo.has("taskTriggerPlayInfo")) {
+                    return;
+                }
+                JSONObject taskTriggerPlayInfo = jo.optJSONObject("taskTriggerPlayInfo");
+                if (taskTriggerPlayInfo == null || !taskTriggerPlayInfo.has("taskList")) {
+                    return;
+                }
+                JSONArray taskList = taskTriggerPlayInfo.getJSONArray("taskList");
+                // 本轮是否还有新的动作（不含已试过的），没有就收工
+                boolean progressed = false;
+
+                for (int j = 0; j < taskList.length(); j++) {
+                    JSONObject task = taskList.getJSONObject(j);
+                    String taskType = task.optString("taskType");
+                    String taskStatus = task.optString("taskStatus");
+                    String sceneCode = task.optString("sceneCode");
+                    String groupId = task.optString("groupId");
+                    int alreadyReceiveAwardCount = task.optInt("alreadyReceiveAwardCount");
+                    int awardCount = task.optInt("awardCount");
+                    int awardCountForReceive = awardCount - alreadyReceiveAwardCount;
+                    int rightsTimesLimit = task.optInt("rightsTimesLimit");
+                    int rightsTimes = task.optInt("rightsTimes");
+                    JSONObject bizInfo = task.optJSONObject("bizInfo");
+                    if (bizInfo == null) {
+                        continue;
                     }
+                    String title = bizInfo.optString("title");
+                    // 同一 taskType 可能分多阶段（rightsTimes 递增），用序号区分，避免误判为已试
+                    String attemptKey = taskType + "#" + rightsTimes;
+
+                    // 黑名单任务跳过
+                    if (AntFarmDrawMachineTaskList.getValue().contains(title)) {
+                        continue;
+                    }
+                    // 底线：交易/支付/充值类一律不申报、一次即永久拉黑，绝不伪造。
+                    // 必须同时查 groupId：充值的 taskType 是 2026cc_1000lyb_A&h（无关键词），
+                    // 真正的判据在 groupId=2026cc_cz6ylyb_fz（cz=充值）
+                    if (TaskAlternative.isTransactionTask(taskType)
+                            || TaskAlternative.isTransactionTask(groupId)
+                            || TaskAlternative.isTransactionTask(sceneCode)) {
+                        MessageUtil.MarkTaskBlackListPermanent("AntFarm", "AntFarmDrawMachineTaskList",
+                                "庄园乐园限定任务", title);
+                        Log.farm("小鸡乐园⏭️交易/履约类[" + title + "]#不申报，已永久拉黑");
+                        continue;
+                    }
+
+                    // 已完成待领：领奖。已领满（awardCountForReceive<=0）不再重复请求
+                    if (TaskStatus.FINISHED.name().equals(taskStatus)) {
+                        if (awardCountForReceive > 0 && attempted.add(attemptKey + "@award")) {
+                            progressed = true;
+                            JSONObject joReceived = new JSONObject(AntFarmRpcCall.receiveTaskAwardantfarm(awardCountForReceive, sceneCode, taskType));
+                            if (MessageUtil.checkSuccess(TAG, joReceived)) {
+                                int incAwardCount = joReceived.optInt("incAwardCount");
+                                JSONObject taskConfigResultVO = joReceived.optJSONObject("taskConfigResultVO");
+                                String awardType = taskConfigResultVO == null ? "乐园币" : taskConfigResultVO.optString("awardType", "乐园币");
+                                Log.farm("小鸡乐园🎖️领取[" + title + "]奖励[" + awardType + "*" + incAwardCount + "]");
+                            }
+                        }
+                        continue;
+                    }
+
+                    // 待完成 / 多阶段未满：上报完成
+                    if (TaskStatus.TODO.name().equals(taskStatus) || rightsTimes < rightsTimesLimit) {
+                        if (!attempted.add(attemptKey)) {
+                            continue;
+                        }
+                        progressed = true;
+                        String label = rightsTimesLimit > 1
+                                ? title + "(" + (rightsTimes + 1) + "/" + rightsTimesLimit + ")" : title;
+                        finishOptionalPlayTask(sceneCode, taskType, label);
+                    }
+                }
+
+                // 没有新的可做任务就结束，避免空转
+                if (!progressed) {
+                    break;
                 }
             }
         } catch (Throwable th) {
             Log.err(TAG, "queryOptionalPlay err:", th);
         }
     }
+
+    /**
+     * 乐园限定任务完成上报：{@code com.alipay.antiep.finishTask}。
+     * 该接口对"逛一逛/玩游戏"类外部场景常回 400000040（不支持 rpc 调用），
+     * 此时用 taskType 作 bizKey 走一次 doFarmTask 伪申报兜底；两条路都失败才判定做不了。
+     */
+    private void finishOptionalPlayTask(String sceneCode, String taskType, String taskTitle) {
+        try {
+            JSONObject jo = new JSONObject(AntFarmRpcCall.finishTask(taskType, sceneCode));
+            if (MessageUtil.checkSuccess(TAG, jo)) {
+                Log.farm("小鸡乐园🧾完成[" + taskTitle + "]");
+                TimeUtil.sleep(500);
+                return;
+            }
+            //可重试/服务端繁忙不拉黑，留给下一轮
+            if (MessageUtil.isRetryable(jo) || MessageUtil.isServerBusy(jo)) {
+                return;
+            }
+            //不支持 rpc 调用 → 换 doFarmTask 伪申报（交易类已在调用点永久拉黑，此处不会被穿透）
+            if (MessageUtil.isUnsupportedRpc(jo) && !taskType.isEmpty()) {
+                JSONObject jodo = new JSONObject(AntFarmRpcCall.doFarmTask(taskType, sceneCode));
+                if (MessageUtil.checkSuccess(TAG, jodo)) {
+                    Log.farm("小鸡乐园🧾完成[" + taskTitle + "]#doFarmTask");
+                    TimeUtil.sleep(500);
+                    return;
+                }
+            }
+            //交自动黑名单机制（延迟拉黑，由列表核对决定落盘）
+            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDrawMachineTaskList", taskTitle, jo);
+            Log.farm("小鸡乐园⚠️未完成[" + taskTitle + "]#taskType=" + taskType + "，需在支付宝内手动完成");
+        } catch (Throwable t) {
+            Log.err(TAG, "finishOptionalPlayTask err:", t);
+        }
+    }
+
+    /** 乐园限定任务单轮最大重拉次数（防服务端恒回 TODO 时死循环）。 */
+    private static final int MAX_OPTIONAL_PLAY_ROUNDS = 2;
 
     //小鸡乐园兑奖
     // skuId, sku
@@ -2998,6 +3090,9 @@ public class AntFarm extends ModelTask {
         try {
             JSONObject jo = new JSONObject(AntFarmRpcCall.queryLoveCabin(UserIdMap.getCurrentUid()));
             if (MessageUtil.checkMemo(TAG, jo)) {
+                //乐园限定活动（庄园 → 乐园限定活动，乐园币任务）：先做任务再抽奖
+                queryOptionalPlay();
+
                 drawMachine("ANTFARM_DAILY_DRAW_TASK", "dailyDrawMachine", "ipDrawMachine");
 
                 JSONObject queryDrawMachineActivityjo = new JSONObject(AntFarmRpcCall.queryDrawMachineActivity("ipDrawMachine", "dailyDrawMachine"));

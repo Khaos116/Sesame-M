@@ -238,7 +238,7 @@ public class TaskAttemptPolicy {
             return Outcome.SKIPPED;
         }
         String flag = FLAG_PREFIX + sanitize(key);
-        // 交易/履约类（识别依据见 TaskAlternative.TRANSACTION_KEYWORDS）：**一律不发任何申报/伪造请求**
+        // 交易/履约类（识别依据见 TaskAlternative 的关键词表）：**一律不发任何申报/伪造请求**
         // （伪申报会被服务端判风险操作、回 1009），并当场交自动黑名单停掉。
         // 不能指望下面"🧊兜底未生效"那条：跳过路径的 outcome 多为 UNABLE，永远不会 markTriggered，
         // 于是任务只会在每轮被反复跳过、永远进不了黑名单（实测农场饲料任务即如此）。
