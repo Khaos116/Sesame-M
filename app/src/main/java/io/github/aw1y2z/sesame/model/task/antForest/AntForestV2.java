@@ -1937,6 +1937,10 @@ public class AntForestV2 extends ModelTask {
             int zulinshangpinliulan = energyGenerated.getInt("zulinshangpinliulan");
             Log.forest("绿色租赁🛍️完成[线上逛街]#产生[" + zulinshangpinliulan + "g能量]");
             Toast.show("绿色租赁🛍️完成[线上逛街]#产生[" + zulinshangpinliulan + "g能量]");
+            if (zulinshangpinliulan > 0) {
+                totalCollected += zulinshangpinliulan;
+                Statistics.addData(Statistics.DataType.COLLECTED, zulinshangpinliulan);
+            }
         } catch (Throwable t) {
             Log.err(TAG, "greenRent err:", t);
         }
@@ -1998,6 +2002,10 @@ public class AntForestV2 extends ModelTask {
                         int receivedEnergyAmount = data.getInt("receivedEnergyAmount");
                         Log.forest("森林集市🛍️完成[线上逛街]#产生[" + receivedEnergyAmount + "g能量]");
                         Toast.show("森林集市🛍️完成[线上逛街]#产生[" + receivedEnergyAmount + "g能量]");
+                        if (receivedEnergyAmount > 0) {
+                            totalCollected += receivedEnergyAmount;
+                            Statistics.addData(Statistics.DataType.COLLECTED, receivedEnergyAmount);
+                        }
                     }
                 }
             }
@@ -4239,6 +4247,8 @@ public class AntForestV2 extends ModelTask {
     /* 新版保护地：领取任务奖励 */
     private boolean monopolyReceiveTaskAward(String regionCode, String taskType, String sceneCode, String title) {
         try {
+            // 领奖响应没有明确的能量到账量字段，只能用账户余额差值估算真实到账量
+            int energyBefore = queryCurrentEnergy();
             JSONObject jo = monopolyResponse(AntForestRpcCall.receiveMonopolyTask(taskType, sceneCode));
             boolean ok = MessageUtil.checkSuccess(TAG, jo);
             // 领奖收口：先按任务列表复核"已领到"，未确认才交自动拉黑（顺序由 TaskAward 固定）
@@ -4246,17 +4256,67 @@ public class AntForestV2 extends ModelTask {
                     k -> probeMonopolyStatus(regionCode, taskType, sceneCode), taskType, title,
                     () -> markMonopolyTaskBlackList(title, jo),
                     msg -> Log.forest(msg))) {
+                recordMonopolyAward(title, energyBefore);
                 return true;
             }
             if (ok) {
                 markMonopolyTaskBlackList(title, jo);
                 Log.forest("新版保护地🌲任务奖励[" + title + "]");
+                recordMonopolyAward(title, energyBefore);
                 return true;
             }
         } catch (Throwable t) {
             Log.err(TAG, "monopolyReceiveTaskAward err:", t);
         }
         return false;
+    }
+
+    /**
+     * 领取保护地奖励后按账户能量余额差值记账。
+     *
+     * <p>保护地领奖响应没有可直接读取的到账量字段（不同于森林集市的 {@code receivedEnergyAmount} /
+     * 绿色租赁的 {@code zulinshangpinliulan}），因此以领奖前后 {@code currentEnergy} 的差值作为
+     * 实际到账量。差值需为正才计入，避免服务端并发扣减导致负数误记。
+     *
+     * @param energyBefore 领奖前查询到的能量余额；{@code < 0} 表示查询失败，放弃记账
+     */
+    private void recordMonopolyAward(String title, int energyBefore) {
+        if (energyBefore < 0) {
+            return;
+        }
+        int energyAfter = queryCurrentEnergy();
+        if (energyAfter < 0) {
+            return;
+        }
+        int gained = energyAfter - energyBefore;
+        if (gained <= 0) {
+            return;
+        }
+        Log.forest("新版保护地🌲任务奖励[" + title + "]到账[" + gained + "g能量]");
+        totalCollected += gained;
+        Statistics.addData(Statistics.DataType.COLLECTED, gained);
+    }
+
+    /**
+     * 查询账户当前能量余额（{@code userBaseInfo.currentEnergy}）。
+     *
+     * @return 余额；查询失败返回 {@code -1}
+     */
+    private int queryCurrentEnergy() {
+        try {
+            JSONObject jo = new JSONObject(AntForestRpcCall.queryHomePage());
+            if (!MessageUtil.checkResultCode(TAG, jo)) {
+                return -1;
+            }
+            JSONObject userBaseInfo = jo.optJSONObject("userBaseInfo");
+            if (userBaseInfo == null || !userBaseInfo.has("currentEnergy")) {
+                return -1;
+            }
+            return userBaseInfo.optInt("currentEnergy", -1);
+        } catch (Throwable t) {
+            Log.err(TAG, "queryCurrentEnergy err:", t);
+            return -1;
+        }
     }
 
     /* 列表状态探针：重拉新版保护地任务列表，按 taskType 匹配该任务当前状态 */
