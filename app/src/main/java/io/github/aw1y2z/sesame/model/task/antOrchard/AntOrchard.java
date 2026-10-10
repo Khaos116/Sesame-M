@@ -1190,7 +1190,11 @@ public class AntOrchard extends ModelTask {
     private static String finishTaskTwice(String sceneCode, String taskTitle, String taskId) {
         try {
             JSONObject finishResponse = new JSONObject(AntOrchardRpcCall.finishTask(sceneCode, taskId));
-            if (MessageUtil.checkSuccess(TAG, finishResponse)) {
+            // 首选接口对多数任务必然回错（400000040 不支持调用、400000001 任务未配置），属预期：
+            // 静默判定，交给 doFarmTask 与列表核对；其它错误仍照常记录
+            String finishCode = finishResponse.optString("code", "").trim();
+            boolean expectedFail = MessageUtil.isUnsupportedRpc(finishResponse) || "400000001".equals(finishCode);
+            if (!expectedFail && MessageUtil.checkSuccess(TAG, finishResponse)) {
                 return "finishTask";
             }
             JSONObject doFarmResponse = new JSONObject(AntOrchardRpcCall.doFarmTask(taskId, sceneCode));

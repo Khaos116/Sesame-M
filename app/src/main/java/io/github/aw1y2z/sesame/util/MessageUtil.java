@@ -76,13 +76,17 @@ public class MessageUtil {
     }
 
     /**
-     * 打印失败应答。唯一的特殊处理是**服务端繁忙（102）的日志降噪**：同一 tag 累计打印满
-     * {@link #SERVER_BUSY_LOG_LIMIT} 次后不再打印，避免限流期间刷屏。
+     * 打印失败应答。两类降噪：**服务端繁忙（102）**按 tag 限次打印；**400000040「不支持rpc调用」**
+     * 只写运行日志、不记模块错误——它不代表任务做不了（调用方会转另一种实现方案）。
      * <p>注意：这里不拦截、不退避、不跳过——请求该发照发，只是少写几行日志。
      */
     public static void printErrorMessage(String tag, JSONObject jo, String errorMessageField) {
         try {
             String memo = jo.getString(errorMessageField);
+            if (isUnsupportedRpc(jo)) {
+                Log.i(tag, jo.toString());
+                return;
+            }
             if (isServerBusy(jo)) {
                 if (!shouldLogServerBusy(tag)) {
                     return;
