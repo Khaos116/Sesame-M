@@ -227,11 +227,11 @@ public final class TaskAlternative {
                 String key = item.getKey();
                 String title = item.getValue();
                 if (stillTodo.contains(key)) {
-                    cfg.sink.log(cfg.logPrefix + "⚠️未完成[" + title + "]#doFarmTask 未生效，已交给自动拉黑机制");
+                    cfg.sink.log(cfg.logPrefix + "⚠️未完成[" + title + "]，已交给自动拉黑机制");
                     MessageUtil.MarkTaskBlackList(cfg.moduleName, cfg.taskListField, cfg.listDisplay,
                             cfg.blacklistByTitle ? title : key);
                 } else {
-                    cfg.sink.log(cfg.logPrefix + cfg.doneTag + "[" + title + "]#doFarmTask（已按任务列表核对）");
+                    cfg.sink.log(cfg.logPrefix + cfg.doneTag + "[" + title + "]（已按任务列表核对）");
                     changed = true;
                 }
             }

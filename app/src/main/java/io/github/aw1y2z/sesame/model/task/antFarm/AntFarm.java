@@ -2864,7 +2864,7 @@ public class AntFarm extends ModelTask {
             if (MessageUtil.isUnsupportedRpc(jo) && !taskType.isEmpty()) {
                 JSONObject jodo = new JSONObject(AntFarmRpcCall.doFarmTask(taskType, sceneCode));
                 if (MessageUtil.checkSuccess(TAG, jodo)) {
-                    Log.farm("小鸡乐园🧾完成[" + taskTitle + "]#doFarmTask");
+                    Log.farm("小鸡乐园🧾完成[" + taskTitle + "]");
                     TimeUtil.sleep(500);
                     return;
                 }
@@ -3241,7 +3241,7 @@ public class AntFarm extends ModelTask {
                         TimeUtil.sleep(2000);
                         if (via != null) {
                             todoDone++;
-                            Log.farm("抽抽乐🧾完成[" + title + "]#" + via);
+                            Log.farm("抽抽乐🧾完成[" + title + "]");
                         } else {
                             todoSkipped++;
                             Log.farm("抽抽乐⚠️未完成[" + title + "]#taskId=" + taskId + "#remain=" + remain + "，需在支付宝内手动完成");
