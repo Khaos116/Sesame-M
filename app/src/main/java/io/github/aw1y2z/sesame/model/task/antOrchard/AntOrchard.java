@@ -85,6 +85,13 @@ public class AntOrchard extends ModelTask {
 
     /** 本轮是否已记过「已达次数上限」：主场景额度用完后每轮还会再查一次，只留一行 */
     private static boolean spreadLimitLoggedThisRun = false;
+
+    /** 主账号肥料余额与单次消耗（本轮缓存）：两个场景同池，yeb 复用即可，不再多查一次 */
+    private static int spreadHappyPoint = -1;
+    private static int spreadWateringCost = -1;
+
+    /** 本轮是否已记过「肥料不足」：同池的另一个场景不再重复播报同一事实 */
+    private static boolean spreadShortageLoggedThisRun = false;
     private static final ArrayList<String> enableSceneList = new ArrayList<>();
 
     @Override
@@ -690,6 +697,9 @@ public class AntOrchard extends ModelTask {
     private void orchardSpreadManure() {
         try {
             spreadLimitLoggedThisRun = false;
+            spreadShortageLoggedThisRun = false;
+            spreadHappyPoint = -1;
+            spreadWateringCost = -1;
             // 轮次上限兜底：每轮最多施肥一次，按「上限/批量步长 + 余量」估算并留足两场景的量
             final int MAX_SPREAD_ROUND = (MAIN_SPREAD_DAILY_LIMIT / BATCH_SPREAD_SIZE + 10) * 8;
             int round = 0;
@@ -852,6 +862,15 @@ public class AntOrchard extends ModelTask {
         return remain > 0 && remain % BATCH_SPREAD_SIZE == 0;
     }
 
+    /** 肥料不足只播报一次：两个场景同池，另一个场景不再重复同一事实 */
+    private static void logSpreadShortage(int happyPoint, int needCost) {
+        if (spreadShortageLoggedThisRun) {
+            return;
+        }
+        spreadShortageLoggedThisRun = true;
+        Log.record("农场施肥⏭️肥料不足[" + happyPoint + "/" + needCost + "g]");
+    }
+
     /**
      * 检查是否可以施肥
      */
@@ -877,6 +896,8 @@ public class AntOrchard extends ModelTask {
                     JSONObject accountInfo = mainAccount.getJSONObject("farmMainAccountInfo");
                     int happyPoint = Integer.parseInt(accountInfo.getString("happyPoint"));
                     int wateringCost = accountInfo.getInt("wateringCost");
+                    spreadHappyPoint = happyPoint;
+                    spreadWateringCost = wateringCost;
                     int leftTimes = accountInfo.getInt("wateringLeftTimes");
                     int usedTimes = MAIN_SPREAD_DAILY_LIMIT - leftTimes;
 
@@ -892,11 +913,11 @@ public class AntOrchard extends ModelTask {
                             batch = false;
                             needCost = wateringCost;
                             if (happyPoint < needCost) {
-                                Log.record("农场施肥⏭️肥料不足[" + happyPoint + "/" + needCost + "g]");
+                                logSpreadShortage(happyPoint, needCost);
                                 return false;
                             }
                         } else {
-                            Log.record("农场施肥⏭️肥料不足[" + happyPoint + "/" + needCost + "g]");
+                            logSpreadShortage(happyPoint, needCost);
                             return false;
                         }
                     }
@@ -922,7 +943,7 @@ public class AntOrchard extends ModelTask {
                     // 与主场景同一套对齐规则；余额宝同样适用 199+5 漏洞
                     boolean batchY = Boolean.TRUE.equals(useBatchSpread.getValue())
                             && shouldBatchSpread(limit, currentProgress);
-                    // yeb 肥料与主账号同池，仅在批量（需 5 倍）时取主账号余额做判据
+                    // 只有批量需要 5 倍余额，才额外查一次主账号；单次直接用 main 场景已缓存的余额
                     if (batchY) {
                         JSONObject yebMain = new JSONObject(AntOrchardRpcCall.orchardSyncIndex());
                         if (!MessageUtil.checkResultCode(TAG, yebMain)) {
@@ -930,12 +951,20 @@ public class AntOrchard extends ModelTask {
                             batchY = false;
                         } else {
                             JSONObject yai = yebMain.getJSONObject("farmMainAccountInfo");
-                            int happyPointY = Integer.parseInt(yai.getString("happyPoint"));
-                            int wateringCostY = yai.getInt("wateringCost");
-                            if (happyPointY < wateringCostY * BATCH_SPREAD_SIZE) {
-                                // 肥料不足 5 倍：退回单次（沿用原 yeb 不判肥料，直接允许单次）
+                            spreadHappyPoint = Integer.parseInt(yai.getString("happyPoint"));
+                            spreadWateringCost = yai.getInt("wateringCost");
+                            if (spreadHappyPoint < spreadWateringCost * BATCH_SPREAD_SIZE) {
+                                // 肥料不足 5 倍：退回单次
                                 batchY = false;
                             }
+                        }
+                    }
+                    // 肥料与主账号同池：单次也用同一余额判据，否则会发出注定被拒的请求（余额未知时不拦）
+                    if (spreadHappyPoint >= 0 && spreadWateringCost >= 0) {
+                        int needCostY = batchY ? spreadWateringCost * BATCH_SPREAD_SIZE : spreadWateringCost;
+                        if (spreadHappyPoint < needCostY) {
+                            logSpreadShortage(spreadHappyPoint, needCostY);
+                            return false;
                         }
                     }
                     // 修正原 `limit < dailyLimit`：允许推进到漏洞上限 204（dailyLimit 名义 200），避免 yeb 完全不施肥
@@ -1140,7 +1169,7 @@ public class AntOrchard extends ModelTask {
                     // taskId 当作 taskType 传给 finishTask（该 RPC 的参数名就叫 taskType）
                     String via = finishTaskTwice(sceneCode, title, taskId);
                     if (via != null) {
-                        Log.farm("肥料任务🧾完成[" + title + "]第" + (rightsTimes + cnt + 1) + "次#" + via);
+                        Log.farm("肥料任务🧾完成[" + title + "]第" + (rightsTimes + cnt + 1) + "次");
                     } else {
                         break;
                     }
@@ -1154,7 +1183,7 @@ public class AntOrchard extends ModelTask {
                 // taskId 当作 taskType 传递
                 String via = finishTaskTwice(sceneCode, title, taskId);
                 if (via != null) {
-                    Log.farm("肥料任务🧾完成[" + title + "]#" + via);
+                    Log.farm("肥料任务🧾完成[" + title + "]");
                 }
                 return true;
             }
@@ -1162,7 +1191,7 @@ public class AntOrchard extends ModelTask {
             //配合黑名单的兜底操作
             String via = finishTaskTwice(sceneCode, title, taskId);
             if (via != null) {
-                Log.farm("肥料任务🧾完成[" + title + "]#" + via);
+                Log.farm("肥料任务🧾完成[" + title + "]");
             }
             return true;
         } catch (Throwable t) {
