@@ -4409,6 +4409,39 @@ public class AntFarm extends ModelTask {
 
     //乐园限定活动（庄园 → 乐园限定活动，bizType=ANTFARM / sceneCode=ANTFARM_COMMON）
     //奖励类型 gameCoin（乐园币），场景码 ANTFARM_LEYUAN_DAILY_TASK
+    private TaskAttemptPolicy.ProbeResult probeOptionalPlayStatus(String scene, String type, int previousRights) {
+        try {
+            JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.queryOptionalPlay());
+            if (!MessageUtil.checkSuccess(TAG, jo)) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            JSONObject info = jo.optJSONObject("taskTriggerPlayInfo");
+            JSONArray tasks = info == null ? null : info.optJSONArray("taskList");
+            if (tasks == null) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            TaskAttemptPolicy.ProbeResult result = TaskAttemptPolicy.ProbeResult.GONE;
+            boolean matched = false;
+            for (int i = 0; i < tasks.length(); i++) {
+                JSONObject task = tasks.optJSONObject(i);
+                if (task == null || task.optString("sceneCode").isEmpty() || task.optString("taskType").isEmpty())
+                    return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+                if (!scene.equals(task.optString("sceneCode")) || !type.equals(task.optString("taskType"))) continue;
+                if (matched) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+                matched = true;
+                String status = task.optString("taskStatus");
+                if (TaskStatus.FINISHED.name().equals(status)) result = TaskAttemptPolicy.ProbeResult.FINISHED;
+                else if (TaskStatus.RECEIVED.name().equals(status)) result = TaskAttemptPolicy.ProbeResult.RECEIVED;
+                else if (TaskStatus.TODO.name().equals(status)) {
+                    // 多阶段任务仍可为 TODO；只确认本次阶段，不能把下一阶段记为失败。
+                    result = task.optInt("rightsTimes", previousRights) > previousRights
+                            ? TaskAttemptPolicy.ProbeResult.FINISHED : TaskAttemptPolicy.ProbeResult.TODO;
+                } else return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            return result;
+        } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
+            Log.err(TAG, "probeOptionalPlayStatus err:", t);
+            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        }
+    }
+
     private void queryOptionalPlay() {
         try {
             // 每个任务本轮最多上报一次：同一次运行内响应"成功"不代表服务端真的落态
@@ -4493,7 +4526,8 @@ public class AntFarm extends ModelTask {
                                 ? title + "(" + (rightsTimes + 1) + "/" + rightsTimesLimit + ")" : title;
                         TaskAttemptPolicy.handle("farm::optionalplay::" + attemptKey, label, null,
                                 () -> finishOptionalPlayTask(sceneCode, taskType, label), Log::farm,
-                                new TaskAttemptPolicy.Site("AntFarmDrawMachineTaskList", "庄园乐园限定任务", taskType, sceneCode));
+                                new TaskAttemptPolicy.Site("AntFarmDrawMachineTaskList", "庄园乐园限定任务", taskType, sceneCode,
+                                        k -> probeOptionalPlayStatus(sceneCode, taskType, rightsTimes)));
                     }
                 }
 

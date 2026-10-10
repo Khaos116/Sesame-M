@@ -3298,7 +3298,6 @@ public class AntForestV2 extends ModelTask {
     }
 
     private void queryTaskList() {
-        queryVitalityYouthTaskList();
         try {
             boolean doubleCheck = true;
             while (doubleCheck) {
@@ -3431,10 +3430,21 @@ public class AntForestV2 extends ModelTask {
         if (DailyTask.skipFlag("vitalityTask::" + route.firstTaskType, "青春特权" + route.displayName)) {
             return;
         }
+        String absentFlag = "vitalityTaskAbsent::" + route.firstTaskType;
+        if (!DailyTask.isManual() && Status.hasFlagToday(absentFlag)) {
+            Log.forest("青春特权道具[" + route.displayName + "]今日已确认无对应任务，自动调度跳过；可点击立即执行重新检查");
+            return;
+        }
+        Status.clearFlag(absentFlag);
         try {
             String status = queryYouthForestTaskStatus(route);
+            if (status == null) {
+                Log.forest("青春特权道具[" + route.displayName + "]查询未确认，不写当日标记");
+                return;
+            }
             if (status.isEmpty()) {
-                Log.forest("青春特权道具[跳过]" + route.displayName + " 未匹配到 taskType=" + route.awardTaskType);
+                Status.flagToday(absentFlag);
+                Log.forest("青春特权道具[" + route.displayName + "]今日无对应任务 taskType=" + route.awardTaskType);
                 return;
             }
             boolean isReceived = TaskStatus.RECEIVED.name().equals(status);
@@ -3458,64 +3468,71 @@ public class AntForestV2 extends ModelTask {
         }
     }
 
-    /**
-     * 查询单个青春特权道具任务状态，返回 taskStatus；查不到返回空串。
-     */
+    /** null 表示查询/结构未确认，空串仅表示有效列表没有对应任务。 */
     private String queryYouthForestTaskStatus(YouthForestRoute route) throws JSONException {
         JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryYouthPrivilegeTaskList(route.firstTaskType, route.source));
-        if (!MessageUtil.checkResultCode(TAG, jo) && !MessageUtil.checkSuccess(TAG, jo)) return "";
-        JSONObject payload = jo.optJSONObject("resData");
-        if (payload == null) {
-            payload = jo;
-        }
-        for (JSONObject taskInfo : collectOpenGreenTaskInfos(payload)) {
-            JSONObject taskBaseInfo = taskInfo.optJSONObject("taskBaseInfo");
-            if (taskBaseInfo == null || !Objects.equals(route.awardTaskType, taskBaseInfo.optString("taskType"))) {
+        if (!MessageUtil.checkResultCode(TAG, jo) && !MessageUtil.checkSuccess(TAG, jo)) return null;
+        JSONObject payload = jo.has("resData") ? jo.optJSONObject("resData") : jo;
+        if (payload == null) return null;
+        List<JSONObject> tasks = new ArrayList<>();
+        boolean complete = collectOpenGreenTaskInfos(payload, tasks);
+        String status = "";
+        for (JSONObject taskInfo : tasks) {
+            JSONObject base = taskInfo.optJSONObject("taskBaseInfo");
+            if (base == null || base.optString("taskType").isEmpty()) {
+                complete = false;
                 continue;
             }
-            return taskBaseInfo.optString("taskStatus");
-        }
-        return "";
-    }
-
-    /**
-     * 收集 listTaskopengreen 响应中所有层级的 taskInfo，兼容多种嵌套结构。
-     */
-    private static List<JSONObject> collectOpenGreenTaskInfos(JSONObject payload) {
-        List<JSONObject> taskInfos = new ArrayList<>();
-        appendTaskInfoList(taskInfos, payload.optJSONArray("taskInfoList"));
-        appendTaskGroups(taskInfos, payload.optJSONArray("taskGroupList"));
-        appendTaskGroups(taskInfos, payload.optJSONArray("forestTasksNew"));
-        JSONObject result = payload.optJSONObject("result");
-        if (result != null) {
-            appendTaskInfoList(taskInfos, result.optJSONArray("taskInfoList"));
-            appendTaskGroups(taskInfos, result.optJSONArray("taskGroupList"));
-        }
-        return taskInfos;
-    }
-
-    private static void appendTaskInfoList(List<JSONObject> taskInfos, JSONArray taskInfoList) {
-        if (taskInfoList == null) {
-            return;
-        }
-        for (int i = 0; i < taskInfoList.length(); i++) {
-            JSONObject taskInfo = taskInfoList.optJSONObject(i);
-            if (taskInfo != null) {
-                taskInfos.add(taskInfo);
+            if (Objects.equals(route.awardTaskType, base.optString("taskType"))) {
+                String found = base.optString("taskStatus");
+                if (found.isEmpty() || (!status.isEmpty() && !status.equals(found))) return null;
+                status = found;
             }
         }
+        // 无关条目异常不能否定已找到的目标；只有判定“无任务”才要求完整列表。
+        return !status.isEmpty() ? status : complete ? "" : null;
     }
 
-    private static void appendTaskGroups(List<JSONObject> taskInfos, JSONArray groups) {
-        if (groups == null) {
-            return;
+    private static boolean collectOpenGreenTaskInfos(JSONObject payload, List<JSONObject> tasks) {
+        boolean found = false;
+        boolean complete = true;
+        if (payload.has("taskInfoList")) {
+            found = true;
+            complete &= appendTaskInfoList(tasks, payload.optJSONArray("taskInfoList"));
         }
+        for (String key : new String[]{"taskGroupList", "forestTasksNew"}) {
+            if (payload.has(key)) {
+                found = true;
+                complete &= appendTaskGroups(tasks, payload.optJSONArray(key));
+            }
+        }
+        if (payload.has("result")) {
+            JSONObject result = payload.optJSONObject("result");
+            complete &= result != null && collectOpenGreenTaskInfos(result, tasks);
+            found = true;
+        }
+        return found && complete;
+    }
+
+    private static boolean appendTaskInfoList(List<JSONObject> tasks, JSONArray list) {
+        if (list == null) return false;
+        boolean complete = true;
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject task = list.optJSONObject(i);
+            if (task == null) complete = false;
+            else tasks.add(task);
+        }
+        return complete;
+    }
+
+    private static boolean appendTaskGroups(List<JSONObject> tasks, JSONArray groups) {
+        if (groups == null) return false;
+        boolean complete = true;
         for (int i = 0; i < groups.length(); i++) {
             JSONObject group = groups.optJSONObject(i);
-            if (group != null) {
-                appendTaskInfoList(taskInfos, group.optJSONArray("taskInfoList"));
-            }
+            complete &= group != null && appendTaskInfoList(tasks, group.optJSONArray("taskInfoList"));
         }
+        return complete;
     }
 
     private Boolean receiveTaskAward(String sceneCode, String taskType, String taskTitle) {
@@ -4072,6 +4089,39 @@ public class AntForestV2 extends ModelTask {
 
     //乐园限定活动（bizType=ANTFOREST / sceneCode=ANTFOREST_COMMON）
     //奖励类型以能量为主，场景码 ANTFOREST_LEYUAN_DAILY_TASK
+    private TaskAttemptPolicy.ProbeResult probeOptionalPlayStatus(String scene, String type, int previousRights) {
+        try {
+            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryOptionalPlay());
+            if (!MessageUtil.checkSuccess(TAG, jo)) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            JSONObject info = jo.optJSONObject("taskTriggerPlayInfo");
+            JSONArray tasks = info == null ? null : info.optJSONArray("taskList");
+            if (tasks == null) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            TaskAttemptPolicy.ProbeResult result = TaskAttemptPolicy.ProbeResult.GONE;
+            boolean matched = false;
+            for (int i = 0; i < tasks.length(); i++) {
+                JSONObject task = tasks.optJSONObject(i);
+                if (task == null || task.optString("sceneCode").isEmpty() || task.optString("taskType").isEmpty())
+                    return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+                if (!scene.equals(task.optString("sceneCode")) || !type.equals(task.optString("taskType"))) continue;
+                if (matched) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+                matched = true;
+                String status = task.optString("taskStatus");
+                if (TaskStatus.FINISHED.name().equals(status)) result = TaskAttemptPolicy.ProbeResult.FINISHED;
+                else if (TaskStatus.RECEIVED.name().equals(status)) result = TaskAttemptPolicy.ProbeResult.RECEIVED;
+                else if (TaskStatus.TODO.name().equals(status)) {
+                    // 多阶段任务仍可为 TODO；只确认本次阶段，不能把下一阶段记为失败。
+                    result = task.optInt("rightsTimes", previousRights) > previousRights
+                            ? TaskAttemptPolicy.ProbeResult.FINISHED : TaskAttemptPolicy.ProbeResult.TODO;
+                } else return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            }
+            return result;
+        } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
+            Log.err(TAG, "probeOptionalPlayStatus err:", t);
+            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        }
+    }
+
     private void queryOptionalPlay() {
         try {
             // 每个任务本轮最多上报一次：响应"成功"不代表服务端真的落态
@@ -4178,7 +4228,7 @@ public class AntForestV2 extends ModelTask {
                         TaskAttemptPolicy.handle("forest::optionalplay::" + attemptKey, label, null,
                                 () -> attemptFinishTask(sceneCode, taskType, label), Log::forest,
                                 new TaskAttemptPolicy.Site("AntForestVitalityTaskList", "森林乐园限定任务",
-                                        taskType, sceneCode));
+                                        taskType, sceneCode, k -> probeOptionalPlayStatus(sceneCode, taskType, rightsTimes)));
                     }
                 }
 
@@ -6293,7 +6343,7 @@ public class AntForestV2 extends ModelTask {
     /** @return 是否真的取到 SKU（取不到时留给下一轮重试） */
     private boolean getAllSkuInfo() {
         try {
-            if (Status.hasFlagToday("forest::vitalitySkuList")) {
+            if (Status.hasFlagToday("forest::vitalitySkuList") && !skuInfo.isEmpty()) {
                 return true;
             }
             int got = 0;

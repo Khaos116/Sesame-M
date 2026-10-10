@@ -357,6 +357,9 @@ public class FlowCheck {
         assert AntForestRpcCall.pages.size() == 10 && f.skuInfo.size() == 10 && VitalityBenefitIdMap.saves == 1;
         assert AntForestRpcCall.pages.contains("SKIN:20") && AntForestRpcCall.pages.contains("OTHER:20");
         AntForestRpcCall.pages.clear(); f.getAllSkuInfo(); assert AntForestRpcCall.pages.isEmpty() : "same-day direct call reloaded catalogue";
+        f = new Forest(); assert f.getAllSkuInfo() && f.skuInfo.size()==10 : "persisted daily flag blocked restart catalogue restore";
+        assert AntForestRpcCall.pages.size()==10 : "restart did not reload catalogue";
+        AntForestRpcCall.pages.clear();
         Status.flags.clear(); AntForestRpcCall.forever = true; f.getAllSkuInfo();
         assert AntForestRpcCall.pages.size() == 50;
         Status.flags.clear(); AntForestRpcCall.brokenItems = true; assert !f.getAllSkuInfo() : "old cache cannot confirm a fresh fetch";

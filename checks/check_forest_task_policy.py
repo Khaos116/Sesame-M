@@ -5,6 +5,8 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent / 'audit_regressions'))
 from run import method, SOURCE
 forest = 'model/task/antForest/AntForestV2.java'
+assert 'queryVitalityYouthTaskList' not in method(forest, 'private void queryTaskList()')
+assert (SOURCE/forest).read_text(encoding='utf-8').count('queryVitalityYouthTaskList();') == 1
 code = r'''
 import org.json.*;import java.util.*;import java.util.function.*;import java.util.regex.*;import java.util.concurrent.atomic.AtomicInteger;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
@@ -47,18 +49,18 @@ public class ForestTaskPolicyCheck {
  static class AntForestRpcCall {
   static Map<String,String> replies=new HashMap<>();static int reads,awards,writes,optionalReads;
   static boolean cancelProbe,cancelAttempt,cancelAward;static JSONArray snapshot=new JSONArray(),nativeSnapshot=new JSONArray();
-  static String awardReply,optionalOverride,home="{}",rain="{}";static int inits;
+  static String youthOverride,optionalAfter;static int youthReads;static String awardReply,optionalOverride,home="{}",rain="{}";static int inits;
   static String finishTask(String scene,String type){writes++;if(cancelAttempt)throw new TaskCancelledException();return replies.getOrDefault(type,"{\"success\":false,\"code\":\"102\"}");}
   static String listTaskopengreen(){reads++;if(cancelProbe)throw new TaskCancelledException();return new JSONObject().put("resultCode","SUCCESS").put("taskInfoList",snapshot).toString();}
   static String receiveTaskAward(String scene,String type){awards++;if(cancelAward)throw new TaskCancelledException();return awardReply;}
   static String queryTaskList(JSONObject args){return new JSONObject().put("resultCode","SUCCESS").put("forestTasksNew",new JSONArray().put(new JSONObject().put("taskInfoList",nativeSnapshot))).toString();}
-  static String queryYouthPrivilegeTaskList(String first,String source){if(cancelProbe)throw new TaskCancelledException();return new JSONObject().put("resultCode","SUCCESS").put("taskInfoList",nativeSnapshot).toString();}
+  static String queryYouthPrivilegeTaskList(String first,String source){youthReads++;if(youthOverride!=null)return youthOverride;if(cancelProbe)throw new TaskCancelledException();return new JSONObject().put("resultCode","SUCCESS").put("taskInfoList",nativeSnapshot).toString();}
   static String receiveYouthPrivilegeTaskAward(String source,String type){return receiveTaskAward(source,type);}
   static String queryHomePage(){if(cancelProbe)throw new TaskCancelledException();return home;}
   static String queryEnergyRainEndGameList(){return rain;}
   static String initTask(String type){check("GAME_DONE_SLJYD".equals(type),"Initialized unrelated game");inits++;return "{\"resultCode\":\"SUCCESS\"}";}
   static String batchQueryAndTouchopengreen(){return "{}";}
-  static String queryOptionalPlay(){optionalReads++;if(optionalOverride!=null)return optionalOverride;return new JSONObject().put("success",true).put("taskTriggerPlayInfo",new JSONObject().put("taskList",new JSONArray().put(new JSONObject().put("taskStatus","TODO").put("sceneCode","scene").put("taskType","unsupported").put("bizInfo",new JSONObject().put("title","browse"))))).toString();}
+  static String queryOptionalPlay(){optionalReads++;if(cancelProbe)throw new TaskCancelledException();if(optionalAfter!=null&&writes>0)return optionalAfter;if(optionalOverride!=null)return optionalOverride;return new JSONObject().put("success",true).put("taskTriggerPlayInfo",new JSONObject().put("taskList",new JSONArray().put(new JSONObject().put("taskStatus","TODO").put("sceneCode","scene").put("taskType","unsupported").put("bizInfo",new JSONObject().put("title","browse"))))).toString();}
   static String receiveTaskAwardopengreen(String source,String scene,String type){return "{}";}
   static String listTaskopengreen(String scene,String source){if(cancelProbe)throw new TaskCancelledException();return new JSONObject().put("success",true).put("taskInfoList",snapshot).toString();}
   static String enterDrawActivityopengreen(String id,String scene,String source){return new JSONObject().put("success",true).put("drawSceneGroups",new JSONArray().put(new JSONObject().put("drawActivity",new JSONObject().put("activityId","id").put("sceneCode","activity").put("name","draw")))).toString();}
@@ -81,7 +83,7 @@ public class ForestTaskPolicyCheck {
  }
  @@METHODS@@
  static JSONObject task(String type,String status){return new JSONObject().put("taskBaseInfo",new JSONObject().put("sceneCode","scene").put("taskType",type).put("taskStatus",status).put("bizInfo","{\"taskTitle\":\""+type+"\",\"autoCompleteTask\":true}"));}
- static void reset(){Status.flags.clear();RuntimeInfo.value.data.clear();ApplicationHook.fallback=0;AntForestRpcCall.replies.clear();
+ static void reset(){AntForestRpcCall.youthOverride=AntForestRpcCall.optionalAfter=null;AntForestRpcCall.youthReads=0;Status.flags.clear();RuntimeInfo.value.data.clear();ApplicationHook.fallback=0;AntForestRpcCall.replies.clear();
   AntForestRpcCall.optionalOverride=null;AntForestRpcCall.snapshot=new JSONArray();AntForestRpcCall.nativeSnapshot=new JSONArray();AntForestRpcCall.awardReply="{\"success\":true,\"returnData\":\"{}\",\"incAwardCount\":1}";
   AntForestRpcCall.reads=AntForestRpcCall.awards=AntForestRpcCall.writes=AntForestRpcCall.optionalReads=0;AntForestRpcCall.cancelProbe=AntForestRpcCall.cancelAttempt=AntForestRpcCall.cancelAward=false;}
  static void expectCancel(Runnable work){try{work.run();check(false,"Task chain swallowed cancellation");}catch(TaskCancelledException expected){}}
@@ -97,9 +99,24 @@ public class ForestTaskPolicyCheck {
   reset();AntForestRpcCall.replies.put("unsupported","{\"success\":false,\"code\":\"400000040\"}");AntForestRpcCall.snapshot=new JSONArray().put(task("unsupported","TODO"));
   f.queryOptionalPlay();check(ApplicationHook.fallback==1,"Optional play must retain unsupported-RPC fallback");
   reset();AntForestRpcCall.replies.put("unsupported","{\"success\":true}");
-  f.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==2,"Forest unchanged TODO must not spin");
+  f.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==3,"Forest unchanged TODO must not spin");
   Farm farm=new Farm();reset();AntForestRpcCall.replies.put("unsupported","{\"success\":true}");
-  farm.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==2,"Farm unchanged TODO must not spin");
+  farm.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==3,"Farm unchanged TODO must not spin");
+  for(boolean isFarm:new boolean[]{false,true}) {
+   Runnable run=isFarm?farm::queryOptionalPlay:f::queryOptionalPlay;
+   reset();AntForestRpcCall.replies.put("unsupported","{\"success\":true}");
+   run.run();run.run();check(AntForestRpcCall.writes==1,"Unchanged optional TODO resubmitted next run");
+   DailyTask.manual(()->{run.run();return null;});check(AntForestRpcCall.writes==2,"Manual optional retry blocked");
+   Status.flags.clear();run.run();check(AntForestRpcCall.writes==3,"Next-day optional retry blocked");
+   reset();run.run();run.run();check(AntForestRpcCall.writes==2,"Temporary optional failure marked daily");
+   reset();AntForestRpcCall.replies.put("unsupported","{\"success\":true}");
+   AntForestRpcCall.optionalAfter="{\"success\":true,\"taskTriggerPlayInfo\":{\"taskList\":false}}";
+   run.run();AntForestRpcCall.optionalAfter=null;run.run();check(AntForestRpcCall.writes==2,"Malformed readback blocked future retry");
+   reset();AntForestRpcCall.cancelProbe=true;expectCancel(run);
+  }
+  reset();AntForestRpcCall.optionalOverride="{\"success\":true,\"taskTriggerPlayInfo\":{\"taskList\":[{\"sceneCode\":\"scene\",\"taskType\":\"unsupported\",\"taskStatus\":\"TODO\",\"rightsTimes\":1}]}}";
+  check(f.probeOptionalPlayStatus("scene","unsupported",0)==TaskAttemptPolicy.ProbeResult.FINISHED,"Advanced stage not recognized");
+  check(farm.probeOptionalPlayStatus("scene","unsupported",1)==TaskAttemptPolicy.ProbeResult.TODO,"Same stage falsely confirmed");
   reset();AntForestRpcCall.replies.put("unsupported","{\"code\":\"400000040\"}");farm.queryOptionalPlay();
   check(ApplicationHook.fallback==1,"Farm optional fallback must use shared policy once");
   reset();AntForestRpcCall.cancelAttempt=true;expectCancel(farm::queryOptionalPlay);
@@ -113,6 +130,36 @@ public class ForestTaskPolicyCheck {
   f.queryYouthForestTask(new YouthForestRoute("nativeFirst","source","nativeReward","reward"));check(!Status.hasFlagToday("vitalityTask::nativeFirst"),"Absence in vitality list must not confirm failed native-list award");
   f.queryYouthForestTask(new YouthForestRoute("nativeFirst","source","nativeReward","reward"));check(AntForestRpcCall.awards==2,"Failed native award must remain retryable today");
   AntForestRpcCall.nativeSnapshot=new JSONArray().put(task("nativeReward","RECEIVED"));f.queryYouthForestTask(new YouthForestRoute("nativeFirst","source","nativeReward","reward"));check(Status.hasFlagToday("vitalityTask::nativeFirst"),"Explicit matching received state still confirms award");
+  reset();YouthForestRoute route=new YouthForestRoute("nativeFirst","source","nativeReward","reward");
+  f.queryYouthForestTask(route);f.queryYouthForestTask(route);check(AntForestRpcCall.youthReads==1,"Absent youth tasks queried repeatedly");
+  check(!Status.hasFlagToday("vitalityTask::nativeFirst"),"Absent youth task logged as successful reward");
+  DailyTask.manual(()->{f.queryYouthForestTask(route);return null;});check(AntForestRpcCall.youthReads==2,"Manual youth recheck blocked");
+  Status.flags.clear();f.queryYouthForestTask(route);check(AntForestRpcCall.youthReads==3,"Next-day youth query blocked");
+  for(String raw:List.of("{}","{\"success\":false}","{\"success\":true}","{\"success\":true,\"taskInfoList\":[{}]}","{\"success\":true,\"taskGroupList\":[{}]}")) {
+   reset();AntForestRpcCall.youthOverride=raw;f.queryYouthForestTask(route);f.queryYouthForestTask(route);
+   check(AntForestRpcCall.youthReads==2&&Status.flags.isEmpty(),"Failed/malformed youth query marked absent");
+  }
+  for(int variant=0;variant<5;variant++) {
+   reset();JSONObject response=new JSONObject().put("success",true);
+   JSONArray mixed=new JSONArray().put(task("nativeReward","FINISHED"));
+   if(variant==0)mixed.put(new JSONObject());
+   if(variant==1)mixed.put(false);
+   response.put("taskInfoList",mixed);
+   if(variant==2)response.put("taskGroupList",new JSONArray().put(new JSONObject()));
+   if(variant==3)response.put("result",false);
+   if(variant==4)response.put("result",new JSONObject());
+   AntForestRpcCall.youthOverride=response.toString();f.queryYouthForestTask(route);
+   check(AntForestRpcCall.awards==1,"Unrelated malformed entry blocked valid youth reward variant="+variant);
+   check(!Status.hasFlagToday("vitalityTaskAbsent::nativeFirst"),"Present target marked absent");
+   mixed.put(0,task("nativeReward","RECEIVED"));AntForestRpcCall.youthOverride=response.toString();f.queryYouthForestTask(route);
+   check(Status.hasFlagToday("vitalityTask::nativeFirst"),"Unrelated malformed entry blocked confirmed reward");
+   mixed.remove(0);reset();AntForestRpcCall.youthOverride=response.toString();f.queryYouthForestTask(route);f.queryYouthForestTask(route);
+   check(Status.flags.isEmpty()&&AntForestRpcCall.youthReads==2,"Incomplete mixed list incorrectly confirmed absence");
+  }
+  reset();AntForestRpcCall.youthOverride=new JSONObject().put("success",true).put("taskGroupList",new JSONArray().put(new JSONObject()).put(new JSONObject().put("taskInfoList",new JSONArray().put(false).put(task("nativeReward","FINISHED"))))).toString();
+  f.queryYouthForestTask(route);check(AntForestRpcCall.awards==1,"Malformed earlier group/entry prevented later target search");
+  reset();AntForestRpcCall.youthOverride=new JSONObject().put("success",true).put("taskInfoList",new JSONArray().put(task("nativeReward","FINISHED")).put(task("nativeReward","TODO"))).toString();
+  f.queryYouthForestTask(route);check(AntForestRpcCall.awards==0&&Status.flags.isEmpty(),"Conflicting target states accepted");
   reset();AntForestRpcCall.cancelProbe=true;
   try{f.probeForestVitalityStatus("scene","task");check(false,"Forest probe swallowed cancellation");}catch(TaskCancelledException expected){}
   reset();AntForestRpcCall.cancelProbe=true;AntForestRpcCall.snapshot=new JSONArray().put(task("busy","TODO"));expectCancel(()->f.doForsetTaskList(AntForestRpcCall.snapshot));
@@ -144,8 +191,8 @@ for marker, path, name in [('@@ALTERNATIVE@@','model/base/TaskAlternative.java',
     source=re.sub(r'^import .*?;\s*','',source,flags=re.M)
     source=source.replace('public final class '+name,'static final class '+name).replace('public class '+name,'static class '+name)
     code=code.replace(marker,source)
-code=code.replace('@@FARM_OPTIONAL@@','\n'.join(method('model/task/antFarm/AntFarm.java',sig) for sig in ('private void queryOptionalPlay()', 'private Outcome finishOptionalPlayTask(')))
-methods=('private void recordMonopolyAward(', 'private int queryCurrentEnergy(', 'public static void checkAndDoEndGameTask(', 'private Boolean doForsetTaskList(','private static final class YouthForestRoute', 'private void queryYouthForestTask(', 'private String queryYouthForestTaskStatus(', 'private static List<JSONObject> collectOpenGreenTaskInfos(', 'private static void appendTaskInfoList(', 'private static void appendTaskGroups(','private Boolean receiveTaskAward(','private static String blackTaskKey(','private Outcome attemptFinishTask(','private TaskAttemptPolicy.ProbeResult probeForestVitalityStatus(','private static TaskAttemptPolicy.ProbeResult forestVitalityStatus(','private boolean awardFinishedChildren(','private boolean doChildTask(','private boolean doEnergySceneTask(','private Outcome attemptSceneTask(','private void queryOptionalPlay()')
+code=code.replace('@@FARM_OPTIONAL@@','\n'.join(method('model/task/antFarm/AntFarm.java',sig) for sig in ('private TaskAttemptPolicy.ProbeResult probeOptionalPlayStatus(', 'private void queryOptionalPlay()', 'private Outcome finishOptionalPlayTask(')))
+methods=('private void recordMonopolyAward(', 'private int queryCurrentEnergy(', 'public static void checkAndDoEndGameTask(', 'private Boolean doForsetTaskList(','private static final class YouthForestRoute', 'private void queryYouthForestTask(', 'private String queryYouthForestTaskStatus(', 'private static boolean collectOpenGreenTaskInfos(', 'private static boolean appendTaskInfoList(', 'private static boolean appendTaskGroups(','private Boolean receiveTaskAward(','private static String blackTaskKey(','private Outcome attemptFinishTask(','private TaskAttemptPolicy.ProbeResult probeForestVitalityStatus(','private static TaskAttemptPolicy.ProbeResult forestVitalityStatus(','private boolean awardFinishedChildren(','private boolean doChildTask(','private boolean doEnergySceneTask(','private Outcome attemptSceneTask(','private TaskAttemptPolicy.ProbeResult probeOptionalPlayStatus(', 'private void queryOptionalPlay()')
 code=code.replace('@@METHODS@@','\n'.join(method(forest,s) for s in methods)).replace('Outcome','TaskAttemptPolicy.Outcome')
 # The shared class declares the enum itself, so restore that declaration and its inner references.
 code=code.replace('enum TaskAttemptPolicy.Outcome','enum Outcome')
