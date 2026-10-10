@@ -353,6 +353,8 @@ import re
 rpc_source=(SOURCE/'model/task/antSports/AntSportsRpcCall.java').read_text(encoding='utf-8')
 code=code.replace('@@WALK_FEATURES@@',re.search(r'private static final String WALK_FEATURES = .*?;',rpc_source).group())
 code=code.replace('@@WALK_RPC@@','\n'.join(method('model/task/antSports/AntSportsRpcCall.java',s) for s in ('public static String queryPath(String date, String pathId)','public static String joinPath(String pathId)','public static String walkGo(String date, String pathId, int useStepCount)')))
+from daily_task_fixture import with_daily_task
+code=with_daily_task(code)
 with tempfile.TemporaryDirectory(prefix="sesame-remaining-") as temporary:
     source = Path(temporary) / "RemainingCheck.java"
     source.write_text(code, encoding="utf-8")

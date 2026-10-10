@@ -1,6 +1,7 @@
 package io.github.aw1y2z.sesame.data.task;
 
 import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.util.DailyTask;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
@@ -38,7 +39,8 @@ public class TaskAttemptPolicy {
     private static final String TAG = TaskAttemptPolicy.class.getSimpleName();
 
     /** 当日已尝试标记前缀，实际键为 {@code attempt::<定位键>} */
-    private static final String FLAG_PREFIX = "attempt::";
+    // 旧标记可能由验证/无响应误写；仅作废尝试标记，未确认上报回执独立保留。
+    private static final String FLAG_PREFIX = "attemptV2::";
 
     /** 已交给兜底方案的记录：{定位键: 记录时间戳}，跨天留存，用于下一轮判定兜底是否生效 */
     private static final String KEY_TRIGGERED = "taskAttemptPolicy.triggeredFallback";
@@ -244,7 +246,8 @@ public class TaskAttemptPolicy {
             return Outcome.SKIPPED;
         }
         String flag = FLAG_PREFIX + sanitize(key);
-        if (Status.hasFlagToday(flag)) {
+        if (Status.hasFlagToday(flag) && !DailyTask.isManual()) {
+            log.accept("任务尝试⏭️今日已尝试[" + title + "]#未标记成功，自动调度不重发；可点击立即执行重新检查");
             return Outcome.TRIED_TODAY;
         }
         // 关键词只能用于阻止交易申报，不能作为修改用户黑名单的证据。
@@ -258,6 +261,10 @@ public class TaskAttemptPolicy {
             Status.flagToday(flag);
             log.accept("任务尝试🕓上报后仍待确认[" + title + "]#今日不重复上报，不修改黑名单");
             return Outcome.TRIED_TODAY;
+        }
+        if (DailyTask.isManual() && Status.hasFlagToday(flag)) {
+            Status.clearFlag(flag);
+            log.accept("任务尝试🔄手动重试[" + title + "]#重新核对完成结果");
         }
         // 响应触发的自动拉黑先入缓冲：等列表核对后决定落盘/丢弃（列表确认完成就不该拉黑）
         boolean listDone = false;

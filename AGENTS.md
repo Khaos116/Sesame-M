@@ -54,6 +54,7 @@ python checks/check_rob_expand_card.py
 python checks/check_farm_npc.py
 python checks/check_zhima_pigeon.py
 python checks/check_farm_daily_limit.py
+python checks/check_farm_task_flow.py
 python checks/check_forest_makeup.py
 python checks/check_bill_stickers.py
 python checks/check_merchant_service.py

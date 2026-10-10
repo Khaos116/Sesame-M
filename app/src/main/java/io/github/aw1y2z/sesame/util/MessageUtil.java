@@ -282,20 +282,20 @@ public class MessageUtil {
      * <p>这类错误只是临时故障，一律不拉黑，避免把任务永久跳过。
      */
     public static boolean isRetryable(JSONObject jo) {
-        if (jo == null) {
-            return false;
+        if (jo == null || jo.length() == 0) return true;
+        // 本地能力拦截仍需交备用完成路径，不能被当成临时请求失败。
+        if ("400000040".equals(jo.optString("code")) || "400000040".equals(jo.optString("resultCode"))) return false;
+        if (jo.optBoolean("retryable", false) || jo.optBoolean("retriable", false)) return true;
+        for (String field : new String[]{"code", "resultCode", "errorCode", "error"}) {
+            String code = jo.optString(field).trim().toUpperCase(java.util.Locale.ROOT);
+            if (java.util.Set.of("RPC_SKIPPED", "TRANSPORT_ERROR", "1009", "48", "2000", "3000",
+                    "REMOTE_INVOKE_EXCEPTION", "SYSTEM_ERROR", "NETWORK_ERROR", "TIMEOUT", "REQUEST_TIMEOUT").contains(code)) return true;
         }
-        String code = jo.optString("code", "").trim();
-        if (code.isEmpty()) {
-            code = jo.optString("resultCode", "").trim();
+        for (String field : new String[]{"errorMessage", "errorMsg", "resultDesc", "resultView", "desc", "memo", "message"}) {
+            String message = jo.optString(field);
+            if (message.contains("验证") || message.contains("网络不可用") || message.contains("登录超时")) return true;
         }
-        if (code.isEmpty()) {
-            code = jo.optString("errorCode", "").trim();
-        }
-        return jo.optBoolean("retryable", false)
-                || jo.optBoolean("retriable", false)
-                || "3000".equals(code)
-                || "REMOTE_INVOKE_EXCEPTION".equals(code);
+        return false;
     }
 
     /**

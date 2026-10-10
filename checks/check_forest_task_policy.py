@@ -112,6 +112,8 @@ code=code.replace('@@METHODS@@','\n'.join(method(forest,s) for s in methods)).re
 code=code.replace('enum TaskAttemptPolicy.Outcome','enum Outcome')
 cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1/org.json/json'
 jar=sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar','-javadoc.jar')))[-1]
+from daily_task_fixture import with_daily_task
+code=with_daily_task(code)
 with tempfile.TemporaryDirectory(prefix='sesame-forest-task-policy-') as tmp:
     java=Path(tmp)/'ForestTaskPolicyCheck.java';java.write_text(code,encoding='utf-8')
     subprocess.run(['javac','-encoding','UTF-8','-cp',str(jar),'-d',tmp,str(java),str(SOURCE/'util/TaskCancelledException.java')],check=True)

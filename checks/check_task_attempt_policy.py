@@ -12,6 +12,10 @@ from run import SOURCE, method
 code = r'''
 import org.json.*; import java.util.*; import java.util.function.*; import java.util.regex.Pattern;
 public class MergePolicyCheck {
+ static final String TAG="farm";
+ static class AntFarmRpcCall {static String response;static int calls;static String doFarmTask(String key){calls++;return response;}
+  static String finishTask(String type,String scene){return doFarmTask(type);}}
+ @@FARM_ATTEMPT@@
  static class System {static long now=java.time.Instant.parse("2026-10-09T15:59:00Z").toEpochMilli();
   static long currentTimeMillis(){return now;}static final java.io.PrintStream out=java.lang.System.out;}
  static class TaskCancelledException extends RuntimeException {}
@@ -36,6 +40,11 @@ public class MergePolicyCheck {
   static RuntimeInfo getInstance(){return instance;}String getString(String k){return map.getOrDefault(k,"");}
   void put(String k,String v){map.put(k,v);}}
  static class MessageUtil {
+  @@RETRY@@
+  static boolean isServerBusy(JSONObject j){return "102".equals(j.optString("resultCode"));}
+  static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}
+  static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}
+  static void checkResultCodeAndMarkTaskBlackList(String a,String b,JSONObject j){}
   static int marks,permanent;static final String TAG="black";
   static boolean isUnsupportedRpc(JSONObject jo){return jo!=null&&"400000040".equals(jo.optString("code"));}
   static final ThreadLocal<List<Runnable>> DEFER_BLACKLIST=new ThreadLocal<>();
@@ -64,13 +73,22 @@ public class MergePolicyCheck {
   assert Status.getIntFlagToday("count")==7;UserIdMap.uid="B";Status.setIntFlagToday("count",3);
   assert Status.getIntFlagToday("count")==3&&Status.disk.get("A").intFlagLogList.get("count")==7;
   UserIdMap.uid="A";assert Status.getIntFlagToday("count")==7;
+  MergePolicyCheck farm=new MergePolicyCheck();
+  Status.flagToday("attempt::farm__task__legacy");
+  for(String raw:new String[]{"", "{}", "{error:'RPC_SKIPPED'}", "{error:'TRANSPORT_ERROR'}", "{error:1009}", "{error:48}", "{resultDesc:'请进行验证后继续'}"}){
+   AntFarmRpcCall.response=raw;int previous=AntFarmRpcCall.calls;
+   for(int round=0;round<2;round++) assert TaskAttemptPolicy.handle("farm::task::legacy","farm",null,
+    ()->farm.attemptFarmTask("farm","browse",""),logs::add,site(TaskAttemptPolicy.ProbeResult.TODO))==TaskAttemptPolicy.Outcome.RETRY;
+   assert AntFarmRpcCall.calls==previous+2 && !Status.hasFlagToday("attemptV2::farm__task__legacy") : "transient response persisted daily failure: "+raw;
+  }
+  assert !MessageUtil.isRetryable(new JSONObject().put("error","RPC_SKIPPED").put("code","400000040")) : "unsupported fallback lost";
   var done=TaskAttemptPolicy.handle("done","done",null,()->attempt(TaskAttemptPolicy.Outcome.RETRY),
    logs::add,site(TaskAttemptPolicy.ProbeResult.FINISHED));
   assert done==TaskAttemptPolicy.Outcome.DONE&&MessageUtil.marks==0;
   var unknown=TaskAttemptPolicy.handle("unknown","unknown",null,()->attempt(TaskAttemptPolicy.Outcome.UNSUPPORTED),
    logs::add,site(TaskAttemptPolicy.ProbeResult.UNKNOWN));
   assert unknown==TaskAttemptPolicy.Outcome.RETRY&&ApplicationHook.writes==0&&MessageUtil.marks==0;
-  assert !Status.hasFlagToday("attempt::unknown");
+  assert !Status.hasFlagToday("attemptV2::unknown");
   var unable=TaskAttemptPolicy.handle("unable","unable",null,()->attempt(TaskAttemptPolicy.Outcome.DONE),
    logs::add,site(TaskAttemptPolicy.ProbeResult.TODO));
   assert unable==TaskAttemptPolicy.Outcome.UNABLE&&MessageUtil.marks==1;
@@ -87,12 +105,27 @@ public class MergePolicyCheck {
   ApplicationHook.reply="bad";
   assert TaskAttemptPolicy.handle("bad","bad",null,()->TaskAttemptPolicy.Outcome.UNSUPPORTED,logs::add,
    site(TaskAttemptPolicy.ProbeResult.TODO))==TaskAttemptPolicy.Outcome.RETRY;
-  assert !Status.hasFlagToday("attempt::bad");
+  assert !Status.hasFlagToday("attemptV2::bad");
   before=attempts;TaskAttemptPolicy.handle("pay","pay",null,()->attempt(TaskAttemptPolicy.Outcome.DONE),logs::add,
    new TaskAttemptPolicy.Site("field","task","OFFLINE_PAY","scene"));assert attempts==before&&MessageUtil.permanent==0;
   int[] probes={0};
   int logCount=logs.size();TaskAttemptPolicy.handle("pay","pay",null,()->attempt(TaskAttemptPolicy.Outcome.DONE),logs::add,
-   new TaskAttemptPolicy.Site("field","task","OFFLINE_PAY","scene"));assert logs.size()==logCount;
+   new TaskAttemptPolicy.Site("field","task","OFFLINE_PAY","scene"));assert logs.size()==logCount+1;
+  int[] retryCalls={0};
+  TaskAttemptPolicy.handle("manualRetry","browse",null,()->{retryCalls[0]++;return TaskAttemptPolicy.Outcome.UNABLE;},logs::add,site(TaskAttemptPolicy.ProbeResult.TODO));
+  Status.load(); // restart restores the same account's daily attempt flag
+  assert TaskAttemptPolicy.handle("manualRetry","browse",null,()->{retryCalls[0]++;return TaskAttemptPolicy.Outcome.DONE;},logs::add,site(TaskAttemptPolicy.ProbeResult.FINISHED))==TaskAttemptPolicy.Outcome.TRIED_TODAY;
+  assert retryCalls[0]==1;
+  assert DailyTask.manual(()->TaskAttemptPolicy.handle("manualRetry","browse",null,()->{retryCalls[0]++;return TaskAttemptPolicy.Outcome.DONE;},logs::add,site(TaskAttemptPolicy.ProbeResult.FINISHED)))==TaskAttemptPolicy.Outcome.DONE;
+  assert retryCalls[0]==2 && !Status.hasFlagToday("attemptV2::manualRetry") && !DailyTask.isManual();
+  DailyTask.manual(()->TaskAttemptPolicy.handle("pay","pay",null,()->{retryCalls[0]++;return TaskAttemptPolicy.Outcome.DONE;},logs::add,new TaskAttemptPolicy.Site("field","task","OFFLINE_PAY","scene")));
+  assert retryCalls[0]==2 : "manual must retain transaction exclusion";
+  TaskAttemptPolicy.handle("pendingManual","pending",null,()->TaskAttemptPolicy.Outcome.FORGED,logs::add,null);
+  assert DailyTask.manual(()->TaskAttemptPolicy.handle("pendingManual","pending",null,()->{retryCalls[0]++;return TaskAttemptPolicy.Outcome.DONE;},logs::add,site(TaskAttemptPolicy.ProbeResult.TODO)))==TaskAttemptPolicy.Outcome.TRIED_TODAY;
+  assert retryCalls[0]==2 : "manual must retain unconfirmed receipt";
+  Status.flagToday("attemptV2::accountRetry");UserIdMap.uid="B";
+  assert !Status.hasFlagToday("attemptV2::accountRetry");
+  UserIdMap.uid="A";assert Status.hasFlagToday("attemptV2::accountRetry");
   int unsupportedMarks=MessageUtil.marks;
   TaskAttemptPolicy.handle("noFallback","noFallback",null,()->attempt(TaskAttemptPolicy.Outcome.UNSUPPORTED),logs::add,
    new TaskAttemptPolicy.Site("field","task",null,"scene",k->TaskAttemptPolicy.ProbeResult.TODO));
@@ -139,7 +172,7 @@ public class MergePolicyCheck {
    MessageUtil.MarkTaskBlackList("a","b","c","d");throw new TaskCancelledException();},logs::add,null);throw new AssertionError();}
   catch(TaskCancelledException expected){}
   assert MessageUtil.marks==previousMarks&&MessageUtil.DEFER_BLACKLIST.get()==null:"cancelled attempt committed blacklist";
-  assert !Status.hasFlagToday("attempt::cancelAttempt");
+  assert !Status.hasFlagToday("attemptV2::cancelAttempt");
   try {TaskAttemptPolicy.handle("cancelAward","title",()->{
    MessageUtil.MarkTaskBlackList("a","b","c","d");throw new TaskCancelledException();},null,logs::add,null);throw new AssertionError();}
   catch(TaskCancelledException expected){}
@@ -149,8 +182,11 @@ public class MergePolicyCheck {
 }
 '''
 replacements = {
+    "@@RETRY@@": method("util/MessageUtil.java", "public static boolean isRetryable("),
+    "@@FARM_ATTEMPT@@": method("model/task/antFarm/AntFarm.java", "private Outcome attemptFarmTask(").replace("Outcome", "TaskAttemptPolicy.Outcome"),
     "@@STATUS@@": "\n".join(method("util/Status.java", s) for s in (
         "private static void ensureLoadedForCurrentUid(", "public static synchronized Boolean hasFlagToday(",
+        "public static synchronized void clearFlag(",
         "public static synchronized void flagToday(String tag)", "public static synchronized int getIntFlagToday(",
         "public static synchronized void setIntFlagToday(")),
     "@@BUFFER@@": "\n".join(method("util/MessageUtil.java", s) for s in (
@@ -167,6 +203,8 @@ replacements = {
 }
 for token, value in replacements.items():
     code = code.replace(token, value)
+from daily_task_fixture import with_daily_task
+code = with_daily_task(code)
 jar = next(p for p in (Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) /
     "caches/modules-2/files-2.1/org.json/json").glob("*/*/json-*.jar")
     if not p.name.endswith(("-sources.jar", "-javadoc.jar")))

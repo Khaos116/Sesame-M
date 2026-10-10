@@ -596,6 +596,8 @@ public class AntFarm extends ModelTask {
             step("饲料任务", () -> {
                 if (receiveFarmTaskAward.getValue()) {
                     runFarmTaskRounds();
+                } else {
+                    Log.record("庄园饲料任务：配置未开启，本轮未查询任务列表");
                 }
             });
 
@@ -2734,10 +2736,6 @@ public class AntFarm extends ModelTask {
             int actionable = 0;
             int progressed = 0;
             for (int i = 0; i < ja.length(); i++) {
-                // 本轮已遇 102（服务端繁忙）时不再继续领奖，留到下一轮再试
-                if (farmTaskAwardBusy) {
-                    break;
-                }
                 JSONObject taskJo = ja.optJSONObject(i);
                 if (taskJo == null) {
                     continue;
@@ -2759,6 +2757,8 @@ public class AntFarm extends ModelTask {
                         if (!alreadyTried(taskJo, "receive") && receiveFarmTaskAward(taskJo)) {
                             progressed++;
                         }
+                    } else if (taskStatus == TaskStatus.TODO && !alreadyTried(taskJo, "blacklistLog")) {
+                        Log.record("庄园饲料任务⏭️[" + title + "]#命中当前账号饲料任务黑名单，未发送完成请求；立即执行仍保留黑名单");
                     }
                     continue;
                 }
@@ -2773,6 +2773,9 @@ public class AntFarm extends ModelTask {
                 }
                 if (taskStatus == TaskStatus.TODO) {
                     if (isUnsupportedFarmTask(taskJo.optString("bizKey"))) {
+                        if (!alreadyTried(taskJo, "unsupportedLog")) {
+                            Log.record("庄园饲料任务⏭️[" + title + "]#已知不支持通用RPC完成，需按活动要求操作，未发送完成请求");
+                        }
                         continue;
                     }
                     actionable++;
@@ -3100,6 +3103,11 @@ public class AntFarm extends ModelTask {
     }
 
     private Boolean receiveFarmTaskAward(JSONObject task) {
+        // 领奖繁忙只暂停领奖，不能中断列表中尚未执行的任务。
+        if (farmTaskAwardBusy) {
+            Log.record("庄园饲料任务⏭️[" + task.optString("title") + "]#本轮领奖繁忙，未发送领奖请求；待办任务继续处理");
+            return false;
+        }
         try {
             String taskId = task.optString("taskId");
             String awardType = task.optString("awardType", "");
