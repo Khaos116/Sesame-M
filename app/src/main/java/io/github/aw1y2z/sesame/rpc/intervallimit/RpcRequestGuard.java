@@ -109,7 +109,7 @@ public final class RpcRequestGuard {
         String sceneId = args.optString("sceneId");
         if (!sceneId.isEmpty()) identity.put("sceneId").put(sceneId);
         // 不同芝麻任务/运动路线不能共用一次失败；同时作废旧的不完整标识。
-        for (String field : new String[]{"templateId", "pathId"}) {
+        for (String field : new String[]{"templateId", "pathId", "appletId", "taskConfigId", "bizId", "playId", "bizScene", "bizSceneFrom", "stageCode", "behavior"}) {
             if (!args.optString(field).isEmpty()) identity.put(field).put(args.optString(field));
         }
         if ("com.alipay.pcreditcardweb.activity.LuckCard.consult".equals(method))
@@ -127,7 +127,8 @@ public final class RpcRequestGuard {
         for (String field : new String[]{"action", "actionType", "operationType", "opType", "type"}) {
             identity.put(field).put(args.optString(field));
         }
-        unsupportedRoute = hasObjectArgument ? identity.toString() : "";
+        // 路由版本升级使旧的粗粒度学习失效，不能继续屏蔽同接口其他任务。
+        unsupportedRoute = hasObjectArgument && canLearnUnsupported(method, args) ? "v2:" + identity : "";
         unsupportedTaskFinish = MyUtils.closeUnRpc() && (
                 "com.alipay.antiep.finishTask".equals(method) && isKnownUnsupportedFinishTask(scene, args.optString("taskType"))
                 || "com.alipay.antieptask.finishTaskantorchard".equals(method) && "GOLDEN_BEAN_MASTER_TASK".equals(scene)
@@ -136,6 +137,26 @@ public final class RpcRequestGuard {
         knownTaskFallback = "com.alipay.antfarm.doFarmTask".equals(method) && "ANTFARM".equals(scene)
                 && isKnownUnsupportedFinishTask(args.optString("taskSceneCode"), args.optString("bizKey"));
         knownUnsupported = unsupportedTaskFinish || isKnownUnsupported(method, args);
+    }
+
+    private static boolean canLearnUnsupported(String method, JSONObject args) {
+        String operation = method.substring(method.lastIndexOf('.') + 1).toLowerCase(java.util.Locale.ROOT);
+        for (String prefix : new String[]{"query", "consult", "list", "get", "check", "fetch", "search"})
+            if (operation.startsWith(prefix)) return false;
+        String behavior = args.optString("behavior").trim().toLowerCase(java.util.Locale.ROOT);
+        for (String field : new String[]{"behavior", "stageCode", "action", "actionType", "operationType", "opType", "type"}) {
+            String action = args.optString(field).trim().toLowerCase(java.util.Locale.ROOT);
+            for (String prefix : new String[]{"query", "consult", "list", "get", "check", "fetch", "search"})
+                if (action.startsWith(prefix)) return false;
+        }
+        boolean write = "trigger".equals(behavior);
+        for (String prefix : new String[]{"finish", "complete", "do", "execute", "trigger", "apply", "push", "send", "submit", "receive", "award", "claim", "sign"})
+            if (operation.startsWith(prefix)) write = true;
+        if (!write) return false;
+        for (String field : new String[]{"taskType", "bizKey", "bizkey", "bizSubType", "taskId", "recordId",
+                "templateId", "pathId", "appletId", "taskConfigId", "bizId", "playId"})
+            if (!args.optString(field).trim().isEmpty()) return true;
+        return false;
     }
 
     /** C158/C176 实机确认的主完成接口；按场景/任务精确匹配，保留备用完成与领奖。 */
@@ -206,6 +227,15 @@ public final class RpcRequestGuard {
             JSONObject saved = MyUtils.newJSONObject(state.getString(key));
             long until = Math.max(saved.optLong("until"), verifyUntil());
             if (!knownUnsupported && !learnedUnsupported && until <= System.currentTimeMillis()) return false;
+            if (learnedUnsupported) {
+                java.util.Calendar today = MyUtils.getInstance();
+                String day = today.get(java.util.Calendar.YEAR) + "-" + today.get(java.util.Calendar.DAY_OF_YEAR);
+                String logKey = "unsupportedRpcLog::" + unsupportedRoute;
+                if (!day.equals(state.getString(logKey))) {
+                    state.put(logKey, day);
+                    Log.record("RPC本地拦截📌已学习规则=" + unsupportedRoute + "#今日首次提示，未发送请求；可关闭跳过不支持RPC重新检查");
+                }
+            }
             String reason = unsupportedTaskFinish || learnedUnsupported ? "本地跳过已确认不支持的完成接口，未发送RPC；保留备用完成与列表核对"
                     : knownUnsupported ? "跳过GR已知异常任务" : "请求异常暂停中，剩余"
                     + Math.max(1, (until - System.currentTimeMillis()) / 1000) + "秒";

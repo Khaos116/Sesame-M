@@ -135,6 +135,7 @@ public class FileUtil {
 package io.github.aw1y2z.sesame.util;
 import org.json.JSONObject;
 public class MyUtils {
+    public static java.util.Calendar getInstance() { return java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("GMT+8")); }
     public static boolean enabled = true;
     public static final java.util.Set<String> unsupported = new java.util.HashSet<>();
     public static boolean isUnsupportedRpcRecorded(Object context, String route) { return context != null && unsupported.contains(route); }
@@ -151,7 +152,8 @@ public class MyUtils {
 package io.github.aw1y2z.sesame.util;
 public class Log {
     public static String lastDebug, lastError;
-    public static void record(String s) { }
+    public static final java.util.List<String> records = new java.util.ArrayList<>();
+    public static void record(String s) { records.add(s); }
     public static void i(String... s) { }
     public static void error(String s) { lastError = s; }
     public static void debug(String s) { lastDebug = s; }
@@ -456,6 +458,36 @@ public class GuardCheck {
         }
     }
     static void dailyReportRules() {
+        reset();
+        for(String field : new String[]{"appletId", "taskConfigId", "bizId", "playId"}) {
+            String a = "[{\""+field+"\":\"TASK_A\",\"stageCode\":\"send\"}]";
+            guard("sdk.task.trigger",a).record(json("{\"code\":\"400000040\"}"));
+            RuntimeInfo.account="B";
+            assert guard("sdk.task.trigger",a).shouldSkip();
+            assert !guard("sdk.task.trigger",a.replace("TASK_A","TASK_B")).shouldSkip() : field;
+            assert !guard("sdk.task.trigger",a.replace("send","signup")).shouldSkip() : "stage collision";
+            reset();
+        }
+        for(String method : new String[]{"sdk.task.query","sdk.task.consult","sdk.task.getTask","sdk.task.listTasks","sdk.task.trigger"}) {
+            String args=method.endsWith("trigger")?"[{\"sceneCode\":\"ONLY_SCENE\"}]":"[{\"appletId\":\"A\"}]";
+            guard(method,args).record(json("{\"code\":\"400000040\"}"));
+            assert MyUtils.unsupported.isEmpty() : "query or method-wide rule learned";
+            assert !guard(method,args).shouldSkip();
+        }
+        String rebate="[{\"playId\":\"PLAY_A\",\"behavior\":\"trigger\"}]";
+        guard("sdk.gameplay.rebate",rebate).record(json("{\"code\":\"400000040\"}"));
+        assert guard("sdk.gameplay.rebate",rebate).shouldSkip();
+        assert !guard("sdk.gameplay.rebate",rebate.replace("trigger","consult")).shouldSkip();
+        guard("sdk.task.trigger","[{\"appletId\":\"query-only\",\"stageCode\":\"query\"}]").record(json("{\"code\":\"400000040\"}"));
+        assert MyUtils.unsupported.size()==1 : "query action learned";
+        String learnedRoute=MyUtils.unsupported.iterator().next();
+        MyUtils.unsupported.clear();MyUtils.unsupported.add(learnedRoute.substring(3));
+        assert !guard("sdk.gameplay.rebate",rebate).shouldSkip() : "legacy wide rule retained";
+        MyUtils.unsupported.clear();MyUtils.unsupported.add(learnedRoute);
+        RuntimeInfo.accounts.clear();Log.records.clear();
+        assert guard("sdk.gameplay.rebate",rebate).shouldSkip();
+        assert guard("sdk.gameplay.rebate",rebate).shouldSkip();
+        assert Log.records.size()==1 && Log.records.get(0).contains("PLAY_A") : "daily skip route diagnostic missing/repeated";
         reset();
         String learnedMethod = "new.task.finish";
         String learnedArgs = "[{\"sceneCode\":\"NEW_SCENE\",\"taskType\":\"NEW_TASK\",\"action\":\"finish\",\"outBizNo\":\"1\"}]";
