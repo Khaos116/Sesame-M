@@ -7,6 +7,7 @@ import io.github.aw1y2z.sesame.entity.RpcEntity;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.RandomUtil;
+import io.github.aw1y2z.sesame.util.StringUtil;
 
 public class AntMemberRpcCall {
 
@@ -531,7 +532,7 @@ public class AntMemberRpcCall {
      * 芝麻信用领取任务
      */
     public static String joinSesameTask(String taskTemplateId) {
-        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.promise.PromiseRpcManager.joinActivity", "[{\"chInfo\":\"seasameList\",\"joinFromOuter\":false,\"templateId\":\"" + taskTemplateId + "\"}]");
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.promise.PromiseRpcManager.joinActivity", "[{\"chInfo\":\"seasameList\",\"joinFromOuter\":false,\"sceneCode\":\"zml\",\"templateId\":\"" + taskTemplateId + "\"}]");
     }
 
     /**
@@ -542,10 +543,13 @@ public class AntMemberRpcCall {
     }
 
     /**
-     * 芝麻信用完成任务
+     * 芝麻信用 pushActivity：须带 recordId 推完记录；extCheck 通常传空。
      */
-    public static String finishSesameTask(String recordId) {
-        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.promise.PromiseRpcManager.pushActivity", "[{\"recordId\":\"" + recordId + "\"}]");
+    public static String finishSesameTask(String recordId, String extCheck) {
+        String body = StringUtil.isEmpty(extCheck)
+                ? "[{\"recordId\":\"" + recordId + "\"}]"
+                : "[{\"promiseActivityExtCheck\":\"" + extCheck + "\",\"recordId\":\"" + recordId + "\"}]";
+        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.promise.PromiseRpcManager.pushActivity", body);
     }
 
     /**
@@ -593,31 +597,20 @@ public class AntMemberRpcCall {
     }
 
     /**
-     * 芝麻信用领取任务
-     */
-    public static String joinSesameTaskNew(String taskTemplateId) {
-        String requestData = "[{\"chInfo\":\"seasameList\",\"joinFromOuter\":false,\"sceneCode\":\"zml\",\"templateId\":\"" + taskTemplateId + "\"}]";
-        return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.promise.PromiseRpcManager.joinActivity", requestData);
-    }
-
-    /**
-     * 芝麻信用获取任务回调
+     * 芝麻信用任务反馈：受理，不等于完成；报文 bizType 固定为 LIFE_RECORD。
      */
     public static String feedBackSesameTaskNew(String taskTemplateId) {
-        String requestData = "[{\"actionType\":\"TO_COMPLETE\",\"bizType\":\"LIFE_RECORD\",\"sceneCode\":\"zml\",\"templateId\":\"" + taskTemplateId + "\",\"version\":\"new\"}]";
+        String requestData = "[{\"actionType\":\"TO_COMPLETE\",\"bizType\":\"LIFE_RECORD\""
+                + ",\"sceneCode\":\"zml\",\"templateId\":\"" + taskTemplateId + "\",\"version\":\"new\"}]";
         return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.creditaccumulate.CreditAccumulateStrategyRpcManager.taskFeedback", requestData);
     }
 
-    /**
-     * 另一种实现方案的 version：本模块**原有取值**，收敛到 {@link TaskAlternative} 时原样保留，不改已实测路径的报文。
-     */
+    /** 另一种实现方案的 version：取值勿改 */
     public static final String DO_FARM_TASK_VERSION = "20250812.01";
 
     /**
      * 查询「最近一次操作任务」：join 被 {@code PROMISE_HAS_PROCESSING_TEMPLATE}（存在进行中的生活记录）拒绝时，
      * 用它取回那条记录的 {@code recordId} 继续推完。
-     * <p>抓包实测请求体为 {@code [{version:"new"}]}；响应 {@code data.lastOperateTaskVO} 含
-     * {@code templateId / recordId / finishFlag / completedNum / needCompleteNum}。
      */
     public static String queryLastOperateTask() {
         return ApplicationHook.requestString("com.antgroup.zmxy.zmmemberop.biz.rpc.creditaccumulate.CreditAccumulateStrategyRpcManager.queryLastOperateTask", "[{\"version\":\"new\"}]");
@@ -625,10 +618,8 @@ public class AntMemberRpcCall {
 
     /**
      * 另一种实现方案：按 bizKey 完成任务（{@code com.alipay.antfarm.doFarmTask}）。
-     * <p>游戏中心任务与庄园抽抽乐、芭芭农场、金豆乐园同源：`doTaskSend` 常被服务端以
-     * 400000040「不支持rpc调用」拒绝，而这条接口能把它们做成（2026-09-22 在三处实测通过）。
-     * <p>它的响应**不可信**（可能回 102「服务器正在开小差」而任务其实已生效），
-     * 调用方必须用任务列表状态核对，不能据响应判成败。version 经实测不被校验，这里沿用本模块原值。
+     * <p>主接口 {@code doTaskSend} 被 400000040 拒绝时改用本接口；其响应不可作成败依据，
+     * 调用方须用任务列表状态核对。
      */
     public static String doFarmTask(String bizKey, String taskSceneCode) {
         return TaskAlternative.request(bizKey, taskSceneCode, DO_FARM_TASK_VERSION);

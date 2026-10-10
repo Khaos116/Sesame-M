@@ -245,7 +245,6 @@ public class AntMember extends ModelTask {
                 }
                 
                 // 游戏中心任务流里的任务也要进候选，否则用户看不到、也无法手动勾选
-                // （原读取的 v4.queryTaskList 实测恒返回空 data，连带这里一直拿不到任务）
                 for (int feedPage = 0; feedPage < 5; feedPage++) {
                     jo = new JSONObject(AntMemberRpcCall.gameCenterGameFeeds(feedPage, 10));
                     if (!MessageUtil.checkSuccess(TAG, jo)) {
@@ -288,10 +287,8 @@ public class AntMember extends ModelTask {
             }
             //初始化MemberCreditSesameTaskListMap
             MemberCreditSesameTaskListMap.load();
-            // 芝麻粒任务走 taskFeedback 后服务端不校验是否真的参与过，未报名任务一发即 success
-            // ⇒ 游戏/浏览/签到/组件/施肥类不再预置拉黑，交给任务循环自动完成。
-            // 仍预置拉黑的只剩真实交易/履约类（下单/租赁/订酒店/回收/雇佣/付钱/查车）：没真做就申报"完成"属虚假履约，有风控风险
-            // 预置集登记在 MessageUtil（单一真相，配置页据此标注"默认"）
+            // 只预置拉黑真实交易/履约类（下单/租赁/订酒店/回收/雇佣/付钱/查车）：没真做就申报"完成"属虚假履约，有风控风险
+            // 其余任务类型交给任务循环自动完成；预置集登记在 MessageUtil（单一真相，配置页据此标注"默认"）
             blackList = MessageUtil.presetBlackList("AntMember", "MemberCreditSesameTaskList");
             // 可继续添加更多黑名单任务
             
@@ -1529,7 +1526,7 @@ public class AntMember extends ModelTask {
             if (AntMemberTaskList.getValue().contains(subTitle)) {
                 return;
             }
-            // 底线：交易/支付类任务一律不申报、一次即**永久**拉黑（不进"满 N 天解禁重试"生命周期）。
+            // 底线：交易/支付类任务一律不申报、一次即永久拉黑（不进"满 N 天解禁重试"生命周期）。
             // 本调用点的 TaskAttemptPolicy.Site 未带 bizKey/listField，handle 顶部那条通用判定到不了这里，
             // 故在此显式拦；bizKey 取值与 attemptDoTask 伪申报时一致。
             String txBizKey = taskObj.optString("bizKey", "").trim();
@@ -1551,10 +1548,9 @@ public class AntMember extends ModelTask {
                 }
             }
 
-            // 执行任务：原先只处理 actionType=VIEW，其它类型直接 return（列表拿到了却静默不处理、
-            // 连日志都没有）。现在各类都尝试一次；做不了的当天只试一次（见 TaskAttemptPolicy）
+            // 各类任务都尝试一次；做不了的当天只试一次（见 TaskAttemptPolicy）
             // 完成与否一律以任务列表为准（探针 probeMemberStatus 复核），响应不可信；
-            // 兜底后的核对仍交给本模块的 verifyPendingTasks，故 listField 传 null（黑名单由 verify 管）
+            // 兜底后的核对交给本模块的 verifyPendingTasks，故 listField 传 null（黑名单由 verify 管）
             TaskAttemptPolicy.handle("member::game::" + taskId, subTitle, null,
                     () -> attemptDoTask(taskObj, taskId, subTitle, actionType, prizeAmount), Log::other,
                     new TaskAttemptPolicy.Site(null, "游戏中心", null, taskObj.optString("sceneCode", "").trim(),
@@ -1600,9 +1596,8 @@ public class AntMember extends ModelTask {
     }
 
     /**
-     * 核对「已触发但响应不可信」的游戏中心任务：等几秒后重拉任务列表，**仍为 NOT_DONE** 的才计入自动拉黑。
-     * <p>为什么以列表为准：{@code doFarmTask} 会回 102「服务器正在开小差」等错码但任务其实已生效，
-     * 服务端是异步推进状态的，只有列表里的 {@code taskStatus} 才是最终判据。
+     * 核对「已触发但响应不可信」的游戏中心任务：重拉任务列表，仍为 NOT_DONE 的才计入自动拉黑。
+     * <p>状态由服务端异步推进，只有列表里的 {@code taskStatus} 才是最终判据。
      */
     private void verifyPendingTasks() {
         TaskAlternative.verify(pendingVerifyTasks, VERIFY_CFG, () -> {
@@ -1655,7 +1650,6 @@ public class AntMember extends ModelTask {
     /**
      * 从 v3 任务列表响应里收集 {@code taskStatus=NOT_DONE} 的 taskId
      * （{@code data.taskModuleList[].taskList[]}）。
-     * <p>原先还会解析 v4 的 {@code data.gameTaskModule.gameTaskList}，该接口实测恒空、已弃用。
      */
     private static void collectNotDoneIds(String response, Set<String> out) {
         try {
@@ -1722,14 +1716,9 @@ public class AntMember extends ModelTask {
     }
     
     /**
-     * 游戏中心（会员场景 xlyy_WJCNJT）宝箱领取。
-     * <p>任务流 {@code queryGameFeeds} 里的条目都是「玩游戏得1个宝箱」（只有
-     * gameId/cardId/appId + taskDesc，没有 taskId/taskStatus）；官方客户端在该场景同样只查不写
-     * （query* + batchReceiveTaskPrize），宝箱由游戏侧上报才 +1——实测 doFarmTask 的
-     * bizKey/taskSceneCode 七种组合全回 307「任务不存在」，所以这里不对任务流发完成请求，
-     * 只在首页报有待领时把宝箱领掉；任务名仍进「会员任务」黑名单候选，供手动剔除。
-     * <p>待领判据取官方字段：{@code taskModule.needReceive} / {@code needReceiveTaskCertCnt}，
-     * 上限 {@code reachTaskCertLimit}（{@code dailyTaskCertCntUpperLimit}，30/天）。
+     * 游戏中心（会员场景 xlyy_WJCNJT）宝箱领取：任务流条目无 taskId/taskStatus，不对其发完成请求，
+     * 宝箱由游戏侧上报才 +1，只领首页有待领的（上限 {@code dailyTaskCertCntUpperLimit}）；
+     * 任务名仍进「会员任务」黑名单候选供手动剔除。
      */
     public void gameCenterTaskPrize() {
         try {
@@ -1773,11 +1762,7 @@ public class AntMember extends ModelTask {
         }
     }
 
-    /**
-     * 游戏中心任务流条目在「会员任务｜黑名单列表」里的标题（如「九梦仙域：玩游戏得1个宝箱」）。
-     * <p>字段实测（2026-10-07 抓包）：{@code mainTitle}=游戏名、{@code subTitle}=宣传语、
-     * {@code taskDesc}=「玩游戏得1个宝箱」、{@code taskTagText}=「玩游戏得」。
-     */
+    /** 游戏中心任务流条目在「会员任务｜黑名单列表」里的标题 */
     private static String gameCenterTaskTitle(JSONObject feed) {
         String title = firstNonEmpty(feed, "mainTitle", "subTitle");
         String taskDesc = firstNonEmpty(feed, "taskDesc", "taskTagText");
@@ -2147,12 +2132,11 @@ public class AntMember extends ModelTask {
                     continue;
                 }
                 
-                // 链路依据（2026-10-05 抓包）：官方走三段——PromiseRpcManager.joinActivity（拿 data.recordId）
-                // → CreditAccumulateStrategyRpcManager.taskFeedback → PromiseRpcManager.pushActivity（带 recordId）。
-                // 只发中间的 taskFeedback 时接口照样返回 success（data:true），但任务状态不推进，
-                // 于是出现"日志报完成、实际未完成、每轮都报"；原先"官方全程不发 join/push"的结论据此推翻。
                 // 上报被受理 ≠ 任务完成：无论走到哪一步都登记回读，真实状态一律以回读为准
-                reportSesameTask(taskTitle, taskTemplateId);
+                String recordId = activeSesameRecordId(data, taskTemplateId);
+                if (recordId == null || !reportSesameTask(taskTitle, taskTemplateId, recordId)) {
+                    continue;
+                }
                 reported.put(taskTemplateId, taskTitle);
                 beforeComplete.put(taskTemplateId, completedNum);
                 
@@ -2262,30 +2246,43 @@ public class AntMember extends ModelTask {
     }
     
     /**
-     * 芝麻粒任务上报：官方链路为三段——joinActivity（拿 data.recordId）→ taskFeedback → pushActivity（带 recordId）。
-     * <p>push 不是必需的：抓包里 zml_zhimajindou_15s 官方只发了 join + taskFeedback；需真实参与的游戏类任务
-     * push 会被服务端以 promiseActivityExtCheck 校验拒掉，而实测这些任务 join + taskFeedback 之后就已经完成，
-     * 所以 push 被拒只记一行，完成与否一律由调用方回读任务列表判定。
-     * <p>join 被 PROMISE_HAS_PROCESSING_TEMPLATE 拒绝＝上一轮留下的"进行中"记录还挂着：
-     * 此时用 queryLastOperateTask 取回那条记录的 recordId 继续推完，否则该任务当天再也进不来。
+     * 芝麻粒任务上报：joinActivity → taskFeedback → pushActivity 须依次全部发送；
+     * join 因"存在进行中的记录"被拒时，刷新列表取本任务那条记录继续推完。
+     * <p>返回是否走到 push；未发送 push 的不计失败，也不登记回读。
+     *
+     * @param recordId 任务列表已给出的进行中记录，为空时才发 join
      */
-    private void reportSesameTask(String taskTitle, String taskTemplateId) {
+    private boolean reportSesameTask(String taskTitle, String taskTemplateId, String recordId) {
         try {
-            String recordId = "";
-            JSONObject joinJo = new JSONObject(AntMemberRpcCall.joinSesameTaskNew(taskTemplateId));
-            TimeUtil.sleep(500);
-            if (MessageUtil.checkResultCode(TAG, joinJo)) {
-                JSONObject joinData = joinJo.optJSONObject("data");
-                recordId = joinData == null ? "" : joinData.optString("recordId", "");
-            } else {
-                recordId = lastOperateRecordId(taskTemplateId);
-                if (!StringUtil.isEmpty(recordId)) {
-                    Log.other("芝麻信用💳[" + taskTitle + "]沿用进行中的记录#recordId=" + recordId);
+            if (StringUtil.isEmpty(recordId)) {
+                JSONObject joinJo = new JSONObject(AntMemberRpcCall.joinSesameTask(taskTemplateId));
+                TimeUtil.sleep(500);
+                if (MessageUtil.checkResultCode(TAG, joinJo)) {
+                    JSONObject joinData = joinJo.optJSONObject("data");
+                    recordId = joinData == null ? "" : joinData.optString("recordId", "");
+                } else {
+                    // 全局只允许一条进行中记录：刷新列表取本任务那条，取不到再回落到最近操作记录
+                    if ("PROMISE_HAS_PROCESSING_TEMPLATE".equals(joinJo.optString("resultCode"))) {
+                        JSONObject fresh = new JSONObject(AntMemberRpcCall.queryAvailableSesameTask());
+                        TimeUtil.sleep(300);
+                        if (MessageUtil.checkResultCode(TAG, fresh) && fresh.optJSONObject("data") != null) {
+                            recordId = activeSesameRecordId(fresh.optJSONObject("data"), taskTemplateId);
+                            if (recordId == null) {
+                                return false;
+                            }
+                        }
+                    }
+                    if (StringUtil.isEmpty(recordId)) {
+                        recordId = lastOperateRecordId(taskTemplateId);
+                    }
+                    if (!StringUtil.isEmpty(recordId)) {
+                        Log.other("芝麻信用💳[" + taskTitle + "]沿用进行中的记录#recordId=" + recordId);
+                    }
                 }
             }
             if (StringUtil.isEmpty(recordId)) {
-                Log.other("芝麻信用💳上报[" + taskTitle + "]无可用记录#回读后按真实状态处理");
-                return;
+                Log.other("芝麻信用💳上报[" + taskTitle + "]无可用记录#未发送反馈与push，不计失败");
+                return false;
             }
             
             JSONObject feedbackJo = new JSONObject(AntMemberRpcCall.feedBackSesameTaskNew(taskTemplateId));
@@ -2293,18 +2290,31 @@ public class AntMember extends ModelTask {
             //检查并标记黑名单任务
             MessageUtil.checkResultCodeAndMarkTaskBlackList("MemberCreditSesameTaskList", taskTitle, feedbackJo);
             if (!MessageUtil.checkResultCode(TAG, feedbackJo)) {
-                Log.other("芝麻信用💳上报[" + taskTitle + "]taskFeedback未受理#回读后按真实状态处理");
-                return;
+                Log.other("芝麻信用💳上报[" + taskTitle + "]taskFeedback未受理#未发送push");
+                return false;
             }
             
-            JSONObject pushJo = new JSONObject(AntMemberRpcCall.finishSesameTask(recordId));
+            JSONObject pushJo = new JSONObject(AntMemberRpcCall.finishSesameTask(recordId, ""));
             TimeUtil.sleep(500);
+            if ("ILLEGAL_ARGUMENT".equals(pushJo.optString("resultCode"))) {
+                // 真实跳转类任务不可能自动完成，服务端固定拒 push：一次即永久拉黑，该错误不再打印
+                if (AutoMemberCreditSesameTaskList.getValue()) {
+                    MessageUtil.MarkTaskBlackListPermanent("AntMember", "MemberCreditSesameTaskList", "芝麻粒任务", taskTitle);
+                    Log.other("芝麻信用💳[" + taskTitle + "]#真实跳转类，无法自动完成，已加入永久黑名单");
+                } else {
+                    Log.other("芝麻信用💳[" + taskTitle + "]#真实跳转类，无法自动完成");
+                }
+                return false;
+            }
             if (!MessageUtil.checkResultCode(TAG, pushJo)) {
                 Log.other("芝麻信用💳[" + taskTitle + "]push被拒#不影响完成判定");
             }
+            return true;
+            
         } catch (Throwable t) {
             Log.err(TAG, "reportSesameTask err:", t);
         }
+        return false;
     }
     
     /**
@@ -2332,6 +2342,41 @@ public class AntMember extends ModelTask {
             Log.err(TAG, "lastOperateRecordId err:", t);
         }
         return null;
+    }
+    
+    /**
+     * 从任务列表取本任务进行中的记录：recordId 须为字符串且仍在进行中，同一任务出现多条不一致记录时返回 null。
+     *
+     * @return 进行中的 recordId；空串表示列表无本任务记录，null 表示列表数据可疑
+     */
+    private String activeSesameRecordId(JSONObject data, String taskTemplateId) {
+        JSONObject daily = data.optJSONObject("dailyTaskListVO");
+        JSONArray[] lists = {data.optJSONArray("toCompleteVOS"),
+                daily == null ? null : daily.optJSONArray("waitCompleteTaskVOS"),
+                daily == null ? null : daily.optJSONArray("waitJoinTaskVOS")};
+        String recordId = "";
+        for (JSONArray list : lists) {
+            for (int i = 0; list != null && i < list.length(); i++) {
+                JSONObject task = list.optJSONObject(i);
+                if (task == null || !taskTemplateId.equals(task.optString("templateId", ""))) {
+                    continue;
+                }
+                Object value = task.opt("recordId");
+                if (value == null || JSONObject.NULL.equals(value) || "".equals(value)) {
+                    continue;
+                }
+                boolean valid = value instanceof String && !((String) value).trim().isEmpty()
+                        && Boolean.FALSE.equals(task.opt("finishFlag"))
+                        && task.optInt("completedNum", 0) < task.optInt("needCompleteNum", 1)
+                        && (recordId.isEmpty() || recordId.equals(value));
+                if (!valid) {
+                    Log.other("芝麻信用💳记录校验未通过#[" + taskTemplateId + "]跳过");
+                    return null;
+                }
+                recordId = (String) value;
+            }
+        }
+        return recordId;
     }
     
     private void CheckInTaskRpcManager() {
