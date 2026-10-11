@@ -15,8 +15,10 @@ public class Toast {
 
     public static void show(CharSequence cs, boolean force) {
         Context context = ApplicationHook.getContext();
-        if (context != null && (force || io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getShowToast())) {
-            show(context, ApplicationHook.getMainHandler(), cs);
+        // mainHandler 只在 Service onCreate hook 内赋值：未就绪时安静跳过，不让 NPE 冒泡成 error 日志
+        Handler handler = ApplicationHook.getMainHandler();
+        if (context != null && handler != null && (force || io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getShowToast())) {
+            show(context, handler, cs);
         }
     }
 

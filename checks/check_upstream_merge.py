@@ -494,8 +494,31 @@ fixes=fixes.replace("@@CLAIM@@",method("model/task/antForest/ForestChouChouLe.ja
 fixes=fixes.replace("@@CONSTRUCTOR@@",method("data/task/SystemChildTaskExecutor.java","public SystemChildTaskExecutor()"))
 fixes=fixes.replace("@@TARGET@@","\n".join(method("model/task/antOrchard/AntOrchard.java",m) for m in ("private int targetSpreadTimes(","private static boolean shouldBatchSpread(")))
 
+toast = r'''
+public class ToastCheck {
+ static class Context {}
+ static class Handler {}
+ static class AppConfig {static final AppConfig INSTANCE=new AppConfig();boolean enabled;boolean getShowToast(){return enabled;}}
+ static class ApplicationHook {static Context context;static Handler handler;static Context getContext(){return context;}static Handler getMainHandler(){return handler;}}
+ static int shown;
+ static void show(Context context,Handler handler,CharSequence text){assert context!=null&&handler!=null;shown++;}
+ @@SHOW@@
+ public static void main(String[] args){
+  show("early",true);assert shown==0;
+  ApplicationHook.context=new Context();show("no handler",true);assert shown==0;
+  ApplicationHook.handler=new Handler();show("disabled",false);assert shown==0;
+  show("forced",true);assert shown==1;
+  AppConfig.INSTANCE.enabled=true;show("enabled",false);assert shown==2;
+  ApplicationHook.context=null;show("no context",true);assert shown==2;
+  System.out.println("PASS upstream toast: missing context/handler skipped, enabled and forced notifications retained");
+ }
+}
+'''
+toast = toast.replace("@@SHOW@@", method("hook/Toast.java", "public static void show(CharSequence cs, boolean force)")
+                      .replace("io.github.aw1y2z.sesame.data.AppConfig", "AppConfig"))
+
 with tempfile.TemporaryDirectory(prefix="sesame-merge-") as tmp:
-    for name, source in (("MergeCheck", code), ("FlowCheck", flows), ("UpstreamFixCheck", fixes)):
+    for name, source in (("MergeCheck", code), ("FlowCheck", flows), ("UpstreamFixCheck", fixes), ("ToastCheck", toast)):
         java = Path(tmp) / (name + ".java")
         java.write_text(source, encoding="utf-8")
         subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(json_jar), "-d", tmp, str(java)], check=True)

@@ -1,4 +1,4 @@
-"""Replay merged production policy, blacklist buffering, ownership, quest and nested-list checks."""
+"""Replay merged production policy, blacklist buffering, ownership and nested-list checks."""
 from pathlib import Path
 import os
 import subprocess
@@ -74,7 +74,6 @@ public class MergePolicyCheck {
  @@POLICY@@
  @@AWARD@@
  @@FOREST@@
- @@QUEST@@
  static List<String> logs=new ArrayList<>();static int attempts;
  static TaskAttemptPolicy.Site site(TaskAttemptPolicy.ProbeResult state){return new TaskAttemptPolicy.Site(
    "field","task","browse","scene",k->state);}
@@ -161,9 +160,6 @@ public class MergePolicyCheck {
   assert forestVitalityStatus(new JSONArray().put(parent),"scene","child")==TaskAttemptPolicy.ProbeResult.TODO;
   assert forestVitalityStatus(new JSONArray().put(parent),"scene","missing")==TaskAttemptPolicy.ProbeResult.GONE;
   assert forestVitalityStatus(new JSONArray().put(1),"scene","child")==TaskAttemptPolicy.ProbeResult.UNKNOWN;
-  assert questDone(new JSONObject().put("done","false"))==null;
-  assert questDone(new JSONObject().put("status","NEW_STATE"))==null;
-  assert Boolean.FALSE.equals(questDone(new JSONObject().put("done",false)));
   TaskAlternative.request("quote\"\\","scene","source");
   assert "quote\"\\".equals(new JSONArray(ApplicationHook.args).optJSONObject(0).optString("bizKey"));
   int writes=ApplicationHook.writes;try{TaskAlternative.request("","scene","source");throw new AssertionError();}
@@ -310,7 +306,6 @@ replacements = {
     "@@AWARD@@": method("data/task/TaskAward.java", "public final class TaskAward").replace(
         "public final class TaskAward", "static final class TaskAward", 1),
     "@@FOREST@@": method("model/task/antForest/AntForestV2.java", "private static TaskAttemptPolicy.ProbeResult forestVitalityStatus("),
-    "@@QUEST@@": method("model/task/omegakoiTown/OmegakoiTown.java", "private static Boolean questDone("),
 }
 for token, value in replacements.items():
     code = code.replace(token, value)

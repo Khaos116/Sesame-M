@@ -130,7 +130,7 @@ foreach ($cls in $order) {
 
     [void]$out.Add("## $grpLabel | $modelName ($cls)")
     [void]$out.Add('')
-    # 表格行先攒着：有字段才补表头，避免出现只有表头的空表（如小镇模块无独立配置项）
+    # 表格行先攒着：有字段才补表头，避免出现只有表头的空表
     $tbl = New-Object System.Collections.ArrayList
 
     $count = 0

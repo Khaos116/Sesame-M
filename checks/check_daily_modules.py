@@ -36,16 +36,13 @@ public class DailyModulesCheck {
  static class AntOceanRpcCall {static String getQuestion(){return rpc();}static String submitAnswer(String a,String b){return rpc();}}
  static class AntStallRpcCall {static String signToday(){return rpc();}}
  static class AntFarmRpcCall {static String familyReceiveFarmTaskAward(String id){return rpc();}}
- static class OmegakoiTownRpcCall {static String getSignInStatus(){return rpc();}static String signIn(){return rpc();}}
  static class AnswerAI {static String getAnswer(String s,List<String> options){return options.get(0);}}
  static class JsonUtil {static List<String> jsonArrayToList(JSONArray a){return List.of("A");}}
- enum RewardType {gold;String rewardName(){return "gold";}}
  static class Forest {@@FOREST@@}
  static class Member {static boolean dailySignIn(){rpc();return true;}@@MEMBER@@}
  static class Ocean {@@OCEAN@@}
  static class Stall {@@STALL@@}
  static class Farm {@@FARM@@}
- static class Town {@@TOWN@@}
  static void reset(String json){response=json;calls=0;Status.flags.clear();}
  static void replay(Runnable action){action.run();int before=calls;assert before>0;action.run();assert calls==before:"auto repeated RPC";
   DailyTask.manual(()->{action.run();return null;});assert calls>before:"manual did not refresh";}
@@ -58,10 +55,8 @@ public class DailyModulesCheck {
   reset("{resultCode:'SUCCESS',answered:true}");replay(()->Ocean.answerQuestion());
   reset("{resultCode:'SUCCESS',signRewardModelList:[]}");replay(()->new Stall().signToday());
   reset("{memo:'SUCCESS'}");replay(()->new Farm().familySign());
-  reset("{success:true,result:{signed:true}}");replay(()->new Town().getSignInStatus());
-  reset("{success:true,result:{}}");new Town().getSignInStatus();assert calls==1&&Status.flags.isEmpty():"missing town status triggered sign";
   for(Runnable action:List.<Runnable>of(()->new Forest().queryCommonSign(),()->new Forest().vitalitySign(),Member::checkAndDoSignIn,
-   ()->Ocean.answerQuestion(),()->new Stall().signToday(),()->new Farm().familySign(),()->new Town().getSignInStatus(),()->new Member().CheckInTaskRpcManager())){
+   ()->Ocean.answerQuestion(),()->new Stall().signToday(),()->new Farm().familySign(),()->new Member().CheckInTaskRpcManager())){
    reset("{success:false,resultCode:'FAIL',memo:'FAIL'}");action.run();int before=calls;action.run();assert calls>before&&Status.flags.isEmpty():"failure cached as success";
   }
   reset("{resultCode:'SUCCESS',data:{currentDateCheckInTaskVO:{status:'CAN_COMPLETE',checkInDate:'20261010'}}}");
@@ -73,7 +68,7 @@ public class DailyModulesCheck {
    reset("{resultCode:'SUCCESS',data:{currentDateCheckInTaskVO:{status:'"+state+"'}}}");
    new Member().CheckInTaskRpcManager();assert calls==1&&Status.flags.isEmpty():"unknown/missing date cached or submitted";
   }
-  System.out.println("PASS daily production entries: forest/member/ocean/stall/family/town, second-auto zero RPC, manual refresh, failed/missing status not completed");
+  System.out.println("PASS daily production entries: forest/member/ocean/stall/family, second-auto zero RPC, manual refresh, failed/missing status not completed");
  }
 }
 '''
@@ -83,7 +78,6 @@ groups = {
     'OCEAN': ('antOcean/AntOcean.java', ['private static Boolean answerQuestion()']),
     'STALL': ('antStall/AntStall.java', ['private void signToday()']),
     'FARM': ('antFarm/AntFarm.java', ['private void familySign()', 'private void familyReceiveFarmTaskAward(']),
-    'TOWN': ('omegakoiTown/OmegakoiTown.java', ['private void getSignInStatus()']),
 }
 for key, (path, signatures) in groups.items():
     code = code.replace('@@'+key+'@@', '\n'.join(method('model/task/'+path, s) for s in signatures))

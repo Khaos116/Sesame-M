@@ -51,7 +51,6 @@ public class MergeReviewCheck {
   static String requestString(String rpc,String body){tries=3;args=body;writes++;return "{}";}
   static String requestString(String rpc,String body,int count,int pause){String r=requestString(rpc,body);assert pause==0;tries=count;return r;}}
  @@WELFARE_RPC@@
- static class TownRpc {@@QUEST@@}
  static class TaskAttemptPolicy {enum ProbeResult {TODO,FINISHED,RECEIVED,GONE,UNKNOWN}}
  static class AntMemberRpcCall {static int failPage;static boolean malformed,found;
   static String queryPointCert(int page,int size){if(page==failPage)return "{\"success\":false}";
@@ -126,10 +125,6 @@ public class MergeReviewCheck {
   reset();WelfareFund.run(false,true,true,Set.of("browse"));assert WelfareFundRpcCall.signups==0;
   String escaped="quoted\"\\\n";WelfareRpc.taskTrigger(escaped,"signup");
   assert escaped.equals(new JSONArray(ApplicationHook.args).optJSONObject(0).optString("appletId"));
-  TownRpc.completeQuest(escaped,escaped);JSONObject request=new JSONArray(ApplicationHook.args).optJSONObject(0);
-  assert escaped.equals(request.optString("questId"))&&escaped.equals(request.optString("scenarioId"));
-  int writes=ApplicationHook.writes;try{TownRpc.completeQuest("","");throw new AssertionError();}catch(IllegalArgumentException expected){}
-  assert ApplicationHook.writes==writes;
   for(String stage:List.of("signup","send","receive")){WelfareRpc.taskTrigger("id",stage);assert ApplicationHook.tries==1;}
   WelfareRpc.signConsult();assert ApplicationHook.tries==1;
   WelfareRpc.signCalendarQuery(7);assert ApplicationHook.tries==3;
@@ -199,7 +194,6 @@ public class MergeReviewCheck {
 '''
 for token, path, signature in (
     ("@@WELFARE@@", "model/task/antMember/WelfareFund.java", "public class WelfareFund"),
-    ("@@QUEST@@", "model/task/omegakoiTown/OmegakoiTownRpcCall.java", "public static String completeQuest("),
     ("@@PROBE@@", "model/task/antMember/AntMember.java", "private static TaskAttemptPolicy.ProbeResult probePointCertStatus("),
     ("@@PACE@@", "model/task/antSports/AntSports.java", "private void paceWalk("),
     ("@@MONOPOLY@@", "model/task/antForest/AntForestV2.java", "private boolean monopolyFinishTask("),
