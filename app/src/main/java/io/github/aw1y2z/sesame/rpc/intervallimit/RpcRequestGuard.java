@@ -236,6 +236,7 @@ public final class RpcRequestGuard {
             JSONObject result = MyUtils.newJSONObject("{\"success\":false,\"error\":\"RPC_SKIPPED\",\"resultCode\":\"RPC_SKIPPED\"}");
             try {
                 result.put("resultDesc", reason).put("errorMessage", reason).put("memo", reason);
+                result.put("localRuleSkip", knownUnsupported || learnedUnsupported);
                 // 备用完成按 code 判断接口不支持；error 仍为 RPC_SKIPPED，不能计入失败或拉黑。
                 if (unsupportedTaskFinish || learnedUnsupported) result.put("code", "400000040");
             } catch (Exception ignored) { }

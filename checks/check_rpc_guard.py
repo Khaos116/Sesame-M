@@ -497,6 +497,11 @@ public class GuardCheck {
         assert !Log.records.isEmpty() : "real server unsupported response must stay visible";
         RuntimeInfo.accounts.clear(); RuntimeInfo.account = "B";
         assert inFlight.shouldSkip() : "already-created guard missed newly learned rule";
+        RpcEntity learnedRequest=new RpcEntity(learnedMethod,learnedArgs);
+        assert new RpcRequestGuard(learnedRequest).shouldSkip();
+        assert json(learnedRequest.getResponseString()).optBoolean("localRuleSkip")
+                && "400000040".equals(json(learnedRequest.getResponseString()).optString("code")) : "learned rule marker/code changed";
+
         assert guard(learnedMethod, learnedArgs.replace("1", "2")).shouldSkip();
         assert !guard(learnedMethod, learnedArgs.replace("NEW_TASK", "OTHER_TASK")).shouldSkip();
         assert !guard(learnedMethod, learnedArgs.replace("NEW_SCENE", "OTHER_SCENE")).shouldSkip();
@@ -547,6 +552,7 @@ public class GuardCheck {
             RuntimeInfo.account = "A";
             JSONObject response = json(request.getResponseString());
             assert "RPC_SKIPPED".equals(response.optString("error"));
+            assert response.optBoolean("localRuleSkip") : "exact unsupported route lacks marker";
             assert response.optString("resultDesc").contains(method) : "skip reason hides the blocked interface";
             assert io.github.aw1y2z.sesame.model.base.TaskAlternative.hit(response, route[0])
                     : "skipping primary must preserve alternative task completion";
@@ -862,6 +868,11 @@ public class GuardCheck {
         assert new RpcRequestGuard(e).shouldSkip();
         assert e.getHasError() && e.getHasResult();
         assert json(e.getResponseString()).getString("error").equals("RPC_SKIPPED");
+        assert json(e.getResponseString()).optBoolean("localRuleSkip") : "GR rule lacks local-rule marker";
+        assert !json(e.getResponseString()).has("code") : "GR rule incorrectly gained fallback code";
+        RpcEntity pausedRequest=new RpcEntity(other,"[{\"sceneCode\":\"OCEAN\",\"taskType\":\"a\"}]");
+        assert new RpcRequestGuard(pausedRequest).shouldSkip();
+        assert !json(pausedRequest.getResponseString()).optBoolean("localRuleSkip") : "backoff marked as local rule";
         e.setResponseObject(json("{\"success\":true}"), "{\"success\":true}");
         assert !e.getHasError(); // reused forest request recovers after pause
         System.out.println("RPC guard: core preservation, escalation, isolation, expiry, GR filters, success parsing passed");

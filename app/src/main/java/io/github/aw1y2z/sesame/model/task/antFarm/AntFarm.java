@@ -2899,7 +2899,7 @@ public class AntFarm extends ModelTask {
             JSONObject jo = MyUtils.newJSONObject("ANTFARM_FOOD_TASK".equals(route)
                     ? AntFarmRpcCall.finishTask("SHANGYEHUA_90_1", route) : AntFarmRpcCall.doFarmTask(bizKey));
             if ("RPC_SKIPPED".equals(jo.optString("error"))) {
-                if (!"400000040".equals(jo.optString("code")))
+                if (!jo.optBoolean("localRuleSkip") && !"400000040".equals(jo.optString("code")))
                     Log.record("庄园饲料任务[" + title + "]本地请求保护暂停，未发送RPC；" + RpcRequestGuard.errorMessage(jo));
                 return Outcome.SKIPPED;
             }
@@ -5348,7 +5348,7 @@ public class AntFarm extends ModelTask {
         boolean restored = RuntimeInfo.getInstance().putVerified("farm::npcFirstRunDay", previousDay.isEmpty() ? null : previousDay);
         Status.clearFlag("farm::npcActionUnconfirmed");
         if (!restored) Log.record("NPC小鸡：请求未发送，首次执行记录恢复写盘失败，本日继续保留首次保护");
-        else if (!"400000040".equals(response.optString("code")))
+        else if (!response.optBoolean("localRuleSkip") && !"400000040".equals(response.optString("code")))
             Log.record("NPC小鸡：请求被本地暂停，未发送RPC，已撤销本次操作预留；" + RpcRequestGuard.errorMessage(response));
         return true;
     }
@@ -5515,7 +5515,7 @@ public class AntFarm extends ModelTask {
         JSONObject feedback = MyUtils.newJSONObject(AntMemberRpcCall.feedbackPigeonAlchemyTask(PIGEON_TEMPLATE, task.optString("bizType")));
         if ("RPC_SKIPPED".equals(feedback.optString("error"))) {
             Status.clearFlag(attempt);
-            if (!"400000040".equals(feedback.optString("code")))
+            if (!feedback.optBoolean("localRuleSkip") && !"400000040".equals(feedback.optString("code")))
                 logPigeonOnce("authorizationPaused", "大表鸽：授权请求被本地暂停，未发送RPC，保留后续授权机会");
             return false;
         }

@@ -84,6 +84,7 @@ public class MessageUtil {
      */
     public static void printErrorMessage(String tag, JSONObject jo, String errorMessageField) {
         try {
+            if ("RPC_SKIPPED".equals(jo.optString("error")) && jo.optBoolean("localRuleSkip")) return;
             String memo = jo.optString(errorMessageField);
             if (isUnsupportedRpc(jo)) {
                 if ("RPC_SKIPPED".equals(jo.optString("error"))) return;

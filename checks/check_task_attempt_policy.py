@@ -197,6 +197,9 @@ public class MergePolicyCheck {
   int runtimeLogs=Log.records.size();
   AntFarmRpcCall.response=localSkip.toString();assert new MergePolicyCheck().attemptFarmTask("local","key","")==TaskAttemptPolicy.Outcome.SKIPPED;
   assert Log.records.size()==runtimeLogs : "known unsupported local skip logged";
+  AntFarmRpcCall.response=new JSONObject().put("error","RPC_SKIPPED").put("localRuleSkip",true).put("resultDesc","跳过GR已知异常任务").toString();
+  assert new MergePolicyCheck().attemptFarmTask("GR","TAO_GOLDEN_V2","")==TaskAttemptPolicy.Outcome.SKIPPED;
+  assert Log.records.size()==runtimeLogs : "GR local rule misreported as pause";
   AntFarmRpcCall.response=new JSONObject().put("error","RPC_SKIPPED").put("resultDesc","请求异常暂停中，剩余30秒").toString();
   assert new MergePolicyCheck().attemptFarmTask("paused","key","")==TaskAttemptPolicy.Outcome.SKIPPED;
   assert Log.records.size()==runtimeLogs+1&&Log.records.get(runtimeLogs).contains("剩余30秒")&&Log.records.get(runtimeLogs).contains("未发送RPC") : "pause reason missing";
