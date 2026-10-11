@@ -2681,21 +2681,7 @@ public class AntMember extends ModelTask {
                     return;
                 }
                 JSONArray ja = jo.optJSONArray("creditFeedbackVOS");
-                if (!AntFarm.bindPigeonFeedback(ja)) return;
-                for (int j = 0; ja != null && j < ja.length(); j++) {
-                    jo = ja.optJSONObject(j);
-                    if (jo == null || !"UNCLAIMED".equals(jo.optString("status"))) {
-                        continue;
-                    }
-                    // title 使用当前任务名称。
-                    String creditFeedbackId = jo.optString("creditFeedbackId");
-                    String potentialSize = jo.optString("potentialSize");
-                    jo = MyUtils.newJSONObject(AntMemberRpcCall.collectCreditFeedback(creditFeedbackId));
-                    TimeUtil.sleep(300);
-                    if (MessageUtil.checkResultCode(TAG, jo)) {
-                        Log.other("收芝麻粒🙇🏻‍♂️领取[" + taskTitle + "]奖励[芝麻粒*" + potentialSize + "]");
-                    }
-                }
+                collectSesameFeedback(ja, taskTitle, AntFarm.bindPigeonFeedback(ja));
             }
 
             // 回读校验：上报被受理不等于任务完成，按服务端最新完成度判定，日志只写真实结果
@@ -2775,7 +2761,10 @@ public class AntMember extends ModelTask {
                 return;
             }
             JSONArray creditFeedbackVOS = jo.optJSONArray("creditFeedbackVOS");
-            if (!AntFarm.bindPigeonFeedback(creditFeedbackVOS)) return;
+            if (!AntFarm.bindPigeonFeedback(creditFeedbackVOS)) {
+                collectSesameFeedback(creditFeedbackVOS, "其他类别", false);
+                return;
+            }
             if (creditFeedbackVOS != null && creditFeedbackVOS.length() != 0) {
                 jo = MyUtils.newJSONObject(AntMemberRpcCall.collectAllCreditFeedback());
                 if (MessageUtil.checkResultCode(TAG, jo)) {
@@ -2791,6 +2780,20 @@ public class AntMember extends ModelTask {
         }
     }
     
+    private void collectSesameFeedback(JSONArray items, String title, boolean pigeonBound) throws JSONException {
+        for (int i = 0; items != null && i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null || !"UNCLAIMED".equals(item.optString("status"))
+                    || !(item.opt("creditFeedbackId") instanceof String) || item.optString("creditFeedbackId").isEmpty()
+                    || (!pigeonBound && !AntFarm.isUnrelatedPigeonFeedback(item))) continue;
+            JSONObject result = MyUtils.newJSONObject(AntMemberRpcCall.collectCreditFeedback(item.optString("creditFeedbackId")));
+            TimeUtil.sleep(300);
+            if (MessageUtil.checkResultCode(TAG, result)) {
+                Log.other("收芝麻粒🙇🏻‍♂️领取[" + title + "]奖励[芝麻粒*" + item.optString("potentialSize") + "]");
+            }
+        }
+    }
+
     /** 反馈后先回查同一记录；仅进入push调用才交列表核对，外跳业务不以push代替（AG dc5c38e8）。 */
     private boolean reportSesameTask(String taskTitle, String taskTemplateId, String actionUrl, String recordId) {
         boolean pushAttempted = false;

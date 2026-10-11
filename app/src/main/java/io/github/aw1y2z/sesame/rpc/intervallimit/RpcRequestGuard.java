@@ -227,15 +227,6 @@ public final class RpcRequestGuard {
             JSONObject saved = MyUtils.newJSONObject(state.getString(key));
             long until = Math.max(saved.optLong("until"), verifyUntil());
             if (!knownUnsupported && !learnedUnsupported && until <= System.currentTimeMillis()) return false;
-            if (learnedUnsupported) {
-                java.util.Calendar today = MyUtils.getInstance();
-                String day = today.get(java.util.Calendar.YEAR) + "-" + today.get(java.util.Calendar.DAY_OF_YEAR);
-                String logKey = "unsupportedRpcLog::" + unsupportedRoute;
-                if (!day.equals(state.getString(logKey))) {
-                    state.put(logKey, day);
-                    Log.record("RPC本地拦截📌已学习规则=" + unsupportedRoute + "#今日首次提示，未发送请求；可关闭跳过不支持RPC重新检查");
-                }
-            }
             String reason = unsupportedTaskFinish || learnedUnsupported ? "本地跳过已确认不支持的完成接口，未发送RPC；保留备用完成与列表核对"
                     : knownUnsupported ? "跳过GR已知异常任务" : "请求异常暂停中，剩余"
                     + Math.max(1, (until - System.currentTimeMillis()) / 1000) + "秒";

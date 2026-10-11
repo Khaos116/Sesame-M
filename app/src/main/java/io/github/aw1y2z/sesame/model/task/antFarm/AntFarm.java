@@ -2698,6 +2698,7 @@ public class AntFarm extends ModelTask {
      * 会让本来放得下的奖励被误判成超上限而一直领不了；差值为 0 时退回 awardCount，保持单阶段任务原行为。
      */
     private static int pendingAward(JSONObject task) {
+        if ("RECEIVED".equals(task.optString("taskStatus"))) return 0;
         int total = task.optInt("awardCount", 0);
         int pending = total - task.optInt("alreadyReceiveStageAwardCount", 0);
         return pending > 0 ? pending : total;
@@ -2761,7 +2762,9 @@ public class AntFarm extends ModelTask {
                     }
                     continue;
                 }
-                if (taskStatus == TaskStatus.RECEIVED || (Mode != null && taskStatus != Mode)) {
+                boolean receivedStage = taskStatus == TaskStatus.RECEIVED
+                        && taskJo.optString("bizKey").contains("multistage_gametask") && multiStagePending(taskJo);
+                if (taskStatus == TaskStatus.RECEIVED && !receivedStage || (Mode != null && taskStatus != Mode)) {
                     continue;
                 }
                 // 多阶段任务（如 8 阶段×30g）把进度打出来：界面上的“180/240”是已领取额，做完但没领的部分显示在
@@ -2770,11 +2773,9 @@ public class AntFarm extends ModelTask {
                     Log.record("庄园饲料任务[" + title + "]阶段 " + taskJo.optInt("rightsTimes", 0) + "/"
                             + taskJo.optInt("rightsTimesLimit", 1) + "，待领 " + pendingAward(taskJo) + "g，状态 " + taskStatus);
                 }
-                if (taskStatus == TaskStatus.TODO) {
+                // 中断前领取部分奖励后可能仍是 RECEIVED，剩余阶段要按服务端进度继续。
+                if (taskStatus == TaskStatus.TODO || receivedStage) {
                     if (isUnsupportedFarmTask(taskJo.optString("bizKey"))) {
-                        if (!alreadyTried(taskJo, "unsupportedLog")) {
-                            Log.record("庄园饲料任务⏭️[" + title + "]#已知不支持通用RPC完成，需按活动要求操作，未发送完成请求");
-                        }
                         continue;
                     }
                     actionable++;
@@ -2897,6 +2898,11 @@ public class AntFarm extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject("ANTFARM_FOOD_TASK".equals(route)
                     ? AntFarmRpcCall.finishTask("SHANGYEHUA_90_1", route) : AntFarmRpcCall.doFarmTask(bizKey));
+            if ("RPC_SKIPPED".equals(jo.optString("error"))) {
+                if (!"400000040".equals(jo.optString("code")))
+                    Log.record("庄园饲料任务[" + title + "]本地请求保护暂停，未发送RPC；" + RpcRequestGuard.errorMessage(jo));
+                return Outcome.SKIPPED;
+            }
             //检查并标记黑名单任务（此处是庄园饲料任务，应写入饲料黑名单而非抽抽乐）
             MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDoFarmTaskList", title, jo);
             if ("ANTFARM_FOOD_TASK".equals(route) ? MessageUtil.checkSuccess(TAG, jo) : MessageUtil.checkResultCode(TAG, jo)) {
@@ -2948,6 +2954,44 @@ public class AntFarm extends ModelTask {
             Log.err(TAG, "probeFarmStatus err:", t);
             return TaskAttemptPolicy.ProbeResult.UNKNOWN;
         }
+    }
+
+    private TaskAttemptPolicy.ProbeResult probeFarmProgress(JSONObject before) {
+        if (npcTaskNumber(before, "rightsTimesLimit") <= 1) return probeFarmStatus(before.optString("bizKey"));
+        try {
+            JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.listFarmTask());
+            JSONArray tasks = response.optJSONArray("farmTaskList");
+            if (!MessageUtil.checkMemo(TAG, response) || tasks == null) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+            boolean complete = true;
+            for (int i = 0; i < tasks.length(); i++) {
+                JSONObject task = tasks.optJSONObject(i);
+                if (task == null || !(task.opt("bizKey") instanceof String) || task.optString("bizKey").isEmpty()
+                        || (!(task.opt("taskId") instanceof String)
+                            && (!(task.opt("taskId") instanceof Number) || npcTaskNumber(task, "taskId") < 0))
+                        || task.optString("taskId").isEmpty()) {
+                    complete = false;
+                    continue;
+                }
+                if (!before.optString("bizKey").equals(task.optString("bizKey"))
+                        || !before.optString("taskId").equals(task.optString("taskId"))) continue;
+                long count = npcTaskNumber(task, "rightsTimes");
+                long previous = before.has("rightsTimes") ? npcTaskNumber(before, "rightsTimes") : 0;
+                long limit = npcTaskNumber(before, "rightsTimesLimit");
+                if (!Set.of("TODO", "FINISHED", "RECEIVED").contains(task.optString("taskStatus"))
+                        || npcTaskNumber(task, "rightsTimesLimit") != limit || count < previous || count > limit)
+                    return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+                if (count > previous) {
+                    Log.record("庄园饲料任务[" + before.optString("title") + "]阶段推进已确认：" + previous + "→" + count + "/" + limit);
+                    return TaskAttemptPolicy.ProbeResult.FINISHED;
+                }
+                // FINISHED 可能只是上一阶段奖励未领，不能据此认定新阶段完成。
+                Log.record("庄园饲料任务[" + before.optString("title") + "]阶段未推进：" + count + "/" + limit);
+                return TaskAttemptPolicy.ProbeResult.TODO;
+            }
+            return complete ? TaskAttemptPolicy.ProbeResult.GONE : TaskAttemptPolicy.ProbeResult.UNKNOWN;
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.err(TAG, "probeFarmProgress", t); }
+        return TaskAttemptPolicy.ProbeResult.UNKNOWN;
     }
 
     private Boolean doAnswerTask(String title) {
@@ -3055,13 +3099,29 @@ public class AntFarm extends ModelTask {
             String title = task.optString("title");
             String bizKey = task.optString("bizKey");
             String taskId = task.optString("taskId");
+            String attemptKey = bizKey;
+            long limit = npcTaskNumber(task, "rightsTimesLimit");
+            if (task.has("rightsTimesLimit") && limit < 0) {
+                Log.record("庄园饲料任务[" + title + "]阶段上限无效，未发送完成请求"); return false;
+            }
+            if (limit > 1) {
+                long count = task.has("rightsTimes") ? npcTaskNumber(task, "rightsTimes")
+                        : "TODO".equals(task.optString("taskStatus")) ? 0 : -1;
+                long claimed = task.has("alreadyReceiveStageAwardCount") ? npcTaskNumber(task, "alreadyReceiveStageAwardCount") : 0;
+                if (bizKey.isEmpty() || taskId.isEmpty()
+                        || (!(task.opt("taskId") instanceof String)
+                            && (!(task.opt("taskId") instanceof Number) || npcTaskNumber(task, "taskId") < 0))
+                        || count < 0 || count >= limit || claimed < 0) {
+                    Log.record("庄园饲料任务[" + title + "]阶段已满或进度无效，未发送完成请求"); return false;
+                }
+                // 策略层截断120字符，用稳定摘要保留完整任务身份及阶段。
+                attemptKey = "stage::" + count + "::claimed::" + claimed + "::"
+                        + java.util.UUID.nameUUIDFromBytes((bizKey + "|" + taskId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
             String route = farmTaskRoute(task);
             if (!route.isEmpty() && !"ANTFARM_FOOD_TASK".equals(route)) {
                 Log.record("饲料任务[" + title + "]由" + route + "业务流程推进；本次未发送通用完成请求");
                 return false;
-            }
-            if (bizKey.contains("multistage_gametask")) {
-                Log.record("庄园多阶段游戏任务🎮[" + title + "]#bizKey=" + bizKey);
             }
             if (isUnsupportedFarmTask(bizKey)) {
                 return false;
@@ -3072,19 +3132,19 @@ public class AntFarm extends ModelTask {
             // 少一个"看"字，导致这两类任务**从来没有走对过接口**（一直落到通用 doFarmTask 分支）
             if ("VIDEO_TASK".equals(taskId)) {
                 // 沿用 M 已验证的观看流程；普通申报失败不能先把视频任务拉黑。
-                Outcome outcome = TaskAttemptPolicy.handle("farm::video::" + bizKey, title, null,
+                Outcome outcome = TaskAttemptPolicy.handle("farm::video::" + attemptKey, title, null,
                         () -> doVideoTask(title), Log::farm,
                         new TaskAttemptPolicy.Site("AntFarmDoFarmTaskList", "庄园饲料任务", bizKey, "",
-                                (k) -> probeFarmStatus(bizKey)));
+                                (k) -> probeFarmProgress(task)));
                 isDoTask = outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
             } else if ("ANSWER".equals(taskId)) {
                 isDoTask = doAnswerTask(title);
             } else {
                 // 完成判定以任务列表为准，不以 doFarmTask 响应为准（见 TaskAttemptPolicy）
-                Outcome outcome = TaskAttemptPolicy.handle("farm::task::" + bizKey, title, null,
+                Outcome outcome = TaskAttemptPolicy.handle("farm::task::" + attemptKey, title, null,
                         () -> attemptFarmTask(title, bizKey, route), Log::farm,
                         new TaskAttemptPolicy.Site("AntFarmDoFarmTaskList", "庄园饲料任务", bizKey, "",
-                                (k) -> probeFarmStatus(bizKey)));
+                                (k) -> probeFarmProgress(task)));
                 isDoTask = outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
             }
 
@@ -5248,15 +5308,59 @@ public class AntFarm extends ModelTask {
         return count;
     }
 
-    private void manageFarmNpc() {
-        int type = farmNpcType.getValue();
-        if (type <= 0 || type >= FARM_NPC_IDS.length) return;
-        if (type == 3) { manageZhimaPigeon(); return; }
-        if (!RuntimeInfo.getInstance().getString(PIGEON_RECEIPT_KEY).isEmpty()) {
-            Log.record("NPC小鸡：大表鸽奖励仍待核验，保留当前NPC，暂缓切换"); return;
+    private static boolean beginFarmNpcDay(boolean commit) {
+        RuntimeInfo runtime = RuntimeInfo.getInstance();
+        synchronized (runtime) {
+            java.util.Calendar now = MyUtils.getInstance();
+            String day = now.get(java.util.Calendar.YEAR) + "-" + now.get(java.util.Calendar.DAY_OF_YEAR);
+            String key = "farm::npcFirstRunDay";
+            if (day.equals(runtime.getString(key))) return false;
+            if (!commit || runtime.putVerified(key, day)) return true;
+            Log.record("特殊小鸡保护：首次执行记录写盘失败，禁止遣返");
+            return false;
         }
+    }
+
+    private static boolean canRenewFarmNpc(JSONObject animal, boolean firstRun) {
+        if (!"NPC".equals(animal.optString("subAnimalType"))) return false;
+        long end = npcTaskNumber(animal, "beHiredEndTime");
+        if (firstRun && end >= 1000000000000L && end - System.currentTimeMillis() < 86400000L) {
+            return true;
+        }
+        if (!firstRun) return false;
+        boolean full = Boolean.TRUE.equals(animal.opt("reachNpcBizRewardLimit"))
+                || FARM_NPC_IDS[3].equals(animal.optString("animalId")) && npcRewardValue(animal) >= 88;
+        if (!full) {
+            if (end < 1000000000000L) {
+                Log.record("特殊小鸡保护：未满产且到期时间无法确认，未发送遣返请求"); return false;
+            }
+            if (end - System.currentTimeMillis() >= 86400000L) {
+                Log.record("特殊小鸡保护：未满产且剩余不少于24小时，未发送遣返请求"); return false;
+            }
+        }
+        // shortcut: 首次执行之外尚无已验证的续雇资格查询，接入真实查询前保留现有NPC。
+        Log.record("特殊小鸡保护：" + (full ? "已满产" : "剩余不足24小时") + "，无法事前确认可再次雇佣，未发送遣返请求");
+        return false;
+    }
+
+    private static boolean restoreSkippedNpcAction(JSONObject response, String previousDay) {
+        if (!"RPC_SKIPPED".equals(response.optString("error"))) return false;
+        boolean restored = RuntimeInfo.getInstance().putVerified("farm::npcFirstRunDay", previousDay.isEmpty() ? null : previousDay);
+        Status.clearFlag("farm::npcActionUnconfirmed");
+        if (!restored) Log.record("NPC小鸡：请求未发送，首次执行记录恢复写盘失败，本日继续保留首次保护");
+        else if (!"400000040".equals(response.optString("code")))
+            Log.record("NPC小鸡：请求被本地暂停，未发送RPC，已撤销本次操作预留；" + RpcRequestGuard.errorMessage(response));
+        return true;
+    }
+
+    private void manageFarmNpc() {
         try {
             TimeUtil.sleep(0);
+            expireUnboundPigeonReceipt();
+            int type = farmNpcType.getValue();
+            if (type == 3) { manageZhimaPigeon(); return; }
+            if (!RuntimeInfo.getInstance().getString(PIGEON_RECEIPT_KEY).isEmpty()) collectPigeonReceipt();
+            if (type <= 0 || type >= FARM_NPC_IDS.length) return;
             if (ownerFarmId == null || ownerFarmId.isEmpty()) { Log.record("NPC小鸡：庄园尚未就绪，跳过"); return; }
             String pending = "farm::npcActionUnconfirmed";
             // ponytail: 未确认动作当日停止自动操作，次日或人工核验后再处理。
@@ -5266,41 +5370,41 @@ public class AntFarm extends ModelTask {
             JSONArray list = farm.optJSONArray("animals");
             String targetId = FARM_NPC_IDS[type], name = FARM_NPC_NAMES[type];
             JSONObject current = findFarmNpc(list, targetId);
-            boolean full = current != null;
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject animal = list.optJSONObject(i);
+                if ("NPC".equals(animal.optString("subAnimalType")) && !targetId.equals(animal.optString("animalId"))) {
+                    Log.record("特殊小鸡保护：已有其他NPC，不因配置切换遣返"); return;
+                }
+            }
+            boolean full = current != null && Boolean.TRUE.equals(current.opt("reachNpcBizRewardLimit"));
             if (current != null) {
                 double reward = npcRewardValue(current);
                 if (!Double.isFinite(reward) || !(current.opt("reachNpcBizRewardLimit") instanceof Boolean)) {
                     Log.record("NPC小鸡：产出状态不明，保留当前小鸡"); return;
                 }
-                if (!Boolean.TRUE.equals(current.opt("reachNpcBizRewardLimit"))) {
-                    Log.record("NPC小鸡：[" + name + "]工作中，当前产出=" + reward); return;
-                }
-            } else {
-                boolean hasNpc = false;
-                for (int i = 0; i < list.length(); i++) {
-                    JSONObject animal = list.optJSONObject(i);
-                    if (!"NPC".equals(animal.optString("subAnimalType"))) continue;
-                    hasNpc = true;
-                    String id = animal.optString("animalId");
-                    if ((FARM_NPC_IDS[1].equals(id) || FARM_NPC_IDS[2].equals(id)) && npcRewardValue(animal) == 0
-                            && Boolean.FALSE.equals(animal.opt("reachNpcBizRewardLimit"))) { current = animal; break; }
-                }
-                if (hasNpc && current == null) { Log.record("NPC小鸡：现有NPC有待领奖励或类型/状态不明，保留"); return; }
-            }
-            if (current != null) {
                 if (!(current.opt("masterFarmId") instanceof String) || current.optString("masterFarmId").isEmpty()) {
-                    Log.record("NPC小鸡：遣返所需庄园标识缺失，跳过"); return;
+                    Log.record("NPC小鸡：庄园标识缺失，保留当前小鸡"); return;
                 }
+            }
+            String previousDay = RuntimeInfo.getInstance().getString("farm::npcFirstRunDay");
+            boolean sentBack = false;
+            boolean firstRun = beginFarmNpcDay(true);
+            if (current != null) {
+                if (!canRenewFarmNpc(current, firstRun)) return;
                 String currentId = current.optString("animalId");
                 TimeUtil.sleep(0);
                 Status.flagToday(pending);
                 JSONObject sent = MyUtils.newJSONObject(AntFarmRpcCall.sendBackNpcAnimal(currentId, ownerFarmId, current.optString("masterFarmId")));
+                if (restoreSkippedNpcAction(sent, previousDay)) return;
+                Log.record("特殊小鸡续雇：遣返请求已发送，开始回查离场及重雇条件");
                 farm = queryNpcFarm();
-                if (!farmFeatureOk(sent) || farm == null || findFarmNpc(farm.optJSONArray("animals"), currentId) != null) {
+                if (farm == null || findFarmNpc(farm.optJSONArray("animals"), currentId) != null) {
                     Log.record("NPC小鸡：遣返/领奖未确认，保留当日保护标记，" + RpcRequestGuard.errorMessage(sent)); return;
                 }
+                if (!farmFeatureOk(sent)) Log.record("NPC小鸡：遣返响应未确认，但回查已离场，继续重雇；" + RpcRequestGuard.errorMessage(sent));
                 Status.clearFlag(pending);
-                Log.farm("NPC小鸡🤖[" + (full ? name + "满产领取并离场已确认" : "切换离场已确认") + "]");
+                sentBack = true;
+                Log.farm("NPC小鸡🤖[" + name + (full ? "满产领取" : "到期续雇") + "离场已确认，继续雇佣]");
                 list = farm.optJSONArray("animals");
             }
             if (findFarmNpc(list, targetId) != null) return;
@@ -5312,6 +5416,7 @@ public class AntFarm extends ModelTask {
             TimeUtil.sleep(0);
             Status.flagToday(pending);
             JSONObject hired = MyUtils.newJSONObject(AntFarmRpcCall.hireNpcAnimal(targetId, FARM_NPC_SOURCES[type]));
+            if (restoreSkippedNpcAction(hired, sentBack ? RuntimeInfo.getInstance().getString("farm::npcFirstRunDay") : previousDay)) return;
             JSONObject after = queryNpcFarm();
             if (farmFeatureOk(hired) && after != null && findFarmNpc(after.optJSONArray("animals"), targetId) != null) {
                 Status.clearFlag(pending);
@@ -5356,28 +5461,79 @@ public class AntFarm extends ModelTask {
         return found;
     }
 
+    private static void logPigeonOnce(String reason, String message) {
+        String key = "farm::pigeonLog::" + reason;
+        if (Status.hasFlagToday(key)) return;
+        Log.record(message);
+        Status.flagToday(key);
+    }
+
+    /** 未绑定只等待24小时；结束等待不是领奖确认，晚到奖励仍交会员正常收取。 */
+    private static void expireUnboundPigeonReceipt() throws JSONException {
+        RuntimeInfo runtime = RuntimeInfo.getInstance();
+        synchronized (runtime) {
+            String saved = runtime.getString(PIGEON_RECEIPT_KEY);
+            if (saved.isEmpty()) return;
+            JSONObject receipt = MyUtils.newJSONObject(saved);
+            if (!(receipt.opt("feedbackId") instanceof String) || !receipt.optString("feedbackId").isEmpty()) return;
+            long now = System.currentTimeMillis(), created = npcTaskNumber(receipt, "createdAt");
+            if (created <= 0 || created > now) {
+                receipt.put("createdAt", now);
+                if (!runtime.putVerified(PIGEON_RECEIPT_KEY, receipt.toString()))
+                    logPigeonOnce("receiptClockWrite", "大表鸽：旧待收记录等待时间写盘失败，保留记录");
+            } else if (now - created >= 86400000L) {
+                if (runtime.putVerified(PIGEON_RECEIPT_KEY, null))
+                    Log.record("大表鸽：奖励超过24小时未绑定，结束等待但不认定领奖成功；后续反馈按会员正常收取");
+                else logPigeonOnce("receiptExpireWrite", "大表鸽：结束奖励等待写盘失败，保留记录");
+            }
+        }
+    }
+
     private boolean authorizePigeonHire() throws JSONException {
         JSONObject task = queryPigeonAlchemyTask();
-        if (task == null) { Log.record("大表鸽：炼金列表没有明确的可雇佣任务，等待后续资格"); return false; }
+        if (task == null) {
+            logPigeonOnce("noHireTask", "大表鸽：炼金列表没有明确的可雇佣任务，未发送遣返/雇佣请求，等待后续资格");
+            return false;
+        }
         if (task.optString("recordId").isEmpty()) {
             JSONObject joined = MyUtils.newJSONObject(AntMemberRpcCall.joinPigeonAlchemyTask(PIGEON_TEMPLATE));
-            if (!farmFeatureOk(joined)) return false;
+            if (!farmFeatureOk(joined)) {
+                Log.record("大表鸽：加入炼金任务响应失败或未确认，未发送遣返/雇佣请求；" + RpcRequestGuard.errorMessage(joined)); return false;
+            }
             task = queryPigeonAlchemyTask();
-            if (task == null || task.optString("recordId").isEmpty()) return false;
+            if (task == null || task.optString("recordId").isEmpty()) {
+                Log.record("大表鸽：加入炼金任务后回查无有效记录，未发送遣返/雇佣请求"); return false;
+            }
         }
         String record = task.optString("recordId");
         String confirmed = "farm::pigeonAuthorized::" + record, attempt = "farm::pigeonFeedbackAttempt::" + record;
         if (Status.hasFlagToday(confirmed)) return true;
-        if (Status.hasFlagToday(attempt)) return false;
+        if (Status.hasFlagToday(attempt)) {
+            logPigeonOnce("authorizationPending", "大表鸽：今日授权已尝试但未确认，不重复授权，未发送遣返/雇佣请求"); return false;
+        }
         TimeUtil.sleep(0); Status.flagToday(attempt);
         JSONObject feedback = MyUtils.newJSONObject(AntMemberRpcCall.feedbackPigeonAlchemyTask(PIGEON_TEMPLATE, task.optString("bizType")));
-        if (!farmFeatureOk(feedback)) return false;
+        if ("RPC_SKIPPED".equals(feedback.optString("error"))) {
+            Status.clearFlag(attempt);
+            if (!"400000040".equals(feedback.optString("code")))
+                logPigeonOnce("authorizationPaused", "大表鸽：授权请求被本地暂停，未发送RPC，保留后续授权机会");
+            return false;
+        }
+        if (!farmFeatureOk(feedback)) {
+            Log.record("大表鸽：炼金授权反馈失败或未确认，未发送遣返/雇佣请求；" + RpcRequestGuard.errorMessage(feedback)); return false;
+        }
         Status.flagToday(confirmed);
         return true;
     }
 
+    public static boolean isUnrelatedPigeonFeedback(JSONObject item) {
+        return item != null && item.opt("cateId") instanceof String
+                && !item.optString("cateId").isEmpty() && !PIGEON_CATEGORY.equals(item.optString("cateId"));
+    }
+
     /** 通用收取前先绑定待收ID，防一键领取使奖励消失后无法判定闭环。 */
     public static boolean bindPigeonFeedback(JSONArray items) throws JSONException {
+        expireUnboundPigeonReceipt();
         RuntimeInfo runtime = RuntimeInfo.getInstance();
         String saved = runtime.getString(PIGEON_RECEIPT_KEY);
         if (saved.isEmpty()) return true;
@@ -5392,7 +5548,9 @@ public class AntFarm extends ModelTask {
             if (!(item.opt("creditFeedbackId") instanceof String) || item.optString("creditFeedbackId").isEmpty() || !id.isEmpty()) return false;
             id = item.optString("creditFeedbackId");
         }
-        if (id.isEmpty()) { Log.record("大表鸽：奖励反馈尚未生成，暂缓通用收取以保留核验依据"); return false; }
+        if (id.isEmpty()) {
+            logPigeonOnce("receiptPending", "大表鸽：奖励反馈尚未生成，保留待收记录及在场鸽子，未在场仍可尝试雇佣；暂缓同类及一键收取，其他类别仍可单领"); return false;
+        }
         pending.put("feedbackId", id);
         return runtime.putVerified(PIGEON_RECEIPT_KEY, pending.toString());
     }
@@ -5438,7 +5596,6 @@ public class AntFarm extends ModelTask {
             for (int i = 0; i < items.length(); i++) if (id.equals(items.optJSONObject(i).optString("creditFeedbackId"))) return false;
         }
         if (!runtime.putVerified(PIGEON_RECEIPT_KEY, null)) return false;
-        Status.clearFlag("farm::npcActionUnconfirmed");
         Log.farm("大表鸽：绑定芝麻粒反馈已回查消失，奖励收取确认");
         return true;
     }
@@ -5493,15 +5650,19 @@ public class AntFarm extends ModelTask {
             TimeUtil.sleep(0);
             if (ownerFarmId == null || ownerFarmId.isEmpty()) return;
             RuntimeInfo runtime = RuntimeInfo.getInstance();
+            expireUnboundPigeonReceipt();
+            String previousDay = runtime.getString("farm::npcFirstRunDay");
             String pending = "farm::npcActionUnconfirmed";
             String receipt = runtime.getString(PIGEON_RECEIPT_KEY);
             if (!receipt.isEmpty() && !(MyUtils.newJSONObject(receipt).opt("feedbackId") instanceof String)) return;
-            if (Status.hasFlagToday(pending) && runtime.getString(PIGEON_RECEIPT_KEY).isEmpty()) return;
             JSONObject farm = queryNpcFarm();
             if (farm == null) return;
             JSONArray list = farm.optJSONArray("animals");
             JSONObject pigeon = findFarmNpc(list, FARM_NPC_IDS[3]);
-            if (!runtime.getString(PIGEON_RECEIPT_KEY).isEmpty() && pigeon == null) { collectPigeonReceipt(); return; }
+            if (!runtime.getString(PIGEON_RECEIPT_KEY).isEmpty() && !collectPigeonReceipt()) {
+                logPigeonOnce("receiptPending", "大表鸽：旧奖励仍待核验，保留待收记录；已在场则不再遣返，未在场继续尝试雇佣");
+            }
+            boolean hireAuthorized = false;
             if (pigeon != null) {
                 double reward = npcRewardValue(pigeon);
                 if (!Double.isFinite(reward)) return;
@@ -5510,56 +5671,87 @@ public class AntFarm extends ModelTask {
                     farm = queryNpcFarm();
                     pigeon = farm == null ? null : findFarmNpc(farm.optJSONArray("animals"), FARM_NPC_IDS[3]);
                     if (pigeon == null || !Double.isFinite(npcRewardValue(pigeon))) return;
+                    list = farm.optJSONArray("animals");
                     reward = npcRewardValue(pigeon);
                 }
-                if (reward < 88 && !Boolean.TRUE.equals(pigeon.opt("reachNpcBizRewardLimit"))) { Log.record("大表鸽：工作中，等待满产"); return; }
-                if (Status.hasFlagToday(pending) || !(pigeon.opt("masterFarmId") instanceof String) || pigeon.optString("masterFarmId").isEmpty()) return;
-                if (runtime.getString(PIGEON_RECEIPT_KEY).isEmpty() && !runtime.putVerified(PIGEON_RECEIPT_KEY, "{\"feedbackId\":\"\"}")) return;
+                for (int i = 0; i < list.length(); i++) {
+                    JSONObject other = list.optJSONObject(i);
+                    if ("NPC".equals(other.optString("subAnimalType")) && !FARM_NPC_IDS[3].equals(other.optString("animalId"))) {
+                        Log.record("特殊小鸡保护：存在其他NPC，续雇名额不明确，保留大表鸽"); return;
+                    }
+                }
+                if (!runtime.getString(PIGEON_RECEIPT_KEY).isEmpty() || Status.hasFlagToday(pending)
+                        || !(pigeon.opt("masterFarmId") instanceof String) || pigeon.optString("masterFarmId").isEmpty()) return;
+                boolean firstRun = beginFarmNpcDay(false);
+                if (!canRenewFarmNpc(pigeon, firstRun)) { if (firstRun) beginFarmNpcDay(true); return; }
+                if (!authorizePigeonHire()) return;
+                hireAuthorized = true;
+                if (!beginFarmNpcDay(true)) return;
+                String createdReceipt = MyUtils.newJSONObject("{\"feedbackId\":\"\"}").put("createdAt", System.currentTimeMillis()).toString();
+                if (reward > 0 && !runtime.putVerified(PIGEON_RECEIPT_KEY, createdReceipt)) return;
                 TimeUtil.sleep(0); Status.flagToday(pending);
                 JSONObject sent = MyUtils.newJSONObject(AntFarmRpcCall.sendBackNpcAnimal(FARM_NPC_IDS[3], ownerFarmId, pigeon.optString("masterFarmId"), FARM_NPC_SOURCES[3]));
-                farm = queryNpcFarm();
-                if (farmFeatureOk(sent) && farm != null && findFarmNpc(farm.optJSONArray("animals"), FARM_NPC_IDS[3]) == null) {
-                    Status.clearFlag(pending);
-                    Log.farm("大表鸽：满产遣返已确认，等待芝麻粒反馈收取");
-                    collectPigeonReceipt();
+                if (restoreSkippedNpcAction(sent, previousDay)) {
+                    synchronized (runtime) {
+                        if (reward > 0 && createdReceipt.equals(runtime.getString(PIGEON_RECEIPT_KEY))
+                                && !runtime.putVerified(PIGEON_RECEIPT_KEY, null))
+                            Log.record("大表鸽：遣返未发送，但本次待收记录回滚写盘失败，保留记录");
+                    }
+                    return;
                 }
-                return;
+                Log.record("大表鸽：授权已确认且遣返请求已发送，开始回查离场及重雇条件");
+                farm = queryNpcFarm();
+                if (farm != null && findFarmNpc(farm.optJSONArray("animals"), FARM_NPC_IDS[3]) == null) {
+                    if (!farmFeatureOk(sent)) Log.record("大表鸽：遣返响应未确认，但回查已离场，继续重雇；" + RpcRequestGuard.errorMessage(sent));
+                    Status.clearFlag(pending);
+                    Log.farm("大表鸽：到期续雇遣返已确认，等待芝麻粒反馈收取");
+                    if (reward > 0 && !collectPigeonReceipt()) Log.record("大表鸽：奖励仍待核验，保留待收记录并继续重雇");
+                    list = farm.optJSONArray("animals");
+                } else {
+                    JSONObject remaining = farm == null ? null : findFarmNpc(farm.optJSONArray("animals"), FARM_NPC_IDS[3]);
+                    if (reward > 0 && remaining != null
+                            && pigeon.optString("masterFarmId").equals(remaining.optString("masterFarmId"))
+                            && npcTaskNumber(pigeon, "beHiredEndTime") == npcTaskNumber(remaining, "beHiredEndTime")
+                            && npcRewardValue(remaining) >= reward) {
+                        // 只回滚本轮新建的空回执；已绑定、期限变化、产出下降及查询失败均保留。
+                        synchronized (runtime) {
+                            if (createdReceipt.equals(runtime.getString(PIGEON_RECEIPT_KEY))) {
+                                boolean cleared = runtime.putVerified(PIGEON_RECEIPT_KEY, null);
+                                Log.record(cleared ? "大表鸽：回查原鸽仍在场、雇佣期限未变且产出未下降，已回滚本次待收记录，当日不再遣返"
+                                        : "大表鸽：原鸽仍在场，待收记录回滚写盘失败，保留记录与当日保护");
+                            }
+                        }
+                    }
+                    Log.record("大表鸽：离场未确认，未发送重雇请求，保留回查保护"); return;
+                }
             }
             if (Status.hasFlagToday(pending)) return;
-            JSONObject replace = null;
             for (int i = 0; i < list.length(); i++) {
-                JSONObject other = list.optJSONObject(i);
-                if (!"NPC".equals(other.optString("subAnimalType"))) continue;
-                String id = other.optString("animalId");
-                if (!(FARM_NPC_IDS[1].equals(id) || FARM_NPC_IDS[2].equals(id)) || npcRewardValue(other) != 0
-                        || !Boolean.FALSE.equals(other.opt("reachNpcBizRewardLimit")) || !(other.opt("masterFarmId") instanceof String) || other.optString("masterFarmId").isEmpty()) return;
-                if (replace != null) return;
-                replace = other;
+                if ("NPC".equals(list.optJSONObject(i).optString("subAnimalType"))) {
+                    Log.record("特殊小鸡保护：已有其他NPC，不为雇佣大表鸽遣返"); return;
+                }
             }
-            if (replace == null && npcOccupiedSlots(list) >= 2 || !authorizePigeonHire()) return;
+            if (npcOccupiedSlots(list) >= 2) {
+                logPigeonOnce("slotsFull", "大表鸽：雇佣名额已满，保留好友工人，未发送雇佣请求"); return;
+            }
+            if (!hireAuthorized && !authorizePigeonHire()) return;
+            if (beginFarmNpcDay(false) && !beginFarmNpcDay(true)) return;
             // 授权请求期间名额也可能变化；重新读取，保留任何新到场NPC/好友工人。
             farm = queryNpcFarm();
             if (farm == null) return;
             list = farm.optJSONArray("animals");
             if (findFarmNpc(list, FARM_NPC_IDS[3]) != null) return;
-            if (replace != null) {
-                JSONObject fresh = findFarmNpc(list, replace.optString("animalId"));
-                if (fresh == null || npcRewardValue(fresh) != 0 || !Boolean.FALSE.equals(fresh.opt("reachNpcBizRewardLimit"))
-                        || !(fresh.opt("masterFarmId") instanceof String) || fresh.optString("masterFarmId").isEmpty()) return;
-                TimeUtil.sleep(0); Status.flagToday(pending);
-                JSONObject sent = MyUtils.newJSONObject(AntFarmRpcCall.sendBackNpcAnimal(fresh.optString("animalId"), ownerFarmId, fresh.optString("masterFarmId"), FARM_NPC_SOURCES[3]));
-                farm = queryNpcFarm();
-                if (!farmFeatureOk(sent) || farm == null || findFarmNpc(farm.optJSONArray("animals"), fresh.optString("animalId")) != null) return;
-                Status.clearFlag(pending); list = farm.optJSONArray("animals");
-            }
             for (int i = 0; i < list.length(); i++) if ("NPC".equals(list.optJSONObject(i).optString("subAnimalType"))) return;
-            if (npcOccupiedSlots(list) >= 2) return;
+            if (npcOccupiedSlots(list) >= 2) {
+                logPigeonOnce("slotsFull", "大表鸽：授权后回查雇佣名额已满，保留好友工人，未发送雇佣请求"); return;
+            }
             TimeUtil.sleep(0); Status.flagToday(pending);
             JSONObject hired = MyUtils.newJSONObject(AntFarmRpcCall.hireNpcAnimal(FARM_NPC_IDS[3], FARM_NPC_SOURCES[3]));
+            if (restoreSkippedNpcAction(hired, hireAuthorized ? runtime.getString("farm::npcFirstRunDay") : previousDay)) return;
             farm = queryNpcFarm();
             if (farmFeatureOk(hired) && farm != null && findFarmNpc(farm.optJSONArray("animals"), FARM_NPC_IDS[3]) != null) {
                 Status.clearFlag(pending); Log.farm("大表鸽：炼金授权后雇佣已回查到场");
-            }
+            } else Log.record("大表鸽：雇佣到场未确认，保留保护标记，" + RpcRequestGuard.errorMessage(hired));
         } catch (TaskCancelledException e) { throw e;
         } catch (Throwable t) { Log.err(TAG, "manageZhimaPigeon", t); }
     }

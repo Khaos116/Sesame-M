@@ -487,13 +487,14 @@ public class GuardCheck {
         RuntimeInfo.accounts.clear();Log.records.clear();
         assert guard("sdk.gameplay.rebate",rebate).shouldSkip();
         assert guard("sdk.gameplay.rebate",rebate).shouldSkip();
-        assert Log.records.size()==1 && Log.records.get(0).contains("PLAY_A") : "daily skip route diagnostic missing/repeated";
+        assert Log.records.isEmpty() : "local unsupported skip must be silent";
         reset();
         String learnedMethod = "new.task.finish";
         String learnedArgs = "[{\"sceneCode\":\"NEW_SCENE\",\"taskType\":\"NEW_TASK\",\"action\":\"finish\",\"outBizNo\":\"1\"}]";
         RpcRequestGuard inFlight = guard(learnedMethod, learnedArgs);
         assert !inFlight.shouldSkip();
         guard(learnedMethod, learnedArgs).record(json("{\"code\":\"400000040\"}"));
+        assert !Log.records.isEmpty() : "real server unsupported response must stay visible";
         RuntimeInfo.accounts.clear(); RuntimeInfo.account = "B";
         assert inFlight.shouldSkip() : "already-created guard missed newly learned rule";
         assert guard(learnedMethod, learnedArgs.replace("1", "2")).shouldSkip();

@@ -891,8 +891,6 @@ public class AntStall extends ModelTask {
                 || "ANTSTALL_TASK_XCXYX_langmancanting".equals(taskType)
                 || "ANTSTALL_TASK_XCXYX_qingyunjue".equals(taskType)
                 || "ANTSTALL_TASK_XCXYX_sijiwuyu".equals(taskType))) {
-            Log.record("新村任务：跳过[" + title + "]，" + ("ANTSTALL_ELEME_VISIT".equals(taskType)
-                    ? "需要在饿了么果园实际浏览，通用接口不能自动完成" : "需要游戏内订单、闯关或合成事件，通用接口不能自动完成"));
             return false;
         }
         // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）

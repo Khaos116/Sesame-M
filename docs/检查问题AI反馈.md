@@ -1,10 +1,20 @@
 # 检查问题 AI 反馈
 
-检查对象：`my_dev` 分支，HEAD `40aef35a` 加工作区未提交改动（上游合并后的修复）。
-检查方式：只读审查。
+检查对象：`my_dev` 分支，HEAD `ca51e2ae` 加工作区未提交改动（codex 收尾处理后的代码）。
+检查方式：只读审查，未改代码。
 
-当前无待处理的代码问题。上游合并检查出的问题均已修复：活力值清单重启后失效、乐园限定任务每轮重发、青春特权道具重复查询及列表解析过严。
+上一轮两件事都已处理：空文件 `0)` 已删除，请求保护暂停的日志已补上。剩一个小问题。
 
-## 仍需用户确认
+## “GR已知异常任务”的本地跳过会被当成请求保护暂停输出
 
-- `queryTaskList()` 里不再调用青春特权查询，`youthPrivilege` 开关关闭的账号不会再领双击卡、能量罩、加速器。合并前（以及上游现在）开关关闭也会顺带领取。接受则无需改动；要保持原样则恢复那一处调用。
+位置：`app/src/main/java/io/github/aw1y2z/sesame/model/task/antFarm/AntFarm.java:2901-2905`。
+
+新加的判断用 `code=400000040` 区分“本地已知不支持”和“请求保护暂停”。但 `RpcRequestGuard.shouldSkip()` 只给两类跳过加这个 code：已学习的规则和精确匹配的完成接口（`rpc/intervallimit/RpcRequestGuard.java:240`）。第三类本地已知跳过没有这个 code，即 `isKnownUnsupported()` 里的硬编码规则，其中包含庄园 `doFarmTask` 的两个 `bizKey`：`_chouchoulechoukuan` 和 `TAO_GOLDEN_V2`（同文件 202-204）。
+
+这两个任务出现在饲料任务列表时，每次执行都会输出：
+
+> 庄园饲料任务[标题]本地请求保护暂停，未发送RPC；com.alipay.antfarm.doFarmTask：跳过GR已知异常任务
+
+两处不对：它属于“本地已知不支持”，按要求应该静默；文案写的是“请求保护暂停”，实际不是暂停。
+
+判断可以改成看跳过原因，或者让 `shouldSkip()` 给这一类也带上可识别的标记。

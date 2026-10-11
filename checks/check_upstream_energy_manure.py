@@ -93,6 +93,8 @@ public class EnergyManureCheck {
     }
     public static void main(String[] args) {
         Log.lines.clear();
+        ErrorMessages.printErrorMessage(TAG,new JSONObject().put("error","RPC_SKIPPED").put("code","400000040"),"memo");
+        assert Log.lines.isEmpty() && ErrorMessages.failures==0 : "local unsupported check wrote runtime log";
         ErrorMessages.printErrorMessage(TAG,new JSONObject().put("code","400000040").put("memo","PRIVATE_PAYLOAD"),"memo");
         assert ErrorMessages.failures==0 && Log.lines.size()==1 && !Log.lines.get(0).contains("PRIVATE_PAYLOAD");
         ErrorMessages.printErrorMessage(TAG,new JSONObject().put("code","OTHER").put("memo","failed"),"memo");

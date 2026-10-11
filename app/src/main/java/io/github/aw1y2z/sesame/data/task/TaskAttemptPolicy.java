@@ -132,7 +132,8 @@ public class TaskAttemptPolicy {
     /**
      * 尝试动作。
      * <p>只应返回 {@link Outcome#DONE} / {@link Outcome#RETRY} / {@link Outcome#UNABLE}
-     * / {@link Outcome#UNSUPPORTED}（交给本类伪申报）/ {@link Outcome#FORGED}（调用点自行伪申报）。
+     * / {@link Outcome#UNSUPPORTED}（交给本类伪申报）/ {@link Outcome#FORGED}（调用点自行伪申报）
+     * / {@link Outcome#SKIPPED}（未发送请求，无需后备动作或列表核对）。
      */
     public interface Attempt {
         Outcome run();
@@ -274,6 +275,7 @@ public class TaskAttemptPolicy {
         MessageUtil.beginDeferBlackList();
         try {
             outcome = attempt.run();
+            if (outcome == Outcome.SKIPPED) return outcome;
             // 列表复核：完成与否一律以任务列表为准——只有列表能宣布"完成"，响应不可信
             if (site != null && site.probe != null) {
                 TimeUtil.sleep(1500);

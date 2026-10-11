@@ -101,7 +101,7 @@ public class StallCheck {
         StallCheck s=new StallCheck();
         for(String id: new String[]{"ANTSTALL_ELEME_VISIT","ANTSTALL_TASK_XCXYX_langmancanting","ANTSTALL_TASK_XCXYX_qingyunjue","ANTSTALL_TASK_XCXYX_sijiwuyu"}){
             reset(id,"TODO");s.taskList();assert AntStallRpcCall.finishes==0&&AntStallRpcCall.awards==0&&TaskAlternative.attempts==0&&MessageUtil.marks==0 : "Unsupported TODO made RPC: "+id;
-            assert Log.lines.stream().anyMatch(x->x.contains("通用接口不能自动完成"));
+            assert Log.lines.isEmpty() : "local unsupported branch wrote runtime log";
             reset(id,"FINISHED");s.taskList();assert AntStallRpcCall.finishes==0&&AntStallRpcCall.awards==1;
             reset(id,"RECEIVED");s.taskList();assert AntStallRpcCall.finishes==0&&AntStallRpcCall.awards==0;
             reset(id,"TODO");MyUtils.skip=false;s.taskList();assert AntStallRpcCall.finishes==1&&AntStallRpcCall.awards==1;

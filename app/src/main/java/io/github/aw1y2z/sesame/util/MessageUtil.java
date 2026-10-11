@@ -79,13 +79,14 @@ public class MessageUtil {
 
     /**
      * 打印失败应答。两类降噪：**服务端繁忙（102）**按 tag 限次打印；**400000040「不支持rpc调用」**
-     * 只写运行日志、不记模块错误——它不代表任务做不了（调用方会转另一种实现方案）。
+     * 服务端应答只写运行日志、不记模块错误，本地拦截静默；调用方仍可转另一种实现方案。
      * <p>注意：这里不拦截、不退避、不跳过——请求该发照发，只是少写几行日志。
      */
     public static void printErrorMessage(String tag, JSONObject jo, String errorMessageField) {
         try {
             String memo = jo.optString(errorMessageField);
             if (isUnsupportedRpc(jo)) {
+                if ("RPC_SKIPPED".equals(jo.optString("error"))) return;
                 Log.i(tag, "请求未受理：不支持RPC调用，后续由调用方处理");
                 return;
             }
@@ -454,6 +455,7 @@ public class MessageUtil {
     }
 
     public static void checkResultCodeAndMarkTaskBlackList(String listTitle, String taskTitle, JSONObject jo) {
+        if (jo != null && "RPC_SKIPPED".equals(jo.optString("error"))) return;
         // 开启延迟拉黑时先入缓冲：只有任务列表未确认完成时才真正落盘
         if (deferBlackList(() -> doCheckResultCodeAndMarkTaskBlackList(listTitle, taskTitle, jo))) {
             return;

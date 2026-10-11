@@ -164,7 +164,7 @@ public class FlowCheck {
         static String CreditAccumulateStrategyRpcManager() { return reads++ == 0 ? first : fresh; }
         static String queryAvailableSesameTask() { calls.add("refresh"); return active; }
         static String queryCreditFeedback() { return ok().put("creditFeedbackVOS", new JSONArray()).toString(); }
-        static String collectCreditFeedback(String id) { throw new AssertionError("unexpected reward"); }
+        static String collectCreditFeedback(String id) { calls.add("collect:"+id); return ok().toString(); }
         static String collectAllCreditFeedback() { throw new AssertionError("unexpected reward"); }
         static String joinSesameTask(String id) { calls.add("join"); return join; }
         static String feedBackSesameTaskNew(String id) { calls.add("feedback"); return ok().toString(); }
@@ -175,7 +175,7 @@ public class FlowCheck {
         return new JSONObject().put("templateId", "T").put("title", "task").put("completedNum", done).put("needCompleteNum", need);
     }
     static String tasks(JSONArray list) { return ok().put("data", new JSONObject().put("toCompleteVOS", list)).toString(); }
-    static class AntFarm { static boolean bindPigeonFeedback(JSONArray items) { return true; } }
+    static class AntFarm { static boolean isUnrelatedPigeonFeedback(JSONObject item) { return "OTHER".equals(item.optString("cateId")); } static boolean bindPigeonFeedback(JSONArray items) { return true; } }
     static class Member {
         static final int GAME_CENTER_CERT_LIMIT=30;
         Field<Set<String>> MemberCreditSesameTaskList = new Field<>(new HashSet<>());
@@ -284,6 +284,13 @@ public class FlowCheck {
         assert Status.hasFlagToday("self:spreadManureLimit:MAIN") == capped;
     }
     public static void main(String[] args) {
+        reset();new Member().collectSesameFeedback(new JSONArray()
+            .put(new JSONObject().put("status","UNCLAIMED").put("cateId","OTHER").put("creditFeedbackId","safe"))
+            .put(new JSONObject().put("status","UNCLAIMED").put("cateId","PIGEON").put("creditFeedbackId","protected"))
+            .put(new JSONObject().put("status","UNCLAIMED").put("creditFeedbackId","unknown"))
+            .put(new JSONObject().put("status","CLAIMED").put("cateId","OTHER").put("creditFeedbackId","claimed"))
+            .put(new JSONObject().put("status","UNCLAIMED").put("cateId","OTHER")), "test", false);
+        assert AntMemberRpcCall.calls.equals(List.of("collect:safe")) : "unbound pigeon receipt blocked unrelated rewards or allowed unsafe claims";
         for (String bad : new String[]{"broken", ok().toString(), ok().put("data", new JSONObject()).toString(),
                 tasks(new JSONArray().put(1)), tasks(new JSONArray().put(new JSONObject())),
                 tasks(new JSONArray().put(task(-1,2))), tasks(new JSONArray().put(task(0,0))),
@@ -424,7 +431,7 @@ public class FlowCheck {
 '''
 for placeholder, path, signatures in (
     ("@@RETRY@@", "util/MessageUtil.java", ("public static boolean isRetryable(",)),
-    ("@@MEMBER@@", member, ("private void collectSesame(", "private boolean reportSesameTask(", "private String lastOperateRecordId(", "private String activeSesameRecordId(", "public void gameCenterTaskPrize(", "private static boolean collectNotDoneIds(", "private static boolean collectNotDoneFromArray(")),
+    ("@@MEMBER@@", member, ("private void collectSesameFeedback(", "private void collectSesame(", "private boolean reportSesameTask(", "private String lastOperateRecordId(", "private String activeSesameRecordId(", "public void gameCenterTaskPrize(", "private static boolean collectNotDoneIds(", "private static boolean collectNotDoneFromArray(")),
     ("@@FOREST@@", "model/task/antForest/AntForestV2.java", ("private boolean getAllSkuInfo(", "private static JSONArray optItemInfoVOList(",
         "private static boolean hasMore(", "private boolean getSkuInfoByItemInfoVO(", "private void teamCooperateWater(",
         "private static JSONObject queryTeamHomePage(", "private static String getTeamId(", "private static int getTeamCanWaterCount(",
