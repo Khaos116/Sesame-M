@@ -5314,6 +5314,9 @@ public class AntForestV2 extends ModelTask {
     }
 
     private void queryUserPatrol() {
+        String day = String.format(java.util.Locale.ROOT, "%tY%<tm%<td", MyUtils.getInstance());
+        String doneFlag = "forest::legacyPatrolDone::" + day;
+        if (DailyTask.skipFlag(doneFlag, "旧版保护地巡护")) return;
         try {
             AntSports sports = getModel(AntSports.class);
             if (sports != null) sports.syncStepNow();
@@ -5362,16 +5365,23 @@ public class AntForestV2 extends ModelTask {
                 if (chance == null) {
                     return;
                 }
-                int leftChance = chance.optInt("leftChance");
-                int leftStep = chance.optInt("leftStep");
-                int usedStep = chance.optInt("usedStep");
+                int leftChance = chance.optInt("leftChance", -1);
+                int leftStep = chance.optInt("leftStep", -1);
+                int usedStep = chance.optInt("usedStep", -1);
                 if ("STANDING".equals(currentStatus)) {
+                    if (leftChance == 0 && usedStep >= 10000
+                            && day.equals(chance.optString("dayString"))
+                            && MessageUtil.checkResultCode(TAG, resData)) {
+                        Status.flagToday(doneFlag);
+                        Log.forest("旧版保护地：今日5次步数兑换及巡护已完成，今日不再检查");
+                        return;
+                    }
                     if (leftChance > 0) {
                         jo = MyUtils.newJSONObject(AntForestRpcCall.patrolGo(currentNode, patrolId));
                         TimeUtil.sleep(500);
                         patrolKeepGoing(jo.toString(), currentNode, patrolId);
                         continue;
-                    } else if (leftStep >= 2000 && usedStep < 10000) {
+                    } else if (leftChance == 0 && leftStep >= 2000 && usedStep >= 0 && usedStep < 10000) {
                         jo = MyUtils.newJSONObject(AntForestRpcCall.exchangePatrolChance(leftStep));
                         TimeUtil.sleep(300);
                         if (MessageUtil.checkResultCode(TAG, jo)) {
