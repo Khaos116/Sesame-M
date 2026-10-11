@@ -18,7 +18,6 @@ import io.github.aw1y2z.sesame.model.task.antSports.AntSports;
 import io.github.aw1y2z.sesame.model.task.antStall.AntStall;
 import io.github.aw1y2z.sesame.model.task.greenFinance.GreenFinance;
 import io.github.aw1y2z.sesame.model.task.goldenbeans.goldenbeans;
-import io.github.aw1y2z.sesame.model.task.omegakoiTown.OmegakoiTown;
 import io.github.aw1y2z.sesame.model.task.protectEcology.ProtectEcology;
 import lombok.Getter;
 
@@ -42,7 +41,6 @@ public class ModelOrder {
         clazzList.add(GreenFinance.class);
         clazzList.add(goldenbeans.class);
         clazzList.add(AnswerAI.class);
-        clazzList.add(OmegakoiTown.class);
 
         ExtensionsHandle.handleAlphaRequest("ModelOrder", "addExtensionsClass", clazzList);
     }
