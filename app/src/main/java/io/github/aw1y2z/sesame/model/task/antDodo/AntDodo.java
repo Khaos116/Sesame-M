@@ -358,48 +358,31 @@ public class AntDodo extends ModelTask {
 
     /** 列表状态探针：重拉神奇物种任务列表，按 sceneCode+taskType 匹配该任务当前状态。 */
     private TaskAttemptPolicy.ProbeResult probeDodoStatus(String sceneCode, String taskType) {
-        try {
-            JSONObject jo = new JSONObject(AntDodoRpcCall.taskList());
-            if (!MessageUtil.checkResultCode(TAG, jo) || !jo.has("data")) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            jo = jo.getJSONObject("data");
-            JSONArray taskGroupInfoList = jo.optJSONArray("taskGroupInfoList");
-            if (taskGroupInfoList == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < taskGroupInfoList.length(); i++) {
-                JSONObject antDodoTask = taskGroupInfoList.getJSONObject(i);
-                JSONArray taskInfoList = antDodoTask.optJSONArray("taskInfoList");
-                if (taskInfoList == null) {
-                    continue;
-                }
-                for (int j = 0; j < taskInfoList.length(); j++) {
-                    JSONObject taskInfo = taskInfoList.getJSONObject(j);
-                    JSONObject taskBaseInfo = taskInfo.optJSONObject("taskBaseInfo");
-                    if (taskBaseInfo == null) {
-                        continue;
+        // 结构为 data.taskGroupInfoList[].taskInfoList[].taskBaseInfo：
+        // 用分组数组作为"列表"，statusOf 里再向下找匹配的 taskBaseInfo
+        return TaskAttemptPolicy.probeByNestedList(TAG, AntDodoRpcCall::taskList,
+                jo -> MessageUtil.checkResultCode(TAG, jo),
+                jo -> {
+                    JSONObject data = jo.optJSONObject("data");
+                    return data == null ? null : data.optJSONArray("taskGroupInfoList");
+                },
+                group -> {
+                    JSONArray taskInfoList = group.optJSONArray("taskInfoList");
+                    if (taskInfoList == null) {
+                        return null;
                     }
-                    if (!sceneCode.equals(taskBaseInfo.optString("sceneCode"))
-                            || !taskType.equals(taskBaseInfo.optString("taskType"))) {
-                        continue;
+                    for (int j = 0; j < taskInfoList.length(); j++) {
+                        JSONObject taskInfo = taskInfoList.optJSONObject(j);
+                        JSONObject taskBaseInfo = taskInfo == null ? null : taskInfo.optJSONObject("taskBaseInfo");
+                        if (taskBaseInfo == null
+                                || !sceneCode.equals(taskBaseInfo.optString("sceneCode"))
+                                || !taskType.equals(taskBaseInfo.optString("taskType"))) {
+                            continue;
+                        }
+                        return taskBaseInfo.optString("taskStatus");
                     }
-                    String status = taskBaseInfo.optString("taskStatus");
-                    if ("FINISHED".equals(status)) {
-                        return TaskAttemptPolicy.ProbeResult.FINISHED;
-                    }
-                    if ("RECEIVED".equals(status)) {
-                        return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                    }
-                    return TaskAttemptPolicy.ProbeResult.TODO;
-                }
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeDodoStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+                    return null;
+                });
     }
 
     private void receiveTaskAward(String sceneCode, String taskType, String taskTitle) {

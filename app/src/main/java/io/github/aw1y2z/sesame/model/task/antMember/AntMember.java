@@ -1608,42 +1608,35 @@ public class AntMember extends ModelTask {
 
     /** 列表状态探针：重拉游戏中心任务列表，按 taskId 匹配；仅 NOT_DONE 视为未完成（消失即已完成）。 */
     private static TaskAttemptPolicy.ProbeResult probeMemberStatus(String taskId) {
-        try {
-            JSONObject data = new JSONObject(AntMemberRpcCall.queryModularTaskList()).optJSONObject("data");
-            if (data == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray modules = data.optJSONArray("taskModuleList");
-            if (modules == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < modules.length(); i++) {
-                JSONObject module = modules.optJSONObject(i);
-                JSONArray tasks = module == null ? null : module.optJSONArray("taskList");
-                if (tasks == null) {
-                    continue;
-                }
-                for (int j = 0; j < tasks.length(); j++) {
-                    JSONObject task = tasks.optJSONObject(j);
-                    if (task == null || !taskId.equals(task.optString("taskId", "").trim())) {
-                        continue;
+        // 结构为 data.taskModuleList[].taskList[]；用模块数组作"列表"，statusOf 里再向下找任务
+        return TaskAttemptPolicy.probeByNestedList(TAG, AntMemberRpcCall::queryModularTaskList,
+                jo -> true,
+                jo -> {
+                    JSONObject data = jo.optJSONObject("data");
+                    return data == null ? null : data.optJSONArray("taskModuleList");
+                },
+                module -> {
+                    JSONArray tasks = module.optJSONArray("taskList");
+                    if (tasks == null) {
+                        return null;
                     }
-                    String status = task.optString("taskStatus", "").trim();
-                    if ("NOT_DONE".equals(status)) {
-                        return TaskAttemptPolicy.ProbeResult.TODO;
+                    for (int j = 0; j < tasks.length(); j++) {
+                        JSONObject task = tasks.optJSONObject(j);
+                        if (task == null || !taskId.equals(task.optString("taskId", "").trim())) {
+                            continue;
+                        }
+                        String status = task.optString("taskStatus", "").trim();
+                        // 状态词与通用映射不同，这里显式给出
+                        if ("NOT_DONE".equals(status)) {
+                            return "TODO";
+                        }
+                        if ("RECEIVED".equals(status)) {
+                            return "RECEIVED";
+                        }
+                        return "FINISHED";
                     }
-                    if ("RECEIVED".equals(status)) {
-                        return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                    }
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeMemberStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+                    return null;
+                });
     }
 
     /**

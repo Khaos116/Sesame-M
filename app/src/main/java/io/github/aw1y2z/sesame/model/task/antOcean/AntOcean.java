@@ -1017,35 +1017,11 @@ public class AntOcean extends ModelTask {
 
     /** 列表状态探针：重拉海洋任务列表，按 sceneCode+taskType 匹配该任务当前状态。 */
     private static TaskAttemptPolicy.ProbeResult probeOceanStatus(String sceneCode, String taskType) {
-        try {
-            JSONObject jo = new JSONObject(AntOceanRpcCall.queryTaskList());
-            if (!MessageUtil.checkResultCode(TAG, jo) || !jo.has("antOceanTaskVOList")) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray ja = jo.optJSONArray("antOceanTaskVOList");
-            if (ja == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < ja.length(); i++) {
-                JSONObject t = ja.getJSONObject(i);
-                if (!sceneCode.equals(t.optString("sceneCode")) || !taskType.equals(t.optString("taskType"))) {
-                    continue;
-                }
-                String status = t.optString("taskStatus");
-                if ("FINISHED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if ("RECEIVED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeOceanStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        // statusOf 返回 null 表示该项不匹配
+        return TaskAttemptPolicy.probeByList(TAG, AntOceanRpcCall::queryTaskList, "antOceanTaskVOList",
+                jo -> MessageUtil.checkResultCode(TAG, jo),
+                t -> sceneCode.equals(t.optString("sceneCode")) && taskType.equals(t.optString("taskType"))
+                        ? t.optString("taskStatus") : null);
     }
 
     // 海洋答题任务
@@ -1535,36 +1511,16 @@ public class AntOcean extends ModelTask {
 
     /** 列表状态探针：重拉摸鱼任务列表（ANTAIFISH），按 taskType 匹配该任务当前状态。 */
     private static TaskAttemptPolicy.ProbeResult probeAntfishStatus(String taskType) {
-        try {
-            JSONObject jo = new JSONObject(AntOceanRpcCall.antfishListTask());
-            if (!MessageUtil.checkResultCode(TAG, jo)) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
-            if (taskInfoList == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < taskInfoList.length(); i++) {
-                JSONObject taskInfo = taskInfoList.optJSONObject(i);
-                JSONObject base = taskInfo == null ? null : taskInfo.optJSONObject("taskBaseInfo");
-                if (base == null || !taskType.equals(base.optString("taskType"))) {
-                    continue;
-                }
-                String status = base.optString("taskStatus");
-                if ("FINISHED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if ("RECEIVED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeAntfishStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        // 摸鱼任务的状态在 taskBaseInfo 子对象内，故用 statusOf 形态：不匹配返回 null
+        return TaskAttemptPolicy.probeByList(TAG, AntOceanRpcCall::antfishListTask, "taskInfoList",
+                jo -> MessageUtil.checkResultCode(TAG, jo),
+                taskInfo -> {
+                    JSONObject base = taskInfo.optJSONObject("taskBaseInfo");
+                    if (base == null || !taskType.equals(base.optString("taskType"))) {
+                        return null;
+                    }
+                    return base.optString("taskStatus");
+                });
     }
 
     /**

@@ -539,35 +539,29 @@ public class AntSports extends ModelTask {
 
     /** 列表状态探针：重拉运动币任务面板，按 taskId 匹配该任务当前状态。 */
     private static TaskAttemptPolicy.ProbeResult probeSportsStatus(String taskId, String sceneCode) {
-        try {
-            JSONObject jo = new JSONObject(AntSportsRpcCall.queryCoinTaskPanel());
-            if (!MessageUtil.checkSuccess(TAG, jo) || !jo.has("data") || !jo.getJSONObject("data").has("taskList")) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray taskList = jo.getJSONObject("data").getJSONArray("taskList");
-            for (int i = 0; i < taskList.length(); i++) {
-                JSONObject t = taskList.getJSONObject(i);
-                if (!taskId.equals(t.optString("taskId"))) {
-                    continue;
-                }
-                String status = t.optString("taskStatus");
-                if ("WAIT_COMPLETE".equals(status) || "TODO".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.TODO;
-                }
-                if ("WAIT_RECEIVE".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if ("HAS_RECEIVED".equals(status) || "RECEIVED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.FINISHED;
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeSportsStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        // 运动币的状态词组与通用映射不同，这里把映射显式写在探针里
+        return TaskAttemptPolicy.probeByNestedList(TAG, AntSportsRpcCall::queryCoinTaskPanel,
+                jo -> MessageUtil.checkSuccess(TAG, jo),
+                jo -> {
+                    JSONObject data = jo.optJSONObject("data");
+                    return data == null ? null : data.optJSONArray("taskList");
+                },
+                t -> {
+                    if (!taskId.equals(t.optString("taskId"))) {
+                        return null;
+                    }
+                    String status = t.optString("taskStatus");
+                    if ("WAIT_COMPLETE".equals(status) || "TODO".equals(status)) {
+                        return "TODO";
+                    }
+                    if ("WAIT_RECEIVE".equals(status)) {
+                        return "FINISHED";
+                    }
+                    if ("HAS_RECEIVED".equals(status) || "RECEIVED".equals(status)) {
+                        return "RECEIVED";
+                    }
+                    return "FINISHED";
+                });
     }
 
     /** 列表状态探针：重拉浏览任务列表，按标题匹配；完成后服务端移出，故仍在列表即视为未完成。 */

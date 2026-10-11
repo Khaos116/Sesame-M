@@ -858,39 +858,9 @@ public class AntStall extends ModelTask {
 
     /** 列表状态探针：重拉新村任务列表，按 taskType 匹配该任务当前状态。 */
     private static TaskAttemptPolicy.ProbeResult probeStallStatus(String taskType) {
-        try {
-            String jostr = AntStallRpcCall.taskList();
-            if (jostr == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONObject jo = new JSONObject(jostr);
-            if (!MessageUtil.checkResultCode(TAG, jo) || !jo.has("taskModels")) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray taskModels = jo.optJSONArray("taskModels");
-            if (taskModels == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < taskModels.length(); i++) {
-                JSONObject t = taskModels.getJSONObject(i);
-                if (!taskType.equals(t.optString("taskType"))) {
-                    continue;
-                }
-                String status = t.optString("taskStatus");
-                if ("FINISHED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if ("RECEIVED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeStallStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        return TaskAttemptPolicy.probeByList(TAG, AntStallRpcCall::taskList, "taskModels",
+                jo -> MessageUtil.checkResultCode(TAG, jo),
+                t -> taskType.equals(t.optString("taskType")) ? t.optString("taskStatus") : null);
     }
     
     private Boolean inviteRegister() {

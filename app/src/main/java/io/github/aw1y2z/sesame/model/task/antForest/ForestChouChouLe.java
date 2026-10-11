@@ -359,39 +359,20 @@ public class ForestChouChouLe {
     /** 列表状态探针：用与本场景相同的表达式重拉寻宝任务列表，按 sceneCode+taskType 匹配该任务当前状态。 */
     private TaskAttemptPolicy.ProbeResult probeChouChouLeStatus(String activitySceneCode, String taskSceneCode,
                                                                 String taskType) {
-        try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.listTaskopengreen(activitySceneCode + "_TASK", "task_entry"));
-            if (!MessageUtil.checkSuccess(TAG, jo) || !jo.has("taskInfoList")) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray taskList = jo.optJSONArray("taskInfoList");
-            if (taskList == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < taskList.length(); i++) {
-                JSONObject taskBaseInfo = taskList.getJSONObject(i).optJSONObject("taskBaseInfo");
-                if (taskBaseInfo == null) {
-                    continue;
-                }
-                if (!taskSceneCode.equals(taskBaseInfo.optString("sceneCode"))
-                        || !taskType.equals(taskBaseInfo.optString("taskType"))) {
-                    continue;
-                }
-                String status = taskBaseInfo.optString("taskStatus");
-                if ("FINISHED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if ("RECEIVED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeChouChouLeStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        // 状态在 taskBaseInfo 子对象内
+        return TaskAttemptPolicy.probeByNestedList(TAG,
+                () -> AntForestRpcCall.listTaskopengreen(activitySceneCode + "_TASK", "task_entry"),
+                jo -> MessageUtil.checkSuccess(TAG, jo),
+                jo -> jo.optJSONArray("taskInfoList"),
+                item -> {
+                    JSONObject taskBaseInfo = item.optJSONObject("taskBaseInfo");
+                    if (taskBaseInfo == null
+                            || !taskSceneCode.equals(taskBaseInfo.optString("sceneCode"))
+                            || !taskType.equals(taskBaseInfo.optString("taskType"))) {
+                        return null;
+                    }
+                    return taskBaseInfo.optString("taskStatus");
+                });
     }
 
     /** 森林寻宝/抽抽乐完成上报：两种接口互为兜底，做不了不拉黑 */

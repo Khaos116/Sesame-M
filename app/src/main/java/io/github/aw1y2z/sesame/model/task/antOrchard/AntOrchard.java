@@ -233,38 +233,20 @@ public class AntOrchard extends ModelTask {
     /** 列表状态探针：重拉农场抽抽乐任务列表，按 sceneCode+taskType 匹配该任务当前状态。 */
     private static TaskAttemptPolicy.ProbeResult probeOrchardChouChouLeStatus(String activitySceneCode,
                                                                              String taskSceneCode, String taskType) {
-        try {
-            JSONObject jo = new JSONObject(
-                    AntOrchardRpcCall.listTaskantorchard(activitySceneCode + "_TASK", "antorchard"));
-            if (!MessageUtil.checkSuccess(TAG, jo)) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
-            if (taskInfoList == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < taskInfoList.length(); i++) {
-                JSONObject taskInfo = taskInfoList.optJSONObject(i);
-                JSONObject taskBaseInfo = taskInfo == null ? null : taskInfo.optJSONObject("taskBaseInfo");
-                if (taskBaseInfo == null || !taskSceneCode.equals(taskBaseInfo.optString("sceneCode"))
-                        || !taskType.equals(taskBaseInfo.optString("taskType"))) {
-                    continue;
-                }
-                String status = taskBaseInfo.optString("taskStatus");
-                if ("FINISHED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if ("RECEIVED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeOrchardChouChouLeStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        // 状态在 taskBaseInfo 子对象内
+        return TaskAttemptPolicy.probeByList(TAG,
+                () -> AntOrchardRpcCall.listTaskantorchard(activitySceneCode + "_TASK", "antorchard"),
+                "taskInfoList",
+                jo -> MessageUtil.checkSuccess(TAG, jo),
+                taskInfo -> {
+                    JSONObject taskBaseInfo = taskInfo.optJSONObject("taskBaseInfo");
+                    if (taskBaseInfo == null
+                            || !taskSceneCode.equals(taskBaseInfo.optString("sceneCode"))
+                            || !taskType.equals(taskBaseInfo.optString("taskType"))) {
+                        return null;
+                    }
+                    return taskBaseInfo.optString("taskStatus");
+                });
     }
 
     private void orchardChouChouLeScene(String activityId, String drawScenename, String sceneCode) {
@@ -620,34 +602,9 @@ public class AntOrchard extends ModelTask {
 
     /** 肥料任务领奖探针：重拉 {@code orchardListTask}，按 taskId 找该任务状态。 */
     private TaskAttemptPolicy.ProbeResult probeOrchardTaskAwardStatus(String taskId) {
-        try {
-            JSONObject jo = new JSONObject(AntOrchardRpcCall.orchardListTask());
-            if (!MessageUtil.checkResultCode(TAG, jo)) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray taskList = jo.optJSONArray("taskList");
-            if (taskList == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < taskList.length(); i++) {
-                JSONObject task = taskList.optJSONObject(i);
-                if (task == null || !taskId.equals(task.optString("taskId"))) {
-                    continue;
-                }
-                String status = task.optString("taskStatus");
-                if ("FINISHED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if ("RECEIVED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeOrchardTaskAwardStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        return TaskAttemptPolicy.probeByList(TAG, AntOrchardRpcCall::orchardListTask, "taskList",
+                jo -> MessageUtil.checkResultCode(TAG, jo),
+                task -> taskId.equals(task.optString("taskId")) ? task.optString("taskStatus") : null);
     }
 
     /** 限时挑战广告子任务完成上报：{@code com.alipay.antiep.finishTask}。 */
@@ -765,37 +722,15 @@ public class AntOrchard extends ModelTask {
 
     /** 列表状态探针：重拉乐园限定任务列表，按 sceneCode+taskType 匹配该任务当前状态。 */
     private TaskAttemptPolicy.ProbeResult probeOrchardOptionalPlayStatus(String sceneCode, String taskType) {
-        try {
-            JSONObject jo = new JSONObject(AntOrchardRpcCall.queryOptionalPlay());
-            if (!MessageUtil.checkSuccess(TAG, jo) || !jo.has("taskTriggerPlayInfo")) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONObject playInfo = jo.optJSONObject("taskTriggerPlayInfo");
-            JSONArray taskList = playInfo == null ? null : playInfo.optJSONArray("taskList");
-            if (taskList == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < taskList.length(); i++) {
-                JSONObject task = taskList.optJSONObject(i);
-                if (task == null || !taskType.equals(task.optString("taskType"))
-                        || !sceneCode.equals(task.optString("sceneCode"))) {
-                    continue;
-                }
-                String status = task.optString("taskStatus");
-                if (TaskStatus.FINISHED.name().equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if (TaskStatus.RECEIVED.name().equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeOrchardOptionalPlayStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        // 任务数组嵌在 taskTriggerPlayInfo 内层
+        return TaskAttemptPolicy.probeByNestedList(TAG, AntOrchardRpcCall::queryOptionalPlay,
+                jo -> MessageUtil.checkSuccess(TAG, jo),
+                jo -> {
+                    JSONObject playInfo = jo.optJSONObject("taskTriggerPlayInfo");
+                    return playInfo == null ? null : playInfo.optJSONArray("taskList");
+                },
+                task -> taskType.equals(task.optString("taskType")) && sceneCode.equals(task.optString("sceneCode"))
+                        ? task.optString("taskStatus") : null);
     }
 
     public static void initAntOrchardTaskListMap(boolean AutoAntOrchardTaskList, boolean orchardListTask, boolean orchardChouChouLe, boolean AutoOrchardChouChouLeTaskList) {

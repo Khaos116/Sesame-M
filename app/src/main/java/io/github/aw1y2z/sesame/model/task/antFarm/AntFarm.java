@@ -1825,32 +1825,9 @@ public class AntFarm extends ModelTask {
 
     /** 列表状态探针：重拉庄园饲料任务列表，按 bizKey 匹配该任务当前状态。 */
     private TaskAttemptPolicy.ProbeResult probeFarmStatus(String bizKey) {
-        try {
-            JSONObject jo = new JSONObject(AntFarmRpcCall.listFarmTask());
-            if (!MessageUtil.checkMemo(TAG, jo) || !jo.has("farmTaskList")) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray farmTaskList = jo.getJSONArray("farmTaskList");
-            for (int i = 0; i < farmTaskList.length(); i++) {
-                JSONObject t = farmTaskList.getJSONObject(i);
-                if (!bizKey.equals(t.optString("bizKey"))) {
-                    continue;
-                }
-                String status = t.optString("taskStatus");
-                if ("FINISHED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if ("RECEIVED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeFarmStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        return TaskAttemptPolicy.probeByList(TAG, AntFarmRpcCall::listFarmTask, "farmTaskList",
+                jo -> MessageUtil.checkMemo(TAG, jo),
+                t -> bizKey.equals(t.optString("bizKey")) ? t.optString("taskStatus") : null);
     }
 
     private Boolean doAnswerTask(String title) {
@@ -2902,36 +2879,15 @@ public class AntFarm extends ModelTask {
 
     /** 乐园限定任务探针：重拉列表，按 sceneCode+taskType 匹配该任务当前状态。 */
     private TaskAttemptPolicy.ProbeResult probeOptionalPlayStatus(String sceneCode, String taskType) {
-        try {
-            JSONObject jo = new JSONObject(AntFarmRpcCall.queryOptionalPlay());
-            if (!MessageUtil.checkSuccess(TAG, jo) || !jo.has("taskTriggerPlayInfo")) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONObject playInfo = jo.optJSONObject("taskTriggerPlayInfo");
-            JSONArray taskList = playInfo == null ? null : playInfo.optJSONArray("taskList");
-            if (taskList == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < taskList.length(); i++) {
-                JSONObject task = taskList.optJSONObject(i);
-                if (task == null || !taskType.equals(task.optString("taskType"))
-                        || !sceneCode.equals(task.optString("sceneCode"))) {
-                    continue;
-                }
-                String status = task.optString("taskStatus");
-                if (TaskStatus.FINISHED.name().equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if (TaskStatus.RECEIVED.name().equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeOptionalPlayStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        // 任务数组嵌在 taskTriggerPlayInfo 内层
+        return TaskAttemptPolicy.probeByNestedList(TAG, AntFarmRpcCall::queryOptionalPlay,
+                jo -> MessageUtil.checkSuccess(TAG, jo),
+                jo -> {
+                    JSONObject playInfo = jo.optJSONObject("taskTriggerPlayInfo");
+                    return playInfo == null ? null : playInfo.optJSONArray("taskList");
+                },
+                task -> taskType.equals(task.optString("taskType")) && sceneCode.equals(task.optString("sceneCode"))
+                        ? task.optString("taskStatus") : null);
     }
 
     /**

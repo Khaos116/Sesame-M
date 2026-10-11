@@ -2014,37 +2014,15 @@ public class AntForestV2 extends ModelTask {
      * 会恒匹配不到而被当成 {@code GONE}（已消失=已完成），把"做不了"误判成"已完成"。
      */
     private static TaskAttemptPolicy.ProbeResult probeOptionalPlayStatus(String sceneCode, String taskType) {
-        try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryOptionalPlay());
-            if (!MessageUtil.checkSuccess(TAG, jo) || !jo.has("taskTriggerPlayInfo")) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONObject playInfo = jo.optJSONObject("taskTriggerPlayInfo");
-            JSONArray taskList = playInfo == null ? null : playInfo.optJSONArray("taskList");
-            if (taskList == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < taskList.length(); i++) {
-                JSONObject task = taskList.optJSONObject(i);
-                if (task == null || !taskType.equals(task.optString("taskType"))
-                        || !sceneCode.equals(task.optString("sceneCode"))) {
-                    continue;
-                }
-                String status = task.optString("taskStatus");
-                if (TaskStatus.FINISHED.name().equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if (TaskStatus.RECEIVED.name().equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            // 列表拉取成功但已无该任务：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeOptionalPlayStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        // 任务数组嵌在 taskTriggerPlayInfo 内层
+        return TaskAttemptPolicy.probeByNestedList(TAG, AntForestRpcCall::queryOptionalPlay,
+                jo -> MessageUtil.checkSuccess(TAG, jo),
+                jo -> {
+                    JSONObject playInfo = jo.optJSONObject("taskTriggerPlayInfo");
+                    return playInfo == null ? null : playInfo.optJSONArray("taskList");
+                },
+                task -> taskType.equals(task.optString("taskType")) && sceneCode.equals(task.optString("sceneCode"))
+                        ? task.optString("taskStatus") : null);
     }
 
     /** 打满判据：重拉乐园限定任务列表，读该任务的已做次数是否达上限。 */
@@ -2779,40 +2757,18 @@ public class AntForestV2 extends ModelTask {
 
     /** 列表状态探针：重拉绿色行动任务列表，按 sceneCode+taskType 匹配该任务当前状态。 */
     private TaskAttemptPolicy.ProbeResult probeForestVitalityStatus(String sceneCode, String taskType) {
-        try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.listTaskopengreen());
-            if (!MessageUtil.checkResultCode(TAG, jo) || !jo.has("taskInfoList")) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
-            if (taskInfoList == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < taskInfoList.length(); i++) {
-                JSONObject taskInfo = taskInfoList.getJSONObject(i);
-                JSONObject taskBaseInfo = taskInfo.optJSONObject("taskBaseInfo");
-                if (taskBaseInfo == null) {
-                    continue;
-                }
-                if (!sceneCode.equals(taskBaseInfo.optString("sceneCode"))
-                        || !taskType.equals(taskBaseInfo.optString("taskType"))) {
-                    continue;
-                }
-                String status = taskBaseInfo.optString("taskStatus");
-                if ("FINISHED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if ("RECEIVED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeForestVitalityStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        // 状态在 taskBaseInfo 子对象内
+        return TaskAttemptPolicy.probeByList(TAG, AntForestRpcCall::listTaskopengreen, "taskInfoList",
+                jo -> MessageUtil.checkResultCode(TAG, jo),
+                taskInfo -> {
+                    JSONObject taskBaseInfo = taskInfo.optJSONObject("taskBaseInfo");
+                    if (taskBaseInfo == null
+                            || !sceneCode.equals(taskBaseInfo.optString("sceneCode"))
+                            || !taskType.equals(taskBaseInfo.optString("taskType"))) {
+                        return null;
+                    }
+                    return taskBaseInfo.optString("taskStatus");
+                });
     }
 
     /**
