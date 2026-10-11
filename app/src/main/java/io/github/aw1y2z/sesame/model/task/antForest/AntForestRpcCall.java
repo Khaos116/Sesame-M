@@ -789,6 +789,14 @@ public class AntForestRpcCall {
         return ApplicationHook.requestString("alipay.greenmatrix.rpc.h5.love.loveHome", new JSONArray().put(request).toString());
     }
 
+    public static String loveteamQuerySubscribeRelation() throws JSONException {
+        JSONObject request = MyUtils.newJSONObject();
+        request.put("entityIds", new JSONArray().put("29ffc27d072b48a2966e9421d6132f79"));
+        request.put("ownerId", "60000002");
+        return ApplicationHook.requestString("alipay.lifemsgprod.message.querySubscribeRelation",
+                new JSONArray().put(request).toString());
+    }
+
     public static String loveteamWater(String teamId, int waterNum) {
         String requestData = "[{\"donateNum\":" + waterNum + ",\"source\":\"chInfo_ch_appcenter__chsub_9patch" + "\",\"teamId\":\"" + teamId + "\"}]";
         return ApplicationHook.requestString("alipay.greenmatrix.rpc.h5.love.teamWater", requestData);

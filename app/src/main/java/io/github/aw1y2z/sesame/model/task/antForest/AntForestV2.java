@@ -6754,6 +6754,7 @@ public class AntForestV2 extends ModelTask {
             }
             if (jo.optJSONObject("resData") != null) jo = jo.optJSONObject("resData");
             if (!MessageUtil.checkResultCode(TAG, jo)) return;
+            loveteamQuerySubscribeRelation();
             stage = "解析每日奖励回执";
             JSONObject team = jo.optJSONObject("teamInfo");
             JSONArray rewards = team == null ? null : team.optJSONArray("popupRewardList");
@@ -6786,6 +6787,25 @@ public class AntForestV2 extends ModelTask {
         } catch (TaskCancelledException e) { throw e; }
         catch (Throwable th) {
             Log.record("真爱合种[" + stage + "]异常：" + th.getClass().getSimpleName() + "，保留已有浇水防重标记");
+            Throwable diagnostic = new Throwable(th.getClass().getName());
+            diagnostic.setStackTrace(th.getStackTrace());
+            Log.printStackTrace(TAG, diagnostic);
+        }
+    }
+
+    private static void loveteamQuerySubscribeRelation() {
+        try {
+            TimeUtil.sleep(0);
+            JSONObject result = MyUtils.newJSONObject(AntForestRpcCall.loveteamQuerySubscribeRelation());
+            if ("RPC_SKIPPED".equals(result.optString("error"))) return;
+            if (result.optJSONObject("resData") != null) result = result.optJSONObject("resData");
+            boolean success = result.optBoolean("success") && result.optInt("resultCode", -1) == 200;
+            Log.record("真爱奖励[querySubscribeRelation]：订阅关系查询"
+                    + (success ? "成功" : "未确认成功") + "，success=" + result.optBoolean("success")
+                    + "，resultCode=" + result.optInt("resultCode", -1) + "，不作为奖励到账依据");
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable th) {
+            Log.record("真爱奖励[querySubscribeRelation]异常：" + th.getClass().getSimpleName());
             Throwable diagnostic = new Throwable(th.getClass().getName());
             diagnostic.setStackTrace(th.getStackTrace());
             Log.printStackTrace(TAG, diagnostic);
