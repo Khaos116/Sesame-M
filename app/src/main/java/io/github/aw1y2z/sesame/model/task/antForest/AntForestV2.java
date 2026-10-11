@@ -71,6 +71,7 @@ import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 import io.github.aw1y2z.sesame.model.task.antFarm.AntFarm.TaskStatus;
 import io.github.aw1y2z.sesame.model.task.antFarm.AntFarmRpcCall;
 import io.github.aw1y2z.sesame.model.task.antGame.GameTask;
+import io.github.aw1y2z.sesame.model.task.antSports.AntSports;
 import io.github.aw1y2z.sesame.model.task.forestRead.ReadForestTask;
 import io.github.aw1y2z.sesame.rpc.intervallimit.FixedOrRangeIntervalLimit;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcIntervalLimit;
@@ -5314,6 +5315,9 @@ public class AntForestV2 extends ModelTask {
 
     private void queryUserPatrol() {
         try {
+            AntSports sports = getModel(AntSports.class);
+            if (sports != null) sports.syncStepNow();
+            TimeUtil.sleep(0);
             th:
             do {
                 JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryUserPatrol());
@@ -5381,6 +5385,7 @@ public class AntForestV2 extends ModelTask {
                 }
                 break;
             } while (true);
+        } catch (TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "queryUserPatrol err:", t);
         }

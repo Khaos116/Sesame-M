@@ -3361,20 +3361,29 @@ public class AntFarm extends ModelTask {
     private void useFenceTool() {
         try {
             TimeUtil.sleep(0);
+            String flag = "farm::fenceUnconfirmed";
             JSONObject state = MyUtils.newJSONObject(AntFarmRpcCall.syncAnimalStatus(ownerFarmId));
             JSONObject farm = state.optJSONObject("subFarmVO");
             if (!farmFeatureOk(state) || farm == null || !ownerFarmId.equals(farm.optString("farmId"))) { Log.record("篱笆卡：庄园状态查询失败或不符，跳过；" + RpcRequestGuard.errorMessage(state)); return; }
             JSONObject buff = state.optJSONObject("buffInfoVO");
             if (buff != null && "FENCE".equals(buff.optString("buffType"))) {
                 if (!(buff.opt("hasBuffEffect") instanceof Boolean)) { Log.record("篱笆卡：效果状态无效，跳过"); return; }
-                if (Boolean.TRUE.equals(buff.opt("hasBuffEffect"))) { Log.record("篱笆卡：仍在生效，剩余" + buff.optInt("buffCountDown", 0) / 60 + "分钟，跳过重复使用"); return; }
+                if (Boolean.TRUE.equals(buff.opt("hasBuffEffect"))) {
+                    Status.clearFlag(flag);
+                    Log.record("篱笆卡：仍在生效，剩余" + buff.optInt("buffCountDown", 0) / 60 + "分钟，跳过重复使用"); return;
+                }
             }
-            String flag = "farm::fenceUnconfirmed";
             if (Status.hasFlagToday(flag)) { Log.record("篱笆卡：本日已提交但结果未确认，避免重复消耗"); return; }
             JSONObject tool = findFeatureTool("FENCETOOL");
             if (tool == null) return;
             Status.flagToday(flag);
             JSONObject used = MyUtils.newJSONObject(AntFarmRpcCall.useFarmTool(ownerFarmId, tool.optString("toolId"), "FENCETOOL"));
+            if ("RPC_SKIPPED".equals(used.optString("error"))) {
+                Status.clearFlag(flag);
+                if (!used.optBoolean("localRuleSkip") && !"400000040".equals(used.optString("code")))
+                    Log.record("篱笆卡：本地请求保护暂停，未发送RPC，保留后续使用机会；" + RpcRequestGuard.errorMessage(used));
+                return;
+            }
             JSONObject after = MyUtils.newJSONObject(AntFarmRpcCall.syncAnimalStatus(ownerFarmId));
             JSONObject afterFarm = after.optJSONObject("subFarmVO"), afterBuff = after.optJSONObject("buffInfoVO");
             if (farmFeatureOk(after) && afterFarm != null && ownerFarmId.equals(afterFarm.optString("farmId")) && afterBuff != null

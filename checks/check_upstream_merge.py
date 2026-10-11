@@ -517,8 +517,73 @@ public class ToastCheck {
 toast = toast.replace("@@SHOW@@", method("hook/Toast.java", "public static void show(CharSequence cs, boolean force)")
                       .replace("io.github.aw1y2z.sesame.data.AppConfig", "AppConfig"))
 
+
+patrol = r'''
+import org.json.*;
+import java.util.*;
+import java.util.concurrent.*;
+public class PatrolSyncCheck {
+ static final String TAG="test";
+ static List<String> events=Collections.synchronizedList(new ArrayList<>());
+ static int pushes, queries, exchanges, left, used, chance, firstCost, observed;
+ static boolean accepted=true, cancel, offline, fail;
+ static int toasts, diagnostics;
+ static class Toast {static void show(String s){toasts++;}}
+ static CountDownLatch entered, release;
+ static class TaskCancelledException extends RuntimeException {}
+ static class TimeUtil {static void sleep(int ms){if(cancel)throw new TaskCancelledException();}}
+ static class MyUtils {
+  static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.set(Calendar.HOUR_OF_DAY,12);return c;}
+  static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}
+ }
+ static class Status {static boolean done;static boolean hasFlagToday(String s){return done;}static void flagToday(String s){done=true;}}
+ static class ApplicationHook {static boolean isOffline(){return offline;}static ClassLoader getClassLoader(){return null;}}
+ static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}
+ static class Log {static void printStackTrace(String tag,Throwable t){assert t.getCause()==null&&!t.getMessage().contains("secret")&&t.getStackTrace().length>0;diagnostics++;}static void record(String s){}static void i(String s){}static void forest(String s){}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
+ static class Field {int value;int getValue(){return value;}}
+ static class AntSportsRpcCall {static String queryWalkStep(){return new JSONObject().put("resultCode","SUCCESS").put("stepCount",observed).toString();}}
+ static class AntSports {
+  final Object stepSyncLock=new Object();final int SKIP_SYNC_STEP=18000;Field earliestSyncStepTime=new Field();boolean enabled=true;
+  Boolean isEnable(){return enabled;}int tmpStepCount(){return 22000;}
+  boolean syncStepByRpcManager(ClassLoader c,int step) throws Exception {
+   pushes++;events.add("sync");if(fail)throw new IllegalStateException("secret",new RuntimeException("secret"));if(entered!=null){entered.countDown();if(!release.await(5,TimeUnit.SECONDS))throw new AssertionError("sync timeout");}
+   if(accepted)left=step;return accepted;
+  }
+  @@SYNC@@
+ }
+ static AntSports sports;
+ static <T>T getModel(Class<T> c){return c.cast(sports);}
+ static class AntForestRpcCall {
+  static String queryUserPatrol(){queries++;events.add("query");return new JSONObject().put("resultCode","SUCCESS").put("userPatrol",new JSONObject().put("currentStatus","STANDING").put("patrolId",2).put("currentNode",0).put("chance",new JSONObject().put("leftChance",chance).put("leftStep",left).put("usedStep",used))).toString();}
+  static String queryMyPatrolRecord(){return "{}";}static String switchUserPatrol(String id){return "{}";}
+  static String patrolGo(int n,int p){chance--;return "{}";}
+  static String exchangePatrolChance(int cost){if(exchanges++==0)firstCost=cost;events.add("exchange");used+=2000;left-=2000;chance++;return new JSONObject().put("resultCode","SUCCESS").put("addedChance",1).toString();}
+ }
+ void patrolKeepGoing(String s,int n,int p){}
+ @@PATROL@@
+ static void reset(){sports=new AntSports();pushes=queries=exchanges=left=used=chance=firstCost=observed=0;accepted=true;cancel=offline=Status.done=fail=false;toasts=diagnostics=0;entered=release=null;events.clear();}
+ public static void main(String[] args)throws Exception {
+  PatrolSyncCheck f=new PatrolSyncCheck();reset();f.queryUserPatrol();
+  assert pushes==1&&exchanges==5&&used==10000&&firstCost==22000&&toasts==1;assert events.indexOf("sync")<events.indexOf("query")&&events.indexOf("query")<events.indexOf("exchange");
+  reset();fail=true;f.queryUserPatrol();assert diagnostics==1&&toasts==0&&!Status.done&&queries==1;
+  reset();used=10000;f.queryUserPatrol();assert pushes==1&&exchanges==0;
+  reset();accepted=false;f.queryUserPatrol();assert queries==1&&exchanges==0&&!Status.done;sports.syncStepNow();assert pushes==2;
+  reset();sports.enabled=false;left=4000;f.queryUserPatrol();assert pushes==0&&exchanges==2;
+  reset();sports.earliestSyncStepTime.value=13;f.queryUserPatrol();assert pushes==0&&queries==1;
+  reset();Status.done=true;f.queryUserPatrol();assert pushes==0&&queries==1;
+  reset();observed=19000;f.queryUserPatrol();assert pushes==0;
+  reset();cancel=true;try{f.queryUserPatrol();throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}assert queries==0&&pushes==0;
+  reset();entered=new CountDownLatch(1);release=new CountDownLatch(1);ExecutorService pool=Executors.newFixedThreadPool(2);
+  try{Future<?> a=pool.submit(()->sports.syncStepNow());assert entered.await(5,TimeUnit.SECONDS);Future<?> b=pool.submit(()->f.queryUserPatrol());assert queries==0;release.countDown();a.get(5,TimeUnit.SECONDS);b.get(5,TimeUnit.SECONDS);assert pushes==1&&exchanges==5;}finally{release.countDown();pool.shutdownNow();}
+  System.out.println("PASS patrol: sync before query/exchange, concurrent deduplication, quotas, disabled/time/failure/cancellation");
+ }
+}
+'''
+patrol = patrol.replace("@@SYNC@@", method("model/task/antSports/AntSports.java", "public void syncStepNow("))
+patrol = patrol.replace("@@PATROL@@", method("model/task/antForest/AntForestV2.java", "private void queryUserPatrol("))
+
 with tempfile.TemporaryDirectory(prefix="sesame-merge-") as tmp:
-    for name, source in (("MergeCheck", code), ("FlowCheck", flows), ("UpstreamFixCheck", fixes), ("ToastCheck", toast)):
+    for name, source in (("MergeCheck", code), ("FlowCheck", flows), ("UpstreamFixCheck", fixes), ("ToastCheck", toast), ("PatrolSyncCheck", patrol)):
         java = Path(tmp) / (name + ".java")
         java.write_text(source, encoding="utf-8")
         subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(json_jar), "-d", tmp, str(java)], check=True)

@@ -147,6 +147,19 @@ public class AGCheck {
         reset();replies("syncAnimalStatus",farmState(false),farmState(true));replies("listFarmTool",tools("FENCETOOL",1));f.useFenceTool();f.useFenceTool();assert calls("useFarmTool").size()==1&&logged("使用成功");
         reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",1));f.useFenceTool();f.useFenceTool();assert calls("useFarmTool").size()==1&&logged("避免重复消耗");
         reset();replies("syncAnimalStatus",new JSONObject());f.useFenceTool();assert calls("useFarmTool").isEmpty();
+        reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",2));f.useFenceTool();
+        assert Status.hasFlagToday("farm::fenceUnconfirmed");
+        replies("syncAnimalStatus",farmState(true));f.useFenceTool();assert !Status.hasFlagToday("farm::fenceUnconfirmed"):"later confirmed fence left stale reservation";
+        replies("syncAnimalStatus",farmState(false),farmState(true));f.useFenceTool();assert calls("useFarmTool").size()==2:"expired fence could not renew after delayed confirmation";
+        for(boolean localRule:new boolean[]{true,false}) {
+            reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",1));
+            replies("useFarmTool",new JSONObject().put("error","RPC_SKIPPED").put("resultCode","RPC_SKIPPED").put("localRuleSkip",localRule));
+            f.useFenceTool();assert !Status.hasFlagToday("farm::fenceUnconfirmed"):"unsent request reserved entire day";
+            assert calls("syncAnimalStatus").size()==1:"unsent request caused unnecessary readback";
+            assert localRule?Log.lines.isEmpty():logged("未发送RPC");
+            replies("useFarmTool",ok());replies("syncAnimalStatus",farmState(false),farmState(true));f.useFenceTool();
+            assert calls("useFarmTool").size()==2&&logged("使用成功");
+        }
         reset();replies("listFarmTool",tools("DOLLTOOL",1));replies("queryLoveCabin",cabin());replies("queryAntfarmDoll",doll(false),doll(true));f.supplementDolls();
         assert calls("useFarmTool").size()==1&&calls("useFarmTool").get(0).optString("dollId").equals("2026_10_MONTH_DOLL")&&logged("成功获得");
         assert calls("useFarmTool").get(0).optString("achievementId").equals("achievement\"id");

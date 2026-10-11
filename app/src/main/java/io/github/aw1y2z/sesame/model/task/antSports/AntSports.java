@@ -64,6 +64,7 @@ public class AntSports extends ModelTask {
     private static final String TAG = AntSports.class.getSimpleName();
 
     private int tmpStepCount = -1;
+    private final Object stepSyncLock = new Object();
     // 真实步数超过该值就不再同步/篡改
     private static final int SKIP_SYNC_STEP = 18000;
     private BooleanModelField walk;
@@ -200,43 +201,7 @@ public class AntSports extends ModelTask {
     @Override
     public void run() {
         try {
-            int hour = Integer.parseInt(Log.getFormatTime().split(":")[0]);
-            // 主动推送使用独立标记 sport::syncStepPush，失败/废弃都不再影响 readDailyStep hook
-            step("同步步数", () -> {
-                if (!Status.hasFlagToday("sport::syncStepPush") && hour >= earliestSyncStepTime.getValue()) {
-                    // 查询失败/被暂停只影响“是否已达标”的判断，不能阻断同步步数和本轮其余运动任务
-                    JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep());
-                    int stepCount = MessageUtil.checkResultCode(TAG, jo) ? jo.optInt("stepCount") : 0;
-                    addChildTask(new ChildModelTask("syncStep", () -> {
-                        int step = tmpStepCount();
-                        if (stepCount <= SKIP_SYNC_STEP && stepCount < step) {
-                            // a(int, boolean, String) 是【实例方法】。旧实现为两步：
-                            //   XHelpers.callMethod(XHelpers.callStaticMethod(RpcManager.class, "a"), "a", {step, false, "system"})
-                            // 即先用静态无参 a() 取单例，再在该实例上调用；此前误写成 Method.invoke(null, …) 传 null 接收者 → null receiver NPE
-                            try {
-                                ClassLoader classLoader = ApplicationHook.getClassLoader();
-                                if (syncStepByRpcManager(classLoader, step)) {
-                                    Toast.show("同步步数🏃🏻‍♂️[" + step + "步]");
-                                    Log.i("同步步数🏃🏻‍♂️[" + step + "步]");
-                                    Status.flagToday("sport::syncStepPush");
-                                } else {
-                                    Log.record("同步运动步数失败：目标步数=" + step + "，具体宿主调用阶段见前述日志；本次未标记成功");
-                                }
-                            } catch (Throwable t) {
-                                // XHelpers 会把 NoSuchMethodException 包装进 RuntimeException，这里统一处理
-                                if (t.getCause() instanceof NoSuchMethodException) {
-                                    Log.record("同步步数主动推送⚠️接口已不可用（新版支付宝移除），已跳过；readDailyStep hook 不受影响");
-                                    // 接口确定不存在才当天不再重试；其余异常保持未标记，下一轮继续同步
-                                    Status.flagToday("sport::syncStepPush");
-                                } else {
-                                    Log.record("同步步数主动推送⚠️异常，下一轮重试");
-                                    Log.printStackTrace(TAG, t);
-                                }
-                            }
-                        }
-                    }));
-                }
-            });
+            step("同步步数", () -> addChildTask(new ChildModelTask("syncStep", this::syncStepNow)));
 
             step("行走", () -> {
                 if (walk.getValue()) {
@@ -326,6 +291,42 @@ public class AntSports extends ModelTask {
             throw cancelled;
         } catch (Throwable t) {
             Log.err(TAG, "run[" + name + "] err:", t);
+        }
+    }
+
+    /** 巡护与运动共用此入口，调用返回后再查询可兑换步数；不等待整个运动任务。 */
+    public void syncStepNow() {
+        synchronized (stepSyncLock) {
+            TimeUtil.sleep(0);
+            if (!Boolean.TRUE.equals(isEnable()) || ApplicationHook.isOffline()) return;
+            int hour = MyUtils.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+            if (Status.hasFlagToday("sport::syncStepPush") || hour < earliestSyncStepTime.getValue()) return;
+            try {
+                JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep());
+                int stepCount = MessageUtil.checkResultCode(TAG, jo) ? jo.optInt("stepCount") : 0;
+                int step = tmpStepCount();
+                if (stepCount > SKIP_SYNC_STEP || stepCount >= step) return;
+                if (syncStepByRpcManager(ApplicationHook.getClassLoader(), step)) {
+                    TimeUtil.sleep(0);
+                    Toast.show("同步步数：宿主已受理[" + step + "步]");
+                    Log.record("同步步数：宿主已受理[" + step + "步]，后续任务按服务器步数回查");
+                    Status.flagToday("sport::syncStepPush");
+                } else {
+                    Log.record("同步运动步数失败：目标步数=" + step + "，本次未标记成功，后续任务仍按服务器步数判断");
+                }
+            } catch (TaskCancelledException e) { throw e;
+            } catch (Throwable t) {
+                if (t.getCause() instanceof NoSuchMethodException) {
+                    Log.record("同步步数主动推送：宿主接口不可用，本日跳过；readDailyStep hook不受影响");
+                    Status.flagToday("sport::syncStepPush");
+                } else {
+                    Log.record("同步步数主动推送异常：" + t.getClass().getSimpleName() + "，后续轮次重试");
+                    // 保留定位栈，不输出宿主异常消息和 cause 中可能包含的凭据。
+                    Throwable diagnostic = new Throwable(t.getClass().getName());
+                    diagnostic.setStackTrace(t.getStackTrace());
+                    Log.printStackTrace(TAG, diagnostic);
+                }
+            }
         }
     }
 
