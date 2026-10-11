@@ -129,11 +129,12 @@ public class FlowCheck {
         static void forest(String s) {} static void farm(String s) {}
         static void record(String s) { results.add(s); } static void i(String s) {}
         static void err(String tag, String msg, Throwable t) { if(t instanceof IllegalStateException && "lost push reply".equals(t.getMessage())) return; throw new AssertionError(t); }
-        static void printStackTrace(String tag, Throwable t) { throw new AssertionError(t); }
+        static void printStackTrace(String tag, Throwable t) { if("java.lang.IllegalArgumentException".equals(t.getMessage())){assert t.getCause()==null&&t.getStackTrace().length>0;return;}throw new AssertionError(t); }
     }
     static class TimeUtil { static void sleep(long ms) {} }
     static class StringUtil { static boolean isEmpty(String s) { return s == null || s.isEmpty(); } }
     static class ApplicationHook { static boolean offline; static boolean isOffline() { return offline; } }
+    static class DailyTask {static boolean manual;static boolean isManual(){return manual;}}
     static class Toast { static void show(String s) {} }
     static class UserIdMap { static String getCurrentUid() { return "self"; } }
     static JSONObject ok() { return new JSONObject().put("resultCode", "SUCCESS"); }
@@ -207,7 +208,11 @@ public class FlowCheck {
             new JSONObject().put("teamCanWaterCount", new JSONObject().put("waterCount", 100))).toString(); }
         static String teamWater(String id, int amount) { waters++; if (cancelled) throw new TaskCancelledException(); return water; }
         static String loveteamWater(String id, int amount) { waters++; if (cancelled) throw new TaskCancelledException(); return water; }
-        static String loveteamHome() { return ok().put("userInfo", new JSONObject().put("teamId", "team")).toString(); }
+        static int loveReads, entryReads;
+        static String loveReply, entryReply;static boolean entryThrows,homeThrows;
+        static String loveteamForestHome(){entryReads++;if(entryThrows)throw new IllegalArgumentException("secret");return entryReply;}
+        static String loveteamHome() {loveReads++;if(homeThrows)throw new IllegalArgumentException("secret");return loveReply==null?ok().put("userInfo",new JSONObject().put("teamId","team")).toString():loveReply;}
+
         static String updateUserConfiginTeam(boolean inTeam) { switches.add(inTeam); return ok().toString(); }
     }
     static class Forest {
@@ -262,6 +267,7 @@ public class FlowCheck {
     }
     static void reset() {
         ApplicationHook.offline = false; AntForestRpcCall.cancelled = false;
+        DailyTask.manual=false;AntForestRpcCall.entryThrows=AntForestRpcCall.homeThrows=false;AntForestRpcCall.loveReads=AntForestRpcCall.entryReads=0;AntForestRpcCall.loveReply=null;AntForestRpcCall.entryReply=ok().put("widgetStatus","waiting").toString();
         Status.flags.clear(); Status.used = 0; Log.results.clear(); MessageUtil.blackHits = 0;
         AntMemberRpcCall.prizes = 0; AntMemberRpcCall.cancelLast=false; AntMemberRpcCall.losePushReply=false;
         AntMemberRpcCall.reads = 0; AntMemberRpcCall.calls.clear(); AntForestRpcCall.waters = 0;
@@ -389,6 +395,29 @@ public class FlowCheck {
         try { f.teamCooperateWater(); throw new AssertionError("team cancel swallowed"); } catch (TaskCancelledException expected) {}
         try { Forest.loveteam(20); throw new AssertionError("love cancel swallowed"); } catch (TaskCancelledException expected) {}
         assert Status.used == 20 && Status.hasFlagToday(Forest.FLAG_LOVETEAM_WATER) && AntForestRpcCall.waters == 2;
+        reset();Status.flagToday(Forest.FLAG_LOVETEAM_WATER);Forest.loveteam(20);
+        assert AntForestRpcCall.entryReads==1&&AntForestRpcCall.loveReads==0&&AntForestRpcCall.waters==0;
+        AntForestRpcCall.entryReply=new JSONObject().put("resData",ok().put("widgetStatus","reward")).toString();
+        AntForestRpcCall.loveReply=new JSONObject().put("resData",ok().put("teamInfo",new JSONObject().put("popupRewardList",new JSONArray().put(JSONObject.NULL).put(new JSONObject()).put(new JSONObject().put("provideType","daily").put("rewardCode","LoveEnergyShield"))))).toString();
+        Forest.loveteam(20);assert AntForestRpcCall.loveReads==1&&AntForestRpcCall.waters==0;
+        assert Log.results.stream().anyMatch(x->x.contains("真爱保护罩"));
+        int logs=Log.results.size(),entries=AntForestRpcCall.entryReads;
+        for(int i=0;i<10;i++)Forest.loveteam(20);assert AntForestRpcCall.loveReads==1&&AntForestRpcCall.entryReads==entries&&Log.results.size()==logs;
+        reset();Status.flagToday(Forest.FLAG_LOVETEAM_WATER);AntForestRpcCall.entryReply="broken";Forest.loveteam(20);assert AntForestRpcCall.loveReads==0;
+        AntForestRpcCall.entryReply=ok().put("widgetStatus","reward").toString();AntForestRpcCall.loveReply=ok().toString();
+        for(int i=0;i<10;i++)Forest.loveteam(20);
+        assert AntForestRpcCall.loveReads==3&&AntForestRpcCall.waters==0;
+        assert Log.results.stream().filter(x->x.contains("不记领取成功")).count()==1;
+        assert !Status.hasFlagToday("Forest::loveteamRewardReported");
+        DailyTask.manual=true;Forest.loveteam(20);assert AntForestRpcCall.loveReads==4&&AntForestRpcCall.waters==0;DailyTask.manual=false;
+        reset();Status.flagToday(Forest.FLAG_LOVETEAM_WATER);AntForestRpcCall.entryReply=ok().put("widgetStatus","reward").toString();AntForestRpcCall.loveReply="{\"error\":\"RPC_SKIPPED\"}";
+        Forest.loveteam(20);assert !Status.hasFlagToday("Forest::loveteamRewardAttempt::1");
+        AntForestRpcCall.loveReply="broken";for(int i=0;i<10;i++)Forest.loveteam(20);assert AntForestRpcCall.loveReads==4&&!Status.hasFlagToday("Forest::loveteamRewardReported");
+        reset();Status.flagToday(Forest.FLAG_LOVETEAM_WATER);AntForestRpcCall.entryThrows=true;Forest.loveteam(20);
+        assert Log.results.stream().anyMatch(x->x.contains("查询奖励提示"))&&Log.results.stream().noneMatch(x->x.contains("secret"));
+        AntForestRpcCall.entryThrows=false;AntForestRpcCall.entryReply=ok().put("widgetStatus","reward").toString();AntForestRpcCall.homeThrows=true;Forest.loveteam(20);
+        assert Log.results.stream().anyMatch(x->x.contains("访问loveHome奖励入口"));
+        reset();ApplicationHook.offline=true;Forest.loveteam(20);assert AntForestRpcCall.loveReads==0&&AntForestRpcCall.entryReads==0;
         Locale.setDefault(Locale.forLanguageTag("tr-TR"));
         Mall mall=new Mall(); AntFarmRpcCall.detail=new JSONObject().put("success",true).put("mallItemDetail",
             new JSONObject().put("mallSubItemDetailList",new JSONArray().put(new JSONObject().put("skuId","sku").put("skuName","name")))).toString();
@@ -604,8 +633,31 @@ patrol = patrol.replace("@@DAILY_SKIP@@", method("util/DailyTask.java", "public 
 patrol = patrol.replace("@@SYNC@@", method("model/task/antSports/AntSports.java", "public void syncStepNow("))
 patrol = patrol.replace("@@PATROL@@", method("model/task/antForest/AntForestV2.java", "private void queryUserPatrol("))
 
+
+love_request = r'''
+import org.json.*;import java.util.*;
+public class LoveRequestCheck {
+ static class MyUtils {static Calendar now;static Calendar getInstance(){return (Calendar)now.clone();}static JSONObject newJSONObject(){return new JSONObject();}}
+ static class ApplicationHook {static String method,args;static String requestString(String m,String a){method=m;args=a;return "{}";}}
+ @@HOME@@
+ @@ENTRY@@
+ public static void main(String[] args)throws Exception {
+  TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));Locale.setDefault(Locale.forLanguageTag("ar"));
+  MyUtils.now=new GregorianCalendar(TimeZone.getTimeZone("GMT+8"));MyUtils.now.clear();MyUtils.now.set(2028,1,1,0,1);
+  loveteamHome();JSONObject request=new JSONArray(ApplicationHook.args).optJSONObject(0);
+  assert request.optString("calenderStart").equals("20280201")&&request.optString("calenderEnd").equals("20280229");
+  assert ApplicationHook.method.equals("alipay.greenmatrix.rpc.h5.love.loveHome");
+  MyUtils.now.set(2026,11,31);loveteamHome();request=new JSONArray(ApplicationHook.args).optJSONObject(0);assert request.optString("calenderEnd").equals("20261231");
+  loveteamForestHome();assert ApplicationHook.method.endsWith("loveForestHome")&&new JSONArray(ApplicationHook.args).optJSONObject(0).optString("source").equals("chInfo_ch_appcenter__chsub_9patch");
+  System.out.println("PASS love reward RPC: captured endpoints, GMT+8 calendar range, leap year, locale independence");
+ }
+}
+'''
+love_request = love_request.replace("@@HOME@@", method("model/task/antForest/AntForestRpcCall.java", "public static String loveteamHome("))
+love_request = love_request.replace("@@ENTRY@@", method("model/task/antForest/AntForestRpcCall.java", "public static String loveteamForestHome("))
+
 with tempfile.TemporaryDirectory(prefix="sesame-merge-") as tmp:
-    for name, source in (("MergeCheck", code), ("FlowCheck", flows), ("UpstreamFixCheck", fixes), ("ToastCheck", toast), ("PatrolSyncCheck", patrol)):
+    for name, source in (("MergeCheck", code), ("FlowCheck", flows), ("UpstreamFixCheck", fixes), ("ToastCheck", toast), ("PatrolSyncCheck", patrol), ("LoveRequestCheck", love_request)):
         java = Path(tmp) / (name + ".java")
         java.write_text(source, encoding="utf-8")
         subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(json_jar), "-d", tmp, str(java)], check=True)

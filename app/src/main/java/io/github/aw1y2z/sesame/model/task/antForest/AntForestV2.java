@@ -6724,24 +6724,71 @@ public class AntForestV2 extends ModelTask {
     }
 
     private static void loveteam(int waterNum) {
-        if (Status.hasFlagToday(FLAG_LOVETEAM_WATER)) {
-            return;
-        }
+        if (ApplicationHook.isOffline()) return;
+        String rewardFlag = "Forest::loveteamRewardReported";
+        String attemptPrefix = "Forest::loveteamRewardAttempt::";
+        String attemptFlag = null;
+        String stage = "查询奖励提示";
         try {
+            if (Status.hasFlagToday(FLAG_LOVETEAM_WATER)) {
+                if (!DailyTask.isManual() && (Status.hasFlagToday(rewardFlag)
+                        || Status.hasFlagToday(attemptPrefix + 3))) return;
+                JSONObject entry = MyUtils.newJSONObject(AntForestRpcCall.loveteamForestHome());
+                if (entry.optJSONObject("resData") != null) entry = entry.optJSONObject("resData");
+                if (!MessageUtil.checkResultCode(TAG, entry) || !"reward".equals(entry.optString("widgetStatus"))) return;
+                TimeUtil.sleep(0);
+                for (int attempt = 1; attempt <= 3; attempt++) {
+                    if (!Status.hasFlagToday(attemptPrefix + attempt)) {
+                        attemptFlag = attemptPrefix + attempt;
+                        Status.flagToday(attemptFlag);
+                        break;
+                    }
+                }
+            }
+            TimeUtil.sleep(0);
+            stage = "访问loveHome奖励入口";
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.loveteamHome());
-            if (!MessageUtil.checkResultCode(TAG, jo)) {
+            if ("RPC_SKIPPED".equals(jo.optString("error"))) {
+                if (attemptFlag != null) Status.clearFlag(attemptFlag);
                 return;
             }
+            if (jo.optJSONObject("resData") != null) jo = jo.optJSONObject("resData");
+            if (!MessageUtil.checkResultCode(TAG, jo)) return;
+            stage = "解析每日奖励回执";
+            JSONObject team = jo.optJSONObject("teamInfo");
+            JSONArray rewards = team == null ? null : team.optJSONArray("popupRewardList");
+            boolean rewardReported = false;
+            for (int i = 0; rewards != null && i < rewards.length(); i++) {
+                JSONObject reward = rewards.optJSONObject(i);
+                if (reward == null || !"daily".equals(reward.optString("provideType"))) continue;
+                String code = reward.optString("rewardCode");
+                if (code.isEmpty()) continue;
+                String name = "LoveEnergyShield".equals(code) ? "真爱保护罩"
+                        : "LoveDoubleClick".equals(code) ? "双击卡" : "LoveQiXiTu".equals(code) ? "七夕兔" : code;
+                Log.record("真爱奖励：loveHome返回每日奖励[" + name + "]，背包到账尚未回查");
+                rewardReported = true;
+            }
+            if (rewardReported) Status.flagToday(rewardFlag);
+            String emptyFlag = "Forest::loveteamRewardEmptyLogged";
+            if (!rewardReported && Status.hasFlagToday(FLAG_LOVETEAM_WATER) && !Status.hasFlagToday(emptyFlag)) {
+                Status.flagToday(emptyFlag);
+                Log.record("真爱奖励：已访问领取入口，未返回可识别的每日奖励，本次不记领取成功");
+            }
+            if (Status.hasFlagToday(FLAG_LOVETEAM_WATER)) return;
             JSONObject userInfo = jo.optJSONObject("userInfo");
             String teamId = userInfo == null ? "" : userInfo.optString("teamId", "");
             if (teamId.isEmpty()) {
                 Log.record("真爱合种:未加入真爱合种或未取到队伍，跳过");
                 return;
             }
+            stage = "真爱浇水";
             loveteamWater(teamId, getLoveteamName(jo, teamId), waterNum);
         } catch (TaskCancelledException e) { throw e; }
         catch (Throwable th) {
-            Log.err(TAG, "loveteam err:", th);
+            Log.record("真爱合种[" + stage + "]异常：" + th.getClass().getSimpleName() + "，保留已有浇水防重标记");
+            Throwable diagnostic = new Throwable(th.getClass().getName());
+            diagnostic.setStackTrace(th.getStackTrace());
+            Log.printStackTrace(TAG, diagnostic);
         }
     }
 
