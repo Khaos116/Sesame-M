@@ -6724,18 +6724,36 @@ public class AntForestV2 extends ModelTask {
     }
 
     private static void loveteam(int waterNum) {
-        if (ApplicationHook.isOffline()) return;
+        if (ApplicationHook.isOffline()) {
+            if (DailyTask.isManual()) Log.record("真爱奖励[入口]：账号离线，未执行奖励检查");
+            return;
+        }
         String rewardFlag = "Forest::loveteamRewardReported";
         String attemptPrefix = "Forest::loveteamRewardAttempt::";
         String attemptFlag = null;
         String stage = "查询奖励提示";
         try {
             if (Status.hasFlagToday(FLAG_LOVETEAM_WATER)) {
-                if (!DailyTask.isManual() && (Status.hasFlagToday(rewardFlag)
-                        || Status.hasFlagToday(attemptPrefix + 3))) return;
+                if (!DailyTask.isManual() && Status.hasFlagToday(rewardFlag)) {
+                    logLoveteamFlow("reported", "今日已收到奖励回执，跳过自动检查，背包到账未核实；可立即执行重查");
+                    return;
+                }
+                if (!DailyTask.isManual() && Status.hasFlagToday(attemptPrefix + 3)) {
+                    logLoveteamFlow("limit", "今日独立奖励入口已尝试3次，停止自动检查；可立即执行重查");
+                    return;
+                }
                 JSONObject entry = MyUtils.newJSONObject(AntForestRpcCall.loveteamForestHome());
+                if ("RPC_SKIPPED".equals(entry.optString("error"))) return;
                 if (entry.optJSONObject("resData") != null) entry = entry.optJSONObject("resData");
-                if (!MessageUtil.checkResultCode(TAG, entry) || !"reward".equals(entry.optString("widgetStatus"))) return;
+                if (!MessageUtil.checkResultCode(TAG, entry)) {
+                    logLoveteamFlow("entryFailed", "loveForestHome已返回，业务结果未确认成功，停止本轮奖励检查");
+                    return;
+                }
+                if (!"reward".equals(entry.optString("widgetStatus"))) {
+                    logLoveteamFlow("noHint", "loveForestHome查询成功，当前无reward奖励提示，不调用loveHome及订阅查询；不代表已领取");
+                    return;
+                }
+                logLoveteamFlow("hint", "loveForestHome查询成功，存在reward提示，继续访问loveHome");
                 TimeUtil.sleep(0);
                 for (int attempt = 1; attempt <= 3; attempt++) {
                     if (!Status.hasFlagToday(attemptPrefix + attempt)) {
@@ -6753,7 +6771,12 @@ public class AntForestV2 extends ModelTask {
                 return;
             }
             if (jo.optJSONObject("resData") != null) jo = jo.optJSONObject("resData");
-            if (!MessageUtil.checkResultCode(TAG, jo)) return;
+            if (!MessageUtil.checkResultCode(TAG, jo)) {
+                logLoveteamFlow("homeFailed", "loveHome已返回，业务结果未确认成功，本轮不调用订阅查询");
+                return;
+            }
+            logLoveteamFlow("home", "loveHome查询成功，继续调用querySubscribeRelation；执行方式="
+                    + (DailyTask.isManual() ? "手动立即执行" : "自动"));
             loveteamQuerySubscribeRelation();
             stage = "解析每日奖励回执";
             JSONObject team = jo.optJSONObject("teamInfo");
@@ -6770,18 +6793,20 @@ public class AntForestV2 extends ModelTask {
                 rewardReported = true;
             }
             if (rewardReported) Status.flagToday(rewardFlag);
-            String emptyFlag = "Forest::loveteamRewardEmptyLogged";
-            if (!rewardReported && Status.hasFlagToday(FLAG_LOVETEAM_WATER) && !Status.hasFlagToday(emptyFlag)) {
-                Status.flagToday(emptyFlag);
-                Log.record("真爱奖励：已访问领取入口，未返回可识别的每日奖励，本次不记领取成功");
+            if (!rewardReported) {
+                logLoveteamFlow("empty", "已访问领取入口，未返回可识别的每日奖励，本次不记领取成功");
             }
-            if (Status.hasFlagToday(FLAG_LOVETEAM_WATER)) return;
+            if (Status.hasFlagToday(FLAG_LOVETEAM_WATER)) {
+                logLoveteamFlow("watered", "本轮奖励检查结束，已有今日浇水防重标记，不重复浇水");
+                return;
+            }
             JSONObject userInfo = jo.optJSONObject("userInfo");
             String teamId = userInfo == null ? "" : userInfo.optString("teamId", "");
             if (teamId.isEmpty()) {
                 Log.record("真爱合种:未加入真爱合种或未取到队伍，跳过");
                 return;
             }
+            logLoveteamFlow("water", "本轮奖励检查结束，尚无今日浇水标记，继续原浇水流程");
             stage = "真爱浇水";
             loveteamWater(teamId, getLoveteamName(jo, teamId), waterNum);
         } catch (TaskCancelledException e) { throw e; }
@@ -6791,6 +6816,13 @@ public class AntForestV2 extends ModelTask {
             diagnostic.setStackTrace(th.getStackTrace());
             Log.printStackTrace(TAG, diagnostic);
         }
+    }
+
+    private static void logLoveteamFlow(String reason, String message) {
+        String flag = "Forest::loveteamFlowLogged::" + reason;
+        if (!DailyTask.isManual() && Status.hasFlagToday(flag)) return;
+        Log.record("真爱奖励[流程]：" + message);
+        if (!DailyTask.isManual()) Status.flagToday(flag);
     }
 
     private static void loveteamQuerySubscribeRelation() {
