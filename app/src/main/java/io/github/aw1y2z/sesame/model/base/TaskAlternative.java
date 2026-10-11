@@ -195,17 +195,15 @@ public final class TaskAlternative {
         private final String taskListField;
         private final String listDisplay;
         private final String logPrefix;
-        private final String doneTag;
         private final boolean blacklistByTitle;
         private final LogSink sink;
 
         public VerifyConfig(String moduleName, String taskListField, String listDisplay,
-                            String logPrefix, String doneTag, boolean blacklistByTitle, LogSink sink) {
+                            String logPrefix, boolean blacklistByTitle, LogSink sink) {
             this.moduleName = moduleName;
             this.taskListField = taskListField;
             this.listDisplay = listDisplay;
             this.logPrefix = logPrefix;
-            this.doneTag = doneTag;
             this.blacklistByTitle = blacklistByTitle;
             this.sink = sink;
         }
@@ -217,7 +215,7 @@ public final class TaskAlternative {
     }
 
     /**
-     * 同轮核对：等 3 秒 → 重拉列表 → 仍未完成才拉黑，否则记「完成（已按任务列表核对）」。
+     * 同轮核对：等 3 秒 → 重拉列表 → 仍未完成才拉黑，否则打当日标记（静默，不输出日志）。
      *
      * @return 是否有任务确认完成
      */
@@ -242,8 +240,7 @@ public final class TaskAlternative {
                     MessageUtil.MarkTaskBlackList(cfg.moduleName, cfg.taskListField, cfg.listDisplay,
                             cfg.blacklistByTitle ? title : key);
                 } else {
-                    cfg.sink.log(cfg.logPrefix + cfg.doneTag + "[" + title + "]（已按任务列表核对）");
-                    // 列表已确认完成：打当日标记，后续轮次不再重复核对与上报
+                    // 核对通过是过程、不是结果：结果由调用方的完成/领取行表达，这里再记一条只会重复
                     markVerifiedToday(key);
                     changed = true;
                 }

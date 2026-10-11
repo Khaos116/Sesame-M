@@ -2765,6 +2765,11 @@ public class AntFarm extends ModelTask {
                     // 去重键带轮次与阶段序号：同一轮内同阶段只动作一次（防重复请求），
                     // 但下一轮可再试——服务端状态推进有延迟，跨轮仍可能落到新阶段
                     String attemptKey = taskType + "#" + rightsTimes + "@" + round;
+                    // 领奖去重**不带轮次**且**跨调用生效**：发奖是幂等的，服务端对已领过的任务仍会成功
+                    // 返回同一个 incAwardCount；只按轮次或单次调用去重会让重跑的每一轮都重复领一次。
+                    // 故按"任务+阶段"打当日标记，一天只领一次。
+                    String awardKey = "farm::optionalplay::award::" + sceneCode + "/" + taskType
+                            + "#" + rightsTimes;
 
                     // 黑名单任务跳过
                     if (AntFarmDrawMachineTaskList.getValue().contains(title)) {
@@ -2782,12 +2787,14 @@ public class AntFarm extends ModelTask {
                         continue;
                     }
 
-                    // 已完成待领：领奖。已领满（awardCountForReceive<=0）不再重复请求
+                    // 已完成待领：领奖。已领满（awardCountForReceive<=0）不再重复请求；
+                    // 当日已领过的同一阶段也不再重复请求（见 awardKey 注释）
                     if (TaskStatus.FINISHED.name().equals(taskStatus)) {
-                        if (awardCountForReceive > 0 && attempted.add(attemptKey + "-award")) {
+                        if (awardCountForReceive > 0 && !Status.hasFlagToday(awardKey)) {
                             progressed = true;
                             JSONObject joReceived = new JSONObject(AntFarmRpcCall.receiveTaskAwardantfarm(awardCountForReceive, sceneCode, taskType));
                             if (MessageUtil.checkSuccess(TAG, joReceived)) {
+                                Status.flagToday(awardKey);
                                 int incAwardCount = joReceived.optInt("incAwardCount");
                                 JSONObject taskConfigResultVO = joReceived.optJSONObject("taskConfigResultVO");
                                 String awardType = taskConfigResultVO == null ? "乐园币" : taskConfigResultVO.optString("awardType", "乐园币");
@@ -2804,9 +2811,13 @@ public class AntFarm extends ModelTask {
                         }
                         String label = rightsTimesLimit > 1
                                 ? title + "(" + (rightsTimes + 1) + "/" + rightsTimesLimit + ")" : title;
+                        // key 必须带轮次：多次任务每推进一档都是**新的**尝试，不带轮次会让第一档打上的
+                        // 当日标记把后续档位全挡下、任务停在第一档。单次任务保持原 key，语义不变。
+                        String policyKey = "farm::optionalplay::" + sceneCode + "/" + taskType
+                                + (rightsTimesLimit > 1 ? "#" + rightsTimes : "");
                         // 走统一策略：完成后按列表核对，400000040 时由策略代为伪申报
                         Outcome outcome = TaskAttemptPolicy.handle(
-                                "farm::optionalplay::" + sceneCode + "/" + taskType, label, null,
+                                policyKey, label, null,
                                 () -> attemptOptionalPlayTask(sceneCode, taskType, label), Log::farm,
                                 new TaskAttemptPolicy.Site("AntFarmDrawMachineTaskList", "庄园乐园限定任务",
                                         taskType, sceneCode, TaskAlternative.DEFAULT_VERSION, null,
@@ -3201,13 +3212,14 @@ public class AntFarm extends ModelTask {
 
                 if (TaskStatus.TODO.name().equals(taskStatus)) {
                     todo++;
-                    // 本日已做成：不再重复上报（省一轮全量重做）
-                    if (TaskAlternative.verifiedToday(taskId)) {
-                        continue;
-                    }
                     int rightsTimesLimit = jo.optInt("rightsTimesLimit");
                     int rightsTimes = jo.optInt("rightsTimes");
                     int remain = rightsTimesLimit - rightsTimes;
+                    // 本日已做成：不再重复上报（省一轮全量重做）。但**多次任务**还有剩余次数时不能跳过，
+                    // 否则当天只做成第一次就卡住、永远推不满。
+                    if (remain <= 0 && TaskAlternative.verifiedToday(taskId)) {
+                        continue;
+                    }
                     boolean matched = false;
 
                     if (taskId.contains("EXCHANGE") || taskId.contains("FKDWChuodong") || taskId.contains("GYG2") || taskId.equals("jiatingdongrirongrongwu")) {

@@ -52,7 +52,7 @@ public class AntMember extends ModelTask {
 
     /** 同轮核对配置（见 TaskAlternative.verify） */
     private static final TaskAlternative.VerifyConfig VERIFY_CFG = new TaskAlternative.VerifyConfig(
-            "AntMember", "AntMemberTaskList", "会员任务", "游戏中心", "🎮完成", true, msg -> Log.other(msg));
+            "AntMember", "AntMemberTaskList", "会员任务", "游戏中心", true, msg -> Log.other(msg));
 
     /** 游戏中心宝箱每日上限（首页 {@code taskModule.dailyTaskCertCntUpperLimit} 的兜底值）。 */
     private static final int GAME_CENTER_CERT_LIMIT = 30;

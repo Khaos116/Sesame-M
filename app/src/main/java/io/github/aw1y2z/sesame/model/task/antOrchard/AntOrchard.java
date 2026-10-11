@@ -1367,8 +1367,13 @@ public class AntOrchard extends ModelTask {
                         Log.farm("肥料任务⏭️交易/履约类[" + title + "]#不申报，已永久拉黑");
                         continue;
                     }
-                    // 本日已按列表核对通过：不再重复上报（省一轮全量重做）
-                    if (TaskAlternative.verifiedToday(jo.optString("taskId"))) {
+                    // 本日已按列表核对通过：不再重复上报（省一轮全量重做）。
+                    // 但**多次任务**（rightsTimes < rightsTimesLimit）还有剩余次数时不能跳过——
+                    // 否则当天只做成第一次就卡住，永远推不满。
+                    int rightsTimes = jo.optInt("rightsTimes", 0);
+                    int rightsTimesLimit = jo.optInt("rightsTimesLimit", 0);
+                    boolean exhausted = rightsTimesLimit > 0 && rightsTimes >= rightsTimesLimit;
+                    if (exhausted && TaskAlternative.verifiedToday(jo.optString("taskId"))) {
                         continue;
                     }
                     if (!finishOrchardTask(jo)) {
@@ -1469,7 +1474,7 @@ public class AntOrchard extends ModelTask {
 
     /** 同轮核对配置（见 TaskAlternative.verify） */
     private static final TaskAlternative.VerifyConfig VERIFY_CFG = new TaskAlternative.VerifyConfig(
-            "AntOrchard", "AntOrchardTaskList", "农场肥料任务", "肥料任务", "🧾完成", true, msg -> Log.farm(msg));
+            "AntOrchard", "AntOrchardTaskList", "农场肥料任务", "肥料任务", true, msg -> Log.farm(msg));
 
     /**
      * 完成任务（两条腿）：先 {@code finishTask}，不成功再用 {@code taskId} 当 bizKey 走 doFarmTask

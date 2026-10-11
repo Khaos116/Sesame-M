@@ -320,7 +320,20 @@ public final class GoldenBeansTasks {
                         continue;
                     }
                     GoldenBeansSupport.pause(interval);
-                    if (finishTask(entry, taskId, taskName)) {
+                    // 多次任务（rightsTimesLimit>1）一次补齐：逐档取不同的策略键，否则第一档落下
+                    // 当日标记后后续档位全被挡下、任务停在第一档
+                    int rightsTimes = task.optInt("rightsTimes", 0);
+                    int rightsTimesLimit = task.optInt("rightsTimesLimit", 0);
+                    int remain = rightsTimesLimit > rightsTimes ? rightsTimesLimit - rightsTimes : 1;
+                    boolean anyDone = false;
+                    for (int cnt = 0; cnt < remain; cnt++) {
+                        if (!finishTask(entry, taskId, taskName, rightsTimes + cnt)) {
+                            break; // 做不了就收手，不再空转剩余次数
+                        }
+                        anyDone = true;
+                        GoldenBeansSupport.pause(interval);
+                    }
+                    if (anyDone) {
                         handled++;
                         changed = true;
                     } else {
@@ -402,7 +415,7 @@ public final class GoldenBeansTasks {
         return upper.contains("ZHIFU") || upper.contains("_PAY");
     }
 
-    private boolean finishTask(GoldenBeansEntry entry, String taskId, String taskName) {
+    private boolean finishTask(GoldenBeansEntry entry, String taskId, String taskName, int stage) {
         if (taskId == null || taskId.isEmpty()) {
             Log.i("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]缺少taskId#跳过");
             return false;
@@ -410,7 +423,9 @@ public final class GoldenBeansTasks {
         // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
         // 完成与否一律以任务列表为准（探针 probeGoldenBeansStatus 复核），响应不可信；
         // 兜底后的核对仍交给本模块的 verifyPendingTasks，故 listField 传 null（黑名单由 verify 管）
-        Outcome outcome = TaskAttemptPolicy.handle("goldenbeans::" + entry.alias + "/" + taskId, taskName, null,
+        // key 带档位：多次任务每推进一档都是新的尝试，否则后续档位会被当日标记挡下
+        Outcome outcome = TaskAttemptPolicy.handle(
+                "goldenbeans::" + entry.alias + "/" + taskId + "#" + stage, taskName, null,
                 () -> attemptFinishTask(entry, taskId, taskName), msg -> Log.goldenBeans(msg),
                 new TaskAttemptPolicy.Site(null, "金豆[" + entry.alias + "]任务", null, entry.taskSceneCode,
                         (k) -> probeGoldenBeansStatus(entry, taskId)));
@@ -458,7 +473,7 @@ public final class GoldenBeansTasks {
         // 日志前缀含入口别名，故每入口现构一份
         TaskAlternative.VerifyConfig cfg = new TaskAlternative.VerifyConfig(
                 "goldenbeans", "GoldenBeansTaskList", "金豆夺宝任务",
-                "金豆[" + entry.alias + "]任务", "🧾完成", false, msg -> Log.goldenBeans(msg));
+                "金豆[" + entry.alias + "]任务", false, msg -> Log.goldenBeans(msg));
         return TaskAlternative.verify(pendingVerifyTasks, cfg, () -> {
             JSONObject syncJo = GoldenBeansSupport.parse(goldenbeansRpcCall.pullOf(
                     entry.bizType, entry.source, "FARM_TASK", "TASK_LIST"));

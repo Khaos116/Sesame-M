@@ -48,6 +48,14 @@ public class TaskAttemptPolicy {
     /** 兜底记录保留时长：任务消失后不会有人来清理，超过此时长直接丢弃 */
     private static final long TRIGGERED_STALE = 604800000L;
 
+    /**
+     * 临时故障类（{@link Outcome#RETRY}）当日最多尝试次数。
+     * <p>RETRY 的语义是"下一轮再试"，但服务端状态长期不推进时会变成整天重试：
+     * 场景卡容器子任务数量多，单轮即可发出上百次请求。故按次计数，
+     * 用尽即当日不再试（次日标记清空后自动恢复）。
+     */
+    private static final int RETRY_MAX_PER_DAY = 3;
+
     /** 处理结论 */
     public enum Outcome {
         /** 列表已确认完成（{@link #isDone}；完成任务后可能仍待领奖） */
@@ -339,6 +347,11 @@ public class TaskAttemptPolicy {
         // 不能指望下面"🧊兜底未生效"那条：跳过路径的 outcome 多为 UNABLE，永远不会 markTriggered，
         // 于是任务只会在每轮被反复跳过、永远进不了黑名单（实测农场饲料任务即如此）。
         if (site != null && site.bizKey != null && TaskAlternative.isTransactionTask(site.bizKey)) {
+            // 这类任务常驻列表、每轮都在，拉黑是**一次性**动作；已处理过就直接静默跳过，
+            // 否则每轮都重打一遍"永久拉黑"，日志被刷屏（且毫无新信息）。
+            if (Status.hasFlagToday(flag)) {
+                return Outcome.TRIED_TODAY;
+            }
             // 底线：交易/支付类一次即**永久**拉黑（不进入"满 N 天解禁重试"的生命周期），绝不伪造
             boolean blacklisted = autoBlackList(site, title, true);
             Status.flagToday(flag);
@@ -358,6 +371,11 @@ public class TaskAttemptPolicy {
         }
         if (Status.hasFlagToday(flag)) {
             Log.i(TAG, "今日已试[" + title + "]#跳过");
+            return Outcome.TRIED_TODAY;
+        }
+        // 临时故障重试次数已用尽：当日不再尝试（次日标记清空后自动恢复）
+        if (Status.getIntFlagToday("attemptRetry::" + sanitize(key)) >= RETRY_MAX_PER_DAY) {
+            Log.i(TAG, "临时故障重试已用尽[" + title + "]#今日不再尝试");
             return Outcome.TRIED_TODAY;
         }
         // 当日额度已用尽（如 rightsTimes 已达上限）：只打当日标记、不进黑名单——
@@ -388,7 +406,11 @@ public class TaskAttemptPolicy {
             MessageUtil.endDeferBlackList(!listDone);
         }
         if (listDone) {
-            log.accept("任务尝试✅列表已确认完成[" + title + "]");
+            // 完全静默：核对是过程、不是结果，结果由调用方的「完成/领取」结果行表达（如 🧾完成、🎖️领取），
+            // 这里再记一条只会与其重复。
+            // 落当日标记：本日已完成的任务不必再核对。漏掉会让重拉列表的调用方
+            // （如抽抽乐的多轮推进）每轮把它重跑一遍。
+            Status.flagToday(flag);
             return Outcome.DONE;
         }
         // 行为伪造：把任务要求的真实行为用接口做出来；能伪造就不必退到伪申报
@@ -414,7 +436,13 @@ public class TaskAttemptPolicy {
             Status.flagToday(flag);
             return Outcome.TRIGGERED;
         }
-        if (outcome == Outcome.DONE || outcome == Outcome.RETRY) {
+        if (outcome == Outcome.DONE) {
+            return outcome;
+        }
+        // 临时故障：计数后放行（次数上限由入口的前置检查把关，避免服务端状态不推进时整天重试）
+        if (outcome == Outcome.RETRY) {
+            String retryKey = "attemptRetry::" + sanitize(key);
+            Status.setIntFlagToday(retryKey, Status.getIntFlagToday(retryKey) + 1);
             return outcome;
         }
         if (outcome == Outcome.UNABLE) {

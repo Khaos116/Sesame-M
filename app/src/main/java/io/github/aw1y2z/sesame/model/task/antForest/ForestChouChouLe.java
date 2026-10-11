@@ -3,6 +3,7 @@ package io.github.aw1y2z.sesame.model.task.antForest;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
@@ -64,6 +65,9 @@ public class ForestChouChouLe {
 
             int loopCount = 0; // 循环次数计数
             final int MAX_LOOP = 7; // 最大循环次数，避免死循环
+            // 本轮已做过的任务：重拉列表后不再重做（服务端状态推进慢，重拉时它可能仍是待办，
+            // 不去重会把每批任务重跑 MAX_LOOP 遍；跨场景不共享，各场景独立计数）
+            Set<String> handledThisRun = new LinkedHashSet<>();
 
       /*
       sceneCode
@@ -158,39 +162,53 @@ public class ForestChouChouLe {
                             // 周期任务常驻列表、由真实行为推进，每轮结果相同；静默跳过
                             continue;
                         }
+                        // 本轮已处理过：重拉列表时不再重做（见 handledThisRun 说明）
+                        if (!handledThisRun.add(taskType)) {
+                            continue;
+                        }
                         // ==================== 活力值兑换任务 =====================
                         if (taskType.equals("NORMAL_DRAW_EXCHANGE_VITALITY") && taskStatus.equals("TODO")) {
-                            //先判断活力值是否大于20
-                            int totalVitalityAmount = 0;
-                            try {
-                                JSONObject jo = new JSONObject(AntForestRpcCall.queryVitalityStoreIndex());
-                                if (!MessageUtil.checkResultCode(TAG, jo)) {
-                                    return;
+                            // 一次补齐：按剩余次数连做（该类任务由服务端给额度，可能不止 2 次）。
+                            // 每次兑换消耗 20 活力值，故每次前都重查活力值。
+                            // 次数按当日累计：TaskAttemptPolicy 的当日标记一旦落下就整日只过一次，
+                            // 达不到"做满 N 次"，故这里用整型标记自行记账，做满 rightsTimesLimit 才停。
+                            String exchangeKey = "forest::chouchoule::exchangeTotal::" + taskSceneCode + "/" + taskType;
+                            int doneToday = Status.getIntFlagToday(exchangeKey);
+                            int remain = (rightsTimesLimit > 0 ? rightsTimesLimit : doneToday + 1) - doneToday;
+                            for (int cnt = 0; cnt < remain; cnt++) {
+                                int totalVitalityAmount = 0;
+                                try {
+                                    JSONObject jo = new JSONObject(AntForestRpcCall.queryVitalityStoreIndex());
+                                    if (!MessageUtil.checkResultCode(TAG, jo) || !jo.has("userVitalityInfoVO")) {
+                                        break;
+                                    }
+                                    JSONObject userVitalityInfo = jo.getJSONObject("userVitalityInfoVO");
+                                    totalVitalityAmount = userVitalityInfo.optInt("totalVitalityAmount", 0);
+                                } catch (Throwable th) {
+                                    Log.err(TAG, "chouChouLesceneEXCHANGE err:", th);
+                                    break;
                                 }
-                                if (!jo.has("userVitalityInfoVO")) {
-                                    return;
+                                if (totalVitalityAmount < 20) {
+                                    Log.forest("森林寻宝🧾活力值" + totalVitalityAmount + "不能兑换");
+                                    break;
                                 }
-                                JSONObject userVitalityInfo = jo.getJSONObject("userVitalityInfoVO");
-                                totalVitalityAmount = userVitalityInfo.optInt("totalVitalityAmount", 0);
-                            } catch (Throwable th) {
-                                Log.err(TAG, "chouChouLesceneEXCHANGE err:", th);
-                            }
-                            if (totalVitalityAmount < 20) {
-                                Log.forest("森林寻宝🧾活力值" + totalVitalityAmount + "不能兑换");
-                                continue;
-                            }
-                            //🏆 走统一策略：完成后按列表核对；400000040 时由策略代为伪申报
-                            Outcome exchangeOutcome = TaskAttemptPolicy.handle(
-                                    "forest::chouchoule::exchange::" + taskSceneCode + "/" + taskType,
-                                    taskName, null,
-                                    () -> attemptExchangeVitality(activityId, sceneCode, taskSceneCode, taskType, taskName),
-                                    Log::forest,
-                                    new TaskAttemptPolicy.Site("AntForestHuntTaskList", "森林寻宝",
-                                            taskType, taskSceneCode,
-                                            (k) -> probeChouChouLeStatus(sceneCode, taskSceneCode, taskType)));
-                            if (exchangeOutcome == Outcome.DONE || exchangeOutcome == Outcome.TRIGGERED
-                                    || exchangeOutcome == Outcome.AWARDED) {
-                                doublecheck = true;
+                                // 每次用不同的 key：handle 的当日标记按 key 计，同一 key 第二次会被挡住
+                                Outcome exchangeOutcome = TaskAttemptPolicy.handle(
+                                        "forest::chouchoule::exchange::" + taskSceneCode + "/" + taskType
+                                                + "#" + doneToday,
+                                        taskName, null,
+                                        () -> attemptExchangeVitality(activityId, sceneCode, taskSceneCode, taskType, taskName),
+                                        Log::forest,
+                                        new TaskAttemptPolicy.Site("AntForestHuntTaskList", "森林寻宝",
+                                                taskType, taskSceneCode,
+                                                (k) -> probeChouChouLeStatus(sceneCode, taskSceneCode, taskType)));
+                                if (exchangeOutcome != Outcome.DONE && exchangeOutcome != Outcome.TRIGGERED
+                                        && exchangeOutcome != Outcome.AWARDED) {
+                                    break; // 做不了就收手，不再空转剩余次数
+                                }
+                                doneToday++;
+                                Status.setIntFlagToday(exchangeKey, doneToday);
+                                TimeUtil.sleep(1000);
                             }
                             continue; // 防止进入下面的 FOREST_NORMAL_DRAW 分支
                         }
@@ -202,7 +220,7 @@ public class ForestChouChouLe {
                             for (int cnt = 0; cnt < remain; cnt++) {
                                 TimeUtil.sleep(1000);
                                 // 三条腿见 chouChouLeFinishTask（XLIGHT=广告类先走 4Chouchoule，其余先走 opengreen）
-                                if (!chouChouLeFinishTask(taskType, taskSceneCode, taskName, taskType.contains("XLIGHT"), sceneCode)) {
+                                if (!chouChouLeFinishTask(taskType, taskSceneCode, taskName, taskType.contains("XLIGHT"), sceneCode, rightsTimes + cnt)) {
                                     break; // 做不了就收手，不再空转剩余次数
                                 }
                                 doublecheck = true;
@@ -215,7 +233,7 @@ public class ForestChouChouLe {
                             int remain = rightsTimesLimit > 0 ? rightsTimesLimit - rightsTimes : 1;
                             for (int cnt = 0; cnt < remain; cnt++) {
                                 TimeUtil.sleep(1000);
-                                if (!chouChouLeFinishTask(taskType, taskSceneCode, taskName, false, sceneCode)) {
+                                if (!chouChouLeFinishTask(taskType, taskSceneCode, taskName, false, sceneCode, rightsTimes + cnt)) {
                                     break; // 做不了就收手，不再空转剩余次数
                                 }
                                 doublecheck = true;
@@ -320,13 +338,17 @@ public class ForestChouChouLe {
      * 抽抽乐任务的三条腿：4Chouchoule ↔ opengreen 互备（XLIGHT 先走前者），都被拒时再换
      * doFarmTask（见 {@link TaskAlternative}）。
      *
+     * @param stage 当前档位（调用方的 rightsTimes）：多次任务每推进一档都是**新的**尝试，
+     *              策略键必须带上它，否则第一档打上的当日标记会把后续档位全挡下、任务停在第一档。
+     *              单次任务传 0 即可（键保持原样）。
      * @return 已成功或已触发（true 时调用方应 {@code doublecheck = true} 重拉列表核对）
      */
     private boolean chouChouLeFinishTask(String taskType, String taskSceneCode, String taskName, boolean xlight,
-                                         String activitySceneCode) {
+                                         String activitySceneCode, int stage) {
         // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
         // 完成判定以任务列表为准（探针复核），响应不可信
-        Outcome outcome = TaskAttemptPolicy.handle("forest::chouchoule::" + taskSceneCode + "/" + taskType, taskName, null,
+        String policyKey = "forest::chouchoule::" + taskSceneCode + "/" + taskType + "#" + stage;
+        Outcome outcome = TaskAttemptPolicy.handle(policyKey, taskName, null,
                 () -> attemptChouChouLeTask(taskType, taskSceneCode, taskName, xlight), Log::forest,
                 new TaskAttemptPolicy.Site("AntForestHuntTaskList", "森林寻宝", taskType, taskSceneCode,
                         (k) -> probeChouChouLeStatus(activitySceneCode, taskSceneCode, taskType)));

@@ -979,11 +979,28 @@ public class AntOcean extends ModelTask {
             // 或换个 taskType 变体就会整类任务一个请求都不发（列表拿到了却没动作、日志也没有）。
             // 做不了的由自动拉黑机制接管，避免用"服务端字符串精确相等"这种不稳定假设当开关
             // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
-            Outcome outcome = TaskAttemptPolicy.handle("ocean::" + sceneCode + "/" + taskType, taskTitle, null,
-                    () -> attemptFinishOceanTask(sceneCode, taskType, taskTitle), Log::other,
-                    new TaskAttemptPolicy.Site("AntOceanAntiepTaskList", "海洋任务", taskType, sceneCode,
-                            (k) -> probeOceanStatus(sceneCode, taskType)));
-            return outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
+            // 多次任务（rightsTimesLimit>1）一次补齐：逐档取不同的策略键，否则第一档落下当日标记后
+            // 后续档位全被挡下、任务停在第一档
+            int rightsTimes = task.optInt("rightsTimes", 0);
+            int rightsTimesLimit = task.optInt("rightsTimesLimit", 0);
+            int remain = rightsTimesLimit > rightsTimes ? rightsTimesLimit - rightsTimes : 1;
+            boolean progressed = false;
+            for (int cnt = 0; cnt < remain; cnt++) {
+                Outcome outcome = TaskAttemptPolicy.handle(
+                        "ocean::" + sceneCode + "/" + taskType + "#" + (rightsTimes + cnt), taskTitle, null,
+                        () -> attemptFinishOceanTask(sceneCode, taskType, taskTitle), Log::other,
+                        new TaskAttemptPolicy.Site("AntOceanAntiepTaskList", "海洋任务", taskType, sceneCode,
+                                (k) -> probeOceanStatus(sceneCode, taskType)));
+                if (outcome == Outcome.TRIED_TODAY || outcome == Outcome.SKIPPED) {
+                    break;
+                }
+                progressed = progressed || outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
+                if (outcome != Outcome.DONE && outcome != Outcome.TRIGGERED) {
+                    break; // 做不了就收手，不再空转剩余次数
+                }
+                TimeUtil.sleep(1000);
+            }
+            return progressed;
         } catch (Throwable t) {
             Log.err(TAG, "finishOceanTask err:", t);
         }
