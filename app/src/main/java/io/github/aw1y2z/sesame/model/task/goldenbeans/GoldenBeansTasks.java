@@ -283,9 +283,8 @@ public final class GoldenBeansTasks {
                         } else {
                             unresolved = true;
                         }
-                    } else {
-                        Log.record("金豆[" + entry.alias + "]任务⏭️[" + taskName + "]黑名单跳过");
                     }
+                    // 黑名单跳过静默：条目由用户在配置页维护，内容恒定，不打日志
                     continue;
                 }
 
@@ -341,8 +340,10 @@ public final class GoldenBeansTasks {
                 changed = true;
             }
 
-            Log.goldenBeans("金豆[" + entry.alias + "]任务🗂️共[" + total + "]个#完成[" + handled + "]个");
+            // 仅在**本轮有新动作**时打统计并重拉列表：total/handled 是列表快照（已领数跨轮恒定），
+            // 每轮照打等于重复播报同一组数字；本轮无动作时静默
             if (changed) {
+                Log.goldenBeans("金豆[" + entry.alias + "]任务🗂️共[" + total + "个]#完成[" + handled + "个]");
                 GoldenBeansSupport.pause(interval);
                 goldenbeansRpcCall.pullOf(entry.bizType, entry.source, "FARM_TASK", "TASK_LIST");
             }

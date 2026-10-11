@@ -131,12 +131,8 @@ public final class GoldenBeansExchange {
                     ? Math.max(dailyBeanLimit - exchangedToday, 0) : Long.MAX_VALUE;
             long available = Math.max(Math.min(serverLimit, userRemaining), 0);
 
-            Log.goldenBeans("金豆芝麻粒换豆资格🔍页面[" + pageOpened + "]芝麻粒[" + currentManure
-                    + "]可换芝麻粒[" + effectiveExchangeManure + "]单粒换豆[" + beanReward
-                    + "]最低兑换[" + minExchangeAmount + "]剩余额度[" + remainQuota
-                    + "]单日上限[" + (dailyBeanLimit > 0 ? String.valueOf(dailyBeanLimit) : "不限")
-                    + "]今日已换[" + exchangedToday + "]可兑换[" + available + "]");
-
+            // 资格快照（芝麻粒/额度/单日上限等）每轮恒定，属诊断数据；不单独打，
+            // 真正兑换成功时才由下方「金豆芝麻粒换豆🎖️…」报告结果
             if (!pageOpened || beanReward <= 0 || minExchangeAmount <= 0) {
                 Log.record("金豆芝麻粒换豆⏸️服务端资格未满足#跳过");
                 return;

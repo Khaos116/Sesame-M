@@ -680,9 +680,8 @@ public class AntStall extends ModelTask {
         try {
             String taskType = task.getString("taskType");
             JSONObject bizInfo = new JSONObject(task.getString("bizInfo"));
-            // 周期/持续型任务：跳过，不尝试也不拉黑
+            // 周期/持续型任务：跳过，不尝试也不拉黑（常驻列表、每轮结果相同；静默）
             if (TaskAttemptPolicy.isCyclicTask(task)) {
-                Log.i("新村任务⏭️跳过周期任务[" + title + "]");
                 return false;
             }
             if (Objects.equals("VISIT_AUTO_FINISH", bizInfo.getString("actionType")) || taskTypeList.contains(taskType)) {
@@ -966,7 +965,7 @@ public class AntStall extends ModelTask {
                 JSONObject jo = new JSONObject(AntStallRpcCall.achieveBeShareP2P(friendUserId));
                 TimeUtil.sleep(5000);
                 if (MessageUtil.checkSuccess(TAG, jo)) {
-                    Log.farm("新村助力🎉助力[" + UserIdMap.getMaskName(friendUserId) + "]成功");
+                    Log.farm("新村助力🧾助力[" + UserIdMap.getMaskName(friendUserId) + "]成功");
                     Status.stallShareP2PToday(friendUserId);
                 }
                 else if (Objects.equals("600000027", jo.getString("code"))) {
@@ -1278,7 +1277,7 @@ public class AntStall extends ModelTask {
                 jo = new JSONObject(AntStallRpcCall.pasteTicket(jo.getString("rentLastBill"), jo.getString("seatId"), jo.getString("rentLastShop"), jo.getString("rentLastUser"), jo.getString("userId")));
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     double amount = jo.getJSONObject("pasteIncome").getDouble("amount");
-                    Log.farm("蚂蚁新村🚫在[" + UserIdMap.getMaskName(friendUserId) + "]的新村贴罚单#获得[" + amount + "木兰币]");
+                    Log.farm("蚂蚁新村⚠️在[" + UserIdMap.getMaskName(friendUserId) + "]的新村贴罚单#获得[" + amount + "木兰币]");
                 }
                 TimeUtil.sleep(1000);
             }

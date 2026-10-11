@@ -1117,12 +1117,18 @@ public class ApplicationHook extends XposedModule {
                                     initHandler(false);
                                 } else if (ModelGroup.BASE == ModelGroup.getByCode(groupCode)) {
                                     ModelTask.stopAllTask();
-                                    ModelTask.startAllTask(false);
+                                    // 同分组分支：先打提示，避免被森林的同步执行挡在后面
                                     Log.record("开始执行全部任务");
+                                    ModelTask.startAllTask(false);
                                 } else {
                                     ModelTask.stopAllTask();
+                                    // 先打"开始"再启动：森林 isSync=true 会同步阻塞到跑完，
+                                    // 若把提示放在 startGroupTask 之后，它会排在森林的执行日志之后（实测晚 20 秒）
+                                    Log.record("开始执行分组【" + ModelGroup.getName(groupCode) + "】任务");
                                     int count = ModelTask.startGroupTask(groupCode);
-                                    Log.record("开始执行分组【" + ModelGroup.getName(groupCode) + "】任务: " + count + " 个");
+                                    if (count == 0) {
+                                        Log.record("分组【" + ModelGroup.getName(groupCode) + "】无可执行任务");
+                                    }
                                 }
                             } catch (Throwable th) {
                                 Log.printStackTrace(TAG, th);

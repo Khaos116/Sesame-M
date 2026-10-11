@@ -392,7 +392,7 @@ public class AntSports extends ModelTask {
             return false;
         }
         Status.flagToday(FLAG_RISK_TODAY);
-        Log.other("运动任务⛔命中风控(1009)，今日不再执行");
+        Log.other("运动任务⚠️命中风控(1009)，今日不再执行");
         return true;
     }
 
@@ -986,7 +986,7 @@ public class AntSports extends ModelTask {
                     // rewardStatus : SUCCESS NOT_HIT
                     continue;
                 }
-                Log.other("行走路线🚶🏻‍♂️收获" + rewardsTypeName + "[" + jo.getString("rewardName") + "*" + jo.getInt("count") + "]");
+                Log.other("行走路线🚶🏻‍♂️[收获]" + rewardsTypeName + "[" + jo.getString("rewardName") + "*" + jo.getInt("count") + "]");
             }
         } catch (Throwable t) {
             Log.err(TAG, "parseRewardsByJSONArrayRewards err:", t);
@@ -1370,12 +1370,12 @@ public class AntSports extends ModelTask {
                         }
                         Log.other("领取奖励🎖️[" + taskName + "]#" + award);
                     } else {
-                        Log.other("文体中心领取奖励失败");
+                        Log.other("文体中心⚠️[领取奖励]#失败");
                         Log.i(jo.toString());
                     }
                 }
             } else {
-                Log.other("文体中心领取奖励失败");
+                Log.other("文体中心⚠️[领取奖励]#失败");
                 Log.i(s);
             }
         } catch (Throwable t) {
@@ -1447,12 +1447,12 @@ public class AntSports extends ModelTask {
                         }
                         Log.other("文体宝箱🎁[" + award + "]");
                     } else {
-                        Log.other("文体中心开宝箱失败");
+                        Log.other("文体中心⚠️[开宝箱]#失败");
                         Log.i(jo.toString());
                     }
                 }
             } else {
-                Log.other("文体中心开宝箱失败");
+                Log.other("文体中心⚠️[开宝箱]#失败");
                 Log.i(s);
             }
         } catch (Throwable t) {
@@ -1820,7 +1820,7 @@ public class AntSports extends ModelTask {
                 JSONObject data = jsonResult.getJSONObject("data");
                 int energy = data.getInt("modifyCount");
                 if (energy > 0) {
-                    Log.other("悦动健康🚑️领取奖励[" + rewardName + "]#获得[" + energy + "g健康能量]");
+                    Log.other("悦动健康🧾领取奖励[" + rewardName + "]#获得[" + energy + "g健康能量]");
                 }
             }
         } catch (Exception e) {
@@ -1840,7 +1840,7 @@ public class AntSports extends ModelTask {
                 JSONObject data = jsonResult.getJSONObject("data");
                 int continuousDay = data.getJSONObject("continuousSignInfo").getInt("continuitySignedDayCount");
                 int reward = data.getJSONObject("continuousDoSignInVO").getInt("rewardAmount");
-                Log.other("悦动健康🚑️连续签到[第" + continuousDay + "天]#获得[" + reward + "g健康能量]");
+                Log.other("悦动健康🧾连续签到[第" + continuousDay + "天]#获得[" + reward + "g健康能量]");
                 return true;
             }
         } catch (Exception e) {
@@ -1866,7 +1866,7 @@ public class AntSports extends ModelTask {
                 JSONObject data = jsonResult.getJSONObject("data");
                 JSONArray rewards = data.getJSONArray("userItems");
                 ArrayList<String> rewardList = parseRewards(rewards);
-                Log.other("悦动健康🚑️领取奖励[" + taskName + "]#获得" + rewardList);
+                Log.other("悦动健康🧾领取奖励[" + taskName + "]#获得" + rewardList);
                 return true;
             }
         } catch (Exception e) {
@@ -1888,7 +1888,7 @@ public class AntSports extends ModelTask {
             JSONObject jsonResult = new JSONObject(AntSportsRpcCall.neverlandtaskSend(arg));
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
                 String taskName = task.getString("title");
-                Log.other("悦动健康🚑️完成任务[" + taskName + "]");
+                Log.other("悦动健康🧾完成任务[" + taskName + "]");
                 TimeUtil.sleep(1000);
                 return true;
             }
@@ -1913,12 +1913,12 @@ public class AntSports extends ModelTask {
                 JSONObject data = jsonResult.getJSONObject("data");
                 int step = data.getJSONArray("mapAwards").getJSONObject(0).getInt("step");
                 int leftCount = data.getInt("leftCount");
-                Log.i("悦动健康🚑️能量泵[" + mapName + "]#前进[" + step + "步]");
+                Log.i("悦动健康🧾能量泵[" + mapName + "]#前进[" + step + "步]");
 
                 JSONArray rewards = data.getJSONArray("userItems");
                 ArrayList<String> rewardList = parseRewards(rewards);
                 if (!rewardList.isEmpty()) {
-                    Log.other("悦动健康🚑️能量泵[" + mapName + "]#获得" + rewardList);
+                    Log.other("悦动健康🧾能量泵[" + mapName + "]#获得" + rewardList);
                 }
 
                 int currentStar = data.getJSONObject("starData").getInt("curr");
@@ -1940,11 +1940,11 @@ public class AntSports extends ModelTask {
                 int buildingEnergyFinal = endStageInfo.optInt("buildingEnergyFinal");
                 String buildingId = endStageInfo.optString("buildingId");
                 int endbuildingEnergyProcess = endStageInfo.optInt("buildingEnergyProcess");
-                Log.i("悦动健康🚑️能量泵[" + mapName + "]建造[" + buildingId + "]进度(" + endbuildingEnergyProcess + "/" + buildingEnergyFinal + ")#消耗" + multiNum * 5 + "g能量");
+                Log.i("悦动健康🧾能量泵[" + mapName + "]建造[" + buildingId + "]进度(" + endbuildingEnergyProcess + "/" + buildingEnergyFinal + ")#消耗" + multiNum * 5 + "g能量");
                 JSONArray rewards = data.getJSONArray("rewards");
                 ArrayList<String> rewardList = parseRewards(rewards);
                 if (!rewardList.isEmpty()) {
-                    Log.other("悦动健康🚑️能量泵[" + mapName + "]#获得" + rewardList);
+                    Log.other("悦动健康🧾能量泵[" + mapName + "]#获得" + rewardList);
                 }
                 return buildingEnergyFinal - endbuildingEnergyProcess;
             }
@@ -1979,7 +1979,7 @@ public class AntSports extends ModelTask {
                 }
 
                 String taskName = task.optString("title", "浏览商品15s得健康能量");
-                Log.other("悦动健康🚑️完成任务[" + taskName + "]#获得[" + totalEnergy + "g健康能量]");
+                Log.other("悦动健康🧾完成任务[" + taskName + "]#获得[" + totalEnergy + "g健康能量]");
                 return true;
             }
         } catch (Exception e) {
@@ -2000,7 +2000,7 @@ public class AntSports extends ModelTask {
                 ArrayList<String> rewardList = parseRewards(rewards);
 
                 if (!rewardList.isEmpty()) {
-                    Log.other("悦动健康🚑️领取奖励[离线奖励]#获得" + rewardList);
+                    Log.other("悦动健康🧾领取奖励[离线奖励]#获得" + rewardList);
                 }
             }
         } catch (Exception e) {
@@ -2047,7 +2047,7 @@ public class AntSports extends ModelTask {
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
                 JSONObject data = jsonResult.getJSONObject("data");
                 String energy = data.getString("changeAmount");
-                Log.other("悦动健康🚑️领取奖励[" + rewardName + "]#获得[" + energy + "g健康能量]");
+                Log.other("悦动健康🧾领取奖励[" + rewardName + "]#获得[" + energy + "g健康能量]");
             }
         } catch (Exception e) {
             Log.err(TAG, "pickBubbleTaskEnergy err:", e);
@@ -2145,7 +2145,7 @@ public class AntSports extends ModelTask {
                                         JSONObject prize = prizes.getJSONObject(0);
                                         String subTitle = prize.optString("subTitle");
                                         String title = prize.optString("title");
-                                        Log.other("悦动健康🚑️领取奖励[" + subTitle + "]#获得[" + title + "]");
+                                        Log.other("悦动健康🧾领取奖励[" + subTitle + "]#获得[" + title + "]");
                                     }
                                 }
                             }
@@ -2466,7 +2466,7 @@ public class AntSports extends ModelTask {
                             if (!status.contains("FINISH")) {
                                 JSONObject jo = new JSONObject(AntSportsRpcCall.mapChooseFree(branchId, mapId));
                                 if (MessageUtil.checkSuccess(TAG, jo)) {
-                                    Log.i("悦动健康🚑️切换到[" + mapName + "](" + mapId + ")");
+                                    Log.i("悦动健康🧾切换到[" + mapName + "](" + mapId + ")");
                                     break;
                                 }
                             }

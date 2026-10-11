@@ -643,7 +643,7 @@ public class AntMember extends ModelTask {
             String awardParamPoint = taskConfigInfo.getJSONObject("awardParam").getString("awardParamPoint");
             JSONArray targetBusinessArr = taskConfigInfo.optJSONArray("targetBusiness");
             if (targetBusinessArr == null || targetBusinessArr.length() == 0) {
-                Log.i("会员任务⏭️跳过[" + name + "]#无 targetBusiness 配置");
+                Log.other("会员任务⏭️跳过[" + name + "]#无 targetBusiness 配置");
                 return false;
             }
             String targetBusiness = targetBusinessArr.getString(0);
@@ -1289,7 +1289,7 @@ public class AntMember extends ModelTask {
                     String openResp = AntMemberRpcCall.openBehaviorCollect(behaviorId);
                     JSONObject openJo = new JSONObject(openResp);
                     if (MessageUtil.checkResultCode(TAG, openJo)) {
-                        Log.other("攒芝麻分🧾任务领取：" + title);
+                        Log.other("攒芝麻分🧾[任务领取]#" + title);
                     }
                     continue;
                 }
@@ -1754,7 +1754,7 @@ public class AntMember extends ModelTask {
                 tip = prizePopup.optString("actionText", "").trim();
             }
             String desc = taskModule.optString("taskProgressDesc", "").trim();
-            Log.other("游戏中心🎁领取宝箱" + (tip.isEmpty() ? "" : "#" + tip) + (desc.isEmpty() ? "" : "#" + desc));
+            Log.other("游戏中心🎁[领取宝箱]" + (tip.isEmpty() ? "" : "#" + tip) + (desc.isEmpty() ? "" : "#" + desc));
         }
         catch (Throwable t) {
             Log.err(TAG, "gameCenterTaskPrize err:", t);
@@ -2457,6 +2457,12 @@ public class AntMember extends ModelTask {
                 String taskCode = taskMaterial.optString("taskCode", "");
                 // 根据 taskCode 执行不同的操作
                 if ("WELFARE_PLUS_ANT_FOREST".equals(taskCode) || "WELFARE_PLUS_ANT_OCEAN".equals(taskCode)) {
+                    // 福利加任务每日只做一次：服务端在完成后仍把该条目留在列表里（状态不翻），
+                    // 不做标记会每轮重复调用触发与领奖接口
+                    String welfareFlag = "AntMember::welfarePlus::" + taskCode;
+                    if (Status.hasFlagToday(welfareFlag)) {
+                        continue;
+                    }
                     if ("WELFARE_PLUS_ANT_FOREST".equals(taskCode)) {
                         //String forestHomePageResponse = AntMemberRpcCall.queryforestHomePage();
                         String forestTaskResponse = AntMemberRpcCall.forestTask();
@@ -2469,6 +2475,7 @@ public class AntMember extends ModelTask {
                         TimeUtil.sleep(500);
                         String oceanreceiveTaskAward = AntMemberRpcCall.oceanreceiveTaskAward();
                     }
+                    Status.flagToday(welfareFlag);
                     if (taskBaseInfo != null) {
                         String appletName = taskBaseInfo.optString("appletName", "Unknown Applet");
                         Log.other("我的快递💌完成[" + appletName + "]");

@@ -934,14 +934,12 @@ public class AntOcean extends ModelTask {
     private Boolean finishOceanTask(JSONObject task) {
         try {
             if (task.has("taskProgress")) {
-                // 进度类任务（如"连续N天来海洋"）无法用 RPC 直接完成，也不能拉黑（否则会永久跳过真任务）；
-                // 这里显式记录，避免"列表拿到了却没动作、日志也没有"
-                Log.i("海洋任务⏭️跳过[进度任务暂不自动完成]#taskType=" + task.optString("taskType"));
+                // 进度类任务（如"连续N天来海洋"）无法用 RPC 直接完成，也不能拉黑（否则会永久跳过真任务）。
+                // 常驻列表、每轮结果相同；静默（与周期任务跳过同类）
                 return false;
             }
-            // 周期/持续型任务：跳过，不尝试也不拉黑
+            // 周期/持续型任务：跳过，不尝试也不拉黑（常驻列表、每轮结果相同；静默）
             if (TaskAttemptPolicy.isCyclicTask(task)) {
-                Log.i("海洋任务⏭️跳过周期任务#taskType=" + task.optString("taskType"));
                 return false;
             }
             JSONObject bizInfo = new JSONObject(task.getString("bizInfo"));
@@ -974,7 +972,7 @@ public class AntOcean extends ModelTask {
             }
             // 限时任务不自动完成（自动完成易触发风控），显式记录而不是静默跳过
             if (taskTitle.startsWith("限时任务：")) {
-                Log.i("海洋任务⏭️跳过[" + taskTitle + "]#taskType=" + taskType + "，限时任务不自动完成");
+                Log.other("海洋任务⏭️跳过[" + taskTitle + "]，限时任务不自动完成");
                 return false;
             }
             // 其余 TODO 一律尝试完成：原先按中文文案 + taskType 白名单精确分派，服务端一改文案
@@ -1076,7 +1074,7 @@ public class AntOcean extends ModelTask {
             TimeUtil.sleep(500);
             jo = new JSONObject(AntOceanRpcCall.submitAnswer(answer, questionId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                Log.other("海洋答题成功");
+                Log.other("海洋答题📝成功");
                 Status.flagToday("Ocean::ANSWER_QUESTION");
                 return true;
             }
@@ -1709,7 +1707,7 @@ public class AntOcean extends ModelTask {
             }
 
             if (touchCount > 0) {
-                Log.other("海洋摸鱼🐟本次共摸鱼" + touchCount + "次获得" + totalEnergy + "g能量");
+                Log.other("海洋摸鱼🐟[本次]#摸鱼" + touchCount + "次#获得" + totalEnergy + "g能量");
                 Toast.show("海洋摸鱼🐟获得" + totalEnergy + "g能量");
             }
 
