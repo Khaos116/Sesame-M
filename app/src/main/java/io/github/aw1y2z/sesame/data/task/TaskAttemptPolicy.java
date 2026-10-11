@@ -122,9 +122,25 @@ public class TaskAttemptPolicy {
         ProbeResult probe(String key);
     }
 
+    /**
+     * 当日额度是否已用尽（如 {@code rightsTimes >= rightsTimesLimit}）。
+     * <p>与 {@link StatusProbe} 同源：探针本已拉到响应，次数信息顺手可取，不额外发请求。
+     * <p>命中时只打**当日标记**、当日不再尝试；**不进黑名单**——这类任务是每日重置的，
+     * 次日服务端次数归零、标记随 status.json 跨天清空，自然恢复尝试。
+     */
+    public interface ExhaustedProbe {
+        boolean exhausted(String key);
+    }
+
     /** 领奖动作，返回 true 表示领取成功 */
     public interface Award {
         boolean run();
+    }
+
+    /** 无打满判据时的站点（保持旧调用点的简明写法）。 */
+    public static Site site(String listField, String logPrefix, String bizKey, String taskSceneCode,
+                            StatusProbe probe) {
+        return new Site(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, probe, null);
     }
 
     /**
@@ -158,35 +174,43 @@ public class TaskAttemptPolicy {
         final Forge forge;
         /** 列表状态探针；null 表示调用点自行判定（沿用响应），非 null 时**完成 / 领奖 / 拉黑**都以列表为准 */
         final StatusProbe probe;
+        /** 当日额度是否用尽；null 表示无此判据。命中只打当日标记、不进黑名单 */
+        final ExhaustedProbe exhausted;
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode) {
-            this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, null);
+            this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, null, null);
         }
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, Forge forge) {
-            this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, forge, null);
+            this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, forge, null, null);
         }
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, StatusProbe probe) {
-            this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, probe);
+            this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, probe, null);
         }
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version) {
-            this(listField, logPrefix, bizKey, taskSceneCode, version, null, null);
+            this(listField, logPrefix, bizKey, taskSceneCode, version, null, null, null);
         }
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
                     Forge forge) {
-            this(listField, logPrefix, bizKey, taskSceneCode, version, forge, null);
+            this(listField, logPrefix, bizKey, taskSceneCode, version, forge, null, null);
         }
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
                     StatusProbe probe) {
-            this(listField, logPrefix, bizKey, taskSceneCode, version, null, probe);
+            this(listField, logPrefix, bizKey, taskSceneCode, version, null, probe, null);
         }
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
                     Forge forge, StatusProbe probe) {
+            this(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, null);
+        }
+
+        /** 带「当日打满」判据的完整形态。 */
+        public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
+                    Forge forge, StatusProbe probe, ExhaustedProbe exhausted) {
             this.listField = listField;
             this.logPrefix = logPrefix;
             this.bizKey = bizKey;
@@ -194,6 +218,7 @@ public class TaskAttemptPolicy {
             this.version = version;
             this.forge = forge;
             this.probe = probe;
+            this.exhausted = exhausted;
         }
     }
 
@@ -263,6 +288,13 @@ public class TaskAttemptPolicy {
         if (Status.hasFlagToday(flag)) {
             Log.i(TAG, "今日已试[" + title + "]#跳过");
             return Outcome.TRIED_TODAY;
+        }
+        // 当日额度已用尽（如 rightsTimes 已达上限）：只打当日标记、不进黑名单——
+        // 这类任务每日重置，次日标记随 status.json 跨天清空即自动恢复尝试
+        if (site != null && site.exhausted != null && site.exhausted.exhausted(key)) {
+            Status.flagToday(flag);
+            log.accept("任务尝试🎯当日已完成[" + title + "]#额度已用尽，今日不再尝试");
+            return Outcome.UNABLE;
         }
         // 响应触发的自动拉黑先入缓冲：等列表核对后决定落盘/丢弃（列表确认完成就不该拉黑）
         boolean listDone = false;

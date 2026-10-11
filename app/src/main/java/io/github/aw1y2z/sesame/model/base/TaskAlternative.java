@@ -11,6 +11,7 @@ import java.util.regex.Pattern;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
+import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 
 /**
@@ -98,6 +99,16 @@ public final class TaskAlternative {
     }
 
     private TaskAlternative() {
+    }
+
+    /** 该任务是否已在本日核对通过（避免后续轮次重复上报与核对）。 */
+    public static boolean verifiedToday(String key) {
+        return Status.hasFlagToday("TaskAlternative::verify::" + key);
+    }
+
+    /** 记下「该任务本日已做成」，后续轮次不再重复上报。 */
+    public static void markVerifiedToday(String key) {
+        Status.flagToday("TaskAlternative::verify::" + key);
     }
 
     /** 唯一的 doFarmTask payload，返回原始响应。 */
@@ -232,6 +243,8 @@ public final class TaskAlternative {
                             cfg.blacklistByTitle ? title : key);
                 } else {
                     cfg.sink.log(cfg.logPrefix + cfg.doneTag + "[" + title + "]（已按任务列表核对）");
+                    // 列表已确认完成：打当日标记，后续轮次不再重复核对与上报
+                    markVerifiedToday(key);
                     changed = true;
                 }
             }
