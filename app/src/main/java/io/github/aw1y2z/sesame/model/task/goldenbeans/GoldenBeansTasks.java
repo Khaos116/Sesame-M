@@ -297,9 +297,8 @@ public final class GoldenBeansTasks {
                         } else {
                             unresolved = true;
                         }
-                    } else {
-                        Log.record("金豆[" + entry.alias + "]任务⏭️[" + taskName + "]黑名单跳过");
                     }
+                    // 黑名单跳过静默：条目由用户在配置页维护，内容恒定，不打日志
                     continue;
                 }
 
@@ -336,7 +335,20 @@ public final class GoldenBeansTasks {
                         continue;
                     }
                     GoldenBeansSupport.pause(interval);
-                    if (finishTask(entry, taskId, taskName)) {
+                    // 多次任务（rightsTimesLimit>1）一次补齐：逐档取不同的策略键，否则第一档落下
+                    // 当日标记后后续档位全被挡下、任务停在第一档
+                    int rightsTimes = task.optInt("rightsTimes", 0);
+                    int rightsTimesLimit = task.optInt("rightsTimesLimit", 0);
+                    int remain = rightsTimesLimit > 0 ? Math.min(60, Math.max(0, rightsTimesLimit - rightsTimes)) : 1;
+                    boolean anyDone = false;
+                    for (int cnt = 0; cnt < remain; cnt++) {
+                        if (!finishTask(entry, taskId, taskName, rightsTimes + cnt)) {
+                            break; // 做不了就收手，不再空转剩余次数
+                        }
+                        anyDone = true;
+                        GoldenBeansSupport.pause(interval);
+                    }
+                    if (anyDone) {
                         changed = true;
                         GoldenBeansSupport.pause(interval);
                         if (claimAward(entry, taskId, taskName)) {
@@ -361,8 +373,10 @@ public final class GoldenBeansTasks {
                 changed = true;
             }
 
-            Log.goldenBeans("金豆[" + entry.alias + "]任务🗂️共[" + total + "]个#完成[" + handled + "]个");
+            // 仅在**本轮有新动作**时打统计并重拉列表：total/handled 是列表快照（已领数跨轮恒定），
+            // 每轮照打等于重复播报同一组数字；本轮无动作时静默
             if (changed) {
+                Log.goldenBeans("金豆[" + entry.alias + "]任务🗂️共[" + total + "个]#完成[" + handled + "个]");
                 GoldenBeansSupport.pause(interval);
                 goldenbeansRpcCall.pullOf(entry.bizType, entry.source, "FARM_TASK", "TASK_LIST");
             }
@@ -423,7 +437,7 @@ public final class GoldenBeansTasks {
         return upper.contains("ZHIFU") || upper.contains("_PAY");
     }
 
-    private boolean finishTask(GoldenBeansEntry entry, String taskId, String taskName) {
+    private boolean finishTask(GoldenBeansEntry entry, String taskId, String taskName, int stage) {
         if (taskId == null || taskId.isEmpty()) {
             Log.i("金豆[" + entry.alias + "]任务⚠️[" + taskName + "]缺少taskId#跳过");
             return false;
@@ -431,10 +445,12 @@ public final class GoldenBeansTasks {
         // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
         // 完成与否一律以任务列表为准（探针 probeGoldenBeansStatus 复核），响应不可信；
         // 兜底后的核对仍交给本模块的 verifyPendingTasks，故 listField 传 null（黑名单由 verify 管）
-        Outcome outcome = TaskAttemptPolicy.handle("goldenbeans::" + entry.alias + "/" + taskId, taskName, null,
+        // key 带档位：多次任务每推进一档都是新的尝试，否则后续档位会被当日标记挡下
+        Outcome outcome = TaskAttemptPolicy.handle(
+                "goldenbeans::" + entry.alias + "/" + taskId + "#" + stage, taskName, null,
                 () -> attemptFinishTask(entry, taskId, taskName), msg -> Log.goldenBeans(msg),
                 new TaskAttemptPolicy.Site(null, "金豆[" + entry.alias + "]任务", null, entry.taskSceneCode,
-                        (k) -> probeGoldenBeansStatus(entry, taskId)));
+                        (k) -> probeGoldenBeansStatus(entry, taskId, stage)));
         return outcome == Outcome.DONE;
     }
 
@@ -508,7 +524,7 @@ public final class GoldenBeansTasks {
     }
 
     /** 列表状态探针：重拉本入口任务列表，按 taskId 匹配；仅待办视为未完成（消失即已完成）。 */
-    private TaskAttemptPolicy.ProbeResult probeGoldenBeansStatus(GoldenBeansEntry entry, String taskId) {
+    private TaskAttemptPolicy.ProbeResult probeGoldenBeansStatus(GoldenBeansEntry entry, String taskId, int previousRights) {
         try {
             JSONObject syncJo = GoldenBeansSupport.parse(goldenbeansRpcCall.pullOf(
                     entry.bizType, entry.source, "FARM_TASK", "TASK_LIST"));
@@ -527,6 +543,8 @@ public final class GoldenBeansTasks {
                     continue;
                 }
                 String status = task.optString("taskStatus", "").trim().toUpperCase(java.util.Locale.ROOT);
+                if ("TODO".equals(status) && previousRights >= 0 && task != null && task.optInt("rightsTimes", -1) > previousRights)
+                    return TaskAttemptPolicy.ProbeResult.FINISHED;
                 if (STATUS_TODO.equals(status)) {
                     return TaskAttemptPolicy.ProbeResult.TODO;
                 }
@@ -561,7 +579,7 @@ public final class GoldenBeansTasks {
             }
             // 领奖收口：先按任务列表复核"已领到"，未确认才交自动拉黑（顺序由 TaskAward 固定）
             if (TaskAward.confirmReceivedOrBlackList("金豆[" + entry.alias + "]任务🎖️领取",
-                    k -> probeGoldenBeansStatus(entry, taskId), taskId, taskName,
+                    k -> probeGoldenBeansStatus(entry, taskId, -1), taskId, taskName,
                     () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("GoldenBeansTaskList", taskId, jo),
                     msg -> Log.goldenBeans(msg))) {
                 return true;

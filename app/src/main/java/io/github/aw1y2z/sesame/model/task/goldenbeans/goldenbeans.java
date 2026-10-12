@@ -184,8 +184,7 @@ public class goldenbeans extends ModelTask {
                 resync(interval);
             }
 
-            // 任务、矿工与兑换进度会在日内变化，各业务按服务端状态和兑换额度自行去重。
-            Log.goldenBeans("金豆夺宝" + (taskResolved && gameResolved ? "✅本轮任务已全部处理" : "⏳仍有待完成或待领取任务"));
+            if (!(taskResolved && gameResolved)) Log.markUnresolved();
         } catch (TaskCancelledException cancelled) {
             throw cancelled;
         } catch (Throwable th) {

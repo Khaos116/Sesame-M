@@ -593,7 +593,7 @@ public class AntSports extends ModelTask {
             return false;
         }
         Status.flagToday(FLAG_RISK_TODAY);
-        Log.other("运动任务⛔命中风控(1009)，今日不再执行");
+        Log.other("运动任务⚠️命中风控(1009)，今日不再执行");
         return true;
     }
 
@@ -1658,12 +1658,12 @@ public class AntSports extends ModelTask {
                         }
                         Log.other("领取奖励🎖️[" + taskName + "]#" + award);
                     } else {
-                        Log.other("文体中心领取奖励失败");
+                        Log.other("文体中心⚠️[领取奖励]#失败");
                         Log.i(jo.toString());
                     }
                 }
             } else {
-                Log.other("文体中心领取奖励失败");
+                Log.other("文体中心⚠️[领取奖励]#失败");
                 Log.i(s);
             }
         } catch (Throwable t) {
@@ -1742,12 +1742,12 @@ public class AntSports extends ModelTask {
                         }
                         Log.other("文体宝箱🎁[" + award + "]");
                     } else {
-                        Log.other("文体中心开宝箱失败");
+                        Log.other("文体中心⚠️[开宝箱]#失败");
                         Log.i(jo.toString());
                     }
                 }
             } else {
-                Log.other("文体中心开宝箱失败");
+                Log.other("文体中心⚠️[开宝箱]#失败");
                 Log.i(s);
             }
         } catch (Throwable t) {
@@ -2149,7 +2149,7 @@ public class AntSports extends ModelTask {
                 JSONObject data = jsonResult.optJSONObject("data");
                 int energy = data != null ? data.optInt("modifyCount") : 0;
                 if (energy > 0) {
-                    Log.other("悦动健康🚑️领取奖励[" + rewardName + "]#获得[" + energy + "g健康能量]");
+                    Log.other("悦动健康🧾领取奖励[" + rewardName + "]#获得[" + energy + "g健康能量]");
                 }
             }
         } catch (Exception e) {
@@ -2254,7 +2254,7 @@ public class AntSports extends ModelTask {
                 JSONArray rewards = data.optJSONArray("userItems");
                 ArrayList<String> rewardList = rewards != null ? parseRewards(rewards) : new ArrayList<>();
                 if (!rewardList.isEmpty()) {
-                    Log.other("悦动健康🚑️能量泵[" + mapName + "]#获得" + rewardList);
+                    Log.other("悦动健康🧾能量泵[" + mapName + "]#获得" + rewardList);
                 }
 
                 JSONObject starData = data.optJSONObject("starData");
@@ -2283,7 +2283,7 @@ public class AntSports extends ModelTask {
                 JSONArray rewards = data.optJSONArray("rewards");
                 ArrayList<String> rewardList = rewards != null ? parseRewards(rewards) : new ArrayList<>();
                 if (!rewardList.isEmpty()) {
-                    Log.other("悦动健康🚑️能量泵[" + mapName + "]#获得" + rewardList);
+                    Log.other("悦动健康🧾能量泵[" + mapName + "]#获得" + rewardList);
                 }
                 return buildingEnergyFinal - endbuildingEnergyProcess;
             }
@@ -2321,7 +2321,7 @@ public class AntSports extends ModelTask {
                 }
 
                 String taskName = task.optString("title", "浏览商品15s得健康能量");
-                Log.other("悦动健康🚑️完成任务[" + taskName + "]#获得[" + totalEnergy + "g健康能量]");
+                Log.other("悦动健康🧾完成任务[" + taskName + "]#获得[" + totalEnergy + "g健康能量]");
                 return true;
             }
         } catch (Exception e) {
@@ -2343,7 +2343,7 @@ public class AntSports extends ModelTask {
                 ArrayList<String> rewardList = rewards != null ? parseRewards(rewards) : new ArrayList<>();
 
                 if (!rewardList.isEmpty()) {
-                    Log.other("悦动健康🚑️领取奖励[离线奖励]#获得" + rewardList);
+                    Log.other("悦动健康🧾领取奖励[离线奖励]#获得" + rewardList);
                 }
             }
         } catch (Exception e) {
@@ -2498,7 +2498,7 @@ public class AntSports extends ModelTask {
                                         }
                                         String subTitle = prize.optString("subTitle");
                                         String title = prize.optString("title");
-                                        Log.other("悦动健康🚑️领取奖励[" + subTitle + "]#获得[" + title + "]");
+                                        Log.other("悦动健康🧾领取奖励[" + subTitle + "]#获得[" + title + "]");
                                     }
                                 }
                             }
@@ -2848,7 +2848,7 @@ public class AntSports extends ModelTask {
                             if (!status.contains("FINISH")) {
                                 JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.mapChooseFree(branchId, mapId));
                                 if (MessageUtil.checkSuccess(TAG, jo)) {
-                                    Log.i("悦动健康🚑️切换到[" + mapName + "](" + mapId + ")");
+                                    Log.i("悦动健康🧾切换到[" + mapName + "](" + mapId + ")");
                                     break;
                                 }
                             }

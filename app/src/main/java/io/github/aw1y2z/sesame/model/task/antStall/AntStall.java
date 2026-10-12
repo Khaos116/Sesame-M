@@ -721,7 +721,6 @@ public class AntStall extends ModelTask {
             JSONObject bizInfo = MyUtils.newJSONObject(task.optString("bizInfo"));
             // 周期/持续型任务：跳过，不尝试也不拉黑
             if (TaskAttemptPolicy.isCyclicTask(task)) {
-                Log.i("新村任务⏭️跳过周期任务[" + title + "]");
                 return false;
             }
             if (Objects.equals("VISIT_AUTO_FINISH", bizInfo.optString("actionType")) || taskTypeList.contains(taskType)) {
@@ -1036,7 +1035,7 @@ public class AntStall extends ModelTask {
                 JSONObject jo = MyUtils.newJSONObject(AntStallRpcCall.achieveBeShareP2P(friendUserId));
                 TimeUtil.sleep(5000);
                 if (MessageUtil.checkSuccess(TAG, jo)) {
-                    Log.farm("新村助力🎉助力[" + UserIdMap.getMaskName(friendUserId) + "]成功");
+                    Log.farm("新村助力🧾助力[" + UserIdMap.getMaskName(friendUserId) + "]成功");
                     Status.stallShareP2PToday(friendUserId);
                 }
                 else if (Objects.equals("600000027", jo.optString("code"))) {

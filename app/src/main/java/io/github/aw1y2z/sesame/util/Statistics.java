@@ -42,6 +42,32 @@ public class Statistics {
     }
     
     /**
+     * 用服务端权威值**覆盖**今日收取能量（而非累加）。
+     * <p>逐点 {@link #addData} 只要漏掉一个入口，当日账目就永久偏小，故改由服务端明细直接定值。
+     * <p>month/year 按差值同步追加：这两个是历史累计维度，被覆盖的今日值此前已计入它们。
+     *
+     * @param todayCollected 服务端给出的今日收取能量；传负数表示无效值、忽略
+     * @return 本次覆盖造成的日维度增量（可能为负）
+     */
+    public static synchronized int setDayCollectedFromServer(int todayCollected) {
+        if (todayCollected < 0) {
+            return 0;
+        }
+        String userId = UserIdMap.getCurrentUid();
+        if (!AccountFolderName.isValidUid(userId)) return 0;
+        if (!userId.equals(loadedUserId)) load(userId);
+        updateDay(MyUtils.getInstance());
+        int delta = todayCollected - INSTANCE.day.collected;
+        if (delta == 0) {
+            return 0;
+        }
+        INSTANCE.day.collected = todayCollected;
+        INSTANCE.month.collected += delta;
+        INSTANCE.year.collected += delta;
+        return delta;
+    }
+
+    /**
      * synchronized：与 save/load/unload 共用 Statistics.class 监视器。
      * <p>各个模块跑在各自线程上、都会累加同一个计数器，原先的 += 既会丢更新，
      * 也可能正好撞上 save() 的序列化过程。

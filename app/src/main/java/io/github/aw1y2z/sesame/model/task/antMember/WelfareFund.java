@@ -156,8 +156,8 @@ public class WelfareFund {
                     }
                     continue;
                 }
+                // 黑名单跳过静默：条目由用户在配置页维护，内容恒定，不打日志
                 if (blackList != null && blackList.contains(title)) {
-                    Log.record("福利金任务⏭️跳过[" + title + "]#黑名单");
                     continue;
                 }
                 String triggerType = item.optString("sendCampTriggerType");

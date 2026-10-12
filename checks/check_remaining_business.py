@@ -16,7 +16,7 @@ code = r'''
 import org.json.*;
 import java.math.BigDecimal;
 import java.util.*;
-import java.util.function.Consumer;
+import java.util.function.*;
 import java.util.concurrent.TimeUnit;
 public class RemainingCheck {
     static class Field<T> { T value; Field(T value) { this.value=value; } T getValue() { return value; } }

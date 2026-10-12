@@ -25,6 +25,7 @@ class BaseModel { static void taskRpcRequest() {} static Value getTimedTaskModel
 class Log { static final java.util.concurrent.atomic.AtomicInteger completions = new java.util.concurrent.atomic.AtomicInteger();
  static String beginModule(String name) { return null; } static void endModule(String previous) {}
  static void record(String s) { if (s.equals("🏁全部任务已执行完成")) completions.incrementAndGet(); }
+ static boolean unresolved; static boolean isUnresolved(){return unresolved;} static void resetUnresolved(){unresolved=false;} static void markUnresolved(){unresolved=true;} static void moduleSummary(String s){}
  static void startModuleLogCount() {} static int stopModuleLogCount() { return 1; }
  static int takeDroppedStaleLogCount() { return 0; } static void restoreDroppedStaleLogCount(int n) {}
  static void error(String s) { }

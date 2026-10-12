@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -60,7 +61,9 @@ import io.github.aw1y2z.sesame.util.Log
 import io.github.aw1y2z.sesame.util.StringUtil
 import io.github.aw1y2z.sesame.util.ToastUtil
 import kotlin.math.roundToInt
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
@@ -79,6 +82,7 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
     }
 
     private var userId: String? = null
+    internal var fieldsVersion by mutableStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,6 +97,11 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
     override fun onBackPressed() {
         save()
         super.onBackPressed()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        fieldsVersion++
     }
 
     /** 顶部返回按钮与系统返回统一入口：先保存再退出（与三级/四级保持一致）。 */
@@ -123,6 +132,31 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
             } catch (th: Throwable) {
                 Log.printStackTrace(th)
             }
+        }
+    }
+
+    /**
+     * 打开一条搜索命中：选择型字段直接进四级编辑页；
+     * 其余类型进三级页，并把字段名当搜索词带过去，进去即只剩该字段。
+     */
+    internal fun openFieldHit(hit: FieldHit) {
+        if (hit.field.type in SELECTION_FIELD_TYPES) {
+            startActivity(
+                Intent(this, MiuixSelectionEditActivity::class.java).apply {
+                    putExtra(MiuixSelectionEditActivity.EXTRA_USER_ID, userId)
+                    putExtra(MiuixSelectionEditActivity.EXTRA_GROUP_CODE, hit.groupCode)
+                    putExtra(MiuixSelectionEditActivity.EXTRA_FIELD_CODE, hit.field.code)
+                    putExtra(MiuixSelectionEditActivity.EXTRA_MODEL_CODE, hit.modelCode)
+                }
+            )
+        } else {
+            startActivity(
+                Intent(this, MiuixGroupFieldsActivity::class.java).apply {
+                    putExtra(MiuixGroupFieldsActivity.EXTRA_USER_ID, userId)
+                    putExtra(MiuixGroupFieldsActivity.EXTRA_GROUP_CODE, hit.groupCode)
+                    putExtra(MiuixGroupFieldsActivity.EXTRA_SEARCH_QUERY, hit.field.name ?: hit.field.code)
+                }
+            )
         }
     }
 }
@@ -169,6 +203,7 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
                 }
                 Model.initAllModel()
                 ConfigPreload.prepare(userId)
+                activity.fieldsVersion++
                 ToastUtil.show(context, "导入成功！")
             } catch (e: Exception) {
                 ToastUtil.show(context, "导入失败！")
@@ -189,6 +224,14 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
         },
         containerColor = MiuixTheme.colorScheme.surface
     ) { padding ->
+        // 全局字段搜索：搜到任意分组下的配置项，直接跳到可编辑处，
+        // 免去「进分组→进三级页→再搜一次」的来回切换（如清理各模块黑名单）
+        var searchQuery by remember { mutableStateOf("") }
+        val query = searchQuery.trim()
+        // 命中项连同归属一起攒好，用于结果行显示与跳转
+        val hits = remember(userId, query, activity.fieldsVersion) {
+            if (query.isEmpty()) emptyList() else buildFieldHits(query)
+        }
         Column(
             Modifier
                 .fillMaxSize()
@@ -196,22 +239,74 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
                 .padding(padding)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            // ============ 配置分组目录 ============
-            CardColumn {
-                ModelGroup.values().forEach { g ->
-                    if (Model.getGroupModelConfig(g).isNotEmpty()) {
-                        ArrowPreference(title = g.getName(), onClick = {
-                            activity.startActivity(
-                                Intent(activity, MiuixGroupFieldsActivity::class.java).apply {
-                                    putExtra(MiuixGroupFieldsActivity.EXTRA_USER_ID, userId)
-                                    putExtra(MiuixGroupFieldsActivity.EXTRA_GROUP_CODE, g.name)
-                                }
+            // 搜索框：与三级/四级页同款
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = "",
+                    modifier = Modifier.weight(1f),
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Filled.Search,
+                            contentDescription = "搜索",
+                            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(start = 12.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            Text(
+                                "×",
+                                fontSize = 16.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.padding(end = 12.dp).clickable { searchQuery = "" }
                             )
-                        })
+                        }
+                    }
+                )
+            }
+
+            if (query.isNotEmpty()) {
+                // ============ 搜索结果 ============
+                if (hits.isEmpty()) {
+                    SmallTitle(text = "无匹配字段")
+                } else {
+                    // 标题里已是「分组 | 字段名」，summary 再给模型名，两者合起来足以区分同名字段
+                    CardColumn {
+                        hits.forEach { hit ->
+                            ArrowPreference(
+                                title = hit.field.name ?: hit.field.code,
+                                summary = hit.modelName,
+                                onClick = { activity.openFieldHit(hit) }
+                            )
+                        }
                     }
                 }
+                Spacer(Modifier.height(12.dp))
+            } else {
+                // ============ 配置分组目录 ============
+                CardColumn {
+                    ModelGroup.values().forEach { g ->
+                        if (Model.getGroupModelConfig(g).isNotEmpty()) {
+                            ArrowPreference(title = g.getName(), onClick = {
+                                activity.startActivity(
+                                    Intent(activity, MiuixGroupFieldsActivity::class.java).apply {
+                                        putExtra(MiuixGroupFieldsActivity.EXTRA_USER_ID, userId)
+                                        putExtra(MiuixGroupFieldsActivity.EXTRA_GROUP_CODE, g.name)
+                                    }
+                                )
+                            })
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
             }
-            Spacer(Modifier.height(12.dp))
 
             if (showDeleteDialog) {
                 ConfirmDialog(
@@ -229,6 +324,44 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
             }
         }
     }
+
+}
+
+/** 可在四级页编辑的字段类型（与三级页的分派保持一致） */
+private val SELECTION_FIELD_TYPES = setOf("SELECT", "SELECT_ONE", "SELECT_AND_COUNT", "SELECT_AND_COUNT_ONE")
+
+/** 一条搜索命中：字段本身 + 它所属的分组与模型（跳转与展示都需要） */
+internal data class FieldHit(
+    val groupCode: String,
+    val modelCode: String,
+    val modelName: String,
+    val field: ModelField<*>
+)
+
+/**
+ * 在全部模块的可见字段里搜关键字，返回命中项。
+ * <p>可见性沿用三级页的判据（依赖的父字段未激活则不可见），保证搜到的字段点进去能看到。
+ */
+private fun buildFieldHits(query: String): List<FieldHit> {
+    val result = ArrayList<FieldHit>()
+    ModelGroup.values().forEach { group ->
+        Model.getGroupModelConfig(group).values.forEach { modelConfig ->
+            val visible = modelConfig.fields.values.filter { it.isVisible(modelConfig) }
+            visible.forEach { field ->
+                if (fieldMatchesSearch(query, field)) {
+                    result.add(
+                        FieldHit(
+                            groupCode = group.name,
+                            modelCode = modelConfig.getCode(),
+                            modelName = modelConfig.name ?: "",
+                            field = field
+                        )
+                    )
+                }
+            }
+        }
+    }
+    return result
 }
 
 /**

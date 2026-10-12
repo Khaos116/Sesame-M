@@ -54,10 +54,10 @@ public class ReadingDada {
                     Log.other("答题完成");
                     return true;
                 } else {
-                    Log.other("答题失败");
+                    Log.other("新村答题⚠️[失败]");
                 }
             } else {
-                Log.other("获取问题失败");
+                Log.other("新村答题⚠️[获取问题]#失败");
             }
         } catch (Throwable e) {
             Log.err(TAG, "answerQuestion err:", e);

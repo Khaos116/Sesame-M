@@ -16,7 +16,12 @@ import java.util.*;
 import org.json.*;
 public class EnergyManureCheck {
     static final String TAG="check";
+    static final int ENERGY_RECORD_PAGE_SIZE=200,ENERGY_RECORD_MAX_PAGES=20;
+    static class TaskCancelledException extends RuntimeException {}
+    static class UserIdMap {static String uid="A";static String getCurrentUid(){return uid;}}
+    static class TaskAlternative {static String describe(JSONObject j){return "invalid";}}
     static class MyUtils {
+        static Calendar getInstance(){return Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));}
         static JSONObject newJSONObject(String s) { try { return new JSONObject(s); } catch(Exception e) { return new JSONObject(); } }
     }
     static class Log {
@@ -43,6 +48,9 @@ public class EnergyManureCheck {
     static class Statistics {
         enum DataType { COLLECTED }
         static int total;
+        static int updates;
+        static int setDayCollectedFromServer(int n){updates++;int delta=n-total;total=n;return delta;}
+        static void save(){}
         static void addData(DataType t,int n) { total+=n; }
     }
     static int totalCollected;
@@ -53,6 +61,12 @@ public class EnergyManureCheck {
         static String sendEnergyByAction(String type) { sent++; return send.remove(); }
     }
     static class AntForestRpcCall {
+        static Queue<String> records=new ArrayDeque<>();static boolean cancelRecords,switchAccount;
+        static String pagingQueryEnergyRecord(long id,int size){
+            if(cancelRecords)throw new TaskCancelledException();
+            if(switchAccount)UserIdMap.uid="B";
+            return records.remove();
+        }
         static String chance; static int generated;
         static String checkUserSecondSceneChance() { return chance; }
         static String generateEnergy() { generated++; return new JSONObject().put("success",true).put("resultObject",
@@ -91,7 +105,28 @@ public class EnergyManureCheck {
         AntOrchardRpcCall.balance=new JSONObject().put("resultCode","SUCCESS").put("farmMainAccountInfo",
             new JSONObject().put("happyPoint",Integer.toString(have)).put("wateringCost",cost).put("wateringLeftTimes",left)).toString();
     }
+    static JSONObject record(long date,int energy){return new JSONObject().put("bizDate",date).put("energy",energy);}
+    static String page(boolean more,long next,Object... rows){return new JSONObject().put("success",true)
+        .put("hasMore",more).put("nextId",next).put("recordVOList",new JSONArray(Arrays.asList(rows))).toString();}
+    static void records(String... pages){AntForestRpcCall.records.clear();Collections.addAll(AntForestRpcCall.records,pages);
+        Statistics.total=99;Statistics.updates=0;UserIdMap.uid="A";AntForestRpcCall.switchAccount=false;}
+    static void energyRecords(){
+        TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));
+        Calendar day=MyUtils.getInstance();day.set(Calendar.HOUR_OF_DAY,0);day.set(Calendar.MINUTE,0);day.set(Calendar.SECOND,0);day.set(Calendar.MILLISECOND,0);
+        long today=day.getTimeInMillis();EnergyManureCheck work=new EnergyManureCheck();
+        records(page(true,10,record(today+1,5)),page(false,0,record(today+2,7)));work.syncTodayCollectedFromServer();assert Statistics.total==12&&Statistics.updates==1;
+        records(page(true,10,record(today,5),record(today-1,100)));work.syncTodayCollectedFromServer();assert Statistics.total==5;
+        for(String bad:List.of("invalid","{}",page(true,10,record(today,7)),page(false,0,new JSONObject()),page(false,0,record(today,-1)))){
+            records(page(true,10,record(today,5)),bad);work.syncTodayCollectedFromServer();assert Statistics.total==99&&Statistics.updates==0:bad;
+        }
+        records(page(false,0,record(today,Integer.MAX_VALUE),record(today,1)));work.syncTodayCollectedFromServer();assert Statistics.updates==0;
+        records();for(int i=1;i<=20;i++)AntForestRpcCall.records.add(page(true,i,record(today,1)));
+        work.syncTodayCollectedFromServer();assert Statistics.updates==0:"truncated pages overwrote totals";
+        records(page(false,0,record(today,8)));AntForestRpcCall.switchAccount=true;work.syncTodayCollectedFromServer();assert Statistics.updates==0;
+        AntForestRpcCall.cancelRecords=true;try{work.syncTodayCollectedFromServer();throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}AntForestRpcCall.cancelRecords=false;
+    }
     public static void main(String[] args) {
+        energyRecords();
         Log.lines.clear();
         ErrorMessages.printErrorMessage(TAG,new JSONObject().put("error","RPC_SKIPPED").put("code","400000040"),"memo");
         ErrorMessages.printErrorMessage(TAG,new JSONObject().put("error","RPC_SKIPPED").put("localRuleSkip",true).put("memo","GR local rule"),"memo");
@@ -101,7 +136,7 @@ public class EnergyManureCheck {
         ErrorMessages.printErrorMessage(TAG,new JSONObject().put("code","OTHER").put("memo","failed"),"memo");
         assert ErrorMessages.failures==1;
         resetMarket(); for(int i=0;i<3;i++) { GreenLifeRpcCall.consult.add(response(true,0)); GreenLifeRpcCall.send.add(response(true,10)); }
-        sendEnergyByAction("GREEN_LIFE"); assert GreenLifeRpcCall.sent==3 && Statistics.total==30 && totalCollected==30;
+        sendEnergyByAction("GREEN_LIFE"); assert GreenLifeRpcCall.sent==1 && Statistics.total==10 && totalCollected==10;
         resetMarket(); GreenLifeRpcCall.consult.add(response(true,0)); GreenLifeRpcCall.consult.add(response(false,0));
         GreenLifeRpcCall.send.add(response(true,8)); sendEnergyByAction("GREEN_LIFE"); assert GreenLifeRpcCall.sent==1 && totalCollected==8;
         for(String invalid : List.of("{}","invalid", "{\"success\":true}",response("true",0),response(JSONObject.NULL,0))) {
@@ -134,13 +169,13 @@ public class EnergyManureCheck {
         Orchard.spreadHappyPoint=-1; balance(50,10,196); assert o.canSpreadManure(PlantScene.yeb) && o.spreadUseBatchThisTime;
         balance(50,0,196); assert !o.canSpreadManure(PlantScene.main);
         balance(50,10,-1); assert !o.canSpreadManure(PlantScene.main);
-        System.out.println("PASS market rounds, rental gates, invalid responses, redaction, shared balance and batch fallback");
+        System.out.println("PASS single market send, rental gates, invalid responses, redaction, shared balance and batch fallback");
     }
 }
 '''
 for key, path, signatures in (
     ("@@ERRORS@@", "util/MessageUtil.java", ("public static void printErrorMessage(", "public static boolean isUnsupportedRpc(", "public static boolean isServerBusy(")),
-    ("@@FOREST@@", "model/task/antForest/AntForestV2.java", ("private static void sendEnergyByAction(", "private static void greenRent(")),
+    ("@@FOREST@@", "model/task/antForest/AntForestV2.java", ("private static void sendEnergyByAction(", "private static void greenRent(", "private void syncTodayCollectedFromServer(")),
     ("@@ORCHARD@@", "model/task/antOrchard/AntOrchard.java", ("private boolean canSpreadManure(", "private boolean doSpreadManure(",
         "private static void logSpreadShortage(", "private int targetSpreadTimes(", "private static boolean shouldBatchSpread(")),
 ):

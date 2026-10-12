@@ -323,6 +323,45 @@ public class Log {
         writeModuleLog(s, io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableOtherLog(), Log::otherLogger);
     }
 
+    /**
+     * 模块收尾汇总：按当前线程所属模块（{@link #MODULE_TAG}）路由到对应的分类文件。
+     * <p>用于 {@code ModelTask} 在模块 run() 结束后打「本轮完成 / 本轮无操作」，是各模块结果汇总的
+     * 唯一入口——新增模块只要在 {@code ModelGroup} 里给了 code，这里自动选对分类文件。
+     * <p>路由：森林/物种（FOREST/SPECIES）→ forest；庄园/新村/农场（FARM/STALL/ORCHARD）→ farm；
+     * 金豆（GOLDENBEANS）→ goldenBeans；其余（海洋/运动/会员/经营/保护/AI/其他）→ other。
+     */
+    /** 本线程本轮是否还有未处理完的任务（模块可显式声明，见 {@link #markUnresolved}） */
+    private static final ThreadLocal<Boolean> MODULE_UNRESOLVED = ThreadLocal.withInitial(() -> false);
+
+    /** 重置本轮未完成标记（由 {@code ModelTask} 在模块 run() 前调用） */
+    public static void resetUnresolved() {
+        MODULE_UNRESOLVED.set(false);
+    }
+
+    /** 模块声明本轮仍有待完成/待领取的任务，收尾汇总会据此打「⏳仍有待处理」 */
+    public static void markUnresolved() {
+        MODULE_UNRESOLVED.set(true);
+    }
+
+    /** 本线程本轮是否有未完成的任务 */
+    public static boolean isUnresolved() {
+        Boolean v = MODULE_UNRESOLVED.get();
+        return v != null && v;
+    }
+
+    public static void moduleSummary(String s) {
+        String tag = MODULE_TAG.get();
+        if ("FOREST".equals(tag) || "SPECIES".equals(tag)) {
+            forest(s);
+        } else if ("FARM".equals(tag) || "STALL".equals(tag) || "ORCHARD".equals(tag)) {
+            farm(s);
+        } else if ("GOLDENBEANS".equals(tag)) {
+            goldenBeans(s);
+        } else {
+            other(s);
+        }
+    }
+
     public static void debug(String s) {
         if (!io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableDebugLog()) {
             return;

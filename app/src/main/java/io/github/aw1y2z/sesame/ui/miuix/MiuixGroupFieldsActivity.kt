@@ -78,21 +78,27 @@ class MiuixGroupFieldsActivity : MiuixBaseActivity() {
     companion object {
         const val EXTRA_USER_ID = "userId"
         const val EXTRA_GROUP_CODE = "groupCode"
+
+        /** 预填搜索词：从二级页搜索结果跳进来时带上，进入即过滤到该字段 */
+        const val EXTRA_SEARCH_QUERY = "searchQuery"
     }
 
     private var userId: String? = null
     internal var groupCode: String? = null
+    private var initialQuery: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         userId = intent.getStringExtra(EXTRA_USER_ID)
         groupCode = intent.getStringExtra(EXTRA_GROUP_CODE)
         ConfigPreload.ensurePrepared(userId)
+        initialQuery = intent.getStringExtra(EXTRA_SEARCH_QUERY)
         setAppContent {
             groupCode?.let { code ->
                 val group = ModelGroup.entries.find { it.name == code }
                 if (group != null) {
-                    GroupFieldsContent(activity = this, userId = userId, groupCode = code, group = group)
+                    GroupFieldsContent(activity = this, userId = userId, groupCode = code, group = group,
+                            initialQuery = initialQuery)
                 } else {
                     top.yukonga.miuix.kmp.basic.Text("分组不存在: $code", color = MiuixTheme.colorScheme.error)
                 }
@@ -175,7 +181,8 @@ private sealed interface GroupFieldsRow {
 }
 
 @Composable
-fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, groupCode: String, group: ModelGroup) {
+fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, groupCode: String, group: ModelGroup,
+                       initialQuery: String? = null) {
     // 父字段开关/选项变化后，依赖其显示的子字段需重新计算可见性，
     // 用 depVersion 作为 remember 键触发扁平行列表重建。
     var depVersion by remember { mutableStateOf(0) }
@@ -241,7 +248,8 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
         containerColor = MiuixTheme.colorScheme.surface
     ) { padding ->
         // 搜索框：与四级页一致，按字段名/编码/描述过滤，并隐藏无匹配的分区
-        var searchQuery by remember { mutableStateOf("") }
+        // 带 initialQuery 进来时（二级页搜索结果跳转）直接以它为初始值，进页面即过滤
+        var searchQuery by remember { mutableStateOf(initialQuery ?: "") }
         // 按分区（Header）归组：一个分组 = 一张 CardColumn（四角 16dp 圆角、行无缝），
         // 与一级页「一张卡里排多行」完全一致；行作为 Card 的子项，背景/裁剪/按压观感都由它负责。
         // 注意：必须在这里算（@Composable 上下文），不能放进 LazyColumn 的 content lambda
@@ -400,7 +408,7 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
  * 三级页搜索匹配：字段名、编码或描述包含关键字（忽略大小写）。
  * 与四级页按 name/id 过滤的语义保持一致，这里用字段的 name/code/description。
  */
-private fun fieldMatchesSearch(query: String, field: ModelField<*>): Boolean {
+internal fun fieldMatchesSearch(query: String, field: ModelField<*>): Boolean {
     return field.name?.contains(query, ignoreCase = true) == true
         || field.code.contains(query, ignoreCase = true)
         || field.description?.contains(query, ignoreCase = true) == true

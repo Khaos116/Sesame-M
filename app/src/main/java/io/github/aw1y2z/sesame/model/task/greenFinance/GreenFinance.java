@@ -443,7 +443,7 @@ public class GreenFinance extends ModelTask {
                     TimeUtil.sleep(1500);
                     JSONObject jsonObject = MyUtils.newJSONObject(str);
                     if (!jsonObject.optBoolean("success")) {
-                        Log.other("绿色经营🙋，好友金币巡查失败");
+                        Log.other("绿色经营🙋[金币巡查]#失败");
                         break;
                     }
                     JSONObject result = jsonObject.optJSONObject("result");

@@ -333,8 +333,8 @@ public class AntDodo extends ModelTask {
                     }
                     if (TaskStatus.TODO.name().equals(taskStatus)) {
                         // 周期/持续型任务：由真实行为推进、常驻列表且无 RPC 可完成，跳过（不尝试、不拉黑）
+                        // 常驻列表、每轮结果相同；静默跳过
                         if (TaskAttemptPolicy.isCyclicTask(taskBaseInfo)) {
-                            Log.i(TAG, "神奇物种⏭️跳过周期任务[" + taskTitle + "]");
                             continue;
                         }
                         if (finishTask(sceneCode, taskType, taskTitle)) {

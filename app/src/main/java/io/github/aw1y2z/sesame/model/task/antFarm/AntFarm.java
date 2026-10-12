@@ -1860,7 +1860,7 @@ public class AntFarm extends ModelTask {
         try {
             JSONArray levelAwardInfoList = jo.optJSONArray("levelAwardInfoList");
             if (levelAwardInfoList == null || levelAwardInfoList.length() == 0) {
-                Log.farm("爱心鸡结号❤️领取：无等级奖励列表");
+                // 无等级奖励列表属每轮恒定的否定状态；静默（真有可领项时下方会打 🎖️领取日志）
                 return;
             }
             int claimed = 0;
@@ -1884,9 +1884,9 @@ public class AntFarm extends ModelTask {
                 TimeUtil.sleep(1000L);
             }
             if (claimed > 0) {
-                Log.farm("爱心鸡结号❤️本次领取" + claimed + "个等级爱心值奖励");
+                Log.farm("爱心鸡结号❤️[等级爱心值]#本次领取" + claimed + "个");
             } else {
-                Log.farm("爱心鸡结号❤️无待领取的等级爱心值奖励");
+                Log.farm("爱心鸡结号❤️[等级爱心值]#无待领取");
             }
         } catch (Throwable t) {
             Log.err(TAG, "receiveCompetitionAward err:", t);
@@ -1936,10 +1936,9 @@ public class AntFarm extends ModelTask {
                 }
                 TimeUtil.sleep(1000L);
             }
+            // 只在真领到时打（"无待领取"是每轮恒定的否定状态，静默）
             if (claimed > 0) {
-                Log.farm("爱心鸡结号❤️本次领取" + claimed + "个任务奖励");
-            } else {
-                Log.farm("爱心鸡结号❤️无待领取的任务奖励");
+                Log.farm("爱心鸡结号❤️[任务奖励]#本次领取" + claimed + "个");
             }
         } catch (Throwable t) {
             Log.err(TAG, "receiveCompetitionTaskAwards err:", t);
@@ -3231,7 +3230,10 @@ public class AntFarm extends ModelTask {
 
     private void checkUnReceiveTaskAward() {
         if (unReceiveTaskAward > 0) {
-            Log.farm("还有待领取的饲料");
+            // 计数来自 receiveFarmTaskAward：奖励会撑破饲料仓（awardCount + foodStock > foodStockLimit），
+            // 服务端拒收。说清是"仓满领不下"，而不是含糊的"还有待领取"
+            Log.farm("饲料仓已满[" + foodStock + "/" + foodStockLimit + "g]#"
+                    + unReceiveTaskAward + "个任务的饲料奖励暂无法领取");
             unReceiveTaskAward = 0;
             listFarmTask(TaskStatus.FINISHED);
         }
@@ -4511,9 +4513,8 @@ public class AntFarm extends ModelTask {
 
     private void queryOptionalPlay() {
         try {
-            // 每个任务本轮最多上报一次：同一次运行内响应"成功"不代表服务端真的落态
-            // （实测「抢先试玩爆款新游」这类 COUNT_DOWN 广告任务恒回成功却一直是 TODO），
-            // 若不记已试集合会在一轮内无限领奖+无限申报。跨轮幂等交给 Status 标记。
+            // 每个任务的每个阶段（taskType#rightsTimes）每轮最多动作一次：
+            // 同一阶段重复动作会白跑，但阶段推进（领取后 rightsTimes 递增）要允许再做，故去重键带场景与序号
             Set<String> attempted = new HashSet<>();
             int round = 0;
             while (round++ < MAX_OPTIONAL_PLAY_ROUNDS) {
@@ -4553,6 +4554,7 @@ public class AntFarm extends ModelTask {
                     // 同一 taskType 可能分多阶段（rightsTimes 递增），用序号区分，避免误判为已试
                     if (taskType.isEmpty() || sceneCode.isEmpty() || title.isEmpty()) continue;
                     String attemptKey = sceneCode + "/" + taskType + "#" + rightsTimes;
+                    String awardKey = "farm::optionalplay::award::" + attemptKey + "#" + awardCount;
 
                     // 黑名单任务跳过
                     if (AntFarmDrawMachineTaskList.getValue().contains(title)) {
@@ -4568,12 +4570,14 @@ public class AntFarm extends ModelTask {
                         continue;
                     }
 
-                    // 已完成待领：领奖。已领满（awardCountForReceive<=0）不再重复请求
+                    // 已完成待领：领奖。已领满（awardCountForReceive<=0）不再重复请求；
+                    // 当日已领过的同一阶段也不再重复请求（按场景、阶段和奖励总数去重）
                     if (TaskStatus.FINISHED.name().equals(taskStatus)) {
-                        if (awardCountForReceive > 0 && attempted.add(attemptKey + "@award")) {
+                        if (awardCountForReceive > 0 && !Status.hasFlagToday(awardKey) && attempted.add(awardKey)) {
                             progressed = true;
                             JSONObject joReceived = MyUtils.newJSONObject(AntFarmRpcCall.receiveTaskAwardantfarm(awardCountForReceive, sceneCode, taskType));
                             if (MessageUtil.checkSuccess(TAG, joReceived)) {
+                                Status.flagToday(awardKey);
                                 int incAwardCount = joReceived.optInt("incAwardCount");
                                 JSONObject taskConfigResultVO = joReceived.optJSONObject("taskConfigResultVO");
                                 String awardType = taskConfigResultVO == null ? "乐园币" : taskConfigResultVO.optString("awardType", "乐园币");
@@ -4588,20 +4592,22 @@ public class AntFarm extends ModelTask {
                         if (!attempted.add(attemptKey)) {
                             continue;
                         }
-                        progressed = true;
                         String label = rightsTimesLimit > 1
                                 ? title + "(" + (rightsTimes + 1) + "/" + rightsTimesLimit + ")" : title;
-                        TaskAttemptPolicy.handle("farm::optionalplay::" + attemptKey, label, null,
+                        Outcome outcome = TaskAttemptPolicy.handle("farm::optionalplay::" + attemptKey, label, null,
                                 () -> finishOptionalPlayTask(sceneCode, taskType, label), Log::farm,
                                 new TaskAttemptPolicy.Site("AntFarmDrawMachineTaskList", "庄园乐园限定任务", taskType, sceneCode,
                                         k -> probeOptionalPlayStatus(sceneCode, taskType, rightsTimes)));
+                        progressed |= outcome != Outcome.TRIED_TODAY && outcome != Outcome.SKIPPED;
                     }
                 }
 
-                // 没有新的可做任务就结束，避免空转
+                // 一整轮里既无可领也无可做：可重复任务已打满次数，收工
                 if (!progressed) {
                     break;
                 }
+                // 服务端状态推进有延迟，留出落态时间再重拉
+                TimeUtil.sleep(1500);
             }
         } catch (Throwable th) {
             if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
@@ -4634,8 +4640,11 @@ public class AntFarm extends ModelTask {
         }
     }
 
-    /** 乐园限定任务单轮最大重拉次数（防服务端恒回 TODO 时死循环）。 */
-    private static final int MAX_OPTIONAL_PLAY_ROUNDS = 2;
+    /**
+     * 乐园限定任务单轮最大重拉次数：正常由「本轮无任何可执行/可领取动作」提前收工，
+     * 此上限只防服务端恒回 TODO 时死循环。
+     */
+    private static final int MAX_OPTIONAL_PLAY_ROUNDS = 12;
 
     //小鸡乐园兑奖
     // skuId, sku
@@ -4836,27 +4845,25 @@ public class AntFarm extends ModelTask {
     // （原先在 doFarmDrawTask 里打，日场/IP 场各一条，一轮下来同一条统计重复出现）
     private int drawStatScenes;
     private int drawStatTotal;
-    private int drawStatReceived;
-    private int drawStatFinished;
     private int drawStatTodo;
     private int drawStatDone;
     private int drawStatSkipped;
+    private int drawStatBlack;
 
     private void drawMachineGroups() {
         drawStatScenes = 0;
         drawStatTotal = 0;
-        drawStatReceived = 0;
-        drawStatFinished = 0;
         drawStatTodo = 0;
         drawStatDone = 0;
         drawStatSkipped = 0;
+        drawStatBlack = 0;
         try {
             drawMachineGroupsInner();
         } finally {
-            if (drawStatScenes > 0) {
-                Log.farm("抽抽乐📊任务统计[" + drawStatScenes + "场共" + drawStatTotal + "个]#已领=" + drawStatReceived
-                        + "完成待领=" + drawStatFinished + "待做=" + drawStatTodo
-                        + "已做=" + drawStatDone + "跳过=" + drawStatSkipped);
+            // 抽抽乐统计不再单独打：模块收尾统一由 ModelTask 打一条汇总（"庄园✅本轮完成"），
+            // 这张统计表与之信息重叠；需要细节时可查配置页任务列表或在 doFarmDrawTask 临时留痕
+            if (drawStatTodo > 0 || (drawStatSkipped - drawStatBlack) > 0) {
+                Log.markUnresolved();
             }
         }
     }
@@ -4946,7 +4953,8 @@ public class AntFarm extends ModelTask {
                 return;
             }
             int total = farmTaskList.length();
-            int received = 0, finished = 0, todo = 0, todoDone = 0, todoSkipped = 0;
+            int todo = 0, todoDone = 0, todoSkipped = 0;
+            int blackSkipped = 0;
             for (int i = 0; i < farmTaskList.length(); i++) {
                 if (!manualFarmOwner(ownerUserId) || !drawMachine.getValue()) return;
                 jo = farmTaskList.optJSONObject(i);
@@ -4957,19 +4965,17 @@ public class AntFarm extends ModelTask {
                 String title = jo.optString("title");
                 String taskId = jo.optString("taskId");
                 if (TaskStatus.RECEIVED.name().equals(taskStatus)) {
-                    received++;
                     continue;
                 }
                 if (TaskStatus.FINISHED.name().equals(taskStatus)) {
-                    finished++;
                     String awardType = jo.optString("awardType");
                     receiveFarmDrawTaskAward(taskId, title, awardType, taskSceneCode);
                     continue;
                 }
-                //黑名单任务跳过
+                //黑名单任务跳过静默：条目由用户在配置页维护，内容恒定，不打日志
                 if (AntFarmDrawMachineTaskList.getValue().contains(title)) {
                     todoSkipped++;
-                    Log.i("抽抽乐⏭️跳过[" + title + "]#黑名单");
+                    blackSkipped++;
                     continue;
                 }
 
@@ -5043,11 +5049,11 @@ public class AntFarm extends ModelTask {
                 String awardType = jo.optString("awardType");
                 receiveFarmDrawTaskAward(taskId, title, awardType, taskSceneCode);
             }
+
             // 统计累加到 drawStat*，由 drawMachineGroups 在抽抽乐全部场景跑完后统一打一行
+            drawStatBlack += blackSkipped;
             drawStatScenes++;
             drawStatTotal += total;
-            drawStatReceived += received;
-            drawStatFinished += finished;
             drawStatTodo += todo;
             drawStatDone += todoDone;
             drawStatSkipped += todoSkipped;
@@ -6474,7 +6480,7 @@ public class AntFarm extends ModelTask {
             }
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.familyEatTogether(groupId, cuisines, EatTogetherUserIds));
             if (MessageUtil.checkMemo(TAG, jo)) {
-                Log.farm("亲密家庭🏠" + periodName + "请客#消耗美食" + EatTogetherUserIds.length() + "份");
+                Log.farm("亲密家庭🏠请客[" + periodName + "]#消耗美食" + EatTogetherUserIds.length() + "份");
                 syncFamilyStatus(groupId);
             }
         } catch (Throwable t) {

@@ -2,12 +2,15 @@ package io.github.aw1y2z.sesame.data.task;
 
 import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.DailyTask;
+import org.json.JSONArray;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
@@ -82,7 +85,22 @@ public class TaskAttemptPolicy {
         FINISHED,
         RECEIVED,
         GONE,
-        UNKNOWN
+        UNKNOWN;
+
+        /**
+         * 把任务列表里的 {@code taskStatus} 映射为探针结果。
+         * <p>只接受 FINISHED / RECEIVED / TODO，其余状态保留 UNKNOWN，
+         * 服务端新增状态时只在此处调整。
+         */
+        public static ProbeResult of(String taskStatus) {
+            if ("FINISHED".equals(taskStatus)) {
+                return FINISHED;
+            }
+            if ("RECEIVED".equals(taskStatus)) {
+                return RECEIVED;
+            }
+            return "TODO".equals(taskStatus) ? TODO : UNKNOWN;
+        }
     }
 
     /** 是否算"完成"（已完成 / 已领到 / 已从列表消失，都算）。 */
@@ -122,6 +140,62 @@ public class TaskAttemptPolicy {
     /** 列表状态探针：重拉对应模块任务列表，返回定位键对应任务的当前列表状态（找不到返回 {@link ProbeResult#GONE}）。 */
     public interface StatusProbe {
         ProbeResult probe(String key);
+    }
+
+    /** 拉取任务列表原始响应 */
+    public interface RawSupplier {
+        String get() throws Exception;
+    }
+
+    /** 列表响应是否可用（各模块校验方式不同：checkResultCode / checkMemo） */
+    public interface ResponseCheck {
+        boolean ok(JSONObject jo);
+    }
+
+    /**
+     * 通用列表探针（顶层列表形态）：拉一次列表 → 用 {@code statusOf} 定位项并取状态。
+     * <p>找不到该项即 {@link ProbeResult#GONE}（视为已完成且已领）；列表拉取或校验失败为
+     * {@link ProbeResult#UNKNOWN}（调用方据此不做判定，避免误拉黑）。
+     * <p>各模块差异只有三处：拉列表的 RPC、列表字段名、定位谓词，故统一到这里。
+     * <p>{@code statusOf} 从列表项取出 {@code taskStatus}，返回 {@code null} 表示该项不匹配。
+     */
+    public static ProbeResult probeByList(String tag, RawSupplier listSupplier, String listField,
+                                          ResponseCheck check, Function<JSONObject, String> statusOf) {
+        return probeByNestedList(tag, listSupplier, check, jo -> jo.optJSONArray(listField), statusOf);
+    }
+
+    /**
+     * 嵌套列表形态：任务数组在响应内层（如 {@code taskTriggerPlayInfo.taskList}）。
+     * <p>与 {@link #probeByList} 同名会因函数式参数产生重载歧义，故单列方法名。
+     *
+     * @param listOf 从响应取出任务数组；取不到返回 null（视为 UNKNOWN）
+     */
+    public static ProbeResult probeByNestedList(String tag, RawSupplier listSupplier, ResponseCheck check,
+                                                Function<JSONObject, JSONArray> listOf,
+                                                Function<JSONObject, String> statusOf) {
+        try {
+            JSONObject jo = MyUtils.newJSONObject(listSupplier.get());
+            if (!check.ok(jo)) {
+                return ProbeResult.UNKNOWN;
+            }
+            JSONArray ja = listOf.apply(jo);
+            if (ja == null) {
+                return ProbeResult.UNKNOWN;
+            }
+            for (int i = 0; i < ja.length(); i++) {
+                JSONObject t = ja.optJSONObject(i);
+                if (t == null) return ProbeResult.UNKNOWN;
+                String status = statusOf.apply(t);
+                if (status != null) {
+                    return ProbeResult.of(status);
+                }
+            }
+            return ProbeResult.GONE;
+        } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
+            Log.err(tag, "probeByNestedList err:", t);
+            return ProbeResult.UNKNOWN;
+        }
     }
 
     /** 领奖动作，返回 true 表示领取成功 */
@@ -300,7 +374,6 @@ public class TaskAttemptPolicy {
                     && !(outcome == Outcome.UNABLE && site != null && site.forge != null));
         }
         if (listDone) {
-            log.accept("任务尝试✅列表已确认完成[" + title + "]");
             return Outcome.DONE;
         }
         // 行为伪造：把任务要求的真实行为用接口做出来；能伪造就不必退到伪申报

@@ -1,10 +1,10 @@
 import org.json.*;
-import java.util.*;import java.util.function.Consumer;import java.util.regex.Pattern;
+import java.util.*;import java.util.function.*;import java.util.regex.Pattern;
 public class Review {
 static String STATUS_FINISHED="FINISHED",STATUS_TO_RECEIVE="TO_RECEIVE",STATUS_RECEIVED="RECEIVED",STATUS_DONE="DONE",STATUS_TODO="TODO";
 static int finishes,claims;static boolean claimSuccess=true,blacklisted=false;
 boolean isBlacklisted(String a,String b){return blacklisted;} boolean isPayTask(String a){return false;} String blacklistKey(JSONObject t){return "task";} String displayName(JSONObject t){return "task";}
-boolean finishTask(GoldenBeansEntry e,String a,String b){finishes++;return true;}boolean claimAward(GoldenBeansEntry e,String a,String b){claims++;return claimSuccess;}
+boolean finishTask(GoldenBeansEntry e,String a,String b,int stage){finishes++;return true;}boolean claimAward(GoldenBeansEntry e,String a,String b){claims++;return claimSuccess;}
 boolean verifyPendingTasks(GoldenBeansEntry e){return false;}
 public static void main(String[]a){
  assert new Review().runTaskList(new GoldenBeansEntry(),0);
@@ -43,11 +43,11 @@ static void resetFlow(){Status.flags.clear();Log.confirmed=0;Log.unknown=0;Messa
 static String memberRows(JSONArray tasks){return new JSONObject().put("success",true).put("data",new JSONObject().put("taskModuleList",new JSONArray().put(new JSONObject().put("taskList",tasks)))).toString();}
 static void regressionFlows(){
  GoldenBeansEntry e=new GoldenBeansEntry();JSONObject input=new JSONObject().put("taskId","task").put("taskStatus","NOT_DONE").put("sceneCode","scene").put("subTitle","task");
- resetFlow();GoldenFlow gold=new GoldenFlow();gold.finishTask(e,"task","task");gold.finishTask(e,"task","task");
+ resetFlow();GoldenFlow gold=new GoldenFlow();gold.finishTask(e,"task","task",0);gold.finishTask(e,"task","task",0);
  assert goldenbeansRpcCall.primary==2&&!Status.hasFlagToday("attempt::goldenbeans::farm/task"):"null fallback incorrectly blocks golden retry";
  resetFlow();MemberFlow member=new MemberFlow();member.processTask(input);member.processTask(input);
  assert AntMemberRpcCall.primary==2&&!Status.hasFlagToday("attempt::member::game::task"):"null fallback incorrectly blocks member retry";
- resetFlow();ApplicationHook.reply="{\"resultCode\":\"102\"}";gold=new GoldenFlow();gold.finishTask(e,"task","task");gold.finishTask(e,"task","task");
+ resetFlow();ApplicationHook.reply="{\"resultCode\":\"102\"}";gold=new GoldenFlow();gold.finishTask(e,"task","task",0);gold.finishTask(e,"task","task",0);
  assert goldenbeansRpcCall.primary==1&&ApplicationHook.calls==1&&gold.pendingVerifyTasks.containsKey("task");
  resetFlow();ApplicationHook.reply="{\"resultCode\":\"102\"}";member=new MemberFlow();member.processTask(input);member.processTask(input);
  assert AntMemberRpcCall.primary==1&&ApplicationHook.calls==1&&member.pendingVerifyTasks.containsKey("task");
@@ -78,13 +78,16 @@ static void regressionFlows(){
  resetFlow();AntMemberRpcCall.snapshot=memberRows(new JSONArray().put(new JSONObject().put("taskStatus","NOT_DONE")));
  assert MemberFlow.probeMemberStatus("task")==TaskAttemptPolicy.ProbeResult.UNKNOWN;
  resetFlow();goldenbeansRpcCall.snapshot=new JSONObject().put("success",true).put("taskList",new JSONArray().put(new JSONObject().put("taskStatus","TODO"))).toString();
- assert new GoldenFlow().probeGoldenBeansStatus(e,"task")==TaskAttemptPolicy.ProbeResult.UNKNOWN;
- resetFlow();goldenbeansRpcCall.cancelSubmit=true;try{new GoldenFlow().finishTask(e,"task","task");throw new AssertionError("gold attempt swallowed cancellation");}catch(TaskCancelledException expected){}
- resetFlow();goldenbeansRpcCall.cancelPull=true;try{new GoldenFlow().probeGoldenBeansStatus(e,"task");throw new AssertionError("gold probe swallowed cancellation");}catch(TaskCancelledException expected){}
+ assert new GoldenFlow().probeGoldenBeansStatus(e,"task",-1)==TaskAttemptPolicy.ProbeResult.UNKNOWN;
+ resetFlow();goldenbeansRpcCall.cancelSubmit=true;try{new GoldenFlow().finishTask(e,"task","task",0);throw new AssertionError("gold attempt swallowed cancellation");}catch(TaskCancelledException expected){}
+ resetFlow();goldenbeansRpcCall.cancelPull=true;try{new GoldenFlow().probeGoldenBeansStatus(e,"task",-1);throw new AssertionError("gold probe swallowed cancellation");}catch(TaskCancelledException expected){}
  resetFlow();goldenbeansRpcCall.cancelPull=true;try{new Review().runTaskList(e,0);throw new AssertionError("gold task boundary swallowed cancellation");}catch(TaskCancelledException expected){}
  resetFlow();AntMemberRpcCall.cancelSend=true;try{new MemberFlow().processTask(input);throw new AssertionError("member attempt swallowed cancellation");}catch(TaskCancelledException expected){}
  resetFlow();AntMemberRpcCall.cancelRead=true;try{MemberFlow.probeMemberStatus("task");throw new AssertionError("member probe swallowed cancellation");}catch(TaskCancelledException expected){}
  resetFlow();AntMemberRpcCall.cancelRead=true;try{new MemberFlow().queryAndProcessTaskList();throw new AssertionError("member query boundary swallowed cancellation");}catch(TaskCancelledException expected){}
+ resetFlow();goldenbeansRpcCall.snapshot=new JSONObject().put("success",true).put("taskList",new JSONArray().put(new JSONObject().put("taskId","stage").put("taskStatus","TODO").put("rightsTimes",4))).toString();
+ assert new GoldenFlow().probeGoldenBeansStatus(e,"stage",3)==TaskAttemptPolicy.ProbeResult.FINISHED;
+ assert new GoldenFlow().probeGoldenBeansStatus(e,"stage",4)==TaskAttemptPolicy.ProbeResult.TODO;
  System.out.println("PASS actual member/golden fallback retry admission, malformed snapshots and cancellation boundaries");
 }
 @@POLICY@@

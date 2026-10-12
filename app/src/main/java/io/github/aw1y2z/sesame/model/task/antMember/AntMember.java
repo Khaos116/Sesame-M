@@ -1000,7 +1000,7 @@ public class AntMember extends ModelTask {
             }
             JSONArray targetBusinessArr = taskConfigInfo.optJSONArray("targetBusiness");
             if (targetBusinessArr == null || targetBusinessArr.length() == 0) {
-                Log.i("会员任务⏭️跳过[" + name + "]#无 targetBusiness 配置");
+                Log.other("会员任务⏭️跳过[" + name + "]#无 targetBusiness 配置");
                 return false;
             }
             String awardParamPoint = awardParam.optString("awardParamPoint");
@@ -1655,7 +1655,7 @@ public class AntMember extends ModelTask {
                     String openResp = AntMemberRpcCall.openBehaviorCollect(behaviorId);
                     JSONObject openJo = MyUtils.newJSONObject(openResp);
                     if (MessageUtil.checkResultCode(TAG, openJo)) {
-                        Log.other("攒芝麻分🧾任务领取：" + title);
+                        Log.other("攒芝麻分🧾[任务领取]#" + title);
                     }
                     continue;
                 }
@@ -2123,7 +2123,7 @@ public class AntMember extends ModelTask {
                 tip = prizePopup.optString("actionText", "").trim();
             }
             String desc = taskModule.optString("taskProgressDesc", "").trim();
-            Log.other("游戏中心🎁领取宝箱" + (tip.isEmpty() ? "" : "#" + tip) + (desc.isEmpty() ? "" : "#" + desc));
+            Log.other("游戏中心🎁[领取宝箱]" + (tip.isEmpty() ? "" : "#" + tip) + (desc.isEmpty() ? "" : "#" + desc));
         }
         catch (TaskCancelledException e) { throw e; }
         catch (Throwable t) {

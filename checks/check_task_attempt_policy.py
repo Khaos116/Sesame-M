@@ -87,6 +87,10 @@ public class MergePolicyCheck {
   assert Status.getIntFlagToday("count")==7;UserIdMap.uid="B";Status.setIntFlagToday("count",3);
   assert Status.getIntFlagToday("count")==3&&Status.disk.get("A").intFlagLogList.get("count")==7;
   UserIdMap.uid="A";assert Status.getIntFlagToday("count")==7;
+  assert TaskAttemptPolicy.probeByList("check",()->"{success:true,tasks:[null]}","tasks",j->j.optBoolean("success"),j->null)==TaskAttemptPolicy.ProbeResult.UNKNOWN;
+  assert TaskAttemptPolicy.probeByList("check",()->"{success:true,tasks:[{status:NEW_STATE}]}","tasks",j->j.optBoolean("success"),j->j.optString("status"))==TaskAttemptPolicy.ProbeResult.UNKNOWN;
+  assert TaskAttemptPolicy.probeByList("check",()->"{success:true,tasks:[]}","tasks",j->j.optBoolean("success"),j->null)==TaskAttemptPolicy.ProbeResult.GONE;
+  try {TaskAttemptPolicy.probeByList("check",()->{throw new TaskCancelledException();},"tasks",j->true,j->null);throw new AssertionError("shared probe swallowed cancellation");}catch(TaskCancelledException expected){}
   MergePolicyCheck farm=new MergePolicyCheck();
   Status.flagToday("attempt::farm__task__legacy");
   for(String raw:new String[]{"", "{}", "{error:'TRANSPORT_ERROR'}", "{error:1009}", "{error:48}", "{resultDesc:'请进行验证后继续'}"}){

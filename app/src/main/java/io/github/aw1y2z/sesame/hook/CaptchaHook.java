@@ -124,12 +124,12 @@ public class CaptchaHook {
     public static void updateHooks(boolean enableUI) {
         ClassLoader classLoader = savedClassLoader;
         if (classLoader == null) {
-            Log.i("❌ ClassLoader未初始化，请先调用setupHook()");
+            Log.i("⚠️ ClassLoader未初始化，请先调用setupHook()");
             return;
         }
         
         Log.i(TAG + "📝 更新验证码Hook状态:");
-        Log.record(TAG + "  UI层拦截: " + (enableUI ? "✅ 开启" : "⛔ 关闭"));
+        Log.record(TAG + "  UI层拦截: " + (enableUI ? "✅ 开启" : "⚠️ 关闭"));
         
         // 先卸载所有现有Hook
         unhookAll();
@@ -187,7 +187,7 @@ public class CaptchaHook {
                 }
             });
         } catch (Throwable e) {
-            Log.i("❌ Hook CaptchaDialog.show() 失败");
+            Log.i("⚠️ Hook CaptchaDialog.show() 失败");
             Log.printStackTrace(TAG, e);
             return null;
         }

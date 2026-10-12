@@ -183,7 +183,7 @@ public class FarmRankingCheck {
    reset(f);AntFarmRpcCall.weekly=true;AntFarmRpcCall.switchOwner=true;
    assert !f.donateToCompetition(3) && AntFarmRpcCall.uses==1 && !Status.hasFlagToday(FLAG_COMPETITION_DONATED_TODAY);
    AntFarmRpcCall.taskAwards=0;for(String status:new String[]{"TODO","RECEIVED","EXPIRED",""}){AntFarmRpcCall.taskStatus=status;f.receiveCompetitionTaskAwards();}assert AntFarmRpcCall.taskAwards==0:"non-FINISHED reward submitted";
-   AntFarmRpcCall.taskStatus="FINISHED";Log.lines.clear();f.receiveCompetitionTaskAwards();assert AntFarmRpcCall.taskAwards==1&&Log.lines.stream().anyMatch(x->x.contains("本次领取1个任务奖励")):"success-based reward response rejected as missing memo";
+   AntFarmRpcCall.taskStatus="FINISHED";Log.lines.clear();f.receiveCompetitionTaskAwards();assert AntFarmRpcCall.taskAwards==1&&Log.lines.stream().anyMatch(x->x.contains("[任务奖励]#本次领取1个")):"success-based reward response rejected as missing memo";
    java.lang.System.out.println("PASS farm ranking: typed daily/S2 schemas, own account, stars/cheapest plan, budget zero/caps, GMT+8 day/week reset, restart persistence, pre-RPC write failure, unknown/readback guards, schedule identity and cancellation");
  }
 }

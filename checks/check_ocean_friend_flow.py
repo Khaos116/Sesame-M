@@ -24,7 +24,7 @@ public class OceanFriendCheck {
  static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}
   static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}static boolean isRetryable(JSONObject j){return false;}static boolean isServerBusy(JSONObject j){return false;}
   static void checkResultCodeAndMarkTaskBlackList(String field,String title,JSONObject j){}}
- static class TaskAttemptPolicy {enum ProbeResult {TODO,FINISHED,RECEIVED,GONE,UNKNOWN}enum Outcome {DONE,RETRY,UNABLE,UNSUPPORTED}
+ static class TaskAttemptPolicy {enum ProbeResult {TODO,FINISHED,RECEIVED,GONE,UNKNOWN}enum Outcome {DONE,RETRY,UNABLE,UNSUPPORTED,TRIED_TODAY,SKIPPED,TRIGGERED}
   interface StatusProbe {ProbeResult probe(String k);}interface Attempt {Outcome run();}static class Site {Site(String a,String b,String c,String d,StatusProbe p){}}
   static boolean isCyclicTask(JSONObject j){return false;}static boolean isReceived(ProbeResult r){return r==ProbeResult.RECEIVED||r==ProbeResult.GONE;}
   static Outcome handle(String a,String b,Object award,Attempt attempt,java.util.function.Consumer<String> log,Site s){return attempt.run();}}
@@ -71,7 +71,7 @@ public class OceanFriendCheck {
  static String fishPage(boolean more,JSONObject... rows){return new JSONObject().put("resultCode","SUCCESS").put("hasMore",more).put("fishVOS",new JSONArray(Arrays.asList(rows))).toString();}
  static void resetPieces(){AntOceanRpcCall.fishPages.clear();AntOceanRpcCall.fishReads=0;AntOceanRpcCall.uses.clear();AntOceanRpcCall.propFail=false;TimeUtil.cancel=false;}
  public static void main(String[] args) throws Exception {
-  try{probeOceanStatus("scene","task");throw new AssertionError("Ocean task probe swallowed cancellation");}catch(TaskCancelledException expected){}
+  try{probeOceanStatus("scene","task",-1);throw new AssertionError("Ocean task probe swallowed cancellation");}catch(TaskCancelledException expected){}
   try{probeAntfishStatus("task");throw new AssertionError("Fish task probe swallowed cancellation");}catch(TaskCancelledException expected){}
   OceanFriendCheck taskFlow=new OceanFriendCheck();
   try{taskFlow.finishOceanTask(new JSONObject().put("sceneCode","scene").put("taskType","browse").put("bizInfo","{\"taskTitle\":\"browse\"}"));throw new AssertionError("Ocean completion wrapper swallowed cancellation");}catch(TaskCancelledException expected){}

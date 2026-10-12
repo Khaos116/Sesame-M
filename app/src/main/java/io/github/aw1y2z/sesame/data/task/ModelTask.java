@@ -67,9 +67,13 @@ public abstract class ModelTask extends Model {
             String prevModule = Log.beginModule(group == null ? null : group.getCode());
             Log.record("执行开始-" + task.getName());
             Log.startModuleLogCount();
+            boolean previousUnresolved = Log.isUnresolved();
+            Log.resetUnresolved();
+            boolean completed = false;
             try {
                 if (RunGeneration.isStale()) throw new TaskCancelledException();
                 task.run();
+                completed = true;
             } catch (TaskCancelledException e) {
                 Log.record(task.getName() + "⏹代际已作废，本轮提前结束");
             } catch (Exception e) {
@@ -83,10 +87,15 @@ public abstract class ModelTask extends Model {
                 Log.restoreDroppedStaleLogCount(droppedPrev);
                 // 还原而非清空：isSync 会在同一线程嵌套起跑，清掉会抹掉外层令牌
                 RunGeneration.restore(prevGen);
-                // 本轮模块未产生任何动作时，在运行日志中给出提示
-                if (Log.stopModuleLogCount() == 0) {
-                    Log.record(task.getName() + "✅本轮无操作");
-                }
+                // 模块收尾汇总：按「是否还有未处理任务」与「本轮是否有动作」给状态
+                int actions = Log.stopModuleLogCount();
+                String summary = task.getName() + (!completed ? "⏹本轮提前结束"
+                        : Log.isUnresolved() ? "⏳仍有待完成或待领取任务"
+                        : actions == 0 ? "✅本轮无操作" : "✅本轮完成");
+                Log.moduleSummary(summary);
+                Log.record(summary);
+                Log.resetUnresolved();
+                if (previousUnresolved) Log.markUnresolved();
                 Log.record("执行结束-" + task.getName());
                 Log.endModule(prevModule);
                 // 身份化移除：只删本线程登记的那条，避免旧代收尾误删新一代条目

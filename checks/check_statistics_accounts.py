@@ -89,6 +89,11 @@ public class StatisticsAccountCheck {
         UserIdMap.uid = "A"; Statistics.load("A"); eq(7);
         assert Statistics.getRoundCollected() == 0;
         UserIdMap.uid = "B"; Statistics.load("B"); eq(3);
+        assert Statistics.setDayCollectedFromServer(8)==5;eq(8);Statistics.save();
+        assert Statistics.setDayCollectedFromServer(-1)==0;eq(8);
+        assert Statistics.getData(Statistics.TimeType.MONTH,Statistics.DataType.COLLECTED)==8;
+        UserIdMap.uid="A";assert Statistics.setDayCollectedFromServer(11)==4;eq(11);Statistics.save();
+        UserIdMap.uid="B";Statistics.load("B");eq(8);
         assert Files.readString(Path.of(args[0], "statistics.json")).contains("99");
         assert Files.isRegularFile(FileUtil.getStatisticsFile("A").toPath());
         assert Files.isRegularFile(FileUtil.getStatisticsFile("B").toPath());
