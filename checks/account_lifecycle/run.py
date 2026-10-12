@@ -29,7 +29,7 @@ class Log { static final java.util.concurrent.atomic.AtomicInteger completions =
  static void startModuleLogCount() {} static int stopModuleLogCount() { return 1; }
  static int takeDroppedStaleLogCount() { return 0; } static void restoreDroppedStaleLogCount(int n) {}
  static void error(String s) { }
- static void printStackTrace(Throwable t) { throw new AssertionError(t); } }
+ static void printStackTrace(Throwable t) { if (t instanceof TaskCancelledException) throw (TaskCancelledException)t; throw new AssertionError(t); } }
 class RunGeneration { static RunGeneration bind(long n, java.util.function.LongSupplier g) { return null; }
  static void restore(RunGeneration previous) {} static boolean isStale() { return false; } }
 class TaskCancelledException extends RuntimeException {}

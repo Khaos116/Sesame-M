@@ -265,6 +265,9 @@ public class GuardCheck {
     static int calls;
     static boolean throwDenied;
     static boolean expireOnCall;
+    static boolean expireOnSuccess;
+    static boolean interruptOnSuccess;
+    static boolean delayedReply;
     static final java.util.concurrent.atomic.AtomicLong generation = new java.util.concurrent.atomic.AtomicLong();
     public static Object parse(String s) { return json(s); }
     public static void rpc(Object a,Object b,Object c,Object d,Object e,Object f,Object g,Object h,
@@ -272,10 +275,19 @@ public class GuardCheck {
         calls++;
         if (expireOnCall) { generation.incrementAndGet(); throw new IllegalStateException("generation expired"); }
         if (throwDenied) throw new IllegalStateException("[1009]访问被拒绝");
-        ((Callback)p).sendJSONResponse(new Reply());
+        Runnable reply = () -> {
+            if (expireOnSuccess) generation.incrementAndGet();
+            ((Callback)p).sendJSONResponse(new Reply());
+        };
+        if (delayedReply) new Thread(() -> {
+            try { Thread.sleep(20); } catch (InterruptedException ex) { throw new AssertionError(ex); }
+            reply.run();
+        }).start();
+        else reply.run();
+        if (interruptOnSuccess) Thread.currentThread().interrupt();
     }
     public static Object oldRpc(Object a,Object b,Object c,Object d,Object e,Object f,Object g,Object h,
-                                Object i,Object j,Object k,Object l) { calls++; return new GuardCheck(); }
+                                Object i,Object j,Object k,Object l) { calls++; if (expireOnSuccess) generation.incrementAndGet(); if (interruptOnSuccess) Thread.currentThread().interrupt(); return new GuardCheck(); }
     public String getResponse() { return payload; }
     static void field(Object obj, String key, Object value) throws Exception {
         var field = obj.getClass().getDeclaredField(key); field.setAccessible(true); field.set(obj, value);
@@ -324,6 +336,28 @@ public class GuardCheck {
                 assert false : "task cancelled during retry must stop";
             } catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 1; }
             expireOnCall = false;
+            generation.set(0); calls = 0; expireOnSuccess = true;
+            try {
+                if (async) bridge.newAsyncRequest(new RpcEntity("generation.success", "[{}]"), 3, 0);
+                else bridge.requestObject(new RpcEntity("generation.success", "[{}]"), 3, 0);
+                assert false : "successful reply escaped after task stopped";
+            } catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 1; }
+            finally { expireOnSuccess = false; }
+            generation.set(0); calls = 0; interruptOnSuccess = true;
+            try {
+                if (async) bridge.newAsyncRequest(new RpcEntity("interrupted.success", "[{}]"), 3, 0);
+                else bridge.requestObject(new RpcEntity("interrupted.success", "[{}]"), 3, 0);
+                assert false : "successful reply escaped after interrupt";
+            } catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 1; }
+            finally { interruptOnSuccess = false; assert Thread.interrupted(); }
+            if (async) {
+                generation.set(0); calls = 0; delayedReply = expireOnSuccess = true;
+                try {
+                    bridge.newAsyncRequest(new RpcEntity("generation.delayed.success", "[{}]"), 3, 0);
+                    assert false : "delayed reply escaped after task stopped";
+                } catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 1; }
+                finally { delayedReply = expireOnSuccess = false; }
+            }
             io.github.aw1y2z.sesame.util.RunGeneration.restore(previous);
             reset(); calls = 0;
             RpcEntity e = new RpcEntity("com.alipay.antfarm.feedAnimal", "[{}]");
@@ -395,6 +429,18 @@ public class GuardCheck {
         try { old.requestObject(new RpcEntity("generation.old.interval", "[{}]"), 3, 0); assert false; }
         catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 0; }
         io.github.aw1y2z.sesame.rpc.intervallimit.RpcIntervalLimit.onEnter = null;
+        generation.set(0); calls = 0; expireOnSuccess = true;
+        try {
+            old.requestObject(new RpcEntity("generation.old.success", "[{}]"), 3, 0);
+            assert false : "old successful reply escaped after task stopped";
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 1; }
+        finally { expireOnSuccess = false; calls = 0; }
+        generation.set(0); interruptOnSuccess = true;
+        try {
+            old.requestObject(new RpcEntity("interrupted.old.success", "[{}]"), 3, 0);
+            assert false : "old successful reply escaped after interrupt";
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException expected) { assert calls == 1; }
+        finally { interruptOnSuccess = false; calls = 0; assert Thread.interrupted(); }
         io.github.aw1y2z.sesame.util.RunGeneration.restore(previous);
         RpcEntity e = new RpcEntity("other.request", "[{}]");
         payload = "{\"error\":48}";

@@ -170,6 +170,7 @@ public class NewRpcBridge implements RpcBridge {
                                 }
                             })
                     );
+                    if (RunGeneration.isStale() || Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
                     if (!rpcEntity.getHasResult()) {
                         guard.recordTransportFailure();
                         return null;
@@ -312,6 +313,7 @@ public class NewRpcBridge implements RpcBridge {
                             rpcEntity.wait(remaining);
                         }
                     }
+                    if (RunGeneration.isStale() || Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
                     if (!rpcEntity.getHasResult()) {
                         guard.recordTransportFailure();
                         return null;

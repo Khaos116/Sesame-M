@@ -59,6 +59,8 @@ def check_reward_cooldown() -> None:
                 public long getLong(String key, long fallback) { Object v=values.get(key); return v instanceof Number ? ((Number)v).longValue() : fallback; }
                 public String getString(String key) { Object v=values.get(key); return v == null ? null : String.valueOf(v); }
                 public void put(String key, Object value) { values.put(key, value); }
+                public boolean failWrite;
+                public boolean putVerified(String key,String value) {if(failWrite)return false;values.put(key,value);return true;}
                 public void clearPrefix(String prefix) { values.keySet().removeIf(k -> k.startsWith(prefix)); }
                 public void reset() { values.clear(); }
             }
@@ -172,6 +174,11 @@ def check_reward_cooldown() -> None:
                     io.github.aw1y2z.sesame.util.DailyTask.manual(()->{task.run();return null;});
                     require(!io.github.aw1y2z.sesame.util.Status.hasFlagToday("dailyTask::Probe"),"failed manual run retained completion");
                     ApplicationHook.fail=false; task.complete=false;
+                    state.reset(); task.claim=true; state.failWrite=true; int beforeFailedWrite=ApplicationHook.calls;
+                    task.run();
+                    require(ApplicationHook.calls==beforeFailedWrite&&state.getString("Probe.attempt.claim")==null,"failed reservation sent mutation");
+                    require(state.getLong("Probe.nextConfirmedQuery",0L)==0L,"failed reservation added interval");
+                    state.failWrite=false;
                     state.reset(); task.claim=true; ApplicationHook.response="{\"error\":1009}"; task.run();
                     require(state.getString("Probe.attempt.claim")!=null,"uncertain mutation reservation was cleared");
                     require(state.getLong("Probe.nextConfirmedQuery",0L)==0L,"failed mutation scheduled interval");

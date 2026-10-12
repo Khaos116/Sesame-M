@@ -576,7 +576,7 @@ public class PatrolSyncCheck {
  static class AntForestRpcCall {
   static String queryUserPatrol(){queries++;events.add("query");return new JSONObject().put("resultCode","SUCCESS").put("userPatrol",new JSONObject().put("currentStatus",patrolState).put("patrolId",2).put("currentNode",0).put("chance",new JSONObject().put("dayString",responseDay).put("leftChance",missingChance?JSONObject.NULL:chance).put("leftStep",left).put("usedStep",used))).toString();}
   static String queryMyPatrolRecord(){return new JSONObject().put("resultCode",badRecord?"FAIL":"SUCCESS").toString();}static String switchUserPatrol(String id){return "{}";}
-  static String patrolGo(int n,int p){departures++;chance--;return "{}";}
+  static String patrolGo(int n,int p){departures++;chance--;return new JSONObject().put("resultCode","SUCCESS").toString();}
   static String exchangePatrolChance(int cost){if(exchanges++==0)firstCost=cost;events.add("exchange");used+=2000;left-=2000;chance++;return new JSONObject().put("resultCode","SUCCESS").put("addedChance",1).toString();}
  }
  void patrolKeepGoing(String s,int n,int p){continuations++;}

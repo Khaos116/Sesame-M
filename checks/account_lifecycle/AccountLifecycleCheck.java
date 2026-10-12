@@ -38,6 +38,39 @@ public class AccountLifecycleCheck {
 
     public static void main(String[] args) throws Exception {
         try {
+            for (boolean cancel : new boolean[] {true, false}) {
+                AtomicInteger checks = new AtomicInteger();
+                BaseTask failing = new BaseTask() {
+                    public Boolean check() {
+                        if (checks.getAndIncrement() == 0) {
+                            if (cancel) throw new TaskCancelledException();
+                            throw new LinkageError("check failed");
+                        }
+                        return true;
+                    }
+                    public void run() { }
+                };
+                try { failing.startTask(); throw new AssertionError("missing check failure"); }
+                catch (TaskCancelledException | LinkageError expected) { }
+                require(TaskLifecycle.isIdle(), "BaseTask failed check leaked admission");
+                require(failing.startTask(), "BaseTask failed check leaked execution slot");
+                failing.getThread().join();
+                ModelTask failingModel = new ModelTask() {
+                    public String getName() { return "failed check"; }
+                    public ModelFields getFields() { return null; }
+                    public Boolean check() {
+                        if (cancel) throw new TaskCancelledException();
+                        throw new LinkageError("check failed");
+                    }
+                    public void run() { throw new AssertionError("rejected model ran"); }
+                };
+                try { failingModel.startTask(); throw new AssertionError("missing model check failure"); }
+                catch (TaskCancelledException | LinkageError expected) { }
+                require(TaskLifecycle.isIdle(), "ModelTask failed check leaked admission");
+                TaskLifecycle.Freeze afterFailure = TaskLifecycle.freezeIfIdle();
+                require(afterFailure != null, "failed check blocked account switching");
+                TaskLifecycle.thaw(afterFailure);
+            }
             CountDownLatch checking = new CountDownLatch(1), allowStart = new CountDownLatch(1);
             BaseTask dispatcher = new BaseTask() {
                 public Boolean check() { checking.countDown(); await(allowStart); return true; }

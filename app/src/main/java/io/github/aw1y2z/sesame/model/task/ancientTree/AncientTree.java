@@ -175,8 +175,11 @@ public class AncientTree extends ModelTask {
                     int protectExpense = new BigDecimal(String.valueOf(ancientTreeInfo.opt("protectExpense"))).intValueExact();
                     cityCode = ancientTreeInfo.optString("cityCode");
                     if (protectExpense < 0 || cityCode.isEmpty()) return false;
-                    if (currentEnergy < protectExpense)
-                        break; TimeUtil.sleep(200);
+                    if (currentEnergy < protectExpense) {
+                        Log.record("保护古树：能量不足，保留后续重试机会");
+                        return false;
+                    }
+                    TimeUtil.sleep(200);
                     jo = MyUtils.newJSONObject(AncientTreeRpcCall.protect(activityId, projectId, cityCode));
                     if (MessageUtil.checkResultCode(TAG, jo)) {
                         Log.forest("保护古树🎐[" + cityName + "-" + districtName + "]#" + age + "年" + name + ",消耗能量" + protectExpense + "g");

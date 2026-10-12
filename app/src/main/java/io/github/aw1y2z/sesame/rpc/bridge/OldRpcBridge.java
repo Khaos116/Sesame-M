@@ -160,6 +160,7 @@ public class OldRpcBridge implements RpcBridge {
                     }
                     return null;
                 }
+                if (RunGeneration.isStale() || Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
                 try {
                     String resultStr = (String) getResponseMethod.invoke(resp);
                     JSONObject resultObject = MyUtils.newJSONObject(resultStr);

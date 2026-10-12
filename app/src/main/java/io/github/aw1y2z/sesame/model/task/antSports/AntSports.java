@@ -2442,50 +2442,31 @@ public class AntSports extends ModelTask {
                 String mapId = data.optString("mapId");
                 String mapName = data.optString("mapName");
                 int walkGridcount = 0;
-                if (canWalkGrid(branchId, mapId) && queryUserEnergy() >= 5 && queryUserEnergy() >= WALK_GRID_LIMIT.getValue()) {
-                    while (walkGrid(branchId, mapId, mapName)) {
-                        TimeUtil.sleep(2000);
-                        if (WALK_GRID_MAX.getValue() == 0) {
-                            continue;
-                        }
-                        walkGridcount++;
-                        if (walkGridcount >= WALK_GRID_MAX.getValue() || queryUserEnergy() < 5 || queryUserEnergy() <= WALK_GRID_LIMIT.getValue()) {
-                            break;
-                        }
-                    }
+                while ((WALK_GRID_MAX.getValue() == 0 || walkGridcount < WALK_GRID_MAX.getValue())
+                        && canWalkGrid(branchId, mapId)) {
+                    long available = (long) queryUserEnergy() - Math.max(0, WALK_GRID_LIMIT.getValue());
+                    if (available < 5 || !walkGrid(branchId, mapId, mapName)) break;
+                    walkGridcount++;
+                    TimeUtil.sleep(2000);
                 }
             }
-            // 处理活动岛能量泵任务
+            // 每次提交都保留配置要求的能量。
             if (data.optBoolean("newGame") && WALK_GRID.getValue()) {
                 String branchId = data.optString("branchId");
                 String mapId = data.optString("mapId");
                 String mapName = data.optString("mapName");
                 int buildcount = 0;
-                if (canBuild(mapId) && queryUserEnergy() >= 5 && queryUserEnergy() >= WALK_GRID_LIMIT.getValue()) {
-                    int remainBuildingEnergyProcess = build(branchId, mapId, mapName, 1);
-                    buildcount++;
-                    if (buildcount >= WALK_GRID_MAX.getValue() && WALK_GRID_MAX.getValue() != 0) {
-                        return;
-                    }
-                    while (remainBuildingEnergyProcess > 0 && canBuild(mapId)) {
-                        TimeUtil.sleep(2000);
-                        if (remainBuildingEnergyProcess >= 50 && ((WALK_GRID_MAX.getValue() - buildcount) >= 10 || WALK_GRID_MAX.getValue() == 0) && queryUserEnergy() >= 50) {
-                            remainBuildingEnergyProcess = build(branchId, mapId, mapName, 10);
-                            buildcount = buildcount + 10;
-                        } else if (remainBuildingEnergyProcess >= 25 && ((WALK_GRID_MAX.getValue() - buildcount) >= 5 || WALK_GRID_MAX.getValue() == 0) && queryUserEnergy() >= 25) {
-                            remainBuildingEnergyProcess = build(branchId, mapId, mapName, 5);
-                            buildcount = buildcount + 5;
-                        } else {
-                            remainBuildingEnergyProcess = build(branchId, mapId, mapName, 1);
-                            buildcount++;
-                        }
-                        if (WALK_GRID_MAX.getValue() == 0) {
-                            continue;
-                        }
-                        if (buildcount >= WALK_GRID_MAX.getValue() || queryUserEnergy() < 5 || queryUserEnergy() <= WALK_GRID_LIMIT.getValue()) {
-                            break;
-                        }
-                    }
+                int remaining = Integer.MAX_VALUE;
+                while (remaining > 0 && (WALK_GRID_MAX.getValue() == 0 || buildcount < WALK_GRID_MAX.getValue())
+                        && canBuild(mapId)) {
+                    long available = (long) queryUserEnergy() - Math.max(0, WALK_GRID_LIMIT.getValue());
+                    if (available < 5) break;
+                    int countLeft = WALK_GRID_MAX.getValue() == 0 ? Integer.MAX_VALUE : WALK_GRID_MAX.getValue() - buildcount;
+                    int count = buildcount > 0 && remaining >= 50 && available >= 50 && countLeft >= 10 ? 10
+                            : buildcount > 0 && remaining >= 25 && available >= 25 && countLeft >= 5 ? 5 : 1;
+                    remaining = build(branchId, mapId, mapName, count);
+                    buildcount += count;
+                    TimeUtil.sleep(2000);
                 }
             }
             if (awardspecialActivityReceive.getValue()) {
@@ -2673,50 +2654,53 @@ public class AntSports extends ModelTask {
      */
     public static void processTaskCenter() {
         try {
-            JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.queryTaskCenter());
-            if (!MessageUtil.checkSuccess(TAG, jsonResult)) {
-                return;
-            }
-
-            JSONObject data = jsonResult.optJSONObject("data");
-            JSONArray tasks = data != null ? data.optJSONArray("taskCenterTaskVOS") : null;
-            boolean needRetry = false;
-
-            for (int i = 0; tasks != null && i < tasks.length(); i++) {
-                JSONObject task = tasks.optJSONObject(i);
-                if (task == null) {
-                    continue;
+            Set<String> processed = new HashSet<>();
+            for (int round = 0; round < 20; round++) {
+                JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.queryTaskCenter());
+                if (!MessageUtil.checkSuccess(TAG, jsonResult)) {
+                    return;
                 }
-                String status = task.optString("taskStatus");
 
-                if ("SIGNUP_COMPLETE".equals(status)) {
-                    String taskType = task.optString("taskType");
-                    if ("LIGHT_TASK".equals(taskType)) {
-                        if (task.has("logExtMap")) {
-                            JSONObject logExtMap = task.optJSONObject("logExtMap");
-                            //if (TaskHelper.checkTaskCompleted(logExtMap.getString("taskType"), logExtMap.getString("bizId"))) {
-                            //
-                            //    needRetry = true;
-                            //}
+                JSONObject data = jsonResult.optJSONObject("data");
+                JSONArray tasks = data != null ? data.optJSONArray("taskCenterTaskVOS") : null;
+                boolean needRetry = false;
+
+                for (int i = 0; tasks != null && i < tasks.length(); i++) {
+                    JSONObject task = tasks.optJSONObject(i);
+                    if (task == null) {
+                        continue;
+                    }
+                    if (!processed.add(task.toString())) continue;
+                    String status = task.optString("taskStatus");
+
+                    if ("SIGNUP_COMPLETE".equals(status)) {
+                        String taskType = task.optString("taskType");
+                        if ("LIGHT_TASK".equals(taskType)) {
+                            if (task.has("logExtMap")) {
+                                JSONObject logExtMap = task.optJSONObject("logExtMap");
+                                //if (TaskHelper.checkTaskCompleted(logExtMap.getString("taskType"), logExtMap.getString("bizId"))) {
+                                //
+                                //    needRetry = true;
+                                //}
+                            }
+                        } else if ("PROMOKERNEL_TASK".equals(taskType)) {
+                            if (completeTask(task)) {
+                                task.put("taskStatus", "TO_RECEIVE");
+                                TimeUtil.sleep(2000);
+                                needRetry = true;
+                            }
                         }
-                    } else if ("PROMOKERNEL_TASK".equals(taskType)) {
-                        if (completeTask(task)) {
-                            task.put("taskStatus", "TO_RECEIVE");
-                            TimeUtil.sleep(2000);
+                    } else if ("TO_RECEIVE".equals(status)) {
+                        if (receiveTaskReward(task)) {
+                            TimeUtil.sleep(1000);
                             needRetry = true;
                         }
                     }
-                } else if ("TO_RECEIVE".equals(status)) {
-                    if (receiveTaskReward(task)) {
-                        TimeUtil.sleep(1000);
-                        needRetry = true;
-                    }
                 }
-            }
 
-            if (needRetry) {
-                processTaskCenter();
+                if (!needRetry) return;
             }
+            Log.record("悦动健康任务中心：达到本轮回查上限，剩余任务留待下轮");
         } catch (Exception e) {
             Log.err(TAG, "processTaskCenter err:", e);
         }

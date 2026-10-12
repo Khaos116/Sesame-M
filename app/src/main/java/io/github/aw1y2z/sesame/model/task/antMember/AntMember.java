@@ -2340,7 +2340,7 @@ public class AntMember extends ModelTask {
             String[] naviCodes = {"14", "1", "11", "12", "13", "bb82b", ""};
             for (String naviCode : naviCodes) {
                 int pageNum = 1;
-                int totalPages = 1;
+                int pagesRead = 0;
                 Log.i(TAG, "fetchBenefitsFromNavi start naviCode=" + naviCode);
                 do {
                     String raw = AntMemberRpcCall.queryIndexNaviBenefitFlowV2(userId, naviCode, pageNum);
@@ -2355,19 +2355,8 @@ public class AntMember extends ModelTask {
                         benefitList = data != null ? data.optJSONArray("entityInfoList") : null;
                     }
                     if (benefitList == null || benefitList.length() == 0) {
-                        Log.i(TAG, "queryIndexNaviBenefitFlowV2 naviCode=" + naviCode + " pageNum=" + pageNum + " 无权益数据，raw=" + raw.substring(0, Math.min(300, raw.length())));
+                        Log.i(TAG, "queryIndexNaviBenefitFlowV2 naviCode=" + naviCode + " pageNum=" + pageNum + " 无权益数据，resultCode=" + jo.optString("resultCode"));
                         break;
-                    }
-                    // 获取总页数
-                    if (pageNum == 1) {
-                        int next = jo.optInt("nextPageNum", 0);
-                        int adNext = jo.optInt("nextAdPageNum", 0);
-                        Log.i(TAG, "queryIndexNaviBenefitFlowV2 naviCode=" + naviCode + " pageNum=" + pageNum + " nextPageNum=" + next + " nextAdPageNum=" + adNext);
-                        if (next > 1) {
-                            totalPages = next;
-                        } else if (adNext > 1) {
-                            totalPages = adNext;
-                        }
                     }
                     // 从 entityInfoList 解析完整权益信息
                     int saved = 0, skipped = 0;
@@ -2411,8 +2400,12 @@ public class AntMember extends ModelTask {
                         }
                     }
                     Log.i(TAG, "queryIndexNaviBenefitFlowV2 naviCode=" + naviCode + " 保存" + saved + "个，补充" + (extInfo != null ? extInfo.length() : 0) + "个，累计" + MemberBenefitIdMap.getMap().size());
-                    pageNum++;
-                } while (pageNum <= totalPages);
+                    int next = jo.optInt("nextPageNum", 0);
+                    int adNext = jo.optInt("nextAdPageNum", 0);
+                    int nextPage = next > pageNum ? next : adNext;
+                    if (nextPage <= pageNum) break;
+                    pageNum = nextPage;
+                } while (++pagesRead < 50);
             }
         }
         catch (Throwable t) {
@@ -2828,11 +2821,20 @@ public class AntMember extends ModelTask {
     }
 
     // 我的快递任务
+    private static boolean deliverySuccess(JSONObject response) {
+        return response != null && !RpcRequestGuard.isFailure(response)
+                && (Boolean.TRUE.equals(response.opt("success")) || "SUCCESS".equals(response.optString("resultCode")));
+    }
+
     private void RecommendTask() {
         try {
             // 调用 AntMemberRpcCall.queryRecommendTask() 获取 JSON 数据
             String response = AntMemberRpcCall.queryRecommendTask();
             JSONObject jsonResponse = MyUtils.newJSONObject(response);
+            if (!deliverySuccess(jsonResponse)) {
+                Log.record("我的快递：推荐任务查询未确认成功，未提交任务");
+                return;
+            }
             // 获取 taskDetailList 数组
             JSONArray taskDetailList = jsonResponse.optJSONArray("taskDetailList");
             // 遍历 taskDetailList
@@ -2858,6 +2860,7 @@ public class AntMember extends ModelTask {
                 String taskCode = taskMaterial.optString("taskCode", "");
                 // 根据 taskCode 执行不同的操作
                 if ("WELFARE_PLUS_ANT_FOREST".equals(taskCode) || "WELFARE_PLUS_ANT_OCEAN".equals(taskCode)) {
+                    JSONObject award = null;
                     if ("WELFARE_PLUS_ANT_FOREST".equals(taskCode)) {
                         //String forestHomePageResponse = AntMemberRpcCall.queryforestHomePage();
                         String forestTaskResponse = AntMemberRpcCall.forestTask();
@@ -2865,6 +2868,7 @@ public class AntMember extends ModelTask {
                         // 设备日报：KUAIDI_VITALITY 领奖每轮都失败（无原因，每天 11+ 次），失败后当天不再重复领
                         if (!Status.hasFlagToday("antMember::kuaidiForestAward")) {
                             JSONObject forestAward = MyUtils.newJSONObject(AntMemberRpcCall.forestreceiveTaskAward());
+                            award = forestAward;
                             if (RpcRequestGuard.isFailure(forestAward) && !"RPC_SKIPPED".equals(forestAward.optString("error"))) {
                                 Status.flagToday("antMember::kuaidiForestAward");
                             }
@@ -2875,10 +2879,15 @@ public class AntMember extends ModelTask {
                         String oceanTaskResponse = AntMemberRpcCall.oceanTask();
                         TimeUtil.sleep(500);
                         String oceanreceiveTaskAward = AntMemberRpcCall.oceanreceiveTaskAward();
+                        award = MyUtils.newJSONObject(oceanreceiveTaskAward);
                     }
-                    if (taskBaseInfo != null) {
+                    if (taskBaseInfo != null && award != null) {
                         String appletName = taskBaseInfo.optString("appletName", "Unknown Applet");
-                        Log.other("我的快递💌完成[" + appletName + "]");
+                        if (deliverySuccess(award)) {
+                            Log.other("我的快递💌领取奖励[" + appletName + "]");
+                        } else {
+                            Log.record("我的快递[" + appletName + "]：奖励未确认领取，未记完成");
+                        }
                     }
                 }
                 if (taskMaterial == null || !taskMaterial.has("taskId")) {
@@ -2887,6 +2896,7 @@ public class AntMember extends ModelTask {
                 }
                 // 获取 taskId
                 String taskId = taskMaterial.optString("taskId");
+                if (taskId.isEmpty()) continue;
                 // 调用 trigger 方法
                 String triggerResponse = AntMemberRpcCall.trigger(taskId);
                 JSONObject triggerResult = MyUtils.newJSONObject(triggerResponse);
@@ -2929,12 +2939,17 @@ public class AntMember extends ModelTask {
                     }
                     // 提取任务 ID、处理状态和触发类型
                     String taskId = task.optString("taskId");
+                    if (taskId.isEmpty()) continue;
                     String taskProcessStatus = task.optString("taskProcessStatus");
                     String sendCampTriggerType = task.optString("sendCampTriggerType");
                     // 检查任务状态和触发类型，执行触发操作
                     if (!"RECEIVE_SUCCESS".equals(taskProcessStatus) && !"EVENT_TRIGGER".equals(sendCampTriggerType)) {
                         // 调用 signuptrigger 方法
                         String signuptriggerResponse = AntMemberRpcCall.signuptrigger(taskId);
+                        if (!deliverySuccess(MyUtils.newJSONObject(signuptriggerResponse))) {
+                            Log.record("我的快递：任务报名未确认成功，未提交领奖 taskId=" + taskId);
+                            continue;
+                        }
                         // 调用 sendtrigger 方法
                         String sendtriggerResponse = AntMemberRpcCall.sendtrigger(taskId);
                         // 解析 sendtriggerResponse

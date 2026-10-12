@@ -586,10 +586,13 @@ public class AntForestV2 extends ModelTask {
                     checkAndHandleWhackMole();
                 }
                 boolean hasMore = false;
+                Set<String> attemptedHomeRewards = new HashSet<>();
                 do {
                     if (hasMore) {
                         hasMore = false;
-                        selfHomeObject = querySelfHome();
+                        JSONObject nextHome = querySelfHome();
+                        if (nextHome == null) break;
+                        selfHomeObject = nextHome;
                     }
                     if (collectWateringBubble.getValue() || onlyCollectRevivedSelfEnergy.getValue() && collectEnergy.getValue()) {
                         JSONArray wateringBubbles = selfHomeObject.optJSONArray("wateringBubbles");
@@ -597,6 +600,7 @@ public class AntForestV2 extends ModelTask {
                             wateringBubbles = new JSONArray();
                         }
                         if (wateringBubbles.length() > 0) {
+                            boolean wateringProgress = false;
                             for (int i = 0; i < wateringBubbles.length(); i++) {
                                 int collected = 0;
                                 JSONObject wateringBubble = wateringBubbles.optJSONObject(i);
@@ -605,6 +609,7 @@ public class AntForestV2 extends ModelTask {
                                 }
                                 String bizType = wateringBubble.optString("bizType");
                                 if (onlyCollectRevivedSelfEnergy.getValue() && !"fuhuo".equals(bizType)) continue;
+                                if (!attemptedHomeRewards.add("bubble:" + bizType + ":" + wateringBubble.optLong("id"))) continue;
                                 String friendShowName = UserIdMap.getShowName(wateringBubble.optString("userId"));
                                 switch (bizType) {
                                     case "jiaoshui": {
@@ -674,9 +679,10 @@ public class AntForestV2 extends ModelTask {
                                         break;
                                     }
                                 }
+                                wateringProgress |= collected > 0;
                                 TimeUtil.sleep(1000L);
                             }
-                            if (wateringBubbles.length() >= 20) {
+                            if (wateringProgress && wateringBubbles.length() >= 20) {
                                 hasMore = true;
                             }
                         }
@@ -687,6 +693,7 @@ public class AntForestV2 extends ModelTask {
                             givenProps = new JSONArray();
                         }
                         if (givenProps.length() > 0) {
+                            boolean propProgress = false;
                             for (int i = 0; i < givenProps.length(); i++) {
                                 JSONObject jo = givenProps.optJSONObject(i);
                                 if (jo == null) {
@@ -694,15 +701,18 @@ public class AntForestV2 extends ModelTask {
                                 }
                                 String giveConfigId = jo.optString("giveConfigId");
                                 String giveId = jo.optString("giveId");
+                                if (giveConfigId.isEmpty() || giveId.isEmpty()
+                                        || !attemptedHomeRewards.add("prop:" + giveConfigId + ":" + giveId)) continue;
                                 JSONObject propConfig = jo.optJSONObject("propConfig");
                                 String propName = propConfig != null ? propConfig.optString("propName") : "";
                                 jo = MyUtils.newJSONObject(AntForestRpcCall.collectProp(giveConfigId, giveId));
                                 if (MessageUtil.checkSuccess(TAG, jo)) {
+                                    propProgress = true;
                                     Log.forest("领取道具🎭[" + propName + "]");
                                 }
                                 TimeUtil.sleep(1000L);
                             }
-                            if (givenProps.length() >= 20) {
+                            if (propProgress && givenProps.length() >= 20) {
                                 hasMore = true;
                             }
                         }
@@ -5527,6 +5537,7 @@ public class AntForestV2 extends ModelTask {
             AntSports sports = getModel(AntSports.class);
             if (sports != null) sports.syncStepNow();
             TimeUtil.sleep(0);
+            Set<String> attemptedPatrolStates = new HashSet<>();
             th:
             do {
                 JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryUserPatrol());
@@ -5550,12 +5561,19 @@ public class AntForestV2 extends ModelTask {
                             if ("silent".equals(userPatrol.optString("mode"))) {
                                 JSONObject patrolConfig = record.optJSONObject("patrolConfig");
                                 String patrolId = patrolConfig != null ? patrolConfig.optString("patrolId") : "";
+                                if (patrolId.isEmpty() || !attemptedPatrolStates.add("switch:" + patrolId)) {
+                                    Log.record("旧版保护地：切图后状态未推进，本轮停止，不标记完成");
+                                    return;
+                                }
                                 resData = MyUtils.newJSONObject(AntForestRpcCall.switchUserPatrol(patrolId));
                                 TimeUtil.sleep(500);
                                 if (MessageUtil.checkResultCode(TAG, resData)) {
                                     Log.i("巡护⚖️-切换地图至" + patrolId);
+                                    continue th;
                                 }
-                                continue th;
+                                if (!"RPC_SKIPPED".equals(resData.optString("error")))
+                                    Log.record("旧版保护地：switchUserPatrol结果未确认成功，本轮停止，不标记完成");
+                                return;
                             }
                             break;
                         }
@@ -5578,6 +5596,11 @@ public class AntForestV2 extends ModelTask {
                 int leftChance = chance.optInt("leftChance", -1);
                 int leftStep = chance.optInt("leftStep", -1);
                 int usedStep = chance.optInt("usedStep", -1);
+                String state = patrolId + ":" + currentNode + ":" + currentStatus + ":" + leftChance + ":" + leftStep + ":" + usedStep;
+                if (!attemptedPatrolStates.add(state)) {
+                    Log.record("旧版保护地：操作后巡护状态未推进，本轮停止，不标记完成");
+                    return;
+                }
                 logLegacyPatrolState("query", "旧版保护地[查询]：可用步数=" + leftStep + "，已兑换步数=" + usedStep
                         + "，剩余巡护次数=" + leftChance + "，状态="
                         + ("STANDING".equals(currentStatus) ? "站立" : "GOING".equals(currentStatus) ? "巡护中" : "未知")
@@ -5595,6 +5618,11 @@ public class AntForestV2 extends ModelTask {
                         Log.record("旧版保护地：剩余巡护次数=" + leftChance + "，先执行巡护，再检查兑换条件");
                         jo = MyUtils.newJSONObject(AntForestRpcCall.patrolGo(currentNode, patrolId));
                         TimeUtil.sleep(500);
+                        if (!MessageUtil.checkResultCode(TAG, jo)) {
+                            if (!"RPC_SKIPPED".equals(jo.optString("error")))
+                                Log.record("旧版保护地：patrolGo结果未确认成功，本轮停止，不标记完成");
+                            return;
+                        }
                         patrolKeepGoing(jo.toString(), currentNode, patrolId);
                         continue;
                     } else if (leftChance == 0 && leftStep >= 2000 && usedStep >= 0 && usedStep < 10000) {
@@ -5632,6 +5660,7 @@ public class AntForestV2 extends ModelTask {
 
     private void patrolKeepGoing(String s, int nodeIndex, int patrolId) {
         try {
+            Set<String> attemptedEvents = new HashSet<>();
             do {
                 if (s == null) {
                     s = AntForestRpcCall.patrolKeepGoing(nodeIndex, patrolId, "image");
@@ -5665,6 +5694,10 @@ public class AntForestV2 extends ModelTask {
                 }
                 JSONObject materialInfo = events.optJSONObject("materialInfo");
                 String materialType = materialInfo != null ? materialInfo.optString("materialType", "image") : "image";
+                if (!attemptedEvents.add(currentNode + ":" + materialType)) {
+                    Log.record("旧版保护地：patrolKeepGoing节点事件未推进，本轮停止，不标记完成");
+                    return;
+                }
                 s = AntForestRpcCall.patrolKeepGoing(currentNode, patrolId, materialType);
                 TimeUtil.sleep(100);
             } while (true);

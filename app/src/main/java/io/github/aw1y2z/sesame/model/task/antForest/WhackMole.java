@@ -1,6 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.antForest;
 
 import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 
 import android.annotation.SuppressLint;
 import java.util.ArrayList;
@@ -205,6 +206,11 @@ public class WhackMole {
                             Thread.sleep(100 + random.nextInt(201)); // 100-300ms 随机延迟
                         }
                     }
+                } catch (TaskCancelledException e) {
+                    throw e;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new TaskCancelledException();
                 } catch (Throwable t) {
                     // 忽略单个击打异常
                 }
@@ -241,8 +247,13 @@ public class WhackMole {
                     Statistics.save();
                 }
             }
+        } catch (TaskCancelledException e) {
+            throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new TaskCancelledException();
         } catch (Throwable t) {
-            Log.record("兼容模式出错:" + (t.getMessage() != null ? t.getMessage() : "未知错误"));
+            Log.record("兼容模式出错:" + t.getClass().getSimpleName());
         }
     }
     

@@ -120,7 +120,8 @@ public final class GoldenBeansGameCenter {
                 }
 
                 JSONObject after = GoldenBeansSupport.parse(goldenbeansRpcCall.fetchGameList());
-                if (after == null) {
+                if (!GoldenBeansSupport.ok(after) || Boolean.FALSE.equals(after.opt("success"))) {
+                    Log.record("金豆乐园：游戏上报后列表回查失败，未记当日跳过");
                     return false;
                 }
                 JSONObject afterRights = GoldenBeansSupport.findObject(after, "gameCenterDrawRights");
@@ -129,6 +130,11 @@ public final class GoldenBeansGameCenter {
                 int afterUsed = afterRights != null
                         ? Math.max(afterRights.optInt("usedQuota", usedQuota), 0) : usedQuota;
                 GameCandidate afterCandidate = collect(after).get(candidate.key());
+                if (afterRights == null || afterRights.optInt("quotaCanUse", -1) < 0
+                        || afterRights.optInt("usedQuota", -1) < 0 || afterCandidate == null) {
+                    Log.record("金豆乐园：游戏上报后权益或任务回查缺失，未记当日跳过");
+                    return false;
+                }
                 boolean candidateProgressed = afterCandidate != null
                         && afterCandidate.rightTimes > candidate.rightTimes;
                 boolean rightsProgressed = afterQuota > quotaCanUse || afterUsed > usedQuota;

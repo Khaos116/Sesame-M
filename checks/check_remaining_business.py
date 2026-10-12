@@ -294,6 +294,12 @@ public class RemainingCheck {
         valid.optJSONObject("data").optJSONObject("ancientTree").optJSONObject("ancientTreeInfo").put("protectExpense","100");
         AncientTreeRpcCall.project=valid.toString(); AncientTreeRpcCall.writes=0;
         Ancient.districtDetail("district"); assert AncientTreeRpcCall.writes==1;
+        Status.flags.clear(); AncientTreeRpcCall.writes=0;
+        JSONObject low=ancientProject(); low.optJSONObject("data").put("currentEnergy",99);
+        AncientTreeRpcCall.project=low.toString(); Ancient.ancientTreeProtect("city");
+        assert AncientTreeRpcCall.writes==0&&!Status.flags.contains("ancient:city"):"low energy must remain retryable";
+        AncientTreeRpcCall.project=ancientProject().toString(); Ancient.ancientTreeProtect("city");
+        assert AncientTreeRpcCall.writes==1&&Status.flags.contains("ancient:city"):"later energy must allow protection";
         for(String failure:new String[]{"{\"resultCode\":\"102\"}","{\"resultCode\":\"SUCCESS\",\"data\":{\"ancientTreeList\":null}}"}) {
             Status.flags.clear(); AncientTreeRpcCall.detailReply=failure; Ancient.ancientTreeProtect("city");
             assert !Status.flags.contains("ancient:city") : "unknown district marked city done today";

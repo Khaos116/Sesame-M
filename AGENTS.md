@@ -111,6 +111,10 @@ python checks/check_goldenbeans_mall.py
 python checks/check_merge_review.py
 python checks/check_dodo_collect.py
 python checks/check_remaining_business.py
+python checks/check_forest_farm_progress.py
+python checks/check_sports_ocean_audit.py
+python checks/check_goldenbeans_game.py
+python checks/check_member_delivery.py
 java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin --console=plain
 ```
 

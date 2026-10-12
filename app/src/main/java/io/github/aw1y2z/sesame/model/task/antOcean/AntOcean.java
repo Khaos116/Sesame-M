@@ -1735,18 +1735,12 @@ public class AntOcean extends ModelTask {
      */
     private boolean antfishReceiveTaskAward(String taskType) {
         try {
-            if (Status.hasFlagToday("Ocean::ANTAIFISH_TaskAward")) {
-                return false;
-            }
             String result = AntOceanRpcCall.antfishReceiveTaskAward(taskType);
             JSONObject jo = MyUtils.newJSONObject(result);
-            if (!jo.optBoolean("success", false)) {
-                Log.record("领取海洋摸鱼[" + jo.optString("desc", "无返回结果") + "]今天不再执行");
-                Status.flagToday("Ocean::ANTAIFISH_TaskAward_Limitid");
-            }
-            if (MessageUtil.checkResultCode(TAG, jo)) {
+            if (!Boolean.FALSE.equals(jo.opt("success")) && MessageUtil.checkResultCode(TAG, jo)) {
                 return true;
             }
+            Log.record("海洋摸鱼领奖：服务端未确认成功，任务保留重试，状态=" + jo.optString("resultCode", "UNKNOWN"));
         } catch (Throwable t) {
             Log.err(TAG, "antfishReceiveTaskAward err:", t);
         }

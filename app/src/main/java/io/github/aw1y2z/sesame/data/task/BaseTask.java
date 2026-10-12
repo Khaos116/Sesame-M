@@ -80,17 +80,19 @@ public abstract class BaseTask {
             work.close();
             return false;
         }
+        boolean checked = false;
         try {
-            if (!check()) {
-                running.set(false);
-                work.close();
-                return false;
-            }
+            if (!check()) return false;
+            checked = true;
         } catch (Exception e) {
             Log.printStackTrace(e);
-            running.set(false);
-            work.close();
             return false;
+        } finally {
+            // 取消异常会被日志入口重抛，检查未完成时仍须归还准入和执行槽。
+            if (!checked) {
+                running.set(false);
+                work.close();
+            }
         }
         // 起跑前快照代际：stopTask 递增后，本代在下一个检查点作废
         long myGen = generation;

@@ -184,7 +184,9 @@ public abstract class IsolatedRewardTask extends ModelTask {
                 Log.record(getName() + "：今日已尝试该动作，等待下一日");
                 return null;
             }
-            state.put(key, day);
+            if (!state.putVerified(key, day)) {
+                stop("当日动作防重状态写入失败，未调用操作RPC");
+            }
             return call(method, args, allowed);
         }
 

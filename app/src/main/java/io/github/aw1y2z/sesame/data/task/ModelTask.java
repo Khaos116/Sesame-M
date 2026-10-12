@@ -225,16 +225,18 @@ public abstract class ModelTask extends Model {
         TaskLifecycle.Work work = TaskLifecycle.enter();
         if (work == null) return false;
         boolean synchronous;
+        boolean checked = false;
         try {
             if (!isEnable() || !check()) {
-                work.close();
                 return false;
             }
             synchronous = Boolean.TRUE.equals(isSync());
+            checked = true;
         } catch (Exception e) {
             Log.printStackTrace(e);
-            work.close();
             return false;
+        } finally {
+            if (!checked) work.close();
         }
         if (!running.compareAndSet(false, true)) {
             Log.record(getName() + "⏭本实例上一代未退出，本轮跳过");
