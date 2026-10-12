@@ -5313,6 +5313,17 @@ public class AntForestV2 extends ModelTask {
         }
     }
 
+    private final Map<String, String> legacyPatrolLogs = new HashMap<>();
+
+    private void logLegacyPatrolState(String stage, String message) {
+        String scope = UserIdMap.getCurrentUid() + "|"
+                + String.format(java.util.Locale.ROOT, "%tY%<tm%<td", MyUtils.getInstance());
+        String state = scope + "|" + message;
+        if (!DailyTask.isManual() && state.equals(legacyPatrolLogs.get(stage))) return;
+        Log.record(message);
+        legacyPatrolLogs.put(stage, state);
+    }
+
     private void queryUserPatrol() {
         String day = String.format(java.util.Locale.ROOT, "%tY%<tm%<td", MyUtils.getInstance());
         String doneFlag = "forest::legacyPatrolDone::" + day;
@@ -5326,6 +5337,8 @@ public class AntForestV2 extends ModelTask {
                 JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryUserPatrol());
                 TimeUtil.sleep(500);
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
+                    if (!"RPC_SKIPPED".equals(jo.optString("error")))
+                        Log.record("旧版保护地：queryUserPatrol结果未确认成功，本轮不兑换、不标记完成");
                     return;
                 }
                 JSONObject resData = MyUtils.newJSONObject(AntForestRpcCall.queryMyPatrolRecord());
@@ -5356,6 +5369,7 @@ public class AntForestV2 extends ModelTask {
 
                 JSONObject userPatrol = jo.optJSONObject("userPatrol");
                 if (userPatrol == null) {
+                    Log.record("旧版保护地：queryUserPatrol缺少userPatrol，本轮停止，不标记完成");
                     return;
                 }
                 int currentNode = userPatrol.optInt("currentNode");
@@ -5363,20 +5377,27 @@ public class AntForestV2 extends ModelTask {
                 int patrolId = userPatrol.optInt("patrolId");
                 JSONObject chance = userPatrol.optJSONObject("chance");
                 if (chance == null) {
+                    Log.record("旧版保护地：queryUserPatrol缺少chance，本轮停止，不标记完成");
                     return;
                 }
                 int leftChance = chance.optInt("leftChance", -1);
                 int leftStep = chance.optInt("leftStep", -1);
                 int usedStep = chance.optInt("usedStep", -1);
+                logLegacyPatrolState("query", "旧版保护地[查询]：可用步数=" + leftStep + "，已兑换步数=" + usedStep
+                        + "，剩余巡护次数=" + leftChance + "，状态="
+                        + ("STANDING".equals(currentStatus) ? "站立" : "GOING".equals(currentStatus) ? "巡护中" : "未知")
+                        + "，日期匹配=" + day.equals(chance.optString("dayString")));
                 if ("STANDING".equals(currentStatus)) {
                     if (leftChance == 0 && usedStep >= 10000
                             && day.equals(chance.optString("dayString"))
                             && MessageUtil.checkResultCode(TAG, resData)) {
                         Status.flagToday(doneFlag);
                         Log.forest("旧版保护地：今日5次步数兑换及巡护已完成，今日不再检查");
+                        Log.record("旧版保护地：今日5次步数兑换及巡护已完成，今日不再检查");
                         return;
                     }
                     if (leftChance > 0) {
+                        Log.record("旧版保护地：剩余巡护次数=" + leftChance + "，先执行巡护，再检查兑换条件");
                         jo = MyUtils.newJSONObject(AntForestRpcCall.patrolGo(currentNode, patrolId));
                         TimeUtil.sleep(500);
                         patrolKeepGoing(jo.toString(), currentNode, patrolId);
@@ -5387,11 +5408,24 @@ public class AntForestV2 extends ModelTask {
                         if (MessageUtil.checkResultCode(TAG, jo)) {
                             int addedChance = jo.optInt("addedChance", 0);
                             Log.forest("步数兑换⚖️[巡护次数*" + addedChance + "]");
+                            Log.record("旧版保护地[步数兑换]：exchangePatrolChance成功，提交步数=" + leftStep
+                                    + "，实际扣除步数=" + jo.optInt("costStep", -1) + "，新增巡护次数=" + addedChance
+                                    + "，继续查询并巡护（-1表示响应缺少该字段）");
                             continue;
                         }
+                        if (!"RPC_SKIPPED".equals(jo.optString("error")))
+                            Log.record("旧版保护地[步数兑换]：exchangePatrolChance结果未确认成功，提交步数=" + leftStep + "，不标记完成");
+                    } else {
+                        logLegacyPatrolState("skip", "旧版保护地[未兑换]：" + (leftChance < 0 || leftStep < 0 || usedStep < 0
+                                ? "服务器次数或步数字段缺失/无效" : usedStep >= 10000
+                                ? "今日已用满10000步兑换额度，但日期或记录未确认，不标记完成"
+                                : "保护地可用步数不足2000，后续轮次继续查询，不标记完成"));
                     }
                 } else if ("GOING".equals(currentStatus)) {
+                    Log.record("旧版保护地：当前巡护进行中，继续推进，不因未兑换而停止巡护");
                     patrolKeepGoing(null, currentNode, patrolId);
+                } else {
+                    Log.record("旧版保护地：巡护状态未知，本轮不兑换、不标记完成");
                 }
                 break;
             } while (true);

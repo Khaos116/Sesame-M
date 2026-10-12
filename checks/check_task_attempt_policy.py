@@ -99,6 +99,11 @@ public class MergePolicyCheck {
   var done=TaskAttemptPolicy.handle("done","done",null,()->attempt(TaskAttemptPolicy.Outcome.RETRY),
    logs::add,site(TaskAttemptPolicy.ProbeResult.FINISHED));
   assert done==TaskAttemptPolicy.Outcome.DONE&&MessageUtil.marks==0;
+  int completedAttempts=attempts;
+  UserIdMap.uid="B";Status.getIntFlagToday("count");UserIdMap.uid="A";
+  assert TaskAttemptPolicy.handle("done","next task",null,()->attempt(TaskAttemptPolicy.Outcome.RETRY),
+   logs::add,site(TaskAttemptPolicy.ProbeResult.FINISHED))==TaskAttemptPolicy.Outcome.DONE;
+  assert attempts==completedAttempts+1 : "confirmed completion blocked later task after account return";
   var unknown=TaskAttemptPolicy.handle("unknown","unknown",null,()->attempt(TaskAttemptPolicy.Outcome.UNSUPPORTED),
    logs::add,site(TaskAttemptPolicy.ProbeResult.UNKNOWN));
   assert unknown==TaskAttemptPolicy.Outcome.RETRY&&ApplicationHook.writes==0&&MessageUtil.marks==0;

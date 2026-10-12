@@ -586,7 +586,8 @@ public class PatrolSyncCheck {
  static final String TAG="test";
  static List<String> events=Collections.synchronizedList(new ArrayList<>());
  static int pushes, queries, exchanges, left, used, chance, firstCost, observed;
- static boolean accepted=true, cancel, offline, fail;
+ static boolean accepted=true, cancel, offline, fail, refreshPatrol=true, missingSync;
+ static List<String> runtimeLogs=new ArrayList<>();
  static int toasts, diagnostics, hour=12, departures, continuations;
  static String patrolState="STANDING", responseDay="20261011";static int date=11;static boolean missingChance, badRecord;
  static class Toast {static void show(String s){toasts++;}}
@@ -598,17 +599,19 @@ public class PatrolSyncCheck {
   static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}
  }
  static class Status {static boolean done;static Set<String> patrolDone=new HashSet<>();static boolean hasFlagToday(String s){return s.startsWith("forest::")?patrolDone.contains(s):done;}static void flagToday(String s){if(s.startsWith("forest::"))patrolDone.add(s);else done=true;}}
+ final Map<String,String> legacyPatrolLogs=new HashMap<>();
+ static class UserIdMap {static String uid="A";static String getCurrentUid(){return uid;}}
  static class ApplicationHook {static boolean isOffline(){return offline;}static ClassLoader getClassLoader(){return null;}}
  static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}
- static class Log {static void printStackTrace(String tag,Throwable t){assert t.getCause()==null&&!t.getMessage().contains("secret")&&t.getStackTrace().length>0;diagnostics++;}static void record(String s){}static void i(String s){}static void forest(String s){}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
+ static class Log {static void printStackTrace(String tag,Throwable t){assert t.getCause()==null&&!t.getMessage().contains("secret")&&t.getStackTrace().length>0;diagnostics++;}static void record(String s){runtimeLogs.add(s);}static void i(String s){}static void forest(String s){}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
  static class Field {int value;int getValue(){return value;}}
  static class AntSportsRpcCall {static String queryWalkStep(){return new JSONObject().put("resultCode","SUCCESS").put("stepCount",observed).toString();}}
  static class AntSports {
   final Object stepSyncLock=new Object();final int SKIP_SYNC_STEP=18000;Field earliestSyncStepTime=new Field();boolean enabled=true;
   Boolean isEnable(){return enabled;}int tmpStepCount(){return 22000;}
   boolean syncStepByRpcManager(ClassLoader c,int step) throws Exception {
-   pushes++;events.add("sync");if(fail)throw new IllegalStateException("secret",new RuntimeException("secret"));if(entered!=null){entered.countDown();if(!release.await(5,TimeUnit.SECONDS))throw new AssertionError("sync timeout");}
-   if(accepted)left=step;return accepted;
+   pushes++;events.add("sync");if(missingSync)throw new NoSuchMethodException("step sync unavailable");if(fail)throw new IllegalStateException("secret",new RuntimeException("secret"));if(entered!=null){entered.countDown();if(!release.await(5,TimeUnit.SECONDS))throw new AssertionError("sync timeout");}
+   if(accepted&&refreshPatrol)left=step;return accepted;
   }
   @@SYNC@@
  }
@@ -623,7 +626,7 @@ public class PatrolSyncCheck {
  }
  void patrolKeepGoing(String s,int n,int p){continuations++;}
  @@PATROL@@
- static void reset(){sports=new AntSports();pushes=queries=exchanges=left=used=chance=firstCost=observed=0;accepted=true;cancel=offline=Status.done=fail=false;toasts=diagnostics=departures=continuations=0;DailyTask.manual=false;hour=12;date=11;responseDay="20261011";missingChance=badRecord=false;Status.patrolDone.clear();patrolState="STANDING";entered=release=null;events.clear();}
+ static void reset(){sports=new AntSports();pushes=queries=exchanges=left=used=chance=firstCost=observed=0;accepted=refreshPatrol=true;missingSync=false;UserIdMap.uid="A";runtimeLogs.clear();cancel=offline=Status.done=fail=false;toasts=diagnostics=departures=continuations=0;DailyTask.manual=false;hour=12;date=11;responseDay="20261011";missingChance=badRecord=false;Status.patrolDone.clear();patrolState="STANDING";entered=release=null;events.clear();}
  public static void main(String[] args)throws Exception {
   PatrolSyncCheck f=new PatrolSyncCheck();reset();f.queryUserPatrol();
   assert pushes==1&&exchanges==5&&used==10000&&firstCost==22000&&toasts==1;assert events.indexOf("sync")<events.indexOf("query")&&events.indexOf("query")<events.indexOf("exchange");
@@ -654,6 +657,25 @@ public class PatrolSyncCheck {
   reset();Status.done=true;f.queryUserPatrol();assert pushes==0&&queries==1;
   reset();observed=19000;f.queryUserPatrol();assert pushes==0;
   reset();cancel=true;try{f.queryUserPatrol();throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}assert queries==0&&pushes==0;
+  reset();accepted=false;left=23816;f.queryUserPatrol();assert exchanges==5&&departures==5&&Status.patrolDone.size()==1;
+  assert runtimeLogs.stream().anyMatch(x->x.contains("可用步数=23816"));
+  assert runtimeLogs.stream().anyMatch(x->x.contains("exchangePatrolChance成功"));
+  assert runtimeLogs.stream().anyMatch(x->x.contains("今日5次步数兑换及巡护已完成"));
+  reset();f.legacyPatrolLogs.clear();refreshPatrol=false;f.queryUserPatrol();assert Status.done&&exchanges==0&&Status.patrolDone.isEmpty();
+  assert runtimeLogs.stream().anyMatch(x->x.contains("可用步数不足2000"));
+  left=23816;f.queryUserPatrol();assert pushes==1&&exchanges==5&&departures==5;
+  reset();missingSync=true;left=23816;new PatrolSyncCheck().queryUserPatrol();
+  assert Status.done&&pushes==1&&exchanges==5&&departures==5;
+  sports.syncStepNow();assert pushes==1&&runtimeLogs.stream().filter(x->x.contains("宿主接口不可用")).count()==1;
+  assert runtimeLogs.stream().noneMatch(x->x.contains("ClassNotFoundException")||x.contains("RpcManager"));
+  reset();sports.enabled=false;PatrolSyncCheck quiet=new PatrolSyncCheck();quiet.queryUserPatrol();quiet.queryUserPatrol();
+  assert runtimeLogs.stream().filter(x->x.contains("旧版保护地[查询]")).count()==1;
+  assert runtimeLogs.stream().filter(x->x.contains("旧版保护地[未兑换]")).count()==1;
+  left=100;quiet.queryUserPatrol();assert runtimeLogs.stream().filter(x->x.contains("可用步数=100")).count()==1;
+  DailyTask.manual=true;quiet.queryUserPatrol();quiet.queryUserPatrol();
+  assert runtimeLogs.stream().filter(x->x.contains("可用步数=100")).count()==3;
+  DailyTask.manual=false;UserIdMap.uid="B";quiet.queryUserPatrol();date=12;quiet.queryUserPatrol();
+  assert runtimeLogs.stream().filter(x->x.contains("可用步数=100")).count()==5;
   reset();entered=new CountDownLatch(1);release=new CountDownLatch(1);ExecutorService pool=Executors.newFixedThreadPool(2);
   try{Future<?> a=pool.submit(()->sports.syncStepNow());assert entered.await(5,TimeUnit.SECONDS);Future<?> b=pool.submit(()->f.queryUserPatrol());assert queries==0;release.countDown();a.get(5,TimeUnit.SECONDS);b.get(5,TimeUnit.SECONDS);assert pushes==1&&exchanges==5;}finally{release.countDown();pool.shutdownNow();}
   System.out.println("PASS patrol: sync before query/exchange, concurrent deduplication, quotas, midnight patrol without exchange, delayed sync, disabled/time/failure/cancellation");
@@ -662,7 +684,7 @@ public class PatrolSyncCheck {
 '''
 patrol = patrol.replace("@@DAILY_SKIP@@", method("util/DailyTask.java", "public static boolean skipFlag("))
 patrol = patrol.replace("@@SYNC@@", method("model/task/antSports/AntSports.java", "public void syncStepNow("))
-patrol = patrol.replace("@@PATROL@@", method("model/task/antForest/AntForestV2.java", "private void queryUserPatrol("))
+patrol = patrol.replace("@@PATROL@@", method("model/task/antForest/AntForestV2.java", "private void logLegacyPatrolState(") + method("model/task/antForest/AntForestV2.java", "private void queryUserPatrol("))
 
 
 love_request = r'''
@@ -694,8 +716,35 @@ love_request = love_request.replace("@@ENTRY@@", method("model/task/antForest/An
 
 love_request = love_request.replace("@@SUBSCRIBE@@", method("model/task/antForest/AntForestRpcCall.java", "public static String loveteamQuerySubscribeRelation("))
 
+sync_probe = r'''
+import java.util.*;import java.lang.reflect.*;
+public class SyncProbeCheck {
+ static List<String> logs=new ArrayList<>();static int calls;static boolean accepted;
+ static class Log {static void record(String s){logs.add(s);}}
+ public static void sync(int n,boolean b,String s){}
+ static List<Method> findSyncStepMethods(Class<?> c){try{return Collections.singletonList(c.getMethod("sync",int.class,boolean.class,String.class));}catch(Exception e){throw new AssertionError(e);}}
+ static List<Object> collectRpcManagerInstances(Class<?> c){throw new AssertionError("static probe expected");}
+ static boolean invokeSyncStepMethod(Method m,Object target,int step){calls++;return accepted;}
+ @@PROBE@@
+ public static void main(String[] args)throws Exception{
+  ClassLoader absent=new ClassLoader(){public Class<?> loadClass(String n)throws ClassNotFoundException{throw new ClassNotFoundException("secret");}};
+  try{syncStepByRpcManager(absent,23000);throw new AssertionError("missing sync not classified");}catch(NoSuchMethodException expected){}
+  assert logs.isEmpty()&&calls==0;
+  ClassLoader fallback=new ClassLoader(){public Class<?> loadClass(String n)throws ClassNotFoundException{if(n.contains("intergation"))throw new ClassNotFoundException("secret");return SyncProbeCheck.class;}};
+  accepted=true;assert syncStepByRpcManager(fallback,23000)&&calls==1;
+  assert logs.size()==1&&logs.get(0).contains("调用接口");
+  logs.clear();accepted=false;assert !syncStepByRpcManager(fallback,23000)&&calls==2;
+  assert logs.stream().noneMatch(x->x.contains("ClassNotFoundException")||x.contains("secret"));
+  logs.clear();ClassLoader broken=new ClassLoader(){public Class<?> loadClass(String n)throws ClassNotFoundException{if(n.contains("intergation"))throw new LinkageError("secret");throw new ClassNotFoundException("secret");}};
+  assert !syncStepByRpcManager(broken,23000)&&logs.size()==1&&logs.get(0).contains("LinkageError")&&!logs.get(0).contains("secret");
+  System.out.println("PASS sync discovery: missing candidates silent, fallback works, genuine loading failures remain visible");
+ }
+}
+'''
+sync_probe = sync_probe.replace("@@PROBE@@", method("model/task/antSports/AntSports.java", "private static boolean syncStepByRpcManager("))
+
 with tempfile.TemporaryDirectory(prefix="sesame-merge-") as tmp:
-    for name, source in (("MergeCheck", code), ("FlowCheck", flows), ("UpstreamFixCheck", fixes), ("ToastCheck", toast), ("PatrolSyncCheck", patrol), ("LoveRequestCheck", love_request)):
+    for name, source in (("MergeCheck", code), ("FlowCheck", flows), ("UpstreamFixCheck", fixes), ("ToastCheck", toast), ("PatrolSyncCheck", patrol), ("LoveRequestCheck", love_request), ("SyncProbeCheck", sync_probe)):
         java = Path(tmp) / (name + ".java")
         java.write_text(source, encoding="utf-8")
         subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(json_jar), "-d", tmp, str(java)], check=True)

@@ -316,7 +316,7 @@ public class AntSports extends ModelTask {
                 }
             } catch (TaskCancelledException e) { throw e;
             } catch (Throwable t) {
-                if (t.getCause() instanceof NoSuchMethodException) {
+                if (t instanceof NoSuchMethodException || t.getCause() instanceof NoSuchMethodException) {
                     Log.record("同步步数主动推送：宿主接口不可用，本日跳过；readDailyStep hook不受影响");
                     Status.flagToday("sport::syncStepPush");
                 } else {
@@ -335,16 +335,22 @@ public class AntSports extends ModelTask {
     // 参照 Sesame-AG 的 AntSports.kt#syncStepByRpcManager 移植
     // ---------------------------------------------------------------------
 
-    private static boolean syncStepByRpcManager(ClassLoader loader, int step) {
+    private static boolean syncStepByRpcManager(ClassLoader loader, int step) throws NoSuchMethodException {
         String[] candidateClassNames = {
                 "com.alibaba.health.pedometer.intergation.rpc.RpcManager",
                 "com.alibaba.health.pedometer.integration.rpc.RpcManager"
         };
+        boolean allCandidatesMissing = true;
         for (String className : candidateClassNames) {
             Class<?> rpcManagerClass;
             try {
                 rpcManagerClass = loader.loadClass(className);
+                allCandidatesMissing = false;
+            } catch (ClassNotFoundException ignored) {
+                // 不同宿主版本只提供其中一个类名，候选缺失不作为运行异常。
+                continue;
             } catch (Throwable t) {
+                allCandidatesMissing = false;
                 Log.record("同步步数[加载接口]：" + className + "，异常=" + t.getClass().getSimpleName());
                 continue;
             }
@@ -365,6 +371,7 @@ public class AntSports extends ModelTask {
                 }
             }
         }
+        if (allCandidatesMissing) throw new NoSuchMethodException("step sync unavailable");
         return false;
     }
 

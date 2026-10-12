@@ -49,6 +49,14 @@ public class FarmFlowCheck {
   AntFarmRpcCall.rows=new JSONArray().put(task("newBrowse","TODO"));f.runFarmTaskRounds();assert f.completions==2 : "later tasks still run";
   AntFarmRpcCall.rows=new JSONArray().put(task("manualBrowse","TODO"));FarmFlowCheck manualFarm=f;DailyTask.manual(()->{manualFarm.runFarmTaskRounds();return null;});assert f.completions==3;
   Status.uid="B";assert !Status.hasFlagToday("farm::sign");AntFarmRpcCall.rows=new JSONArray().put(task("accountB","TODO"));f.runFarmTaskRounds();assert f.completions==4;
+  // A领奖后出现新任务：切到B再回A，保留当日状态仍须重新查询和执行。
+  Status.uid="A";int completed=f.completions,readBefore=AntFarmRpcCall.reads;
+  AntFarmRpcCall.rows=new JSONArray().put(task("newAfterClaim","TODO"));f.runFarmTaskRounds();
+  assert f.completions==completed+1&&AntFarmRpcCall.reads>readBefore;
+  assert AntFarmRpcCall.rows.optJSONObject(0).optString("taskStatus").equals("RECEIVED");
+  // 重启后重建任务实例，账号当天签到等标记仍在，新任务仍可推进。
+  f=new FarmFlowCheck();AntFarmRpcCall.rows=new JSONArray().put(task("newAfterRestart","TODO"));f.runFarmTaskRounds();
+  assert f.completions==1&&AntFarmRpcCall.rows.optJSONObject(0).optString("taskStatus").equals("RECEIVED");
   f=new FarmFlowCheck();AntFarmRpcCall.busy=true;AntFarmRpcCall.claims=0;
   AntFarmRpcCall.rows=new JSONArray().put(task("claimBusy","FINISHED")).put(task("stillTodo","TODO")).put(task("otherClaim","FINISHED"));
   f.runFarmTaskRounds();assert f.completions==1 : "busy claim suppressed later TODO";
