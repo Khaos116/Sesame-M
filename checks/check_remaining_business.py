@@ -9,6 +9,8 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent / "audit_regressions"))
 from run import method, SOURCE
 
+sports_source=(SOURCE/"model/task/antSports/AntSports.java").read_text(encoding="utf-8")
+assert 'if (initWalkPathThemeMap()) Status.flagToday("WalkPathTheme::init")' in sports_source
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle"))
 jar = next((cache / "caches/modules-2/files-2.1/org.json/json").glob("*/*/json-*.jar"))
 
@@ -69,12 +71,13 @@ public class RemainingCheck {
         boolean walkGo(JSONObject path,int steps) { return false; }
         @@WALK@@
     }
-    static class AntSportsRpcCall { static int claims; static boolean transport; static String claimReply="{\"success\":false,\"resultCode\":\"102\"}";
+    static class PathThemeMapListMap {static Map<String,String> map=new HashMap<>();static int saves;static boolean failSave;static void load(){}static void add(String id,String name){map.put(id,name);}static boolean save(){saves++;return !failSave;}static Map<String,String> getMap(){return map;}}
+    static class AntSportsRpcCall {static String themes;static boolean cancelTheme;static String queryThemeList(){if(cancelTheme)throw new TaskCancelledException();return themes;} static int claims; static boolean transport; static String claimReply="{\"success\":false,\"resultCode\":\"102\"}";
         static String queryTaskInfo() { return "{\"success\":true,\"data\":{\"taskInfos\":[{\"title\":\"browse\",\"viewSec\":15,\"encryptValue\":\"fixture\",\"energyNum\":1}]}}"; }
         static String neverlandenergyReceive(String raw) { claims++; if(transport) throw new IllegalStateException(); return claimReply; }
         static String walkGo(String date,String path,int count) { return "{\"success\":true,\"data\":{}}"; } }
     static class SportsTasks { static String TAG="sports"; Field<Integer> walkPaceMs=new Field<>(50); void parseRewardsByJSONObjectData(JSONObject data) { }
-        @@SPORTS_BROWSE@@ @@SPORTS_PROBE@@ @@SPORTS_RECEIVE@@ @@SPORTS_PACE@@ @@SPORTS_GO@@ }
+        @@SPORTS_THEME@@ @@SPORTS_BROWSE@@ @@SPORTS_PROBE@@ @@SPORTS_RECEIVE@@ @@SPORTS_PACE@@ @@SPORTS_GO@@ }
     static class AntStallRpcCall { static String detail; static String projectDetail(String id) { return detail; }
         static int plugins; static boolean pluginFailure,finishCancel; static String failure="{\"success\":false,\"resultCode\":\"102\"}";
         static String xlightPlugin() { plugins++; return pluginFailure ? failure : "{\"playingResult\":{\"playingBizId\":\"biz\",\"eventRewardDetail\":{\"eventRewardInfoList\":[{}]}}}"; }
@@ -96,9 +99,15 @@ public class RemainingCheck {
         @@FISH_SLEEP@@
         @@FISH_AWARD@@
     }
+    static class GameTaskAction {
+        enum Kind {NONE,DURATION,LEGACY,DEFERRED,COUNTDOWN} Kind kind;static Kind mode=Kind.NONE;static int calls;
+        static GameTaskAction parse(JSONObject task){GameTaskAction g=new GameTaskAction();g.kind=mode;return g;}
+        static int duration(Object value){return value instanceof Number?((Number)value).intValue():-1;}
+        boolean perform(String key,String title,String channel){calls++;return true;}
+    }
     static class Stall {
         static String TAG="stall"; int donations; static Set<String> taskTypeList=Set.of(); Field<Boolean> inviteRegister=new Field<>(false);
-        boolean inviteRegister() { return false; } boolean finishTask(String task,String title) { return false; } void querySelfHome() { }
+        int finishes; boolean inviteRegister() { return false; } boolean finishTask(String task,String title) { finishes++; return false; } void querySelfHome() { }
         boolean projectDonate(String id) { donations++; return true; }
         @@STALL@@
         @@STALL_DO@@ @@STALL_XLIGHT@@ @@STALL_PROBE@@
@@ -240,6 +249,15 @@ public class RemainingCheck {
         TimeUtil.stale=false;
     }
     static void stallRetry() {
+        for(GameTaskAction.Kind kind:new GameTaskAction.Kind[]{GameTaskAction.Kind.DURATION,GameTaskAction.Kind.DEFERRED,GameTaskAction.Kind.COUNTDOWN}) {
+            GameTaskAction.mode=kind;GameTaskAction.calls=0;Stall work=new Stall();
+            JSONObject task=new JSONObject().put("taskType","ANTSTALL_XLIGHT_VARIABLE_AWARD").put("bizInfo",new JSONObject().put("countDownSeconds",15).toString());
+            assert !work.doStallTask(task,"game"):"unchanged TODO must not finish";
+            assert work.finishes==(kind==GameTaskAction.Kind.COUNTDOWN?1:0);
+            assert GameTaskAction.calls==(kind==GameTaskAction.Kind.DURATION?1:0);
+        }
+        GameTaskAction.mode=GameTaskAction.Kind.NONE;
+
         for(boolean pluginFailure:new boolean[]{true,false}) {
             for(String failure:new String[]{"{\"success\":false,\"resultCode\":\"102\"}","{}"}) {
                 Status.flags.clear(); AntStallRpcCall.plugins=0; AntStallRpcCall.pluginFailure=pluginFailure; AntStallRpcCall.failure=failure;
@@ -319,6 +337,14 @@ public class RemainingCheck {
         TimeUtil.stale=false;
     }
     public static void main(String[] args) {
+        SportsTasks themes=new SportsTasks();
+        for(String bad:List.of("{}","{success:false,data:{themeList:[{themeId:'x',themeName:'x'}]}}","{success:true,data:{themeList:[]}}","{success:true,data:{themeList:[null,{}, {themeId:1,themeName:'x'}]}}")){
+            AntSportsRpcCall.themes=bad;assert !themes.initWalkPathThemeMap();assert PathThemeMapListMap.saves==0;
+        }
+        AntSportsRpcCall.themes="{success:true,data:{themeList:[null,{themeId:'id',themeName:'name'}]}}";
+        assert themes.initWalkPathThemeMap()&&PathThemeMapListMap.saves==1&&PathThemeMapListMap.map.get("id").equals("name");
+        PathThemeMapListMap.failSave=true;assert !themes.initWalkPathThemeMap():"failed persistence must not mark initialization complete";PathThemeMapListMap.failSave=false;
+        AntSportsRpcCall.cancelTheme=true;try{themes.initWalkPathThemeMap();throw new AssertionError("theme cancel swallowed");}catch(TaskCancelledException expected){}AntSportsRpcCall.cancelTheme=false;
         switch (args[0]) { case "green": green(); break; case "green_cancel": greenCancel(); break;
             case "sports": sports(); break; case "stall": stall(); break; case "ecology": ecology(); break;
             case "sports_retry": sportsRetry(); break; case "sports_pace_cancel": sportsPaceCancel(); break; case "stall_retry": stallRetry(); break; case "ancient": ancient(); break;
@@ -336,6 +362,7 @@ for token, path, signature in (
     ("@@FISH_AWARD@@", "fish/FishTask.java", "    private boolean receiveTaskAward("),
     ("@@TREE_QUERY@@", "protectEcology/ProtectEcology.java", "    private static ExchangeableTree queryTreeForExchange("),
     ("@@TREE_LOOP@@", "protectEcology/ProtectEcology.java", "    private static void protectTree()"),
+    ("@@SPORTS_THEME@@", "antSports/AntSports.java", "    private boolean initWalkPathThemeMap("),
     ("@@SPORTS_BROWSE@@", "antSports/AntSports.java", "    public static void processBrowseTasks("),
     ("@@SPORTS_PROBE@@", "antSports/AntSports.java", "    private static TaskAttemptPolicy.ProbeResult probeBrowseStatus("),
     ("@@SPORTS_RECEIVE@@", "antSports/AntSports.java", "    public static boolean receiveBrowseReward("),

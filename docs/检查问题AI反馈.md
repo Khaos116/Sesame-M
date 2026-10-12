@@ -1,30 +1,28 @@
 # 检查问题 AI 反馈
 
-检查对象：`my_dev` 分支，HEAD `c6929628` 加工作区未提交改动（上游合并 `b3415cda` 的四项修正）。
+检查对象：`my_dev` 分支，HEAD `a028c4bf` 加工作区未提交改动（参考 AG/XU 的四项业务同步，第二轮）。
 检查方式：只读审查，未改代码。
 
-代码没有待处理的问题。有一件和代码无关的事需要清理，见最后一节。
+当前无待处理的代码问题。
 
-## 上一轮四项的核对结果
+## 上一轮五项的核对结果
 
-第1项已修复。森林寻宝、海洋、金豆三处“一次补齐”循环，从第二次上报起先查一次任务列表，状态不是 `TODO`（待领奖、已领取、状态不明）就停止，交回外层领奖后再继续。位置：`ForestChouChouLe.java:225`、`241`，`AntOcean.java:1104`，`GoldenBeansTasks.java:346`。森林寻宝探针遇到未知状态现在返回 `UNKNOWN`，不再当成 `TODO`。
+第1项已修复。`GameTaskAction.java:168` 改成 `reportSync(label, 1, channel) > 0`，上报成功不会再被判成“未确认”。
 
-第2项已修复。`AntOrchard.java:730` 拉黑时改用 `StringUtil.stripCountSuffix(label)`，写进黑名单的名字不带档位，和跳过判断一致。
+第2项已修复。
 
-第3项已修复。`orchard::tbAward::` 那一行已删除。
+- `gameAction::` 和 `memberApply::`：`GameTaskAction.cleanupDailyRecords()` 每个账号每天清一次，日期不是今天的记录删除。
+- `memberBrowse::`：`MemberBrowseTasks.java:88-102`，只有在列表完整取到、流程已不在列表里、并且记录不是今天的情况下才删除。仍在列表里的流程保留记录，未确认的提交不会被重发。
 
-第4项已修复。`AntForestV2.java:928-1033`：当天没有记录时不再写日志；各种提前返回都通过 `logEnergyRecordIssue` 写明原因，同一原因每个账号每天只写一次，切号或跨天时不写。
+第3项已修复两处，一处保持原样。
 
-## 需要清理：仓库根目录多了 5 个空文件
+- 完成或阶段推进时写分类日志“会员任务🎖️完成[名称]”，详情里有积分时带上积分（`MemberBrowseTasks.java:334-340`）。
+- 执行被服务端明确拒绝、并且详情回查成功时才交给拉黑判断；本地跳过（`RPC_SKIPPED`）和回查失败不拉黑（`MemberBrowseTasks.java:323`、`328-332`）。
+- 旧的 `signPageTaskList()`（无参数）、`applyTask`、`executeTask` 已删除。
+- 不支持的任务类型（不是 `BROWSE#子类型#参数` 三段格式）仍然不写日志直接跳过。
 
-`git status` 显示根目录有 5 个未跟踪的空文件（0 字节，今天 10:46 至 10:47 生成）：
+第4项已修复。`currentMemberAdTasks()` 的请求体只有 `{"source":"signInAd"}`，与 AG 一致。
 
-- `0`
-- `0)`
-- `probeGoldenBeansStatus(entry`
-- `probeLimitedTimeChildStatus(childTaskId)))`
-- `probeOptionalPlayStatus(sceneCode`
+第5项保持原样。新村（`AntStall.java:738-740`）和金豆（`GoldenBeansTasks.java:466-468`）里被判成“暂不处理”的游戏任务仍然不写日志。
 
-这是执行命令时，代码片段里的 `>` 被命令行当成了输出重定向留下的，和之前出现过的 `previous)`、`0)` 是同一种情况。提交前删掉，注意不要用 `git add -A` 把它们带进提交。
-
-处理结果：上述 5 个文件已逐一确认是未跟踪的 0 字节文件并清理，未改动业务代码。
+第3项最后一条和第5项属于同一类：本地判断不支持、没有发出请求。`docs/MyFix.md` 硬性规则第7条允许这种情况不写运行日志，所以不算问题，可以不改。以后如果发现某个任务一直停在待办又查不到原因，再回来给这几处加日志。

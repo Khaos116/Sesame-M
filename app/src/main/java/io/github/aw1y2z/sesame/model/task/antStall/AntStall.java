@@ -1,5 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.antStall;
 
+import io.github.aw1y2z.sesame.model.common.GameTaskAction;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 import io.github.aw1y2z.sesame.util.MyUtils;
@@ -721,6 +723,27 @@ public class AntStall extends ModelTask {
             JSONObject bizInfo = MyUtils.newJSONObject(task.optString("bizInfo"));
             // 周期/持续型任务：跳过，不尝试也不拉黑
             if (TaskAttemptPolicy.isCyclicTask(task)) {
+                return false;
+            }
+            GameTaskAction game = GameTaskAction.parse(task);
+            if (game.kind != GameTaskAction.Kind.NONE && !"VISIT_AUTO_FINISH".equals(bizInfo.optString("actionType"))) {
+                if (TaskAlternative.isTransactionTask(taskType)) return false;
+                if (game.kind == GameTaskAction.Kind.COUNTDOWN) {
+                    int seconds = GameTaskAction.duration(bizInfo.opt("countDownSeconds"));
+                    if (seconds <= 0) return false;
+                    Log.record("新村任务[" + title + "]：页面倒计时" + seconds + "秒");
+                    TimeUtil.sleep(seconds * 1000L);
+                    return finishTask(taskType, title);
+                }
+                if (game.kind != GameTaskAction.Kind.DURATION) {
+                    return false;
+                }
+                String key = "stall:" + taskType + ":" + task.optString("taskProgress") + ":" + task.optString("taskRequire");
+                boolean accepted = game.perform(key, "新村游戏[" + title + "]", null);
+                TaskAttemptPolicy.ProbeResult result = probeStallStatus(taskType);
+                if (result == TaskAttemptPolicy.ProbeResult.FINISHED || result == TaskAttemptPolicy.ProbeResult.RECEIVED
+                        || result == TaskAttemptPolicy.ProbeResult.GONE) return true;
+                Log.record("新村游戏[" + title + "]：" + (accepted ? "动作已受理" : "动作未确认") + "，任务回查=" + result);
                 return false;
             }
             if (Objects.equals("VISIT_AUTO_FINISH", bizInfo.optString("actionType")) || taskTypeList.contains(taskType)) {

@@ -50,6 +50,7 @@ python checks/check_statistics_accounts.py
 python checks/check_upstream_merge.py
 python checks/check_upstream_energy_manure.py
 python checks/check_ag_features.py
+python checks/check_ag_task_sync.py
 python checks/check_ag_retirements.py
 python checks/check_rob_expand_card.py
 python checks/check_farm_npc.py

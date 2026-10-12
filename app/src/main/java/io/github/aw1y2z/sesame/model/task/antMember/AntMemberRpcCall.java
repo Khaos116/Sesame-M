@@ -207,17 +207,48 @@ public class AntMemberRpcCall {
     }
 
     /* 会员任务 */
-    public static String signPageTaskList() {
-        return ApplicationHook.requestString("alipay.antmember.biz.rpc.membertask.h5.signPageTaskList", "[{\"sourceBusiness\":\"antmember\",\"spaceCode\":\"ant_member_xlight_task\"}]");
+    private static String currentMemberRequest(String method, JSONObject body) throws org.json.JSONException {
+        body.put("sourcePassMap", MyUtils.newJSONObject().put("innerSource", "").put("source", "mytab").put("unid", ""));
+        if (method.startsWith("MemTaskManagerFacade."))
+            return ApplicationHook.requestString("com.alipay.amic.memtask.h5." + method, new JSONArray().put(body).toString(), 1, 0);
+        return ApplicationHook.requestString("com.alipay.amic.memtask.h5." + method, new JSONArray().put(body).toString());
     }
 
-    public static String applyTask(String darwinName, Long taskConfigId) {
-        return ApplicationHook.requestString("alipay.antmember.biz.rpc.membertask.h5.applyTask", "[{\"darwinExpParams\":{\"darwinName\":\"" + darwinName + "\"},\"sourcePassMap\":{\"innerSource\":\"\",\"source\":\"myTab\",\"unid\":\"\"},\"taskConfigId\":" + taskConfigId + "}]");
+    public static String signPageTaskList(int page, String session) throws org.json.JSONException {
+        return currentMemberRequest("MemTaskListQueryFacade.signPageTaskList", MyUtils.newJSONObject()
+                .put("pageNo", page).put("pageSize", 8).put("session", session).put("switchNormal", true)
+                .put("source", "antmember").put("spaceCode", "ant_member_xlight_task").put("taskTopConfigId", ""));
     }
 
-    public static String executeTask(String bizParam, String bizSubType) {
-        return ApplicationHook.requestString("alipay.antmember.biz.rpc.membertask.h5.executeTask", "[{\"bizOutNo\":\"" + (System.currentTimeMillis() - 16000L) + "\",\"bizParam\":\"" + bizParam + "\",\"bizSubType\":\"" + bizSubType + "\",\"bizType\":\"BROWSE\"}]");
+    public static String currentMemberAdTasks() throws org.json.JSONException {
+        return ApplicationHook.requestString("com.alipay.amic.memtask.h5.MemTaskListQueryFacade.queryAllStatusTaskList",
+                new JSONArray().put(MyUtils.newJSONObject().put("source", "signInAd")).toString());
     }
+
+    public static String currentMemberProcesses() throws org.json.JSONException {
+        JSONObject body = MyUtils.newJSONObject().put("relatedChannel", "MEMBERPOINT").put("sourcePassMap",
+                MyUtils.newJSONObject().put("innerSource", "").put("source", "mytab").put("unid", ""));
+        return ApplicationHook.requestString("com.alipay.alipaymember.biz.rpc.membertask.h5.queryTaskList", new JSONArray().put(body).toString());
+    }
+
+    public static String applyCurrentMemberTask(String id, boolean batch) throws org.json.JSONException {
+        JSONObject body = MyUtils.newJSONObject();
+        if (batch) body.put("pageMark", "adFeeds").put("taskConfigIdList", new JSONArray().put(id));
+        else body.put("alipayGrowthTask", false).put("taskConfigId", id);
+        return currentMemberRequest("MemTaskManagerFacade." + (batch ? "batchApplyTask" : "applyTask"), body);
+    }
+
+    public static String executeCurrentMemberTask(String subType, String param) throws org.json.JSONException {
+        return currentMemberRequest("MemTaskManagerFacade.executeTask", MyUtils.newJSONObject().put("bizType", "BROWSE")
+                .put("bizSubType", subType).put("bizParam", param).put("outBizNo", String.valueOf(System.currentTimeMillis())));
+    }
+
+    public static String currentMemberTaskDetail(String processId) throws org.json.JSONException {
+        return currentMemberRequest("MemTaskListQueryFacade.querySingleTaskProcessDetail", MyUtils.newJSONObject().put("taskProcessId", processId));
+    }
+
+
+
 
     public static String queryAllStatusTaskList() {
         String args = "[{\"sourceBusiness\":\"signInAd\"}]";

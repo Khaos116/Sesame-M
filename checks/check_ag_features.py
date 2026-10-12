@@ -196,6 +196,15 @@ public class AGCheck {
         reset();o.AntOrchardTaskList.value.add("ORCHARD_NORMAL_STAR");replies("listTask",starList(star("ORCHARD_NORMAL_STAR","TODO")));o.orchardStarTasks();assert calls("finishTask").isEmpty();assert AntOrchardTaskListMap.get("ORCHARD_NORMAL_STAR").startsWith("努力流星｜")&&AntOrchardTaskListMap.saves==1;o.orchardStarTasks();assert AntOrchardTaskListMap.saves==1;o.AntOrchardTaskList.value.clear();
         reset();JSONObject visit=new JSONObject().put("taskId","ANTFARM_ORCHARD_NORMAL_GONGGEFANGWEN").put("taskStatus","TODO").put("taskDisplayConfig",new JSONObject().put("targetUrl","https://render.alipay.com?source=provided"));
         replies("orchardListTask",regularList(new JSONObject(visit.toString()).put("taskStatus","RECEIVED")));o.runExtraOrchardTask(visit,false);assert calls("orchardIndex").get(0).optString("source").equals("provided")&&logged("已完成并领奖");
+        JSONObject tb=new JSONObject().put("taskPlantType","TAOBAO").put("actionType","VISIT");
+        for(String url:List.of("https://example.com/page", "alipays://platformapi/startapp?url=https%3A%2F%2Fexample.com%2Fpage")){
+            reset();o.performOrchardBrowse(tb,new JSONObject().put("targetUrl",url));assert calls("orchardSimple").get(0).optString("source").equals("h5");
+        }
+        reset();o.performOrchardBrowse(tb,new JSONObject().put("targetUrl","https://example.com/?source=explicit"));assert calls("orchardSimple").get(0).optString("source").equals("explicit");
+        for(String action:List.of("VISIT","SYSTEM_SWITCH"))for(String url:List.of("alipays://platformapi/startapp?appId=123","https:///missing-host")){
+            reset();o.performOrchardBrowse(new JSONObject(tb.toString()).put("actionType",action),new JSONObject().put("targetUrl",url));assert ApplicationHook.calls.isEmpty();
+        }
+        reset();o.performOrchardBrowse(new JSONObject(tb.toString()).put("actionType","SYSTEM_SWITCH"),new JSONObject().put("targetUrl","https://example.com/"));assert ApplicationHook.calls.isEmpty();
         reset();replies("xlightPlugin",adPage(adEvent(),""));replies("orchardListTask",regularList(browse(1)),regularList(browse(2)));o.runExtraOrchardTask(browse(0),false);
         assert calls("finish").size()==2&&TimeUtil.waits.contains(2000L)&&logged("次数上限");assert calls("finish").get(0).optJSONObject("extendInfo").optString("iepTaskSceneCode").equals("scene");
         reset();replies("xlightPlugin",adPage(adEvent(),""));replies("orchardListTask",regularList(browse(0)));o.runExtraOrchardTask(browse(0),false);assert calls("finish").size()==1&&logged("进度未推进");
@@ -232,6 +241,7 @@ with tempfile.TemporaryDirectory(prefix="sesame-ag-features-") as tmp:
     uri.parent.mkdir(parents=True)
     uri.write_text(r'''package android.net; public final class Uri {
         final String raw; private Uri(String s){raw=s;} public static Uri parse(String s){return new Uri(s);}
+        public String getScheme(){return java.net.URI.create(raw).getScheme();} public String getHost(){return java.net.URI.create(raw).getHost();}
         public boolean isHierarchical(){return raw.contains("://");}
         public String getQueryParameter(String key){int q=raw.indexOf('?');if(q<0)return null;String tail=raw.substring(q+1).split("#",2)[0];
             for(String p:tail.split("&")){String[] kv=p.split("=",2);if(java.net.URLDecoder.decode(kv[0],java.nio.charset.StandardCharsets.UTF_8).equals(key))return kv.length<2?"":java.net.URLDecoder.decode(kv[1],java.nio.charset.StandardCharsets.UTF_8);}return null;}

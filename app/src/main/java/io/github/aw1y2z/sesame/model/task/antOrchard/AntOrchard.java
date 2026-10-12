@@ -1595,6 +1595,13 @@ public class AntOrchard extends ModelTask {
 
     private JSONObject performOrchardBrowse(JSONObject task, JSONObject display) throws Exception {
         String source = orchardTaskSource(display), action = task.optString("actionType");
+        if (source.isEmpty() && "TAOBAO".equals(task.optString("taskPlantType")) && "VISIT".equals(action)) {
+            String page = orchardUrlParam(display, "url");
+            if (page.isEmpty()) page = display.optString("targetUrl");
+            android.net.Uri uri = android.net.Uri.parse(page);
+            if (("https".equals(uri.getScheme()) || "http".equals(uri.getScheme()))
+                    && uri.getHost() != null && !uri.getHost().isEmpty()) source = "h5";
+        }
         if ("ANTFARM_ORCHARD_NORMAL_GONGGEFANGWEN".equals(task.optString("taskId")) || "TAOBAO".equals(task.optString("taskPlantType"))) {
             if (source.isEmpty()) { Log.record("农场浏览：缺少任务提供的访问来源，跳过"); return null; }
             return orchardUnwrapExtra(MyUtils.newJSONObject(AntOrchardRpcCall.orchardVisit(source, "TAOBAO".equals(task.optString("taskPlantType")))));

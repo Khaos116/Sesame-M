@@ -28,6 +28,15 @@ public static void main(String[]a){
   assert finishes==(wait?1:8)&&claims==1:"Golden loop must stop at awaiting-award while preserving TODO progress";
  }
  stageTest=false;
+ for(GameTaskAction.Kind kind:new GameTaskAction.Kind[]{GameTaskAction.Kind.DURATION,GameTaskAction.Kind.LEGACY,GameTaskAction.Kind.DEFERRED}) {
+  GameTaskAction.mode=kind;GameTaskAction.calls=finishes=claims=0;Status.flags.clear();
+  goldenbeansRpcCall.snapshot="{success:true,taskList:[{sceneCode:'scene',taskId:'task',taskStatus:'TODO'}]}";
+  new Review().runTaskList(new GoldenBeansEntry(),0);
+  assert finishes==0&&claims==0:"game ACK must not finish or claim an unchanged task";
+  assert GameTaskAction.calls==(kind==GameTaskAction.Kind.DEFERRED?0:1);
+ }
+ GameTaskAction.mode=GameTaskAction.Kind.NONE;
+
  System.out.println("PASS finish then claim, retry failed claims including blacklisted finished tasks");
 }
 @@TASKS@@
@@ -126,3 +135,9 @@ class RuntimeInfo {static RuntimeInfo instance=new RuntimeInfo();Map<String,Stri
 class MyUtils {static JSONObject newJSONObject(){return new JSONObject();}static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
 class TimeUtil {static void sleep(long ms){}static boolean isLessThanSecondOfDays(long a,long b){return false;}}
 class TaskCancelledException extends RuntimeException {}
+
+class GameTaskAction {
+ enum Kind {NONE,DURATION,LEGACY,DEFERRED,COUNTDOWN} Kind kind;static Kind mode=Kind.NONE;static int calls;
+ static GameTaskAction parse(JSONObject t){GameTaskAction g=new GameTaskAction();g.kind=mode;return g;}
+ boolean perform(String key,String label,String channel){calls++;return true;}
+}

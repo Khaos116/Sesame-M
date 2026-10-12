@@ -219,8 +219,7 @@ public class AntMember extends ModelTask {
             
             if (AntMemberTask.getValue()) {
                 queryPointCert(1, 8);
-                signPageTaskList();
-                queryAllStatusTaskList();
+                MemberBrowseTasks.run(AntMemberTaskList.getValue());
             }
             
             memberPointExchangeBenefit();
@@ -766,73 +765,6 @@ public class AntMember extends ModelTask {
         }
     }
     
-    /**
-     * 做任务赚积分
-     */
-    private void signPageTaskList() {
-        try {
-            do {
-                JSONObject jo = MyUtils.newJSONObject(AntMemberRpcCall.signPageTaskList());
-                TimeUtil.sleep(500);
-                boolean doubleCheck = false;
-                if (!MessageUtil.checkResultCode(TAG + " signPageTaskList", jo)) {
-                    return;
-                }
-                if (!jo.has("categoryTaskList")) {
-                    Log.i(TAG, "signPageTaskList 无 categoryTaskList 字段");
-                    return;
-                }
-                JSONArray categoryTaskList = jo.optJSONArray("categoryTaskList");
-                for (int i = 0; categoryTaskList != null && i < categoryTaskList.length(); i++) {
-                    jo = categoryTaskList.optJSONObject(i);
-                    if (jo == null) {
-                        continue;
-                    }
-                    JSONArray taskList = jo.optJSONArray("taskList");
-                    String type = jo.optString("type");
-                    if (taskList == null) {
-                        continue;
-                    }
-                    if (Objects.equals("BROWSE", type)) {
-                        doubleCheck = doBrowseTask(taskList);
-                    }
-                    else {
-                        ExtensionsHandle.handleAlphaRequest("antMember", "doMoreTask", jo);
-                    }
-                }
-                if (doubleCheck) {
-                    continue;
-                }
-                break;
-            }
-            while (true);
-        }
-        catch (Throwable t) {
-            Log.err(TAG, "signPageTaskList err:", t);
-        }
-    }
-    
-    /**
-     * 查询所有状态任务列表
-     */
-    private void queryAllStatusTaskList() {
-        try {
-            JSONObject jo = MyUtils.newJSONObject(AntMemberRpcCall.queryAllStatusTaskList());
-            TimeUtil.sleep(500);
-            if (!MessageUtil.checkResultCode(TAG, jo)) {
-                Log.i(TAG, "queryAllStatusTaskList 接口返回失败");
-                return;
-            }
-            JSONArray availableTaskList = jo.optJSONArray("availableTaskList");
-            if (availableTaskList != null && doBrowseTask(availableTaskList)) {
-                queryAllStatusTaskList();
-            }
-        }
-        catch (Throwable t) {
-            Log.err(TAG, "queryAllStatusTaskList err:", t);
-        }
-    }
-    
     // 生活记录
     private void promise() {
         try {
@@ -947,99 +879,6 @@ public class AntMember extends ModelTask {
             return null;
         }
         return jo;
-    }
-    
-    // 蚂蚁积分-做浏览任务
-    private Boolean doBrowseTask(JSONArray taskList) {
-        boolean doubleCheck = false;
-        try {
-            for (int i = 0; i < taskList.length(); i++) {
-                JSONObject task = taskList.optJSONObject(i);
-                if (task == null) {
-                    continue;
-                }
-                if (task.optBoolean("hybrid")) {
-                    JSONObject extInfo = task.optJSONObject("extInfo");
-                    if (extInfo == null) {
-                        continue;
-                    }
-                    int periodCurrentCount = Integer.parseInt(extInfo.optString("PERIOD_CURRENT_COUNT", "0"));
-                    int periodTargetCount = Integer.parseInt(extInfo.optString("PERIOD_TARGET_COUNT", "0"));
-                    int count = periodTargetCount > periodCurrentCount ? periodTargetCount - periodCurrentCount : 0;
-                    if (count > 0) {
-                        doubleCheck = doubleCheck || doBrowseTask(task, periodTargetCount, periodTargetCount);
-                    }
-                }
-                else {
-                    doubleCheck = doubleCheck || doBrowseTask(task, 1, 1);
-                }
-            }
-        }
-        catch (Throwable t) {
-            Log.err(TAG, "doBrowseTask err:", t);
-        }
-        return doubleCheck;
-    }
-    
-    private Boolean doBrowseTask(JSONObject task, int left, int right) {
-        boolean doubleCheck = false;
-        try {
-            JSONObject taskConfigInfo = task.optJSONObject("taskConfigInfo");
-            if (taskConfigInfo == null) {
-                return false;
-            }
-            String name = taskConfigInfo.optString("name");
-            //黑名单任务跳过
-            if (AntMemberTaskList.getValue().contains(name)) {
-                return false;
-            }
-            Long id = taskConfigInfo.optLong("id");
-            JSONObject awardParam = taskConfigInfo.optJSONObject("awardParam");
-            if (awardParam == null) {
-                return false;
-            }
-            JSONArray targetBusinessArr = taskConfigInfo.optJSONArray("targetBusiness");
-            if (targetBusinessArr == null || targetBusinessArr.length() == 0) {
-                Log.other("会员任务⏭️跳过[" + name + "]#无 targetBusiness 配置");
-                return false;
-            }
-            String awardParamPoint = awardParam.optString("awardParamPoint");
-            String targetBusiness = targetBusinessArr.optString(0);
-            for (int i = left; i <= right; i++) {
-                JSONObject jo = MyUtils.newJSONObject(AntMemberRpcCall.applyTask(name, id));
-                TimeUtil.sleep(300);
-                if (!MessageUtil.checkResultCode(TAG, jo)) {
-                    //检查并标记黑名单任务
-                    MessageUtil.checkResultCodeAndMarkTaskBlackList("AntMemberTaskList", name, jo);
-                    continue;
-                }
-                String[] targetBusinessArray = targetBusiness.split("#");
-                String bizParam;
-                String bizSubType;
-                if (targetBusinessArray.length > 2) {
-                    bizParam = targetBusinessArray[2];
-                    bizSubType = targetBusinessArray[1];
-                }
-                else {
-                    bizParam = targetBusinessArray[1];
-                    bizSubType = targetBusinessArray[0];
-                }
-                jo = MyUtils.newJSONObject(AntMemberRpcCall.executeTask(bizParam, bizSubType));
-                TimeUtil.sleep(300);
-                if (!MessageUtil.checkResultCode(TAG, jo)) {
-                    //检查并标记黑名单任务
-                    MessageUtil.checkResultCodeAndMarkTaskBlackList("AntMemberTaskList", name, jo);
-                    continue;
-                }
-                String ex = left == right && left == 1 ? "" : "(" + (i + 1) + "/" + right + ")";
-                Log.other("会员任务🎖️完成[" + name + ex + "]#获得[" + awardParamPoint + "积分]");
-                doubleCheck = true;
-            }
-        }
-        catch (Throwable t) {
-            Log.err(TAG, "doBrowseTask err:", t);
-        }
-        return doubleCheck;
     }
     
     private void goldTicket() {

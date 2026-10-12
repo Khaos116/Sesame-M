@@ -62,7 +62,7 @@ def main():
         run("pagination", "GreenCurrent.java", "Pagination.java.in", {"@@PAGINATION@@": method(
             "model/task/greenFinance/GreenFinance.java", "    private void batchStealFriend")})
         run("tasks", "Review.java", "Tasks.java.in", {
-            "@@TASKS@@": method("model/task/goldenbeans/GoldenBeansTasks.java", "    private boolean runTaskList"),
+            "@@TASKS@@": method("model/task/goldenbeans/GoldenBeansTasks.java", "    private boolean runTaskList") + method("model/task/goldenbeans/GoldenBeansTasks.java", "    private boolean finishGameTask("),
             "@@GOLDEN_FLOW@@": re.sub(r"\bOutcome\b", "TaskAttemptPolicy.Outcome", "\n".join(
                 method("model/task/goldenbeans/GoldenBeansTasks.java", signature) for signature in (
                     "private boolean finishTask(", "private Outcome attemptFinishTask(",

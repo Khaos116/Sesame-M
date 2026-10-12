@@ -220,8 +220,7 @@ public class AntSports extends ModelTask {
             //初始化行走主题列表
             step("初始化行走主题列表", () -> {
                 if (!Status.hasFlagToday("WalkPathTheme::init")) {
-                    initWalkPathThemeMap();
-                    Status.flagToday("WalkPathTheme::init");
+                    if (initWalkPathThemeMap()) Status.flagToday("WalkPathTheme::init");
                 }
             });
 
@@ -548,32 +547,50 @@ public class AntSports extends ModelTask {
         }
     }
 
-    private void initWalkPathThemeMap() {
+    private boolean initWalkPathThemeMap() {
         //初始化PathThemeMapListMap
         PathThemeMapListMap.load();
         try {
             String result = AntSportsRpcCall.queryThemeList();
             JSONObject jo = MyUtils.newJSONObject(result);
+            if (!MessageUtil.checkSuccess(TAG, jo)) {
+                Log.record("同步路线主题：查询未成功，下轮重试");
+                return false;
+            }
+            boolean synced = false;
             JSONObject data = jo.optJSONObject("data");
             if (data != null) {
                 JSONArray themeList = data.optJSONArray("themeList");
                 if (themeList != null) {
                     for (int i = 0; i < themeList.length(); i++) {
                         JSONObject theme = themeList.optJSONObject(i);
+                        if (theme == null || !(theme.opt("themeId") instanceof String)
+                                || !(theme.opt("themeName") instanceof String)) continue;
                         String themeId = theme.optString("themeId");
                         String themeName = theme.optString("themeName");
                         if (themeId != null && !themeId.isEmpty() && themeName != null && !themeName.isEmpty()) {
                             PathThemeMapListMap.add(themeId, themeName);
+                            synced = true;
                         }
                     }
                 }
             }
-            PathThemeMapListMap.save();
+            if (!synced) {
+                Log.record("同步路线主题：未取得有效主题，下轮重试");
+                return false;
+            }
+            if (!PathThemeMapListMap.save()) {
+                Log.record("同步路线主题：保存失败，下轮重试");
+                return false;
+            }
             Log.record("同步路线主题" + PathThemeMapListMap.getMap());
+            return true;
 
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "initWalkPathThemeMap err:", t);
         }
+        return false;
 
     }
 

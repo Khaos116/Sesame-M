@@ -15,6 +15,7 @@ import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy;
 import io.github.aw1y2z.sesame.data.task.TaskAward;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy.Outcome;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
+import io.github.aw1y2z.sesame.model.common.GameTaskAction;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Status;
@@ -344,7 +345,11 @@ public final class GoldenBeansTasks {
                     for (int cnt = 0; cnt < remain; cnt++) {
                         // 待领奖、已领取或状态不明时交回外层处理，不继续上报。
                         if (cnt > 0 && probeGoldenBeansStatus(entry, taskId, -1) != TaskAttemptPolicy.ProbeResult.TODO) break;
-                        if (!finishTask(entry, taskId, taskName, rightsTimes + cnt)) {
+                        GameTaskAction game = GameTaskAction.parse(task);
+                        boolean done = game.kind == GameTaskAction.Kind.NONE
+                                ? finishTask(entry, taskId, taskName, rightsTimes + cnt)
+                                : finishGameTask(entry, taskId, taskName, rightsTimes + cnt, game);
+                        if (!done) {
                             break; // 做不了就收手，不再空转剩余次数
                         }
                         anyDone = true;
@@ -454,6 +459,20 @@ public final class GoldenBeansTasks {
                 new TaskAttemptPolicy.Site(null, "金豆[" + entry.alias + "]任务", null, entry.taskSceneCode,
                         (k) -> probeGoldenBeansStatus(entry, taskId, stage)));
         return outcome == Outcome.DONE;
+    }
+
+    private boolean finishGameTask(GoldenBeansEntry entry, String taskId, String title, int stage, GameTaskAction game) throws Exception {
+        String label = "金豆[" + entry.alias + "]游戏[" + title + "]";
+        if (game.kind != GameTaskAction.Kind.DURATION && game.kind != GameTaskAction.Kind.LEGACY) {
+            return false;
+        }
+        String key = "goldenbeans:" + entry.alias + ":" + taskId + ":" + stage;
+        boolean accepted = game.perform(key, label, "goldenbean");
+        TaskAttemptPolicy.ProbeResult result = probeGoldenBeansStatus(entry, taskId, stage);
+        if (result == TaskAttemptPolicy.ProbeResult.FINISHED || result == TaskAttemptPolicy.ProbeResult.RECEIVED
+                || result == TaskAttemptPolicy.ProbeResult.GONE) return true;
+        Log.record(label + "：" + (accepted ? "动作已受理" : "动作未确认") + "，任务回查=" + result + "，后续轮次继续回查");
+        return false;
     }
 
     /** 任务提交：做不了的不拉黑、交给兜底方案；其它错误码才算真做不了（仍计入自动拉黑） */
