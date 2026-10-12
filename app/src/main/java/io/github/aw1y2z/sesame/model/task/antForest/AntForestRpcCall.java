@@ -774,27 +774,10 @@ public class AntForestRpcCall {
     }
     
     //真爱合种查询
-    public static String loveteamForestHome() {
-        return ApplicationHook.requestString("alipay.greenmatrix.rpc.h5.love.loveForestHome",
-                "[{\"source\":\"chInfo_ch_appcenter__chsub_9patch\"}]");
-    }
-
     public static String loveteamHome() throws JSONException {
-        java.util.Calendar now = MyUtils.getInstance();
-        String month = String.format(java.util.Locale.ROOT, "%tY%<tm", now);
         JSONObject request = MyUtils.newJSONObject();
-        request.put("calenderStart", month + "01");
-        request.put("calenderEnd", month + now.getActualMaximum(java.util.Calendar.DAY_OF_MONTH));
         request.put("source", "chInfo_ch_appcenter__chsub_9patch");
         return ApplicationHook.requestString("alipay.greenmatrix.rpc.h5.love.loveHome", new JSONArray().put(request).toString());
-    }
-
-    public static String loveteamQuerySubscribeRelation() throws JSONException {
-        JSONObject request = MyUtils.newJSONObject();
-        request.put("entityIds", new JSONArray().put("29ffc27d072b48a2966e9421d6132f79"));
-        request.put("ownerId", "60000002");
-        return ApplicationHook.requestString("alipay.lifemsgprod.message.querySubscribeRelation",
-                new JSONArray().put(request).toString());
     }
 
     public static String loveteamWater(String teamId, int waterNum) {
