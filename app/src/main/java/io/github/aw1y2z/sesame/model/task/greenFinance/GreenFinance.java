@@ -132,7 +132,7 @@ public class GreenFinance extends ModelTask {
             JSONObject joSelfCollect = new JSONObject(s);
             if (joSelfCollect.optBoolean("success")) {
                 int totalCollectPoint = joSelfCollect.getJSONObject("result").getInt("totalCollectPoint");
-                Log.other("绿色经营📊收集获得" + totalCollectPoint);
+                Log.other("绿色经营📊[收集]#获得" + totalCollectPoint);
             } else {
                 Log.i(TAG + ".batchSelfCollect", joSelfCollect.optString("resultDesc"));
             }
@@ -421,12 +421,12 @@ public class GreenFinance extends ModelTask {
                     TimeUtil.sleep(1500);
                     JSONObject jsonObject = new JSONObject(str);
                     if (!jsonObject.optBoolean("success")) {
-                        Log.other("绿色经营🙋，好友金币巡查失败");
+                        Log.other("绿色经营🙋[金币巡查]#失败");
                         break;
                     }
                     JSONObject result = jsonObject.getJSONObject("result");
                     if (result.getBoolean("lastPage")) {
-                        Log.other("绿色经营🙋，好友金币巡查完成");
+                        Log.other("绿色经营🙋[金币巡查]#完成");
                         Status.greenFinancePointFriend();
                         return;
                     }

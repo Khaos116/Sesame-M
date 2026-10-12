@@ -150,7 +150,10 @@ public class goldenbeans extends ModelTask {
                 resync(interval);
             }
 
-            Log.goldenBeans("金豆夺宝" + (taskResolved && gameResolved ? "✅本轮任务已全部处理" : "⏳仍有待完成或待领取任务"));
+            // 汇总行由 ModelTask 收尾统一打（Log.moduleSummary），这里只声明是否还有未处理任务
+            if (!(taskResolved && gameResolved)) {
+                Log.markUnresolved();
+            }
         } catch (Throwable th) {
             Log.i(GoldenBeansSupport.TAG, "run err:");
             Log.printStackTrace(GoldenBeansSupport.TAG, th);

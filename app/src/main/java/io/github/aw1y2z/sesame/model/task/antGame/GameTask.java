@@ -143,7 +143,7 @@ public enum GameTask {
                     return this.cachedToken;
                 }
             } else {
-                Log.error("登录接口❌报错(Code" + respCode + "):" + responseText);
+                Log.error("登录接口⚠️报错(Code" + respCode + "):" + responseText);
             }
         } catch (Exception e) {
             Log.error("登录过程🚨抛出异常:" + e.getMessage());
@@ -160,7 +160,7 @@ public enum GameTask {
         final String reportUid = UserIdMap.getCurrentUid();
         new Thread(() -> {
             if (!java.util.Objects.equals(reportUid, UserIdMap.getCurrentUid())) {
-                Log.record("任务流程🛑账号已切换，停止上报");
+                Log.record("任务流程⚠️账号已切换，停止上报");
                 return;
             }
             this.cachedToken = login();
@@ -172,7 +172,7 @@ public enum GameTask {
             Log.record("开始执行🚀"+gameType+"游戏任务:目标" + eggCount + "个蛋，需请求" + totalNeeded + "次");
             for (int i = 1; i <= totalNeeded; i++) {
                 if (!java.util.Objects.equals(reportUid, UserIdMap.getCurrentUid())) {
-                    Log.record("任务流程🛑账号已切换，停止上报");
+                    Log.record("任务流程⚠️账号已切换，停止上报");
                     break;
                 }
                 if (!executeSingleReport(gameType,i, totalNeeded)) {

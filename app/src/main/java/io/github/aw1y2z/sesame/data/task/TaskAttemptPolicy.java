@@ -1,11 +1,13 @@
 package io.github.aw1y2z.sesame.data.task;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
@@ -46,6 +48,14 @@ public class TaskAttemptPolicy {
     /** 兜底记录保留时长：任务消失后不会有人来清理，超过此时长直接丢弃 */
     private static final long TRIGGERED_STALE = 604800000L;
 
+    /**
+     * 临时故障类（{@link Outcome#RETRY}）当日最多尝试次数。
+     * <p>RETRY 的语义是"下一轮再试"，但服务端状态长期不推进时会变成整天重试：
+     * 场景卡容器子任务数量多，单轮即可发出上百次请求。故按次计数，
+     * 用尽即当日不再试（次日标记清空后自动恢复）。
+     */
+    private static final int RETRY_MAX_PER_DAY = 3;
+
     /** 处理结论 */
     public enum Outcome {
         /** 列表已确认完成（{@link #isDone}；完成任务后可能仍待领奖） */
@@ -80,7 +90,22 @@ public class TaskAttemptPolicy {
         FINISHED,
         RECEIVED,
         GONE,
-        UNKNOWN
+        UNKNOWN;
+
+        /**
+         * 把任务列表里的 {@code taskStatus} 映射为探针结果。
+         * <p>各模块列表的状态字符串一致（FINISHED/RECEIVED/其余视为 TODO），
+         * 服务端新增状态时只在此处调整。
+         */
+        public static ProbeResult of(String taskStatus) {
+            if ("FINISHED".equals(taskStatus)) {
+                return FINISHED;
+            }
+            if ("RECEIVED".equals(taskStatus)) {
+                return RECEIVED;
+            }
+            return TODO;
+        }
     }
 
     /** 是否算"完成"（已完成 / 已领到 / 已从列表消失，都算）。 */
@@ -122,9 +147,79 @@ public class TaskAttemptPolicy {
         ProbeResult probe(String key);
     }
 
+    /** 拉取任务列表原始响应 */
+    public interface RawSupplier {
+        String get() throws Exception;
+    }
+
+    /** 列表响应是否可用（各模块校验方式不同：checkResultCode / checkMemo） */
+    public interface ResponseCheck {
+        boolean ok(JSONObject jo);
+    }
+
+    /**
+     * 通用列表探针（顶层列表形态）：拉一次列表 → 用 {@code statusOf} 定位项并取状态。
+     * <p>找不到该项即 {@link ProbeResult#GONE}（视为已完成且已领）；列表拉取或校验失败为
+     * {@link ProbeResult#UNKNOWN}（调用方据此不做判定，避免误拉黑）。
+     * <p>各模块差异只有三处：拉列表的 RPC、列表字段名、定位谓词，故统一到这里。
+     * <p>{@code statusOf} 从列表项取出 {@code taskStatus}，返回 {@code null} 表示该项不匹配。
+     */
+    public static ProbeResult probeByList(String tag, RawSupplier listSupplier, String listField,
+                                          ResponseCheck check, Function<JSONObject, String> statusOf) {
+        return probeByNestedList(tag, listSupplier, check, jo -> jo.optJSONArray(listField), statusOf);
+    }
+
+    /**
+     * 嵌套列表形态：任务数组在响应内层（如 {@code taskTriggerPlayInfo.taskList}）。
+     * <p>与 {@link #probeByList} 同名会因函数式参数产生重载歧义，故单列方法名。
+     *
+     * @param listOf 从响应取出任务数组；取不到返回 null（视为 UNKNOWN）
+     */
+    public static ProbeResult probeByNestedList(String tag, RawSupplier listSupplier, ResponseCheck check,
+                                                Function<JSONObject, JSONArray> listOf,
+                                                Function<JSONObject, String> statusOf) {
+        try {
+            JSONObject jo = new JSONObject(listSupplier.get());
+            if (!check.ok(jo)) {
+                return ProbeResult.UNKNOWN;
+            }
+            JSONArray ja = listOf.apply(jo);
+            if (ja == null) {
+                return ProbeResult.UNKNOWN;
+            }
+            for (int i = 0; i < ja.length(); i++) {
+                JSONObject t = ja.optJSONObject(i);
+                String status = t == null ? null : statusOf.apply(t);
+                if (status != null) {
+                    return ProbeResult.of(status);
+                }
+            }
+            return ProbeResult.GONE;
+        } catch (Throwable t) {
+            Log.err(tag, "probeByNestedList err:", t);
+            return ProbeResult.UNKNOWN;
+        }
+    }
+
+    /**
+     * 当日额度是否已用尽（如 {@code rightsTimes >= rightsTimesLimit}）。
+     * <p>与 {@link StatusProbe} 同源：探针本已拉到响应，次数信息顺手可取，不额外发请求。
+     * <p>命中时只打**当日标记**、当日不再尝试；**不进黑名单**——这类任务是每日重置的，
+     * 次日服务端次数归零、标记随 status.json 跨天清空，自然恢复尝试。
+     */
+    public interface ExhaustedProbe {
+        boolean exhausted(String key);
+    }
+
     /** 领奖动作，返回 true 表示领取成功 */
     public interface Award {
         boolean run();
+    }
+
+    /** 无打满判据时的站点（保持旧调用点的简明写法）。 */
+    public static Site site(String listField, String logPrefix, String bizKey, String taskSceneCode,
+                            StatusProbe probe) {
+        return new Site(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, probe, null);
     }
 
     /**
@@ -158,35 +253,43 @@ public class TaskAttemptPolicy {
         final Forge forge;
         /** 列表状态探针；null 表示调用点自行判定（沿用响应），非 null 时**完成 / 领奖 / 拉黑**都以列表为准 */
         final StatusProbe probe;
+        /** 当日额度是否用尽；null 表示无此判据。命中只打当日标记、不进黑名单 */
+        final ExhaustedProbe exhausted;
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode) {
-            this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, null);
+            this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, null, null);
         }
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, Forge forge) {
-            this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, forge, null);
+            this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, forge, null, null);
         }
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, StatusProbe probe) {
-            this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, probe);
+            this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, probe, null);
         }
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version) {
-            this(listField, logPrefix, bizKey, taskSceneCode, version, null, null);
+            this(listField, logPrefix, bizKey, taskSceneCode, version, null, null, null);
         }
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
                     Forge forge) {
-            this(listField, logPrefix, bizKey, taskSceneCode, version, forge, null);
+            this(listField, logPrefix, bizKey, taskSceneCode, version, forge, null, null);
         }
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
                     StatusProbe probe) {
-            this(listField, logPrefix, bizKey, taskSceneCode, version, null, probe);
+            this(listField, logPrefix, bizKey, taskSceneCode, version, null, probe, null);
         }
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
                     Forge forge, StatusProbe probe) {
+            this(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, null);
+        }
+
+        /** 带「当日打满」判据的完整形态。 */
+        public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
+                    Forge forge, StatusProbe probe, ExhaustedProbe exhausted) {
             this.listField = listField;
             this.logPrefix = logPrefix;
             this.bizKey = bizKey;
@@ -194,6 +297,7 @@ public class TaskAttemptPolicy {
             this.version = version;
             this.forge = forge;
             this.probe = probe;
+            this.exhausted = exhausted;
         }
     }
 
@@ -243,6 +347,11 @@ public class TaskAttemptPolicy {
         // 不能指望下面"🧊兜底未生效"那条：跳过路径的 outcome 多为 UNABLE，永远不会 markTriggered，
         // 于是任务只会在每轮被反复跳过、永远进不了黑名单（实测农场饲料任务即如此）。
         if (site != null && site.bizKey != null && TaskAlternative.isTransactionTask(site.bizKey)) {
+            // 这类任务常驻列表、每轮都在，拉黑是**一次性**动作；已处理过就直接静默跳过，
+            // 否则每轮都重打一遍"永久拉黑"，日志被刷屏（且毫无新信息）。
+            if (Status.hasFlagToday(flag)) {
+                return Outcome.TRIED_TODAY;
+            }
             // 底线：交易/支付类一次即**永久**拉黑（不进入"满 N 天解禁重试"的生命周期），绝不伪造
             boolean blacklisted = autoBlackList(site, title, true);
             Status.flagToday(flag);
@@ -263,6 +372,18 @@ public class TaskAttemptPolicy {
         if (Status.hasFlagToday(flag)) {
             Log.i(TAG, "今日已试[" + title + "]#跳过");
             return Outcome.TRIED_TODAY;
+        }
+        // 临时故障重试次数已用尽：当日不再尝试（次日标记清空后自动恢复）
+        if (Status.getIntFlagToday("attemptRetry::" + sanitize(key)) >= RETRY_MAX_PER_DAY) {
+            Log.i(TAG, "临时故障重试已用尽[" + title + "]#今日不再尝试");
+            return Outcome.TRIED_TODAY;
+        }
+        // 当日额度已用尽（如 rightsTimes 已达上限）：只打当日标记、不进黑名单——
+        // 这类任务每日重置，次日标记随 status.json 跨天清空即自动恢复尝试
+        if (site != null && site.exhausted != null && site.exhausted.exhausted(key)) {
+            Status.flagToday(flag);
+            log.accept("任务尝试🎯当日已完成[" + title + "]#额度已用尽，今日不再尝试");
+            return Outcome.UNABLE;
         }
         // 响应触发的自动拉黑先入缓冲：等列表核对后决定落盘/丢弃（列表确认完成就不该拉黑）
         boolean listDone = false;
@@ -285,7 +406,11 @@ public class TaskAttemptPolicy {
             MessageUtil.endDeferBlackList(!listDone);
         }
         if (listDone) {
-            log.accept("任务尝试✅列表已确认完成[" + title + "]");
+            // 完全静默：核对是过程、不是结果，结果由调用方的「完成/领取」结果行表达（如 🧾完成、🎖️领取），
+            // 这里再记一条只会与其重复。
+            // 落当日标记：本日已完成的任务不必再核对。漏掉会让重拉列表的调用方
+            // （如抽抽乐的多轮推进）每轮把它重跑一遍。
+            Status.flagToday(flag);
             return Outcome.DONE;
         }
         // 行为伪造：把任务要求的真实行为用接口做出来；能伪造就不必退到伪申报
@@ -311,7 +436,13 @@ public class TaskAttemptPolicy {
             Status.flagToday(flag);
             return Outcome.TRIGGERED;
         }
-        if (outcome == Outcome.DONE || outcome == Outcome.RETRY) {
+        if (outcome == Outcome.DONE) {
+            return outcome;
+        }
+        // 临时故障：计数后放行（次数上限由入口的前置检查把关，避免服务端状态不推进时整天重试）
+        if (outcome == Outcome.RETRY) {
+            String retryKey = "attemptRetry::" + sanitize(key);
+            Status.setIntFlagToday(retryKey, Status.getIntFlagToday(retryKey) + 1);
             return outcome;
         }
         if (outcome == Outcome.UNABLE) {

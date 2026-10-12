@@ -137,8 +137,8 @@ public class WelfareFund {
                 if ("RECEIVE_SUCCESS".equalsIgnoreCase(item.optString("taskProcessStatus"))) {
                     continue;
                 }
+                // 黑名单跳过静默：条目由用户在配置页维护，内容恒定，不打日志
                 if (blackList != null && blackList.contains(title)) {
-                    Log.record("福利金任务⏭️跳过[" + title + "]#黑名单");
                     continue;
                 }
                 // NONE_SIGNUP 先报名再完成；SIGNUP_COMPLETE 直接领奖
@@ -149,6 +149,7 @@ public class WelfareFund {
                 triggerTask(appletId, "send", title);
                 TimeUtil.sleep(500);
             }
+
         } catch (Throwable t) {
             Log.err(TAG, "runTasks err:", t);
         }

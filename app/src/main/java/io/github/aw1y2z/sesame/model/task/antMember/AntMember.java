@@ -52,7 +52,7 @@ public class AntMember extends ModelTask {
 
     /** 同轮核对配置（见 TaskAlternative.verify） */
     private static final TaskAlternative.VerifyConfig VERIFY_CFG = new TaskAlternative.VerifyConfig(
-            "AntMember", "AntMemberTaskList", "会员任务", "游戏中心", "🎮完成", true, msg -> Log.other(msg));
+            "AntMember", "AntMemberTaskList", "会员任务", "游戏中心", true, msg -> Log.other(msg));
 
     /** 游戏中心宝箱每日上限（首页 {@code taskModule.dailyTaskCertCntUpperLimit} 的兜底值）。 */
     private static final int GAME_CENTER_CERT_LIMIT = 30;
@@ -643,7 +643,7 @@ public class AntMember extends ModelTask {
             String awardParamPoint = taskConfigInfo.getJSONObject("awardParam").getString("awardParamPoint");
             JSONArray targetBusinessArr = taskConfigInfo.optJSONArray("targetBusiness");
             if (targetBusinessArr == null || targetBusinessArr.length() == 0) {
-                Log.i("会员任务⏭️跳过[" + name + "]#无 targetBusiness 配置");
+                Log.other("会员任务⏭️跳过[" + name + "]#无 targetBusiness 配置");
                 return false;
             }
             String targetBusiness = targetBusinessArr.getString(0);
@@ -1289,7 +1289,7 @@ public class AntMember extends ModelTask {
                     String openResp = AntMemberRpcCall.openBehaviorCollect(behaviorId);
                     JSONObject openJo = new JSONObject(openResp);
                     if (MessageUtil.checkResultCode(TAG, openJo)) {
-                        Log.other("攒芝麻分🧾任务领取：" + title);
+                        Log.other("攒芝麻分🧾[任务领取]#" + title);
                     }
                     continue;
                 }
@@ -1608,42 +1608,35 @@ public class AntMember extends ModelTask {
 
     /** 列表状态探针：重拉游戏中心任务列表，按 taskId 匹配；仅 NOT_DONE 视为未完成（消失即已完成）。 */
     private static TaskAttemptPolicy.ProbeResult probeMemberStatus(String taskId) {
-        try {
-            JSONObject data = new JSONObject(AntMemberRpcCall.queryModularTaskList()).optJSONObject("data");
-            if (data == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray modules = data.optJSONArray("taskModuleList");
-            if (modules == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < modules.length(); i++) {
-                JSONObject module = modules.optJSONObject(i);
-                JSONArray tasks = module == null ? null : module.optJSONArray("taskList");
-                if (tasks == null) {
-                    continue;
-                }
-                for (int j = 0; j < tasks.length(); j++) {
-                    JSONObject task = tasks.optJSONObject(j);
-                    if (task == null || !taskId.equals(task.optString("taskId", "").trim())) {
-                        continue;
+        // 结构为 data.taskModuleList[].taskList[]；用模块数组作"列表"，statusOf 里再向下找任务
+        return TaskAttemptPolicy.probeByNestedList(TAG, AntMemberRpcCall::queryModularTaskList,
+                jo -> true,
+                jo -> {
+                    JSONObject data = jo.optJSONObject("data");
+                    return data == null ? null : data.optJSONArray("taskModuleList");
+                },
+                module -> {
+                    JSONArray tasks = module.optJSONArray("taskList");
+                    if (tasks == null) {
+                        return null;
                     }
-                    String status = task.optString("taskStatus", "").trim();
-                    if ("NOT_DONE".equals(status)) {
-                        return TaskAttemptPolicy.ProbeResult.TODO;
+                    for (int j = 0; j < tasks.length(); j++) {
+                        JSONObject task = tasks.optJSONObject(j);
+                        if (task == null || !taskId.equals(task.optString("taskId", "").trim())) {
+                            continue;
+                        }
+                        String status = task.optString("taskStatus", "").trim();
+                        // 状态词与通用映射不同，这里显式给出
+                        if ("NOT_DONE".equals(status)) {
+                            return "TODO";
+                        }
+                        if ("RECEIVED".equals(status)) {
+                            return "RECEIVED";
+                        }
+                        return "FINISHED";
                     }
-                    if ("RECEIVED".equals(status)) {
-                        return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                    }
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeMemberStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+                    return null;
+                });
     }
 
     /**
@@ -1754,7 +1747,7 @@ public class AntMember extends ModelTask {
                 tip = prizePopup.optString("actionText", "").trim();
             }
             String desc = taskModule.optString("taskProgressDesc", "").trim();
-            Log.other("游戏中心🎁领取宝箱" + (tip.isEmpty() ? "" : "#" + tip) + (desc.isEmpty() ? "" : "#" + desc));
+            Log.other("游戏中心🎁[领取宝箱]" + (tip.isEmpty() ? "" : "#" + tip) + (desc.isEmpty() ? "" : "#" + desc));
         }
         catch (Throwable t) {
             Log.err(TAG, "gameCenterTaskPrize err:", t);
@@ -2457,6 +2450,12 @@ public class AntMember extends ModelTask {
                 String taskCode = taskMaterial.optString("taskCode", "");
                 // 根据 taskCode 执行不同的操作
                 if ("WELFARE_PLUS_ANT_FOREST".equals(taskCode) || "WELFARE_PLUS_ANT_OCEAN".equals(taskCode)) {
+                    // 福利加任务每日只做一次：服务端在完成后仍把该条目留在列表里（状态不翻），
+                    // 不做标记会每轮重复调用触发与领奖接口
+                    String welfareFlag = "AntMember::welfarePlus::" + taskCode;
+                    if (Status.hasFlagToday(welfareFlag)) {
+                        continue;
+                    }
                     if ("WELFARE_PLUS_ANT_FOREST".equals(taskCode)) {
                         //String forestHomePageResponse = AntMemberRpcCall.queryforestHomePage();
                         String forestTaskResponse = AntMemberRpcCall.forestTask();
@@ -2469,6 +2468,7 @@ public class AntMember extends ModelTask {
                         TimeUtil.sleep(500);
                         String oceanreceiveTaskAward = AntMemberRpcCall.oceanreceiveTaskAward();
                     }
+                    Status.flagToday(welfareFlag);
                     if (taskBaseInfo != null) {
                         String appletName = taskBaseInfo.optString("appletName", "Unknown Applet");
                         Log.other("我的快递💌完成[" + appletName + "]");

@@ -3,6 +3,7 @@ package io.github.aw1y2z.sesame.model.task.antForest;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
@@ -64,6 +65,9 @@ public class ForestChouChouLe {
 
             int loopCount = 0; // 循环次数计数
             final int MAX_LOOP = 7; // 最大循环次数，避免死循环
+            // 本轮已做过的任务：重拉列表后不再重做（服务端状态推进慢，重拉时它可能仍是待办，
+            // 不去重会把每批任务重跑 MAX_LOOP 遍；跨场景不共享，各场景独立计数）
+            Set<String> handledThisRun = new LinkedHashSet<>();
 
       /*
       sceneCode
@@ -155,53 +159,83 @@ public class ForestChouChouLe {
                         }
                         // 周期/持续型任务：跳过，不尝试也不拉黑
                         if (TaskAttemptPolicy.isCyclicTask(taskBaseInfo)) {
-                            Log.i(TAG, "森林寻宝⏭️跳过周期任务[" + taskName + "]");
+                            // 周期任务常驻列表、由真实行为推进，每轮结果相同；静默跳过
+                            continue;
+                        }
+                        // 本轮已处理过：重拉列表时不再重做（见 handledThisRun 说明）
+                        if (!handledThisRun.add(taskType)) {
                             continue;
                         }
                         // ==================== 活力值兑换任务 =====================
                         if (taskType.equals("NORMAL_DRAW_EXCHANGE_VITALITY") && taskStatus.equals("TODO")) {
-                            //先判断活力值是否大于20
-                            int totalVitalityAmount = 0;
-                            try {
-                                JSONObject jo = new JSONObject(AntForestRpcCall.queryVitalityStoreIndex());
-                                if (!MessageUtil.checkResultCode(TAG, jo)) {
-                                    return;
+                            // 一次补齐：按剩余次数连做（该类任务由服务端给额度，可能不止 2 次）。
+                            // 每次兑换消耗 20 活力值，故每次前都重查活力值。
+                            // 次数按当日累计：TaskAttemptPolicy 的当日标记一旦落下就整日只过一次，
+                            // 达不到"做满 N 次"，故这里用整型标记自行记账，做满 rightsTimesLimit 才停。
+                            String exchangeKey = "forest::chouchoule::exchangeTotal::" + taskSceneCode + "/" + taskType;
+                            int doneToday = Status.getIntFlagToday(exchangeKey);
+                            int remain = (rightsTimesLimit > 0 ? rightsTimesLimit : doneToday + 1) - doneToday;
+                            for (int cnt = 0; cnt < remain; cnt++) {
+                                int totalVitalityAmount = 0;
+                                try {
+                                    JSONObject jo = new JSONObject(AntForestRpcCall.queryVitalityStoreIndex());
+                                    if (!MessageUtil.checkResultCode(TAG, jo) || !jo.has("userVitalityInfoVO")) {
+                                        break;
+                                    }
+                                    JSONObject userVitalityInfo = jo.getJSONObject("userVitalityInfoVO");
+                                    totalVitalityAmount = userVitalityInfo.optInt("totalVitalityAmount", 0);
+                                } catch (Throwable th) {
+                                    Log.err(TAG, "chouChouLesceneEXCHANGE err:", th);
+                                    break;
                                 }
-                                if (!jo.has("userVitalityInfoVO")) {
-                                    return;
+                                if (totalVitalityAmount < 20) {
+                                    Log.forest("森林寻宝🧾活力值" + totalVitalityAmount + "不能兑换");
+                                    break;
                                 }
-                                JSONObject userVitalityInfo = jo.getJSONObject("userVitalityInfoVO");
-                                totalVitalityAmount = userVitalityInfo.optInt("totalVitalityAmount", 0);
-                            } catch (Throwable th) {
-                                Log.err(TAG, "chouChouLesceneEXCHANGE err:", th);
-                            }
-                            if (totalVitalityAmount < 20) {
-                                Log.forest("森林寻宝🧾活力值" + totalVitalityAmount + "不能兑换");
-                                continue;
-                            }
-                            //🏆
-                            JSONObject sginRes = new JSONObject(AntForestRpcCall.exchangeTimesFromTaskopengreen(activityId, sceneCode, "task_entry", taskSceneCode, taskType));
-                            if (MessageUtil.checkSuccess(TAG, sginRes)) {
-                                int times = sginRes.getInt("times");
-                                Log.forest("森林寻宝🎖️[" + taskName + "]获得抽奖*" + times);
-                                doublecheck = true;
+                                // 每次用不同的 key：handle 的当日标记按 key 计，同一 key 第二次会被挡住
+                                Outcome exchangeOutcome = TaskAttemptPolicy.handle(
+                                        "forest::chouchoule::exchange::" + taskSceneCode + "/" + taskType
+                                                + "#" + doneToday,
+                                        taskName, null,
+                                        () -> attemptExchangeVitality(activityId, sceneCode, taskSceneCode, taskType, taskName),
+                                        Log::forest,
+                                        new TaskAttemptPolicy.Site("AntForestHuntTaskList", "森林寻宝",
+                                                taskType, taskSceneCode,
+                                                (k) -> probeChouChouLeStatus(sceneCode, taskSceneCode, taskType)));
+                                if (exchangeOutcome != Outcome.DONE && exchangeOutcome != Outcome.TRIGGERED
+                                        && exchangeOutcome != Outcome.AWARDED) {
+                                    break; // 做不了就收手，不再空转剩余次数
+                                }
+                                doneToday++;
+                                Status.setIntFlagToday(exchangeKey, doneToday);
+                                TimeUtil.sleep(1000);
                             }
                             continue; // 防止进入下面的 FOREST_NORMAL_DRAW 分支
                         }
 
                         // 统一处理 FOREST_NORMAL_DRAW 和 FOREST_ACTIVITY_DRAW开头任务
                         if ((taskType.startsWith("FOREST_NORMAL_DRAW") || taskType.startsWith("FOREST_ACTIVITY_DRAW")) && taskStatus.equals("TODO")) {
-                            TimeUtil.sleep(1000);
-                            // 三条腿见 chouChouLeFinishTask（XLIGHT=广告类先走 4Chouchoule，其余先走 opengreen）
-                            if (chouChouLeFinishTask(taskType, taskSceneCode, taskName, taskType.contains("XLIGHT"), sceneCode)) {
+                            // 一次补齐：同一轮内按剩余次数连做，打满即止
+                            int remain = rightsTimesLimit > 0 ? rightsTimesLimit - rightsTimes : 1;
+                            for (int cnt = 0; cnt < remain; cnt++) {
+                                TimeUtil.sleep(1000);
+                                // 三条腿见 chouChouLeFinishTask（XLIGHT=广告类先走 4Chouchoule，其余先走 opengreen）
+                                if (!chouChouLeFinishTask(taskType, taskSceneCode, taskName, taskType.contains("XLIGHT"), sceneCode, rightsTimes + cnt)) {
+                                    break; // 做不了就收手，不再空转剩余次数
+                                }
                                 doublecheck = true;
                             }
                             continue;
                         }
                         if (taskStatus.equals("TODO")) {
-                            //兜底完成任务操作（三条腿见 chouChouLeFinishTask，非 XLIGHT 先走 opengreen）
-                            TimeUtil.sleep(1000);
-                            if (chouChouLeFinishTask(taskType, taskSceneCode, taskName, false, sceneCode)) {
+                            // 一次补齐：同一轮内按剩余次数连做，打满即止（与庄园抽抽乐同一形态）
+                            // 兜底完成任务操作（三条腿见 chouChouLeFinishTask，非 XLIGHT 先走 opengreen）
+                            int remain = rightsTimesLimit > 0 ? rightsTimesLimit - rightsTimes : 1;
+                            for (int cnt = 0; cnt < remain; cnt++) {
+                                TimeUtil.sleep(1000);
+                                if (!chouChouLeFinishTask(taskType, taskSceneCode, taskName, false, sceneCode, rightsTimes + cnt)) {
+                                    break; // 做不了就收手，不再空转剩余次数
+                                }
                                 doublecheck = true;
                             }
                         }
@@ -272,7 +306,7 @@ public class ForestChouChouLe {
                 } else if ((shareUserId.length() > 20 && shareUserId.length() < 28) && taskType.equals("FOREST_ACTIVITY_DRAW_SHARE")) {
                     shareId = shareUserId + "4O7FEYDgn0xx0OehP5jt9" + "bxgpIW643h4FnWRjs9uZzng" + "77VUJcjlcZsjGio6MsAtmwxkxkx";
                 } else {
-                    Log.forest("森林寻宝🎰️存在错误的分享用户:" + UserIdMap.getShowName(shareUserId));
+                    Log.forest("森林寻宝🎰️[错误分享用户]#" + UserIdMap.getShowName(shareUserId));
                     continue;
                 }
                 String userId = shareComponentRecall(p2pSceneCode, shareId);
@@ -304,55 +338,63 @@ public class ForestChouChouLe {
      * 抽抽乐任务的三条腿：4Chouchoule ↔ opengreen 互备（XLIGHT 先走前者），都被拒时再换
      * doFarmTask（见 {@link TaskAlternative}）。
      *
+     * @param stage 当前档位（调用方的 rightsTimes）：多次任务每推进一档都是**新的**尝试，
+     *              策略键必须带上它，否则第一档打上的当日标记会把后续档位全挡下、任务停在第一档。
+     *              单次任务传 0 即可（键保持原样）。
      * @return 已成功或已触发（true 时调用方应 {@code doublecheck = true} 重拉列表核对）
      */
     private boolean chouChouLeFinishTask(String taskType, String taskSceneCode, String taskName, boolean xlight,
-                                         String activitySceneCode) {
+                                         String activitySceneCode, int stage) {
         // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
         // 完成判定以任务列表为准（探针复核），响应不可信
-        Outcome outcome = TaskAttemptPolicy.handle("forest::chouchoule::" + taskSceneCode + "/" + taskType, taskName, null,
+        String policyKey = "forest::chouchoule::" + taskSceneCode + "/" + taskType + "#" + stage;
+        Outcome outcome = TaskAttemptPolicy.handle(policyKey, taskName, null,
                 () -> attemptChouChouLeTask(taskType, taskSceneCode, taskName, xlight), Log::forest,
                 new TaskAttemptPolicy.Site("AntForestHuntTaskList", "森林寻宝", taskType, taskSceneCode,
                         (k) -> probeChouChouLeStatus(activitySceneCode, taskSceneCode, taskType)));
         return outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
     }
 
+    /** 活力值兑换抽奖次数：{@code exchangeTimesFromTaskopengreen}。 */
+    private Outcome attemptExchangeVitality(String activityId, String sceneCode, String taskSceneCode,
+                                            String taskType, String taskName) {
+        try {
+            JSONObject jo = new JSONObject(AntForestRpcCall.exchangeTimesFromTaskopengreen(
+                    activityId, sceneCode, "task_entry", taskSceneCode, taskType));
+            if (MessageUtil.checkSuccess(TAG, jo)) {
+                Log.forest("森林寻宝🎖️[" + taskName + "]获得抽奖*" + jo.optInt("times"));
+                return Outcome.DONE;
+            }
+            if (MessageUtil.isRetryable(jo) || MessageUtil.isServerBusy(jo)) {
+                return Outcome.RETRY;
+            }
+            if (TaskAlternative.hit(jo, taskSceneCode)) {
+                return Outcome.UNSUPPORTED;
+            }
+            return Outcome.UNABLE;
+        } catch (Throwable t) {
+            Log.err(TAG, "attemptExchangeVitality err:", t);
+        }
+        return Outcome.RETRY;
+    }
+
     /** 列表状态探针：用与本场景相同的表达式重拉寻宝任务列表，按 sceneCode+taskType 匹配该任务当前状态。 */
     private TaskAttemptPolicy.ProbeResult probeChouChouLeStatus(String activitySceneCode, String taskSceneCode,
                                                                 String taskType) {
-        try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.listTaskopengreen(activitySceneCode + "_TASK", "task_entry"));
-            if (!MessageUtil.checkSuccess(TAG, jo) || !jo.has("taskInfoList")) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray taskList = jo.optJSONArray("taskInfoList");
-            if (taskList == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < taskList.length(); i++) {
-                JSONObject taskBaseInfo = taskList.getJSONObject(i).optJSONObject("taskBaseInfo");
-                if (taskBaseInfo == null) {
-                    continue;
-                }
-                if (!taskSceneCode.equals(taskBaseInfo.optString("sceneCode"))
-                        || !taskType.equals(taskBaseInfo.optString("taskType"))) {
-                    continue;
-                }
-                String status = taskBaseInfo.optString("taskStatus");
-                if ("FINISHED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if ("RECEIVED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeChouChouLeStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        // 状态在 taskBaseInfo 子对象内
+        return TaskAttemptPolicy.probeByNestedList(TAG,
+                () -> AntForestRpcCall.listTaskopengreen(activitySceneCode + "_TASK", "task_entry"),
+                jo -> MessageUtil.checkSuccess(TAG, jo),
+                jo -> jo.optJSONArray("taskInfoList"),
+                item -> {
+                    JSONObject taskBaseInfo = item.optJSONObject("taskBaseInfo");
+                    if (taskBaseInfo == null
+                            || !taskSceneCode.equals(taskBaseInfo.optString("sceneCode"))
+                            || !taskType.equals(taskBaseInfo.optString("taskType"))) {
+                        return null;
+                    }
+                    return taskBaseInfo.optString("taskStatus");
+                });
     }
 
     /** 森林寻宝/抽抽乐完成上报：两种接口互为兜底，做不了不拉黑 */

@@ -934,14 +934,12 @@ public class AntOcean extends ModelTask {
     private Boolean finishOceanTask(JSONObject task) {
         try {
             if (task.has("taskProgress")) {
-                // 进度类任务（如"连续N天来海洋"）无法用 RPC 直接完成，也不能拉黑（否则会永久跳过真任务）；
-                // 这里显式记录，避免"列表拿到了却没动作、日志也没有"
-                Log.i("海洋任务⏭️跳过[进度任务暂不自动完成]#taskType=" + task.optString("taskType"));
+                // 进度类任务（如"连续N天来海洋"）无法用 RPC 直接完成，也不能拉黑（否则会永久跳过真任务）。
+                // 常驻列表、每轮结果相同；静默（与周期任务跳过同类）
                 return false;
             }
-            // 周期/持续型任务：跳过，不尝试也不拉黑
+            // 周期/持续型任务：跳过，不尝试也不拉黑（常驻列表、每轮结果相同；静默）
             if (TaskAttemptPolicy.isCyclicTask(task)) {
-                Log.i("海洋任务⏭️跳过周期任务#taskType=" + task.optString("taskType"));
                 return false;
             }
             JSONObject bizInfo = new JSONObject(task.getString("bizInfo"));
@@ -974,18 +972,35 @@ public class AntOcean extends ModelTask {
             }
             // 限时任务不自动完成（自动完成易触发风控），显式记录而不是静默跳过
             if (taskTitle.startsWith("限时任务：")) {
-                Log.i("海洋任务⏭️跳过[" + taskTitle + "]#taskType=" + taskType + "，限时任务不自动完成");
+                Log.other("海洋任务⏭️跳过[" + taskTitle + "]，限时任务不自动完成");
                 return false;
             }
             // 其余 TODO 一律尝试完成：原先按中文文案 + taskType 白名单精确分派，服务端一改文案
             // 或换个 taskType 变体就会整类任务一个请求都不发（列表拿到了却没动作、日志也没有）。
             // 做不了的由自动拉黑机制接管，避免用"服务端字符串精确相等"这种不稳定假设当开关
             // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
-            Outcome outcome = TaskAttemptPolicy.handle("ocean::" + sceneCode + "/" + taskType, taskTitle, null,
-                    () -> attemptFinishOceanTask(sceneCode, taskType, taskTitle), Log::other,
-                    new TaskAttemptPolicy.Site("AntOceanAntiepTaskList", "海洋任务", taskType, sceneCode,
-                            (k) -> probeOceanStatus(sceneCode, taskType)));
-            return outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
+            // 多次任务（rightsTimesLimit>1）一次补齐：逐档取不同的策略键，否则第一档落下当日标记后
+            // 后续档位全被挡下、任务停在第一档
+            int rightsTimes = task.optInt("rightsTimes", 0);
+            int rightsTimesLimit = task.optInt("rightsTimesLimit", 0);
+            int remain = rightsTimesLimit > rightsTimes ? rightsTimesLimit - rightsTimes : 1;
+            boolean progressed = false;
+            for (int cnt = 0; cnt < remain; cnt++) {
+                Outcome outcome = TaskAttemptPolicy.handle(
+                        "ocean::" + sceneCode + "/" + taskType + "#" + (rightsTimes + cnt), taskTitle, null,
+                        () -> attemptFinishOceanTask(sceneCode, taskType, taskTitle), Log::other,
+                        new TaskAttemptPolicy.Site("AntOceanAntiepTaskList", "海洋任务", taskType, sceneCode,
+                                (k) -> probeOceanStatus(sceneCode, taskType)));
+                if (outcome == Outcome.TRIED_TODAY || outcome == Outcome.SKIPPED) {
+                    break;
+                }
+                progressed = progressed || outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
+                if (outcome != Outcome.DONE && outcome != Outcome.TRIGGERED) {
+                    break; // 做不了就收手，不再空转剩余次数
+                }
+                TimeUtil.sleep(1000);
+            }
+            return progressed;
         } catch (Throwable t) {
             Log.err(TAG, "finishOceanTask err:", t);
         }
@@ -1019,35 +1034,11 @@ public class AntOcean extends ModelTask {
 
     /** 列表状态探针：重拉海洋任务列表，按 sceneCode+taskType 匹配该任务当前状态。 */
     private static TaskAttemptPolicy.ProbeResult probeOceanStatus(String sceneCode, String taskType) {
-        try {
-            JSONObject jo = new JSONObject(AntOceanRpcCall.queryTaskList());
-            if (!MessageUtil.checkResultCode(TAG, jo) || !jo.has("antOceanTaskVOList")) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray ja = jo.optJSONArray("antOceanTaskVOList");
-            if (ja == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < ja.length(); i++) {
-                JSONObject t = ja.getJSONObject(i);
-                if (!sceneCode.equals(t.optString("sceneCode")) || !taskType.equals(t.optString("taskType"))) {
-                    continue;
-                }
-                String status = t.optString("taskStatus");
-                if ("FINISHED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if ("RECEIVED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeOceanStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        // statusOf 返回 null 表示该项不匹配
+        return TaskAttemptPolicy.probeByList(TAG, AntOceanRpcCall::queryTaskList, "antOceanTaskVOList",
+                jo -> MessageUtil.checkResultCode(TAG, jo),
+                t -> sceneCode.equals(t.optString("sceneCode")) && taskType.equals(t.optString("taskType"))
+                        ? t.optString("taskStatus") : null);
     }
 
     // 海洋答题任务
@@ -1076,7 +1067,7 @@ public class AntOcean extends ModelTask {
             TimeUtil.sleep(500);
             jo = new JSONObject(AntOceanRpcCall.submitAnswer(answer, questionId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                Log.other("海洋答题成功");
+                Log.other("海洋答题📝成功");
                 Status.flagToday("Ocean::ANSWER_QUESTION");
                 return true;
             }
@@ -1537,36 +1528,16 @@ public class AntOcean extends ModelTask {
 
     /** 列表状态探针：重拉摸鱼任务列表（ANTAIFISH），按 taskType 匹配该任务当前状态。 */
     private static TaskAttemptPolicy.ProbeResult probeAntfishStatus(String taskType) {
-        try {
-            JSONObject jo = new JSONObject(AntOceanRpcCall.antfishListTask());
-            if (!MessageUtil.checkResultCode(TAG, jo)) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
-            if (taskInfoList == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < taskInfoList.length(); i++) {
-                JSONObject taskInfo = taskInfoList.optJSONObject(i);
-                JSONObject base = taskInfo == null ? null : taskInfo.optJSONObject("taskBaseInfo");
-                if (base == null || !taskType.equals(base.optString("taskType"))) {
-                    continue;
-                }
-                String status = base.optString("taskStatus");
-                if ("FINISHED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if ("RECEIVED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeAntfishStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        // 摸鱼任务的状态在 taskBaseInfo 子对象内，故用 statusOf 形态：不匹配返回 null
+        return TaskAttemptPolicy.probeByList(TAG, AntOceanRpcCall::antfishListTask, "taskInfoList",
+                jo -> MessageUtil.checkResultCode(TAG, jo),
+                taskInfo -> {
+                    JSONObject base = taskInfo.optJSONObject("taskBaseInfo");
+                    if (base == null || !taskType.equals(base.optString("taskType"))) {
+                        return null;
+                    }
+                    return base.optString("taskStatus");
+                });
     }
 
     /**
@@ -1709,7 +1680,7 @@ public class AntOcean extends ModelTask {
             }
 
             if (touchCount > 0) {
-                Log.other("海洋摸鱼🐟本次共摸鱼" + touchCount + "次获得" + totalEnergy + "g能量");
+                Log.other("海洋摸鱼🐟[本次]#摸鱼" + touchCount + "次#获得" + totalEnergy + "g能量");
                 Toast.show("海洋摸鱼🐟获得" + totalEnergy + "g能量");
             }
 

@@ -40,8 +40,6 @@ public final class GoldenBeansGameCenter {
                     Log.goldenBeans("金豆乐园⚠️列表查询失败[" + GoldenBeansSupport.describe(snapshot) + "]");
                     return false;
                 }
-                Log.goldenBeans("金豆乐园🎮游戏列表");
-
                 JSONObject drawRights = GoldenBeansSupport.findObject(snapshot, "gameCenterDrawRights");
                 int quotaCanUse = drawRights != null ? Math.max(drawRights.optInt("quotaCanUse", 0), 0) : 0;
                 int usedQuota = drawRights != null ? Math.max(drawRights.optInt("usedQuota", 0), 0) : 0;
@@ -77,14 +75,8 @@ public final class GoldenBeansGameCenter {
                 // 无抽奖次数：尝试游戏权益上报
                 int remainingDraws = Math.max(quotaLimit - usedQuota - quotaCanUse, 0);
                 Map<String, GameCandidate> candidates = collect(snapshot);
-                int registered = 0;
-                for (GameCandidate item : candidates.values()) {
-                    if (GameTask.matchAppId(item.appId) != null) {
-                        registered++;
-                    }
-                }
-                Log.goldenBeans("金豆乐园🎯抽奖[可用" + quotaCanUse + "/已用" + usedQuota + "/上限" + quotaLimit
-                        + "]#剩余" + remainingDraws + "#候选" + candidates.size() + "/已登记" + registered);
+                // 额度状态（可用/已用/上限）每轮恒定，候选明细属过程数据；不单独打，
+                // 真正抽中时下面的「金豆乐园🎰抽奖[第N次]#获得…」才是结果
                 GameCandidate candidate = null;
                 for (GameCandidate item : candidates.values()) {
                     if (Status.hasFlagToday(skipFlag(item))) {

@@ -680,9 +680,8 @@ public class AntStall extends ModelTask {
         try {
             String taskType = task.getString("taskType");
             JSONObject bizInfo = new JSONObject(task.getString("bizInfo"));
-            // 周期/持续型任务：跳过，不尝试也不拉黑
+            // 周期/持续型任务：跳过，不尝试也不拉黑（常驻列表、每轮结果相同；静默）
             if (TaskAttemptPolicy.isCyclicTask(task)) {
-                Log.i("新村任务⏭️跳过周期任务[" + title + "]");
                 return false;
             }
             if (Objects.equals("VISIT_AUTO_FINISH", bizInfo.getString("actionType")) || taskTypeList.contains(taskType)) {
@@ -859,39 +858,9 @@ public class AntStall extends ModelTask {
 
     /** 列表状态探针：重拉新村任务列表，按 taskType 匹配该任务当前状态。 */
     private static TaskAttemptPolicy.ProbeResult probeStallStatus(String taskType) {
-        try {
-            String jostr = AntStallRpcCall.taskList();
-            if (jostr == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONObject jo = new JSONObject(jostr);
-            if (!MessageUtil.checkResultCode(TAG, jo) || !jo.has("taskModels")) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            JSONArray taskModels = jo.optJSONArray("taskModels");
-            if (taskModels == null) {
-                return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-            }
-            for (int i = 0; i < taskModels.length(); i++) {
-                JSONObject t = taskModels.getJSONObject(i);
-                if (!taskType.equals(t.optString("taskType"))) {
-                    continue;
-                }
-                String status = t.optString("taskStatus");
-                if ("FINISHED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.FINISHED;
-                }
-                if ("RECEIVED".equals(status)) {
-                    return TaskAttemptPolicy.ProbeResult.RECEIVED;
-                }
-                return TaskAttemptPolicy.ProbeResult.TODO;
-            }
-            // 任务已从列表消失：视为已完成且已领
-            return TaskAttemptPolicy.ProbeResult.GONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "probeStallStatus err:", t);
-            return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-        }
+        return TaskAttemptPolicy.probeByList(TAG, AntStallRpcCall::taskList, "taskModels",
+                jo -> MessageUtil.checkResultCode(TAG, jo),
+                t -> taskType.equals(t.optString("taskType")) ? t.optString("taskStatus") : null);
     }
     
     private Boolean inviteRegister() {
@@ -966,7 +935,7 @@ public class AntStall extends ModelTask {
                 JSONObject jo = new JSONObject(AntStallRpcCall.achieveBeShareP2P(friendUserId));
                 TimeUtil.sleep(5000);
                 if (MessageUtil.checkSuccess(TAG, jo)) {
-                    Log.farm("新村助力🎉助力[" + UserIdMap.getMaskName(friendUserId) + "]成功");
+                    Log.farm("新村助力🧾助力[" + UserIdMap.getMaskName(friendUserId) + "]成功");
                     Status.stallShareP2PToday(friendUserId);
                 }
                 else if (Objects.equals("600000027", jo.getString("code"))) {
@@ -1278,7 +1247,7 @@ public class AntStall extends ModelTask {
                 jo = new JSONObject(AntStallRpcCall.pasteTicket(jo.getString("rentLastBill"), jo.getString("seatId"), jo.getString("rentLastShop"), jo.getString("rentLastUser"), jo.getString("userId")));
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     double amount = jo.getJSONObject("pasteIncome").getDouble("amount");
-                    Log.farm("蚂蚁新村🚫在[" + UserIdMap.getMaskName(friendUserId) + "]的新村贴罚单#获得[" + amount + "木兰币]");
+                    Log.farm("蚂蚁新村⚠️在[" + UserIdMap.getMaskName(friendUserId) + "]的新村贴罚单#获得[" + amount + "木兰币]");
                 }
                 TimeUtil.sleep(1000);
             }
