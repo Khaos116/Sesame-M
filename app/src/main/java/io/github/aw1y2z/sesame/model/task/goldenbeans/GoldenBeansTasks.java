@@ -342,6 +342,8 @@ public final class GoldenBeansTasks {
                     int remain = rightsTimesLimit > 0 ? Math.min(60, Math.max(0, rightsTimesLimit - rightsTimes)) : 1;
                     boolean anyDone = false;
                     for (int cnt = 0; cnt < remain; cnt++) {
+                        // 待领奖、已领取或状态不明时交回外层处理，不继续上报。
+                        if (cnt > 0 && probeGoldenBeansStatus(entry, taskId, -1) != TaskAttemptPolicy.ProbeResult.TODO) break;
                         if (!finishTask(entry, taskId, taskName, rightsTimes + cnt)) {
                             break; // 做不了就收手，不再空转剩余次数
                         }

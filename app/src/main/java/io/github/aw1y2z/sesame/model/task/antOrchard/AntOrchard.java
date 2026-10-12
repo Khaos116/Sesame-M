@@ -727,7 +727,7 @@ public class AntOrchard extends ModelTask {
     private Outcome attemptFinishOptionalPlayTask(String sceneCode, String taskType, String label) {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntOrchardRpcCall.finishTaskantorchard(taskType, sceneCode));
-            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOrchardTaskList", label, jo);
+            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOrchardTaskList", StringUtil.stripCountSuffix(label), jo);
             TimeUtil.sleep(500);
             if (MessageUtil.checkSuccess(TAG, jo)) {
                 Log.farm("农场乐园🧾️完成[" + label + "]");
@@ -1974,8 +1974,6 @@ public class AntOrchard extends ModelTask {
                     MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOrchardTaskList", title, triggerJo);
                     if (MessageUtil.checkResultCode(TAG, triggerJo)) {
                         Log.farm("肥料领取🎖️任务[" + title + "]奖励#获得[" + awardCount + "g]");
-                        // 已领到：打当日标记，后续轮次不再逐个核对
-                        Status.flagToday("orchard::tbAward::" + taskId, userId);
                     } else {
                         // 领奖收口：先按列表复核"已领到"，未确认才交自动拉黑
                         TaskAward.confirmReceivedOrBlackList("肥料领取🎖️",

@@ -953,10 +953,13 @@ public class AntForestV2 extends ModelTask {
                 JSONArray records = resData.optJSONArray("recordVOList");
                 if (records == null) {
                     // 拉取失败：宁可不更新（保留旧值），也不要把今日统计冲成 0
-                    Log.record("能量明细⚠️无明细字段[" + TaskAlternative.describe(jo) + "]#今日统计保持原值");
+                    logEnergyRecordIssue(account, todayStartMillis, "缺少明细数组");
                     return;
                 }
-                if (!(resData.opt("hasMore") instanceof Boolean)) return;
+                if (!(resData.opt("hasMore") instanceof Boolean)) {
+                    logEnergyRecordIssue(account, todayStartMillis, "分页标记无效");
+                    return;
+                }
                 if (records.length() == 0) {
                     complete = !resData.optBoolean("hasMore");
                     break;
@@ -964,9 +967,15 @@ public class AntForestV2 extends ModelTask {
                 for (int i = 0; i < records.length(); i++) {
                     JSONObject record = records.optJSONObject(i);
                     if (record == null || !(record.opt("bizDate") instanceof Number)
-                            || !(record.opt("energy") instanceof Number)) return;
+                            || !(record.opt("energy") instanceof Number)) {
+                        logEnergyRecordIssue(account, todayStartMillis, "明细字段缺失或类型错误");
+                        return;
+                    }
                     long bizDate = record.optLong("bizDate", 0);
-                    if (bizDate <= 0 || bizDate >= todayStartMillis + 86400000L) return;
+                    if (bizDate <= 0 || bizDate >= todayStartMillis + 86400000L) {
+                        logEnergyRecordIssue(account, todayStartMillis, "明细日期无效");
+                        return;
+                    }
                     if (bizDate < todayStartMillis) {
                         // 已翻过今日边界：更早的记录不必再看
                         reachedOlder = true;
@@ -974,7 +983,10 @@ public class AntForestV2 extends ModelTask {
                     }
                     scanned++;
                     long energy = record.optLong("energy", -1);
-                    if (energy < 0 || energy > Integer.MAX_VALUE - todayTotal) return;
+                    if (energy < 0 || energy > Integer.MAX_VALUE - todayTotal) {
+                        logEnergyRecordIssue(account, todayStartMillis, "能量数值无效或总量溢出");
+                        return;
+                    }
                     todayTotal += energy;
                 }
                 if (reachedOlder || !resData.optBoolean("hasMore", false)) {
@@ -982,16 +994,20 @@ public class AntForestV2 extends ModelTask {
                     break;
                 }
                 long next = resData.optLong("nextId", 0);
-                if (next <= 0 || !cursors.add(next)) return;
+                if (next <= 0 || !cursors.add(next)) {
+                    logEnergyRecordIssue(account, todayStartMillis, "分页游标无效或重复");
+                    return;
+                }
                 nextId = next;
                 TimeUtil.sleep(300);
             }
 
-            // 一条都没扫到（接口改版/字段变动）时不能覆盖：否则会把已有统计冲成 0
-            if (!complete || scanned == 0) {
-                Log.record("能量明细⚠️未解析到任何记录#今日统计保持原值");
+            // 不完整的分页不能覆盖统计；正常空列表或仅有往日记录静默保留原值。
+            if (!complete) {
+                logEnergyRecordIssue(account, todayStartMillis, "分页未完整结束");
                 return;
             }
+            if (scanned == 0) return;
             TimeUtil.sleep(0);
             if (!Objects.equals(account, UserIdMap.getCurrentUid())
                     || MyUtils.getInstance().getTimeInMillis() >= todayStartMillis + 86400000L) return;
@@ -1005,6 +1021,15 @@ public class AntForestV2 extends ModelTask {
             if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "syncTodayCollectedFromServer err:", t);
         }
+    }
+
+    private void logEnergyRecordIssue(String account, long dayStartMillis, String reason) {
+        if (account == null || account.isEmpty() || !Objects.equals(account, UserIdMap.getCurrentUid())
+                || MyUtils.getInstance().getTimeInMillis() >= dayStartMillis + 86400000L) return;
+        String key = "forest::energyRecordLog::" + reason;
+        if (Status.hasFlagToday(key)) return;
+        Status.flagToday(key, account);
+        Log.record("能量明细⚠️" + reason + "#今日统计保持原值");
     }
 
     private void ForestEnergyInfo() {

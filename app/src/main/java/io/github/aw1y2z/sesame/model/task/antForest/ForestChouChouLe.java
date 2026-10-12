@@ -221,6 +221,8 @@ public class ForestChouChouLe {
                             // 一次补齐：同一轮内按剩余次数连做，打满即止
                             int remain = rightsTimesLimit > 0 ? Math.min(60, Math.max(0, rightsTimesLimit - rightsTimes)) : 1;
                             for (int cnt = 0; cnt < remain; cnt++) {
+                                // 待领奖、已领取或状态不明时交回外层处理，不继续上报。
+                                if (cnt > 0 && probeChouChouLeStatus(sceneCode, taskSceneCode, taskType, -1) != TaskAttemptPolicy.ProbeResult.TODO) break;
                                 TimeUtil.sleep(1000);
                                 // 三条腿见 chouChouLeFinishTask（XLIGHT=广告类先走 4Chouchoule，其余先走 opengreen）
                                 if (!chouChouLeFinishTask(taskType, taskSceneCode, taskName, taskType.contains("XLIGHT"), sceneCode, rightsTimes + cnt)) {
@@ -235,6 +237,8 @@ public class ForestChouChouLe {
                             // 兜底完成任务操作（三条腿见 chouChouLeFinishTask，非 XLIGHT 先走 opengreen）
                             int remain = rightsTimesLimit > 0 ? Math.min(60, Math.max(0, rightsTimesLimit - rightsTimes)) : 1;
                             for (int cnt = 0; cnt < remain; cnt++) {
+                                // 待领奖、已领取或状态不明时交回外层处理，不继续上报。
+                                if (cnt > 0 && probeChouChouLeStatus(sceneCode, taskSceneCode, taskType, -1) != TaskAttemptPolicy.ProbeResult.TODO) break;
                                 TimeUtil.sleep(1000);
                                 if (!chouChouLeFinishTask(taskType, taskSceneCode, taskName, false, sceneCode, rightsTimes + cnt)) {
                                     break; // 做不了就收手，不再空转剩余次数
@@ -415,7 +419,7 @@ public class ForestChouChouLe {
                 if ("RECEIVED".equals(status)) {
                     return TaskAttemptPolicy.ProbeResult.RECEIVED;
                 }
-                return TaskAttemptPolicy.ProbeResult.TODO;
+                return "TODO".equals(status) ? TaskAttemptPolicy.ProbeResult.TODO : TaskAttemptPolicy.ProbeResult.UNKNOWN;
             }
             // 任务已从列表消失：视为已完成且已领
             return TaskAttemptPolicy.ProbeResult.GONE;

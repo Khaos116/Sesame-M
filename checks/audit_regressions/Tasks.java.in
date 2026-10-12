@@ -2,9 +2,10 @@ import org.json.*;
 import java.util.*;import java.util.function.*;import java.util.regex.Pattern;
 public class Review {
 static String STATUS_FINISHED="FINISHED",STATUS_TO_RECEIVE="TO_RECEIVE",STATUS_RECEIVED="RECEIVED",STATUS_DONE="DONE",STATUS_TODO="TODO";
-static int finishes,claims;static boolean claimSuccess=true,blacklisted=false;
+static boolean stageTest,waiting;static int finishes,claims;static boolean claimSuccess=true,blacklisted=false;
 boolean isBlacklisted(String a,String b){return blacklisted;} boolean isPayTask(String a){return false;} String blacklistKey(JSONObject t){return "task";} String displayName(JSONObject t){return "task";}
-boolean finishTask(GoldenBeansEntry e,String a,String b,int stage){finishes++;return true;}boolean claimAward(GoldenBeansEntry e,String a,String b){claims++;return claimSuccess;}
+boolean finishTask(GoldenBeansEntry e,String a,String b,int stage){finishes++;if(stageTest){goldenbeansRpcCall.snapshot=new JSONObject(goldenbeansRpcCall.snapshot).put("taskList",new JSONArray().put(new JSONObject().put("sceneCode","scene").put("taskId","task").put("taskStatus",waiting?"FINISHED":"TODO").put("rightsTimes",finishes).put("rightsTimesLimit",8))).toString();}return true;}boolean claimAward(GoldenBeansEntry e,String a,String b){claims++;return claimSuccess;}
+TaskAttemptPolicy.ProbeResult probeGoldenBeansStatus(GoldenBeansEntry e,String id,int stage){return new GoldenFlow().probeGoldenBeansStatus(e,id,stage);}
 boolean verifyPendingTasks(GoldenBeansEntry e){return false;}
 public static void main(String[]a){
  assert new Review().runTaskList(new GoldenBeansEntry(),0);
@@ -19,6 +20,14 @@ public static void main(String[]a){
  assert new Review().runTaskList(new GoldenBeansEntry(),0)&&Status.hasFlagToday("dailyTask::goldenBeansTasks::MASTER");
  Status.flags.clear();goldenbeansRpcCall.snapshot="{success:true,taskList:[{taskId:'task',taskStatus:'RECEIVED'}]}";
  assert !new Review().runTaskList(new GoldenBeansEntry(),0)&&Status.flags.isEmpty():"missing scene cached as complete";
+ stageTest=true;claimSuccess=true;
+ for(boolean wait:new boolean[]{true,false}){
+  waiting=wait;finishes=claims=0;Status.flags.clear();
+  goldenbeansRpcCall.snapshot="{success:true,taskList:[{sceneCode:'scene',taskId:'task',taskStatus:'TODO',rightsTimes:0,rightsTimesLimit:8}]}";
+  new Review().runTaskList(new GoldenBeansEntry(),0);
+  assert finishes==(wait?1:8)&&claims==1:"Golden loop must stop at awaiting-award while preserving TODO progress";
+ }
+ stageTest=false;
  System.out.println("PASS finish then claim, retry failed claims including blacklisted finished tasks");
 }
 @@TASKS@@

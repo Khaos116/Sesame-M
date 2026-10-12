@@ -35,7 +35,7 @@ public class ForestTaskPolicyCheck {
   static boolean checkResultCode(String tag,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}
   static boolean isRetryable(JSONObject j){return j.optBoolean("retryable");}static boolean isServerBusy(JSONObject j){return "102".equals(j.optString("code"));}
   static boolean isUnsupportedRpc(JSONObject j){return "400000040".equals(j.optString("code"));}
-  static void checkResultCodeAndMarkTaskBlackList(String a,String b,JSONObject j){}
+  static String blacklistKey;static void checkResultCodeAndMarkTaskBlackList(String a,String b,JSONObject j){blacklistKey=b;}
   static void MarkTaskBlackList(String a,String b,String c,String d){}
   static void beginDeferBlackList(){}static void endDeferBlackList(boolean b){}
   static String[] autoBlackListTarget(String f){return null;}
@@ -49,9 +49,9 @@ public class ForestTaskPolicyCheck {
  static class AntForestRpcCall {
   static Map<String,String> replies=new HashMap<>();static int reads,awards,writes,optionalReads;
   static boolean cancelProbe,cancelAttempt,cancelAward;static JSONArray snapshot=new JSONArray(),nativeSnapshot=new JSONArray();
-  static int optionalStage=-1;
+  static int optionalStage=-1;static boolean drawStages,drawWait;
   static String youthOverride,optionalAfter;static int youthReads;static String awardReply,optionalOverride,home="{}",rain="{}";static int inits;
-  static String finishTask(String scene,String type){writes++;if(cancelAttempt)throw new TaskCancelledException();if(optionalStage>=0){optionalStage++;return "{\"success\":true}";}return replies.getOrDefault(type,"{\"success\":false,\"code\":\"102\"}");}
+  static String finishTask(String scene,String type){writes++;if(cancelAttempt)throw new TaskCancelledException();if(drawStages){JSONObject t=snapshot.optJSONObject(0);t.optJSONObject("taskRights").put("rightsTimes",writes);t.optJSONObject("taskBaseInfo").put("taskStatus",drawWait?"FINISHED":"TODO");return "{success:true}";}if(optionalStage>=0){optionalStage++;return "{\"success\":true}";}return replies.getOrDefault(type,"{\"success\":false,\"code\":\"102\"}");}
   static String listTaskopengreen(){reads++;if(cancelProbe)throw new TaskCancelledException();return new JSONObject().put("resultCode","SUCCESS").put("taskInfoList",snapshot).toString();}
   static String receiveTaskAward(String scene,String type){awards++;if(cancelAward)throw new TaskCancelledException();return awardReply;}
   static String queryTaskList(JSONObject args){return new JSONObject().put("resultCode","SUCCESS").put("forestTasksNew",new JSONArray().put(new JSONObject().put("taskInfoList",nativeSnapshot))).toString();}
@@ -93,7 +93,7 @@ public class ForestTaskPolicyCheck {
  }
  @@METHODS@@
  static JSONObject task(String type,String status){return new JSONObject().put("taskBaseInfo",new JSONObject().put("sceneCode","scene").put("taskType",type).put("taskStatus",status).put("bizInfo","{\"taskTitle\":\""+type+"\",\"autoCompleteTask\":true}"));}
- static void reset(){AntForestRpcCall.optionalStage=-1;AntForestRpcCall.youthOverride=AntForestRpcCall.optionalAfter=null;AntForestRpcCall.youthReads=0;Status.flags.clear();Status.counts.clear();RuntimeInfo.value.data.clear();ApplicationHook.fallback=0;AntForestRpcCall.replies.clear();
+ static void reset(){AntForestRpcCall.drawStages=false;AntForestRpcCall.optionalStage=-1;AntForestRpcCall.youthOverride=AntForestRpcCall.optionalAfter=null;AntForestRpcCall.youthReads=0;Status.flags.clear();Status.counts.clear();RuntimeInfo.value.data.clear();ApplicationHook.fallback=0;AntForestRpcCall.replies.clear();
   AntForestRpcCall.optionalOverride=null;AntForestRpcCall.snapshot=new JSONArray();AntForestRpcCall.nativeSnapshot=new JSONArray();AntForestRpcCall.awardReply="{\"success\":true,\"returnData\":\"{}\",\"incAwardCount\":1}";
   AntForestRpcCall.reads=AntForestRpcCall.awards=AntForestRpcCall.writes=AntForestRpcCall.optionalReads=0;AntForestRpcCall.cancelProbe=AntForestRpcCall.cancelAttempt=AntForestRpcCall.cancelAward=false;}
  static void expectCancel(Runnable work){try{work.run();check(false,"Task chain swallowed cancellation");}catch(TaskCancelledException expected){}}
@@ -187,6 +187,19 @@ public class ForestTaskPolicyCheck {
   AntForestRpcCall.snapshot=new JSONArray().put(task("stage","TODO").put("taskRights",new JSONObject().put("rightsTimes",4)));
   check(stages.probeChouChouLeStatus("activity","scene","stage",3)==TaskAttemptPolicy.ProbeResult.FINISHED,"advanced draw stage treated as failure");
   check(stages.probeChouChouLeStatus("activity","scene","stage",4)==TaskAttemptPolicy.ProbeResult.TODO,"unchanged draw stage treated as complete");
+  for(String type:List.of("FOREST_NORMAL_DRAW_BROWSE","GENERIC_BROWSE"))for(boolean wait:new boolean[]{true,false}){
+   reset();AntForestRpcCall.drawStages=true;AntForestRpcCall.drawWait=wait;
+   AntForestRpcCall.snapshot=new JSONArray().put(task(type,"TODO").put("taskRights",new JSONObject().put("rightsTimes",0).put("rightsTimesLimit",8)));
+   stages.chouChouLe(false,false,Set.of(),false,false,Set.of());
+   check(AntForestRpcCall.writes==(wait?1:8),"Draw task must stop for award but continue progressing TODO");
+  }
+  reset();orchard.attemptFinishOptionalPlayTask("scene","task","browse(3/8)");
+  check("browse".equals(MessageUtil.blacklistKey),"Orchard blacklist must use title without count suffix");
+  orchard.AntOrchardTaskList.getValue().add(MessageUtil.blacklistKey);AntForestRpcCall.writes=0;
+  orchard.queryOptionalPlay();check(AntForestRpcCall.writes==0,"Normalized orchard blacklist key must skip next run");
+  orchard.AntOrchardTaskList.getValue().clear();
+  reset();AntForestRpcCall.snapshot=new JSONArray().put(task("stage","NEW_STATE"));
+  check(stages.probeChouChouLeStatus("activity","scene","stage",-1)==TaskAttemptPolicy.ProbeResult.UNKNOWN,"Unknown draw status must not permit another stage");
   ForestChouChouLe hunt=new ForestChouChouLe();reset();AntForestRpcCall.cancelProbe=true;expectCancel(()->hunt.probeChouChouLeStatus("activity","scene","type",-1));
   reset();AntForestRpcCall.cancelAttempt=true;AntForestRpcCall.snapshot=new JSONArray().put(task("browse","TODO"));
   expectCancel(()->hunt.chouChouLe(false,false,Set.of(),false,false,Set.of()));assert AntForestRpcCall.writes==1:"Hunt cancellation stops the second completion RPC";

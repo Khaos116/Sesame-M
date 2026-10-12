@@ -21,7 +21,7 @@ public class EnergyManureCheck {
     static class UserIdMap {static String uid="A";static String getCurrentUid(){return uid;}}
     static class TaskAlternative {static String describe(JSONObject j){return "invalid";}}
     static class MyUtils {
-        static Calendar getInstance(){return Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));}
+        static int dayOffset;static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.add(Calendar.DAY_OF_YEAR,dayOffset);return c;}
         static JSONObject newJSONObject(String s) { try { return new JSONObject(s); } catch(Exception e) { return new JSONObject(); } }
     }
     static class Log {
@@ -76,8 +76,10 @@ public class EnergyManureCheck {
     static class Field { boolean value; Boolean getValue() { return value; } }
     enum PlantScene { main,yeb; String nickname() { return name(); } }
     static class Status {
-        static boolean hasFlagToday(String s) { return false; }
-        static void flagToday(String s,String uid) {}
+        static Set<String> flags=new HashSet<>();
+        static String key(String uid,String s){return uid+"|"+MyUtils.getInstance().get(Calendar.DAY_OF_YEAR)+"|"+s;}
+        static boolean hasFlagToday(String s) { return flags.contains(key(UserIdMap.uid,s)); }
+        static void flagToday(String s,String uid) { flags.add(key(uid,s)); }
     }
     static class AntOrchardRpcCall {
         static String balance; static int queries,progress;
@@ -123,6 +125,22 @@ public class EnergyManureCheck {
         records();for(int i=1;i<=20;i++)AntForestRpcCall.records.add(page(true,i,record(today,1)));
         work.syncTodayCollectedFromServer();assert Statistics.updates==0:"truncated pages overwrote totals";
         records(page(false,0,record(today,8)));AntForestRpcCall.switchAccount=true;work.syncTodayCollectedFromServer();assert Statistics.updates==0;
+        Status.flags.clear();Log.lines.clear();
+        records(page(false,0));work.syncTodayCollectedFromServer();
+        records(page(false,0,record(today-1,5)));work.syncTodayCollectedFromServer();
+        assert Log.lines.isEmpty()&&Statistics.updates==0:"Normal empty day must be silent and retain totals";
+        for(int i=0;i<2;i++){records("{success:true,recordVOList:[]}");work.syncTodayCollectedFromServer();}
+        assert Log.lines.size()==1&&Log.lines.get(0).contains("分页标记"):"Repeated bad pagination must log once";
+        records("{success:true,recordVOList:[]}");UserIdMap.uid="B";work.syncTodayCollectedFromServer();
+        assert Log.lines.size()==2:"Different account must retain its own diagnostic";
+        records(page(false,0,new JSONObject()));work.syncTodayCollectedFromServer();
+        assert Log.lines.size()==3&&Log.lines.get(2).contains("明细字段"):"Different reason must be logged";
+        records(page(false,0,new JSONObject()));AntForestRpcCall.switchAccount=true;work.syncTodayCollectedFromServer();
+        assert Log.lines.size()==3:"Stale account must not emit a diagnostic";
+        MyUtils.dayOffset=1;
+        records("{success:true,recordVOList:[]}");work.syncTodayCollectedFromServer();
+        assert Log.lines.size()==4:"Next GMT+8 day must allow diagnostics again";
+        MyUtils.dayOffset=0;
         AntForestRpcCall.cancelRecords=true;try{work.syncTodayCollectedFromServer();throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}AntForestRpcCall.cancelRecords=false;
     }
     public static void main(String[] args) {
@@ -175,7 +193,7 @@ public class EnergyManureCheck {
 '''
 for key, path, signatures in (
     ("@@ERRORS@@", "util/MessageUtil.java", ("public static void printErrorMessage(", "public static boolean isUnsupportedRpc(", "public static boolean isServerBusy(")),
-    ("@@FOREST@@", "model/task/antForest/AntForestV2.java", ("private static void sendEnergyByAction(", "private static void greenRent(", "private void syncTodayCollectedFromServer(")),
+    ("@@FOREST@@", "model/task/antForest/AntForestV2.java", ("private static void sendEnergyByAction(", "private static void greenRent(", "private void syncTodayCollectedFromServer(", "private void logEnergyRecordIssue(")),
     ("@@ORCHARD@@", "model/task/antOrchard/AntOrchard.java", ("private boolean canSpreadManure(", "private boolean doSpreadManure(",
         "private static void logSpreadShortage(", "private int targetSpreadTimes(", "private static boolean shouldBatchSpread(")),
 ):

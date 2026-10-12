@@ -50,9 +50,10 @@ public class OceanFriendCheck {
   }
  }
  static class AntOceanRpcCall {
-  static String queryTaskList(){throw new TaskCancelledException();}
+  static boolean stageMode,awaitAward;static int writes;
+  static String queryTaskList(){if(!stageMode)throw new TaskCancelledException();return new JSONObject().put("resultCode","SUCCESS").put("antOceanTaskVOList",new JSONArray().put(new JSONObject().put("sceneCode","scene").put("taskType","browse").put("taskStatus",awaitAward?"FINISHED":"TODO").put("rightsTimes",writes))).toString();}
   static String antfishListTask(){throw new TaskCancelledException();}
-  static String finishTask(String scene,String type){throw new TaskCancelledException();}
+  static String finishTask(String scene,String type){if(!stageMode)throw new TaskCancelledException();writes++;return "{success:true,resultCode:SUCCESS}";}
   static String receiveTaskAward(String scene,String type){throw new TaskCancelledException();}
   static String antfishFinishTask(String type){throw new TaskCancelledException();}
   static String getUniqueId(){return "unique";}
@@ -78,6 +79,13 @@ public class OceanFriendCheck {
   try{receiveTaskAward("scene","type","browse");throw new AssertionError("Ocean award wrapper swallowed cancellation");}catch(TaskCancelledException expected){}
   try{taskFlow.antfishFinishTask("browse","type");throw new AssertionError("Fish completion swallowed cancellation");}catch(TaskCancelledException expected){}
   taskFlow.antfishAutoTask.on=true;try{taskFlow.antfishRun();throw new AssertionError("Fish task/run chain swallowed cancellation");}catch(TaskCancelledException expected){}
+  AntOceanRpcCall.stageMode=true;
+  for(boolean waiting:new boolean[]{true,false}){
+   AntOceanRpcCall.awaitAward=waiting;AntOceanRpcCall.writes=0;
+   assert taskFlow.finishOceanTask(new JSONObject().put("sceneCode","scene").put("taskType","browse").put("bizInfo","{taskTitle:browse}").put("rightsTimes",0).put("rightsTimesLimit",8));
+   assert AntOceanRpcCall.writes==(waiting?1:8):"Awaiting award must stop writes; progressing TODO must continue";
+  }
+  AntOceanRpcCall.stageMode=false;
   OceanFriendCheck f=new OceanFriendCheck();reset(f);f.recommendedSailing.on=false;assert !f.helpCleanRecommendedFriend()&&ApplicationHook.calls.isEmpty();
   reset(f);f.cleanOceanType.n=0;assert !f.helpCleanRecommendedFriend()&&ApplicationHook.calls.isEmpty();
   reset(f);ApplicationHook.friends.addAll(Arrays.asList("self","blocked","allowed"));f.cleanOceanList.ids.add("allowed");assert f.helpCleanRecommendedFriend();assert calls("cleanFriendOcean")==1&&calls("giveFriendPiece")==0;
