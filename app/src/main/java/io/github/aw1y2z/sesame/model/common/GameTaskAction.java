@@ -110,6 +110,42 @@ public final class GameTaskAction {
                 || "SUCCESS".equals(response.optString("resultCode")) || "100".equals(response.optString("resultCode")));
     }
 
+    public static boolean isBusinessRejection(JSONObject response) {
+        return Boolean.FALSE.equals(response.opt("success")) && !response.optString("resultCode").isEmpty()
+                && !"RPC_SKIPPED".equals(response.optString("resultCode")) && !"RPC_SKIPPED".equals(response.optString("error"))
+                && !MessageUtil.isRetryable(response) && !MessageUtil.isServerBusy(response);
+    }
+
+    public static boolean skipRejected(String key, String label) {
+        if (DailyTask.isManual() || !Status.hasFlagToday("agReject::" + key)) return false;
+        Log.record(label + "：当天已被服务端明确拒绝，自动调度跳过；可点击立即执行重试");
+        return true;
+    }
+
+    public static boolean waitCountdown(String key, int seconds, String label) throws Exception {
+        if (seconds <= 0 || seconds > 1800) return false;
+        try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
+            if (work == null) return false;
+            cleanupDailyRecords();
+            RuntimeInfo store = RuntimeInfo.getInstance();
+            Calendar now = MyUtils.getInstance();
+            String day = now.get(Calendar.YEAR) + "-" + now.get(Calendar.DAY_OF_YEAR);
+            String storageKey = "gameAction::countdown:" + key;
+            JSONObject state = MyUtils.newJSONObject(store.getString(storageKey));
+            if (!day.equals(state.optString("day")) || state.optInt("seconds") != seconds) {
+                state = MyUtils.newJSONObject().put("day", day).put("seconds", seconds)
+                        .put("readyAt", System.currentTimeMillis() + seconds * 1000L);
+                if (!store.putVerified(storageKey, state.toString())) return false;
+            }
+            long wait = state.optLong("readyAt") - System.currentTimeMillis();
+            if (state.optLong("readyAt") <= 0 || wait > seconds * 1000L) return false;
+            Log.record(label + "：页面倒计时，剩余" + Math.max(0, (wait + 999) / 1000) + "秒");
+            TimeUtil.sleep(Math.max(0, wait));
+            now = MyUtils.getInstance();
+            return day.equals(now.get(Calendar.YEAR) + "-" + now.get(Calendar.DAY_OF_YEAR));
+        }
+    }
+
     public static void cleanupDailyRecords() {
         if (Status.hasFlagToday("agTaskSync::cleanup")) return;
         RuntimeInfo store = RuntimeInfo.getInstance();
@@ -143,6 +179,7 @@ public final class GameTaskAction {
             state.put("contract", contract);
             if (state.optBoolean("pending")) { Log.record(label + "：游戏动作已提交待回查，不重复上报"); return false; }
             if (state.optBoolean("accepted")) return true;
+            if (skipRejected(storageKey, label)) return false;
             int reported = state.optInt("reported");
             do {
                 int chunk = kind == Kind.DURATION ? Math.min(30, seconds - reported) : 0;
@@ -178,6 +215,7 @@ public final class GameTaskAction {
                         return false;
                     }
                     ok = accepted(response);
+                    if (isBusinessRejection(response)) Status.flagToday("agReject::" + storageKey);
                     if (!ok) Log.record(label + "：submitUserPlayDurationAction 返回未受理，code=" + response.optString("resultCode", "缺失"));
                     if (!ok && (Boolean.FALSE.equals(response.opt("success")) || "RPC_SKIPPED".equals(response.optString("resultCode")))) {
                         state.put("pending", false); store.putVerified(storageKey, state.toString());

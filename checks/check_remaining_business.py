@@ -101,6 +101,7 @@ public class RemainingCheck {
     }
     static class GameTaskAction {
         enum Kind {NONE,DURATION,LEGACY,DEFERRED,COUNTDOWN} Kind kind;static Kind mode=Kind.NONE;static int calls;
+        static boolean waitCountdown(String key,int seconds,String label){TimeUtil.sleep(seconds*1000L);return true;}
         static GameTaskAction parse(JSONObject task){GameTaskAction g=new GameTaskAction();g.kind=mode;return g;}
         static int duration(Object value){return value instanceof Number?((Number)value).intValue():-1;}
         boolean perform(String key,String title,String channel){calls++;return true;}

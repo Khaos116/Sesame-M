@@ -23,7 +23,8 @@ public class AgTaskSyncCheck {
   static RuntimeInfo getInstance(){return accounts.computeIfAbsent(uid,k->new RuntimeInfo());}String getString(String k){return data.getOrDefault(k,"");}List<String> keysStartingWith(String prefix){return new ArrayList<>(data.keySet().stream().filter(k->k.startsWith(prefix)).toList());}
   boolean putVerified(String k,String v){if(fail)return false;data.put(k,v);return true;}void put(String k,Object v){if(v==null)data.remove(k);else data.put(k,v.toString());}}
  static class Status {static Set<String> flags=new HashSet<>();static String key(String k){return RuntimeInfo.uid+":"+MyUtils.day+":"+k;}static boolean hasFlagToday(String k){return flags.contains(key(k));}static void flagToday(String k){flags.add(key(k));}}
- static class MessageUtil {static int rejected;static void checkResultCodeAndMarkTaskBlackList(String list,String title,JSONObject j){assert list.equals("AntMemberTaskList");if("UNSUPPORTED".equals(j.optString("resultCode")))rejected++;}}
+ static class DailyTask {static boolean manual;static boolean isManual(){return manual;}}
+ static class MessageUtil {static boolean isRetryable(JSONObject j){return "3000".equals(j.optString("resultCode"));}static boolean isServerBusy(JSONObject j){return "102".equals(j.optString("resultCode"));}static int rejected;static void checkResultCodeAndMarkTaskBlackList(String list,String title,JSONObject j){assert list.equals("AntMemberTaskList");if("UNSUPPORTED".equals(j.optString("resultCode")))rejected++;}}
  static class RpcRequestGuard {static boolean isFailure(JSONObject j){return Boolean.FALSE.equals(j.opt("success"))||j.has("error")||"RPC_SKIPPED".equals(j.optString("resultCode"));}}
  static class GameTask {static int writes,result=2;static GameTask matchAppId(String id){return "2060170000000001".equals(id)?new GameTask():null;}int reportSync(String label,int n,String channel){writes++;return result;}}
  static class Uri {java.net.URI value;static Uri parse(String s){Uri u=new Uri();u.value=java.net.URI.create(s);return u;}boolean isHierarchical(){return !value.isOpaque();}
@@ -35,18 +36,18 @@ public class AgTaskSyncCheck {
   static String requestString(String rpc,String raw){JSONObject j=new JSONArray(raw).optJSONObject(0);calls.add(j.put("rpc",rpc));if(transport)throw new IllegalStateException();return reply;}}
  @@GAME@@
  static class AntMemberRpcCall {
-  static Map<String,JSONObject> tasks=new LinkedHashMap<>();static List<Integer> pages=new ArrayList<>();static Set<String> sessions=new HashSet<>();static int apply,execute;static boolean advance=true,emptyMap,repeatPage,brokenDetail,omitConfig,statusOnly,splitPages;static String pageOverride,executeReply="{success:true}";
+  static Map<String,JSONObject> tasks=new LinkedHashMap<>();static List<Integer> pages=new ArrayList<>();static Set<String> sessions=new HashSet<>();static int apply,execute;static boolean advance=true,emptyMap,repeatPage,brokenDetail,omitConfig,statusOnly,splitPages;static String applyReply,pageOverride,executeReply="{success:true}";
   static String response(JSONArray rows){return new JSONObject().put("success",true).put("resultData",new JSONObject().put("taskProcessVOList",rows)).toString();}
   static String signPageTaskList(int page,String session){pages.add(page);sessions.add(session);if(pageOverride!=null)return pageOverride;if(splitPages)return response(page<=tasks.size()?new JSONArray().put(new ArrayList<>(tasks.values()).get(page-1)):new JSONArray());return response(page==1||repeatPage?new JSONArray(tasks.values()):new JSONArray());}
   static String currentMemberAdTasks(){return response(new JSONArray());}static String currentMemberProcesses(){return response(new JSONArray(tasks.values()));}
-  static String applyCurrentMemberTask(String id,boolean batch){apply++;JSONObject t=tasks.get(id);if(!emptyMap)t.put("processId","p"+id);return new JSONObject().put("success",true).put("resultData",new JSONObject().put("resultMap",emptyMap?new JSONObject():new JSONObject().put(id,"SUCCESS")).put("taskProcessVO",batch?JSONObject.NULL:new JSONObject(t.toString()))).toString();}
+  static String applyCurrentMemberTask(String id,boolean batch){apply++;if(applyReply!=null)return applyReply;JSONObject t=tasks.get(id);if(!emptyMap)t.put("processId","p"+id);return new JSONObject().put("success",true).put("resultData",new JSONObject().put("resultMap",emptyMap?new JSONObject():new JSONObject().put(id,"SUCCESS")).put("taskProcessVO",batch?JSONObject.NULL:new JSONObject(t.toString()))).toString();}
   static String currentMemberTaskDetail(String id){JSONObject row=tasks.values().stream().filter(t->id.equals(t.optString("processId"))).findFirst().orElse(null);if(row!=null&&omitConfig){row=new JSONObject(row.toString());row.remove("simpleTaskConfig");}return brokenDetail?"{}":new JSONObject().put("success",true).put("resultData",new JSONObject().put("taskProcessVO",row)).toString();}
   static String executeCurrentMemberTask(String type,String param){execute++;if(statusOnly)tasks.get(param).put("status","PROCESSING");else if(advance){JSONObject row=tasks.get(param);int n=row.optInt("currentCount")+1;row.put("currentCount",n);if(n>=row.optInt("targetCount"))row.put("status","FINISHED");}return executeReply;}
  }
  static class AntMemberTaskListMap {static Map<String,String> names=new HashMap<>();static Map<String,String> getMap(){return names;}static void add(String k,String v){names.put(k,v);}static void save(){}}
  static class RpcContract { @@RPC@@ }
  @@MEMBER@@
- static void reset(){RuntimeInfo.accounts.clear();RuntimeInfo.uid="A";RuntimeInfo.fail=false;ApplicationHook.calls.clear();ApplicationHook.reply="{success:true}";ApplicationHook.transport=false;MyUtils.day=0;TimeUtil.cancel=TimeUtil.cancelWait=TimeUtil.rollDay=false;TimeUtil.waits.clear();GameTask.writes=0;GameTask.result=2;Status.flags.clear();MessageUtil.rejected=0;Log.category.clear();}
+ static void reset(){RuntimeInfo.accounts.clear();RuntimeInfo.uid="A";RuntimeInfo.fail=false;ApplicationHook.calls.clear();ApplicationHook.reply="{success:true}";ApplicationHook.transport=false;MyUtils.day=0;TimeUtil.cancel=TimeUtil.cancelWait=TimeUtil.rollDay=false;TimeUtil.waits.clear();GameTask.writes=0;GameTask.result=2;DailyTask.manual=false;Status.flags.clear();MessageUtil.rejected=0;Log.category.clear();}
  static JSONObject game(int seconds){return new JSONObject().put("gameAppId","2060170000000002").put("source","channel").put("browseSeconds",seconds);}
  static void games() throws Exception {
   for(int reports:new int[]{@@LEGACY_COUNTS@@}){
@@ -77,7 +78,7 @@ public class AgTaskSyncCheck {
   assert GameTaskAction.parse(nested).kind==GameTaskAction.Kind.DURATION;
  }
  static JSONObject member(String id,boolean applied){return new JSONObject().put("taskConfigId",id).put("processId",applied?"p"+id:"").put("status","TODO").put("currentCount",0).put("targetCount",1).put("simpleTaskConfig",new JSONObject().put("configId",id).put("title","task"+id).put("sourceBusiness","signInAd").put("browseSeconds",15).put("targetBusiness",new JSONArray().put("BROWSE#sub#"+id)));}
- static void resetMember(){reset();AntMemberRpcCall.tasks.clear();AntMemberRpcCall.pages.clear();AntMemberRpcCall.sessions.clear();AntMemberRpcCall.apply=AntMemberRpcCall.execute=0;AntMemberRpcCall.advance=true;AntMemberRpcCall.emptyMap=AntMemberRpcCall.repeatPage=AntMemberRpcCall.brokenDetail=AntMemberRpcCall.omitConfig=AntMemberRpcCall.statusOnly=AntMemberRpcCall.splitPages=false;AntMemberRpcCall.pageOverride=null;AntMemberRpcCall.executeReply="{success:true}";}
+ static void resetMember(){reset();AntMemberRpcCall.tasks.clear();AntMemberRpcCall.pages.clear();AntMemberRpcCall.sessions.clear();AntMemberRpcCall.apply=AntMemberRpcCall.execute=0;AntMemberRpcCall.advance=true;AntMemberRpcCall.emptyMap=AntMemberRpcCall.repeatPage=AntMemberRpcCall.brokenDetail=AntMemberRpcCall.omitConfig=AntMemberRpcCall.statusOnly=AntMemberRpcCall.splitPages=false;AntMemberRpcCall.applyReply=null;AntMemberRpcCall.pageOverride=null;AntMemberRpcCall.executeReply="{success:true}";}
  static void members()throws Exception{
   resetMember();AntMemberRpcCall.tasks.put("one",member("one",false));MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.apply==1&&AntMemberRpcCall.execute==1;assert AntMemberRpcCall.pages.contains(2);assert TimeUtil.waits.stream().mapToLong(Long::longValue).sum()>=15000;
   resetMember();JSONObject ordinary=member("one",false);ordinary.optJSONObject("simpleTaskConfig").put("sourceBusiness","antmember");AntMemberRpcCall.tasks.put("one",ordinary);MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.apply==1&&AntMemberRpcCall.execute==1:"ordinary apply process must continue only once";
@@ -113,6 +114,21 @@ public class AgTaskSyncCheck {
   RpcContract.executeCurrentMemberTask("sub","param");assert ApplicationHook.calls.get(3).optString("bizType").equals("BROWSE");
   RpcContract.currentMemberAdTasks();assert ApplicationHook.calls.get(4).length()==2&&!ApplicationHook.calls.get(4).has("sourcePassMap");
  }
+ static void reviewRegressions()throws Exception{
+  for(boolean resetCounts:new boolean[]{false,true}){
+   resetMember();JSONObject row=member("one",true).put("currentCount",2).put("targetCount",5).put("extInfo",new JSONObject().put("PERIOD_CURRENT_COUNT",2).put("PERIOD_TARGET_COUNT",5));AntMemberRpcCall.tasks.put("one",row);AntMemberRpcCall.advance=false;
+   MemberBrowseTasks.run(Set.of());MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.execute==1;
+   MyUtils.day++;if(resetCounts){row.put("currentCount",0);row.optJSONObject("extInfo").put("PERIOD_CURRENT_COUNT",0);}MemberBrowseTasks.run(Set.of());MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.execute==2:"new day must not remain blocked by old submitted/counts";
+  }
+  resetMember();AntMemberRpcCall.tasks.put("one",member("one",true));AntMemberRpcCall.advance=false;AntMemberRpcCall.executeReply="{success:false,resultCode:'NO_QUALIFICATION'}";
+  MemberBrowseTasks.run(Set.of());MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.execute==1;DailyTask.manual=true;MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.execute==2;
+  resetMember();AntMemberRpcCall.tasks.put("one",member("one",false));AntMemberRpcCall.applyReply="{success:false,resultCode:'NO_QUALIFICATION'}";MemberBrowseTasks.run(Set.of());MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.apply==1;DailyTask.manual=true;MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.apply==2;
+  reset();ApplicationHook.reply="{success:false,resultCode:'NO_QUALIFICATION'}";GameTaskAction task=GameTaskAction.parse(game(1));task.perform("denied","test",null);task.perform("denied","test",null);assert ApplicationHook.calls.size()==1;DailyTask.manual=true;task.perform("denied","test",null);assert ApplicationHook.calls.size()==2;
+  reset();ApplicationHook.reply="{success:false,resultCode:'102'}";task.perform("busy","test",null);task.perform("busy","test",null);assert ApplicationHook.calls.size()==2:"transient failure belongs to RPC guard";
+  reset();assert GameTaskAction.waitCountdown("stall",15,"test");RuntimeInfo store=RuntimeInfo.getInstance();JSONObject timer=MyUtils.newJSONObject(store.getString("gameAction::countdown:stall"));timer.put("readyAt",System.currentTimeMillis()-1);store.put("gameAction::countdown:stall",timer.toString());TimeUtil.waits.clear();assert GameTaskAction.waitCountdown("stall",15,"test")&&TimeUtil.waits.equals(List.of(0L));
+  TimeUtil.rollDay=true;assert !GameTaskAction.waitCountdown("crossday",15,"test");
+  assert MemberBrowseTasks.rows("{success:true,resultData:{playInstanceId:'unknown'}}")==null:"unverified snapshot cannot authorize cleanup";
+ }
  static void cleanup()throws Exception{
   resetMember();Calendar now=MyUtils.getInstance();String gameDay=now.get(Calendar.YEAR)+"-"+now.get(Calendar.DAY_OF_YEAR),day=now.get(Calendar.YEAR)+":"+now.get(Calendar.DAY_OF_YEAR);
   RuntimeInfo a=RuntimeInfo.getInstance();a.put("gameAction::old","{day:'old',pending:true}");a.put("gameAction::today",new JSONObject().put("day",gameDay).put("pending",true).toString());
@@ -125,7 +141,7 @@ public class AgTaskSyncCheck {
   MemberBrowseTasks.load();assert !a.data.containsKey("memberBrowse::gone")&&a.data.containsKey("memberBrowse::pone"):"active pending process must survive cleanup";
   AntMemberRpcCall.tasks.get("one").put("status","FINISHED");MemberBrowseTasks.load();assert !a.data.containsKey("memberBrowse::pone")&&Log.category.size()==1;MemberBrowseTasks.load();assert Log.category.size()==1:"late confirmation should log once";
  }
- public static void main(String[] args)throws Exception{games();members();cleanup();System.out.println("PASS AG task contracts/duration/checkpoints/unknown ACK/accounts/cancellation");}
+ public static void main(String[] args)throws Exception{games();members();cleanup();reviewRegressions();System.out.println("PASS AG task contracts/duration/checkpoints/unknown ACK/accounts/cancellation");}
 }
 '''
 legacy_source = (SOURCE/'model/task/antGame/GameTask.java').read_text(encoding='utf-8')

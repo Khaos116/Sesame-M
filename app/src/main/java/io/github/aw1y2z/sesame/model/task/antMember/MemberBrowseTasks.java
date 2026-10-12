@@ -229,6 +229,7 @@ final class MemberBrowseTasks {
             if (target(listed) == null) return false;
             Calendar now = MyUtils.getInstance();
             String key = "memberApply::" + id;
+            if (GameTaskAction.skipRejected(key, label)) return false;
             String stage = now.get(Calendar.YEAR) + ":" + now.get(Calendar.DAY_OF_YEAR) + ":" + progress(listed);
             if (stage.equals(store.getString(key))) { Log.record(label + "：已报名待列表确认，不重复报名"); return false; }
             TimeUtil.sleep(0);
@@ -240,6 +241,7 @@ final class MemberBrowseTasks {
             JSONObject resultMap = data == null ? null : data.optJSONObject("resultMap");
             boolean ok = GameTaskAction.accepted(response) && (!batch || resultMap != null && "SUCCESS".equals(resultMap.optString(id)));
             if (!ok) markRejected(title, response);
+            if (GameTaskAction.isBusinessRejection(response)) Status.flagToday("agReject::" + key);
             if (Boolean.FALSE.equals(response.opt("success")) || "RPC_SKIPPED".equals(response.optString("resultCode"))) store.putVerified(key, "");
             Log.record(label + (ok ? "：报名已受理，重新查询任务阶段" : "：报名未确认，code=" + response.optString("resultCode", "缺失")));
             JSONObject applied = data == null ? null : data.optJSONObject("taskProcessVO");
@@ -261,6 +263,10 @@ final class MemberBrowseTasks {
         if (target == null) return false;
         String stage = progress(task);
         JSONObject state = MyUtils.newJSONObject(store.getString(key));
+        Calendar started = MyUtils.getInstance();
+        String day = started.get(Calendar.YEAR) + ":" + started.get(Calendar.DAY_OF_YEAR);
+        // 已回查同一流程尚未完成；旧日的计时、次数和提交状态不阻断新一天。
+        if (!day.equals(state.optString("day"))) state = MyUtils.newJSONObject();
         if (state.has("stage") && !stage.equals(state.optString("stage")) && !advanced(state.optJSONObject("before"), task)) {
             Log.record(label + "：进度变化未确认推进，保留回查状态"); return false;
         }
@@ -271,13 +277,12 @@ final class MemberBrowseTasks {
             state = MyUtils.newJSONObject().put("stage", stage).put("before", before);
         }
         if (state.optBoolean("submitted")) { Log.record(label + "：同阶段已提交，详情尚未确认，不重复执行"); return false; }
+        if (GameTaskAction.skipRejected(key + ":" + stage, label)) return false;
         String contract = Arrays.toString(target) + ":" + config(task).optString("browseSeconds");
         if (state.has("contract") && !contract.equals(state.optString("contract"))) {
             store.put(key, null); return false;
         }
         state.put("contract", contract);
-        Calendar started = MyUtils.getInstance();
-        String day = started.get(Calendar.YEAR) + ":" + started.get(Calendar.DAY_OF_YEAR);
         if (!day.equals(state.optString("day"))) state.put("day", day).put("readyAt", 0);
         GameTaskAction game = GameTaskAction.parse(task);
         if (game.kind == GameTaskAction.Kind.DEFERRED || game.kind == GameTaskAction.Kind.COUNTDOWN) {
@@ -320,7 +325,10 @@ final class MemberBrowseTasks {
         if (after != null && (finished(after) || advanced(task, after))) {
             store.put(key, null); logConfirmed(title, after); return true;
         }
-        if (after != null && !GameTaskAction.accepted(response)) markRejected(title, response);
+        if (after != null && !GameTaskAction.accepted(response)) {
+            if (GameTaskAction.isBusinessRejection(response)) Status.flagToday("agReject::" + key + ":" + stage);
+            markRejected(title, response);
+        }
         Log.record(label + "：执行后结果未确认，code=" + response.optString("resultCode", "缺失") + "，后续轮次继续回查");
         return false;
     }

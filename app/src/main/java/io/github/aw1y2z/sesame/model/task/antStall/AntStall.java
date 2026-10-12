@@ -731,8 +731,8 @@ public class AntStall extends ModelTask {
                 if (game.kind == GameTaskAction.Kind.COUNTDOWN) {
                     int seconds = GameTaskAction.duration(bizInfo.opt("countDownSeconds"));
                     if (seconds <= 0) return false;
-                    Log.record("新村任务[" + title + "]：页面倒计时" + seconds + "秒");
-                    TimeUtil.sleep(seconds * 1000L);
+                    String timerKey = "stall:" + taskType + ":" + task.optString("taskProgress") + ":" + task.optString("taskRequire");
+                    if (!GameTaskAction.waitCountdown(timerKey, seconds, "新村任务[" + title + "]")) return false;
                     return finishTask(taskType, title);
                 }
                 if (game.kind != GameTaskAction.Kind.DURATION) {
