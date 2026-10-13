@@ -5647,6 +5647,7 @@ public class AntForestV2 extends ModelTask {
                 } else if ("GOING".equals(currentStatus)) {
                     Log.record("旧版保护地：当前巡护进行中，继续推进，不因未兑换而停止巡护");
                     patrolKeepGoing(null, currentNode, patrolId);
+                    continue;
                 } else {
                     Log.record("旧版保护地：巡护状态未知，本轮不兑换、不标记完成");
                 }
@@ -5694,7 +5695,10 @@ public class AntForestV2 extends ModelTask {
                 }
                 JSONObject materialInfo = events.optJSONObject("materialInfo");
                 String materialType = materialInfo != null ? materialInfo.optString("materialType", "image") : "image";
-                if (!attemptedEvents.add(currentNode + ":" + materialType)) {
+                // 同节点的 material→reward 是正常推进，不能仅按素材类型判重复。
+                String eventState = currentNode + ":" + materialType + ":" + events.optString("eventType")
+                        + ":" + events.optString("reacted") + ":" + (materialInfo != null ? materialInfo.optString("materialId") : "");
+                if (!attemptedEvents.add(eventState)) {
                     Log.record("旧版保护地：patrolKeepGoing节点事件未推进，本轮停止，不标记完成");
                     return;
                 }

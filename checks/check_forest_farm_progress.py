@@ -30,6 +30,10 @@ public class ForestFarmProgressCheck {
  static JSONObject page(int start,String type){JSONArray b=new JSONArray();for(int i=start;i<start+20;i++)b.put(new JSONObject().put("id",i).put("bizType",type));return new JSONObject().put("wateringBubbles",b);}
  static JSONObject props(){JSONArray p=new JSONArray();for(int i=0;i<20;i++)p.put(new JSONObject().put("giveConfigId","c").put("giveId","p"+i));return new JSONObject().put("givenProps",p);}
  static int patrolQueries,switchCalls,goCalls,exchanges,keepCalls,patrolMode;
+ static Deque<String> eventReplies=new ArrayDeque<>();
+ static String patrolEvent(int node,String type,boolean reacted,boolean going){return new JSONObject().put("resultCode","SUCCESS").put("currentStatus",going?"GOING":"STANDING")
+  .put("userPatrol",new JSONObject().put("currentNode",node)).put("events",new JSONArray().put(new JSONObject().put("nodeIndex",node).put("eventType",reacted?"reward":"material").put("reacted",reacted)
+  .put("materialInfo",new JSONObject().put("materialType",type).put("materialId",node==30?12400068:400)))).toString();}
  static String ok(){return new JSONObject().put("resultCode","SUCCESS").toString();}
  static class AntSports {void syncStepNow(){}}static <T>T getModel(Class<T> t){return null;}
  static class DailyTask {static boolean skipFlag(String f,String n){return Status.flags.contains(f);}}
@@ -43,7 +47,7 @@ public class ForestFarmProgressCheck {
   static String switchUserPatrol(String id){switchCalls++;return patrolMode==0?"{}":ok();}
   static String patrolGo(int n,int p){goCalls++;return patrolMode==2?"{}":ok();}
   static String exchangePatrolChance(int n){exchanges++;return ok();}
-  static String patrolKeepGoing(int n,int p,String type){if(++keepCalls>3)throw new AssertionError("patrol event repeated");return new JSONObject().put("resultCode","SUCCESS").put("currentStatus","GOING").put("userPatrol",new JSONObject().put("currentNode",1)).put("events",new JSONArray().put(new JSONObject().put("materialInfo",new JSONObject().put("materialType","image")))).toString();}
+  static String patrolKeepGoing(int n,int p,String type){if(++keepCalls>3)throw new AssertionError("patrol event repeated");if(!eventReplies.isEmpty())return eventReplies.removeFirst();return new JSONObject().put("resultCode","SUCCESS").put("currentStatus","GOING").put("userPatrol",new JSONObject().put("currentNode",1)).put("events",new JSONArray().put(new JSONObject().put("materialInfo",new JSONObject().put("materialType","image")))).toString();}
   static String oldstartWhackMole(String s){if(cancelStage==0)throw new TaskCancelledException();return new JSONObject().put("success",true).put("token","private").put("moleInfo",new JSONArray().put(new JSONObject().put("id",1).put("bubbleId",2))).toString();}
   static String oldwhackMole(long id,String t,String s){if(cancelStage==1)throw new TaskCancelledException();if(cancelStage==3)throw new IllegalStateException("secret-token");return new JSONObject().put("success",true).toString();}
   static String oldsettlementWhackMole(String t,List<String> ids,String s){settles++;throw new TaskCancelledException();}
@@ -71,6 +75,9 @@ public class ForestFarmProgressCheck {
   reset();home=page(1,"jiaoshui");homeNull=true;f.homeRewards(home);assert homeQueries==1;
   for(int mode=0;mode<=4;mode++){reset();patrolMode=mode;f.queryUserPatrol();assert Status.flags.isEmpty();assert patrolQueries==(mode==0||mode==2?1:2);assert switchCalls==(mode<=1?1:0);assert goCalls==(mode==2||mode==3?1:0);assert exchanges==(mode==4?1:0);}
   reset();f.patrolKeepGoing(null,0,1);assert keepCalls==2&&Status.flags.isEmpty():"unchanged node/event must stop";
+  reset();eventReplies.add(patrolEvent(30,"image",true,true));eventReplies.add(patrolEvent(32,"story",false,true));eventReplies.add(patrolEvent(32,"story",true,false));
+  f.patrolKeepGoing(patrolEvent(30,"image",false,true),29,2);
+  assert keepCalls==3&&eventReplies.isEmpty():"captured material-to-reward transition at same node/type must continue to patrol completion";
   reset();initialQuota=5;f.drawGameCenterAward();assert draws==5&&reported==0&&Status.flags.isEmpty():"do not report completed quota";
   reset();used=5;f.drawGameCenterAward();assert gameQueries==1&&draws==0&&reported==0:"exhausted initial quota needs no refresh";
   reset();Status.flags.add(FLAG_GAME_DRAW_TASK_SKIP);initialQuota=2;f.drawGameCenterAward();assert draws==2&&gameQueries==1&&reported==0:"skip task refresh but still open available boxes";

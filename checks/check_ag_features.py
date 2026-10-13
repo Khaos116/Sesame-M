@@ -136,25 +136,37 @@ public class AGCheck {
         reset();JSONObject fractional=cert(0);fractional.optJSONObject("exchangeableTree").put("energy",0.5);replies("queryMonopolyEntryInfo",e);replies("queryTreeForExchange",fractional);f.exchangeMonopolyCertificate();assert calls("exchangeTree").isEmpty();
         System.out.println("PASS forest: expiry/confirm/occupancy, independent grams/quota/off, plant progress, certificate balance and uncertain debit");
     }
-    static JSONObject farmState(boolean fence){return ok().put("subFarmVO",new JSONObject().put("farmId","farm"))
-        .put("buffInfoVO",new JSONObject().put("buffType","FENCE").put("hasBuffEffect",fence).put("buffCountDown",800));}
+    static JSONObject farmState(boolean fence){return ok().put("subFarmVO",new JSONObject().put("farmId","farm")
+        .put("buffInfoVO",new JSONObject().put("buffType","FENCE").put("hasBuffEffect",fence).put("buffCountDown",800)));}
     static JSONObject tools(String type,int count){return ok().put("toolList",new JSONArray().put(new JSONObject().put("toolType",type).put("toolCount",count).put("toolId","tool\"id")));}
     static JSONObject doll(boolean acquired){return ok().put("dollInfoVO",new JSONObject().put("acquired",acquired).put("achievementId","achievement\"id").put("dollName","monthly"));}
     static JSONObject cabin(){JSONArray list=new JSONArray();for(int n=2022*12+9;n<2026*12+9;n++)list.put(new JSONObject().put("dollId",String.format(Locale.ROOT,"%04d_%02d_MONTH_DOLL",n/12,n%12+1)));return ok().put("loveCabinDollList",list);}
     static JSONObject diary(String day,boolean liked){return ok().put("data",new JSONObject().put("chickenDiary",new JSONObject().put("diaryId",day.isEmpty()?"today":day).put("diaryDateStr",day).put("collectStatus",liked)));}
     static void farmChecks() throws Exception {
-        Farm f=new Farm();reset();replies("syncAnimalStatus",farmState(true));f.useFenceTool();assert calls("useFarmTool").isEmpty()&&logged("仍在生效");
+        Farm f=new Farm();reset();replies("syncAnimalStatus",farmState(true));f.useFenceTool();assert calls("useFarmTool").isEmpty()&&logged("仍在生效"):"nested subFarmVO fence must prevent duplicate use";
+        reset();JSONObject mixed=farmState(true).put("buffInfoVO",farmState(false).optJSONObject("subFarmVO").optJSONObject("buffInfoVO"));
+        replies("syncAnimalStatus",mixed);Status.flagToday("farm::fenceUnconfirmed");f.useFenceTool();
+        assert calls("useFarmTool").isEmpty()&&!Status.hasFlagToday("farm::fenceUnconfirmed::v2"):"nested active effect must clear an older unknown reservation";
+        reset();JSONObject root=farmState(true);root.put("buffInfoVO",root.optJSONObject("subFarmVO").remove("buffInfoVO"));replies("syncAnimalStatus",root);f.useFenceTool();assert calls("useFarmTool").isEmpty()&&logged("仍在生效");
+        reset();Status.flagToday("farm::fenceUnconfirmed");replies("syncAnimalStatus",farmState(false),farmState(true));replies("listFarmTool",tools("FENCETOOL",20));f.useFenceTool();
+        assert calls("useFarmTool").size()==1&&!Status.hasFlagToday("farm::fenceUnconfirmed")&&!Status.hasFlagToday("farm::fenceUnconfirmed::v2")&&logged("使用成功"):"old erroneous reservation must not block an inactive fence after upgrade";
+        reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",20));
+        replies("useFarmTool",new JSONObject().put("success",false).put("resultCode","722").put("memo","我已经被关在家里了，一个篱笆就够啦"));f.useFenceTool();
+        assert !Status.hasFlagToday("farm::fenceUnconfirmed::v2")&&!logged("使用成功"):"explicit 722 rejection must not reserve an unconfirmed consumption";
+        replies("syncAnimalStatus",farmState(false),farmState(true));replies("useFarmTool",ok());f.useFenceTool();assert calls("useFarmTool").size()==2&&logged("使用成功"):"722 must not block later renewal";
+        reset();replies("syncAnimalStatus",farmState(false),farmState(true));replies("listFarmTool",tools("FENCETOOL",20));f.useFenceTool();f.useFenceTool();
+        assert calls("useFarmTool").size()==1&&!Status.hasFlagToday("farm::fenceUnconfirmed::v2")&&logged("使用成功"):"twenty stocked cards must use one and confirm the nested effect";
         reset();replies("syncAnimalStatus",farmState(false),farmState(true));replies("listFarmTool",tools("FENCETOOL",1));f.useFenceTool();f.useFenceTool();assert calls("useFarmTool").size()==1&&logged("使用成功");
         reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",1));f.useFenceTool();f.useFenceTool();assert calls("useFarmTool").size()==1&&logged("避免重复消耗");
         reset();replies("syncAnimalStatus",new JSONObject());f.useFenceTool();assert calls("useFarmTool").isEmpty();
         reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",2));f.useFenceTool();
-        assert Status.hasFlagToday("farm::fenceUnconfirmed");
-        replies("syncAnimalStatus",farmState(true));f.useFenceTool();assert !Status.hasFlagToday("farm::fenceUnconfirmed"):"later confirmed fence left stale reservation";
+        assert Status.hasFlagToday("farm::fenceUnconfirmed::v2");
+        replies("syncAnimalStatus",farmState(true));f.useFenceTool();assert !Status.hasFlagToday("farm::fenceUnconfirmed::v2"):"later confirmed fence left stale reservation";
         replies("syncAnimalStatus",farmState(false),farmState(true));f.useFenceTool();assert calls("useFarmTool").size()==2:"expired fence could not renew after delayed confirmation";
         for(boolean localRule:new boolean[]{true,false}) {
             reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",1));
             replies("useFarmTool",new JSONObject().put("error","RPC_SKIPPED").put("resultCode","RPC_SKIPPED").put("localRuleSkip",localRule));
-            f.useFenceTool();assert !Status.hasFlagToday("farm::fenceUnconfirmed"):"unsent request reserved entire day";
+            f.useFenceTool();assert !Status.hasFlagToday("farm::fenceUnconfirmed::v2"):"unsent request reserved entire day";
             assert calls("syncAnimalStatus").size()==1:"unsent request caused unnecessary readback";
             assert localRule?Log.lines.isEmpty():logged("未发送RPC");
             replies("useFarmTool",ok());replies("syncAnimalStatus",farmState(false),farmState(true));f.useFenceTool();

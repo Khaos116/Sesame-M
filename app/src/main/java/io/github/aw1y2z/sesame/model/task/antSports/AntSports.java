@@ -309,7 +309,17 @@ public class AntSports extends ModelTask {
                     TimeUtil.sleep(0);
                     Toast.show("同步步数：宿主已受理[" + step + "步]");
                     Log.record("同步步数：宿主已受理[" + step + "步]，后续任务按服务器步数回查");
-                    Status.flagToday("sport::syncStepPush");
+                    JSONObject confirmed = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep());
+                    int confirmedStep = !Boolean.FALSE.equals(confirmed.opt("success"))
+                            && "SUCCESS".equals(confirmed.optString("resultCode")) ? confirmed.optInt("stepCount", -1) : -1;
+                    if (confirmedStep >= step) {
+                        Status.flagToday("sport::syncStepPush");
+                        Log.record("同步步数：服务器已确认[" + confirmedStep + "步]，保护地仍按自身步数查询兑换");
+                    } else if (!"RPC_SKIPPED".equals(confirmed.optString("error"))) {
+                        Log.record("同步步数：宿主受理后服务器未确认，目标步数=" + step
+                                + "，查询步数=" + confirmedStep + "，业务状态=" + confirmed.optString("resultCode", "缺失")
+                                + "，保留后续同步机会；保护地继续查询、兑换和巡护");
+                    }
                 } else {
                     Log.record("同步运动步数失败：目标步数=" + step + "，本次未标记成功，后续任务仍按服务器步数判断");
                 }

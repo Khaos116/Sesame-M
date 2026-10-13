@@ -541,7 +541,7 @@ public class PatrolSyncCheck {
  static final String TAG="test";
  static List<String> events=Collections.synchronizedList(new ArrayList<>());
  static int pushes, queries, exchanges, left, used, chance, firstCost, observed;
- static boolean accepted=true, cancel, offline, fail, refreshPatrol=true, missingSync;
+ static boolean accepted=true, cancel, offline, fail, refreshPatrol=true, refreshWalk=true, missingSync, finishContinuation, invalidWalkReadback, bulkExchange;
  static List<String> runtimeLogs=new ArrayList<>();
  static int toasts, diagnostics, hour=12, departures, continuations;
  static String patrolState="STANDING", responseDay="20261011";static int date=11;static boolean missingChance, badRecord;
@@ -560,13 +560,13 @@ public class PatrolSyncCheck {
  static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}
  static class Log {static void printStackTrace(String tag,Throwable t){assert t.getCause()==null&&!t.getMessage().contains("secret")&&t.getStackTrace().length>0;diagnostics++;}static void record(String s){runtimeLogs.add(s);}static void i(String s){}static void forest(String s){}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
  static class Field {int value;int getValue(){return value;}}
- static class AntSportsRpcCall {static String queryWalkStep(){return new JSONObject().put("resultCode","SUCCESS").put("stepCount",observed).toString();}}
+ static class AntSportsRpcCall {static String queryWalkStep(){return new JSONObject().put("resultCode","SUCCESS").put("stepCount",observed).put("success",!(invalidWalkReadback&&pushes>0)).toString();}}
  static class AntSports {
   final Object stepSyncLock=new Object();final int SKIP_SYNC_STEP=18000;Field earliestSyncStepTime=new Field();boolean enabled=true;
   Boolean isEnable(){return enabled;}int tmpStepCount(){return 22000;}
   boolean syncStepByRpcManager(ClassLoader c,int step) throws Exception {
    pushes++;events.add("sync");if(missingSync)throw new NoSuchMethodException("step sync unavailable");if(fail)throw new IllegalStateException("secret",new RuntimeException("secret"));if(entered!=null){entered.countDown();if(!release.await(5,TimeUnit.SECONDS))throw new AssertionError("sync timeout");}
-   if(accepted&&refreshPatrol)left=step;return accepted;
+   if(accepted&&refreshPatrol)left=step;if(accepted&&refreshWalk)observed=step;return accepted;
   }
   @@SYNC@@
  }
@@ -577,29 +577,35 @@ public class PatrolSyncCheck {
   static String queryUserPatrol(){queries++;events.add("query");return new JSONObject().put("resultCode","SUCCESS").put("userPatrol",new JSONObject().put("currentStatus",patrolState).put("patrolId",2).put("currentNode",0).put("chance",new JSONObject().put("dayString",responseDay).put("leftChance",missingChance?JSONObject.NULL:chance).put("leftStep",left).put("usedStep",used))).toString();}
   static String queryMyPatrolRecord(){return new JSONObject().put("resultCode",badRecord?"FAIL":"SUCCESS").toString();}static String switchUserPatrol(String id){return "{}";}
   static String patrolGo(int n,int p){departures++;chance--;return new JSONObject().put("resultCode","SUCCESS").toString();}
-  static String exchangePatrolChance(int cost){if(exchanges++==0)firstCost=cost;events.add("exchange");used+=2000;left-=2000;chance++;return new JSONObject().put("resultCode","SUCCESS").put("addedChance",1).toString();}
+  static String exchangePatrolChance(int cost){if(exchanges++==0)firstCost=cost;events.add("exchange");int added=bulkExchange?5:1;used+=2000*added;left-=2000*added;chance+=added;return new JSONObject().put("resultCode","SUCCESS").put("addedChance",added).toString();}
  }
- void patrolKeepGoing(String s,int n,int p){continuations++;}
+ void patrolKeepGoing(String s,int n,int p){continuations++;if(finishContinuation)patrolState="STANDING";}
  @@PATROL@@
- static void reset(){sports=new AntSports();pushes=queries=exchanges=left=used=chance=firstCost=observed=0;accepted=refreshPatrol=true;missingSync=false;UserIdMap.uid="A";runtimeLogs.clear();cancel=offline=Status.done=fail=false;toasts=diagnostics=departures=continuations=0;DailyTask.manual=false;hour=12;date=11;responseDay="20261011";missingChance=badRecord=false;Status.patrolDone.clear();patrolState="STANDING";entered=release=null;events.clear();}
+ static void reset(){sports=new AntSports();pushes=queries=exchanges=left=used=chance=firstCost=observed=0;accepted=refreshPatrol=refreshWalk=true;finishContinuation=invalidWalkReadback=bulkExchange=false;missingSync=false;UserIdMap.uid="A";runtimeLogs.clear();cancel=offline=Status.done=fail=false;toasts=diagnostics=departures=continuations=0;DailyTask.manual=false;hour=12;date=11;responseDay="20261011";missingChance=badRecord=false;Status.patrolDone.clear();patrolState="STANDING";entered=release=null;events.clear();}
  public static void main(String[] args)throws Exception {
   PatrolSyncCheck f=new PatrolSyncCheck();reset();f.queryUserPatrol();
   assert pushes==1&&exchanges==5&&used==10000&&firstCost==22000&&toasts==1;assert events.indexOf("sync")<events.indexOf("query")&&events.indexOf("query")<events.indexOf("exchange");
   reset();fail=true;f.queryUserPatrol();assert diagnostics==1&&toasts==0&&!Status.done&&queries==1;
   reset();used=10000;f.queryUserPatrol();assert pushes==1&&exchanges==0;
   assert Status.patrolDone.size()==1;int oldQueries=queries;Status.done=false;f.queryUserPatrol();assert queries==oldQueries&&pushes==1;
-  date=12;responseDay="20261012";used=0;f.queryUserPatrol();assert pushes==2&&exchanges==5;
+  date=12;responseDay="20261012";used=observed=0;f.queryUserPatrol();assert pushes==2&&exchanges==5;
   reset();sports.enabled=false;used=10000;chance=2;f.queryUserPatrol();assert departures==2&&Status.patrolDone.size()==1;
   reset();sports.enabled=false;used=10000;f.queryUserPatrol();assert Status.patrolDone.size()==1;
   chance=2;DailyTask.manual=true;f.queryUserPatrol();assert departures==2&&chance==0;
   DailyTask.manual=false;oldQueries=queries;f.queryUserPatrol();assert queries==oldQueries;
-  reset();sports.enabled=false;used=10000;patrolState="GOING";f.queryUserPatrol();assert continuations==1&&Status.patrolDone.isEmpty();patrolState="STANDING";f.queryUserPatrol();assert Status.patrolDone.size()==1;
+  reset();sports.enabled=false;used=10000;patrolState="GOING";finishContinuation=false;f.queryUserPatrol();assert continuations==1&&Status.patrolDone.isEmpty();patrolState="STANDING";f.queryUserPatrol();assert Status.patrolDone.size()==1;
+  reset();sports.enabled=false;left=23816;patrolState="GOING";finishContinuation=true;f.queryUserPatrol();
+  assert continuations==6&&exchanges==5&&departures==5&&Status.patrolDone.size()==1:"resumed patrol must requery and exchange available steps in same run";
+  finishContinuation=false;
   reset();missingChance=true;f.queryUserPatrol();assert exchanges==0&&Status.patrolDone.isEmpty();
   reset();used=-1;f.queryUserPatrol();assert exchanges==0&&Status.patrolDone.isEmpty();
   reset();used=10000;responseDay="20261010";f.queryUserPatrol();assert Status.patrolDone.isEmpty();
   reset();used=10000;badRecord=true;f.queryUserPatrol();assert Status.patrolDone.isEmpty();
 
   reset();accepted=false;f.queryUserPatrol();assert queries==1&&exchanges==0&&!Status.done;sports.syncStepNow();assert pushes==2;
+  reset();refreshWalk=false;refreshPatrol=false;f.queryUserPatrol();assert !Status.done&&exchanges==0:"host acceptance alone cannot mark daily synchronization complete";
+  sports.syncStepNow();assert pushes==2:"unconfirmed step sync must remain retryable";refreshWalk=true;
+  reset();invalidWalkReadback=true;f.queryUserPatrol();assert !Status.done&&exchanges==5:"failed sports readback cannot seal sync but patrol must still exchange its confirmed steps";
   reset();sports.enabled=false;left=4000;f.queryUserPatrol();assert pushes==0&&exchanges==2;
   reset();sports.earliestSyncStepTime.value=13;f.queryUserPatrol();assert pushes==0&&queries==1;
   reset();hour=0;sports.earliestSyncStepTime.value=8;chance=3;f.queryUserPatrol();
@@ -615,6 +621,8 @@ public class PatrolSyncCheck {
   reset();accepted=false;left=23816;f.queryUserPatrol();assert exchanges==5&&departures==5&&Status.patrolDone.size()==1;
   assert runtimeLogs.stream().anyMatch(x->x.contains("可用步数=23816"));
   assert runtimeLogs.stream().anyMatch(x->x.contains("exchangePatrolChance成功"));
+  reset();sports.enabled=false;bulkExchange=true;left=23816;f.queryUserPatrol();
+  assert exchanges==1&&firstCost==23816&&departures==5&&used==10000&&left==13816&&Status.patrolDone.size()==1:"captured batch exchange must consume five chances and patrol all five";
   assert runtimeLogs.stream().anyMatch(x->x.contains("今日5次步数兑换及巡护已完成"));
   reset();f.legacyPatrolLogs.clear();refreshPatrol=false;f.queryUserPatrol();assert Status.done&&exchanges==0&&Status.patrolDone.isEmpty();
   assert runtimeLogs.stream().anyMatch(x->x.contains("可用步数不足2000"));
