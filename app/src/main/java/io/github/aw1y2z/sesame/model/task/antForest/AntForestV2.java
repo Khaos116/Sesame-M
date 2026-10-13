@@ -5537,6 +5537,7 @@ public class AntForestV2 extends ModelTask {
             AntSports sports = getModel(AntSports.class);
             if (sports != null) sports.syncStepNow();
             TimeUtil.sleep(0);
+            AntSports.queryLegacyPatrolSteps(ApplicationHook.getClassLoader());
             Set<String> attemptedPatrolStates = new HashSet<>();
             th:
             do {

@@ -2,6 +2,8 @@ package io.github.aw1y2z.sesame.model.task.antSports;
 
 import io.github.aw1y2z.sesame.util.MyUtils;
 
+import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
@@ -102,9 +104,14 @@ public class AntSportsRpcCall {
         return ApplicationHook.requestString("alipay.antsports.walk.charity.donate", args);
     }
     
-    public static String queryWalkStep() {
-        String args = "[{\"appId\":\"healthstep\",\"bizId\":\"donation\",\"chInfo\":\"h5_donation_healthstep\",\"timeZone\":\"Asia/Shanghai\"}]";
-        return ApplicationHook.requestString("alipay.antsports.steps.query", args);
+    public static String queryWalkStep() throws JSONException {
+        return queryWalkStep("Asia/Shanghai");
+    }
+
+    public static String queryWalkStep(String timezoneId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("appId", "healthstep").put("bizId", "donation")
+                .put("chInfo", "h5_donation_healthstep").put("timeZone", timezoneId == null ? "Asia/Shanghai" : timezoneId);
+        return ApplicationHook.requestString("alipay.antsports.steps.query", new JSONArray().put(args).toString());
     }
     
     public static String walkDonateSignInfo(int count) {

@@ -65,6 +65,8 @@ public class AntSports extends ModelTask {
 
     private int tmpStepCount = -1;
     private final Object stepSyncLock = new Object();
+    private final Map<String, Long> stepSyncRetryAt = new LinkedHashMap<>();
+    private int stepSyncRetryDay;
     // 真实步数超过该值就不再同步/篡改
     private static final int SKIP_SYNC_STEP = 18000;
     private BooleanModelField walk;
@@ -169,23 +171,71 @@ public class AntSports extends ModelTask {
     public static final String DISPLAY_NAME = "悦动健康岛";
     public static final ModelGroup MODULE_GROUP = ModelGroup.SPORTS;
 
+    private static final ThreadLocal<Integer> syncStepTarget = new ThreadLocal<>();
+
     @Override
     public void boot(ClassLoader classLoader) {
-        try {
-            XHelpers.findAndHookMethod("com.alibaba.health.pedometer.core.datasource.PedometerAgent", classLoader, "readDailyStep", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    int hour = Integer.parseInt(Log.getFormatTime().split(":")[0]);
-                    int originStep = (Integer) param.getResult();
-                    int step = tmpStepCount();
-                    if (hour >= earliestSyncStepTime.getValue() && originStep <= SKIP_SYNC_STEP && originStep < step) {
-                        param.setResult(step);
+        // 新版上传 stepDataList 时直接读取 SensorPedometer，绕过汇总入口。
+        for (String className : new String[]{"com.alibaba.health.pedometer.core.datasource.PedometerAgent",
+                "com.alibaba.health.pedometer.core.datasource.sensor.core.SensorPedometer"}) {
+            try {
+                XHelpers.findAndHookMethod(className, classLoader, "readDailyStep", new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (param.hasThrowable() || !(param.getResult() instanceof Integer)) return;
+                        int hour = MyUtils.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+                        int originStep = (Integer) param.getResult();
+                        int step = tmpStepCount();
+                        if (hour >= earliestSyncStepTime.getValue() && originStep <= SKIP_SYNC_STEP && originStep < step) {
+                            param.setResult(step);
+                        }
                     }
-                }
-            });
-            Log.i(TAG, "hook readDailyStep successfully");
+                });
+                Log.i(TAG, "hook readDailyStep successfully: " + className);
+            } catch (Throwable t) {
+                if (t instanceof ClassNotFoundException || t instanceof NoSuchMethodException
+                        || t instanceof NoSuchMethodError || t.getCause() instanceof ClassNotFoundException) continue;
+                Log.err(TAG, "hook readDailyStep err:", t);
+            }
+        }
+        hookStepUploadResult(classLoader);
+    }
+
+    private static void hookStepUploadResult(ClassLoader loader) {
+        try {
+            Class<?> rpcClient = loader.loadClass("com.alibaba.health.pedometer.intergation.rpc.RpcClient");
+            for (Method method : rpcClient.getDeclaredMethods()) {
+                if (method.getParameterCount() != 4 || !"StepProSyncResponsePB".equals(method.getReturnType().getSimpleName())) continue;
+                Object[] parameters = Arrays.copyOf(method.getParameterTypes(), 5, Object[].class);
+                parameters[4] = new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (syncStepTarget.get() == null) return;
+                        Object reply = param.getResult();
+                        if (param.hasThrowable() || reply == null) {
+                            Log.record("同步步数[宿主上传回执]：" + (param.hasThrowable() ? "上传接口抛出异常" : "未返回回执")
+                                    + "，目标步数=" + syncStepTarget.get() + "，服务器结果未确认");
+                            return;
+                        }
+                        Log.record("同步步数[宿主上传回执]：success=" + stepReplyValue(reply, "success")
+                                + "，statusCode=" + stepReplyValue(reply, "statusCode") + "，authStatus=" + stepReplyValue(reply, "authStatus")
+                                + "，userDailyCount=" + stepReplyValue(reply, "userDailyCount") + "，目标步数=" + syncStepTarget.get());
+                    }
+                };
+                XHelpers.findAndHookMethod(rpcClient, method.getName(), parameters);
+            }
+        } catch (ClassNotFoundException ignored) {
         } catch (Throwable t) {
-            Log.err(TAG, "hook readDailyStep err:", t);
+            Log.record("同步步数[上传回执监听]：初始化异常=" + t.getClass().getSimpleName());
+        }
+    }
+
+    private static String stepReplyValue(Object reply, String name) {
+        try {
+            Object value = reply.getClass().getField(name).get(reply);
+            return value instanceof Boolean || value instanceof Number ? value.toString() : "缺失";
+        } catch (ReflectiveOperationException ignored) {
+            return "缺失";
         }
     }
 
@@ -298,28 +348,71 @@ public class AntSports extends ModelTask {
         synchronized (stepSyncLock) {
             TimeUtil.sleep(0);
             if (!Boolean.TRUE.equals(isEnable()) || ApplicationHook.isOffline()) return;
-            int hour = MyUtils.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+            java.util.Calendar calendar = MyUtils.getInstance();
+            int syncDay = calendar.get(java.util.Calendar.YEAR) * 1000 + calendar.get(java.util.Calendar.DAY_OF_YEAR);
+            if (stepSyncRetryDay != syncDay) {
+                stepSyncRetryAt.clear();
+                stepSyncRetryDay = syncDay;
+            }
+            String uid = UserIdMap.getCurrentUid();
+            int hour = calendar.get(java.util.Calendar.HOUR_OF_DAY);
             if (Status.hasFlagToday("sport::syncStepPush") || hour < earliestSyncStepTime.getValue()) return;
             try {
-                JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep());
-                int stepCount = MessageUtil.checkResultCode(TAG, jo) ? jo.optInt("stepCount") : 0;
+                String timezone = nativeStepTimezone(ApplicationHook.getClassLoader());
+                JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep(timezone));
+                int stepCount = Boolean.TRUE.equals(jo.opt("success")) && "SUCCESS".equals(jo.optString("resultCode"))
+                        ? jo.optInt("stepCount", -1) : -1;
+                if (stepCount < 0) {
+                    Log.record("同步步数[上传前]：运动查询失败或步数字段无效，本轮不上传；保护地继续查询、兑换和巡护");
+                    return;
+                }
                 int step = tmpStepCount();
-                if (stepCount > SKIP_SYNC_STEP || stepCount >= step) return;
+                if (stepCount > SKIP_SYNC_STEP || stepCount >= step) {
+                    Log.record("同步步数[上传前]：查询时区=" + (timezone == null ? "Asia/Shanghai" : timezone)
+                            + "，服务器步数=" + stepCount + "，按现有高步数/目标规则跳过重复上传；保护地继续查询、兑换和巡护");
+                    return;
+                }
+                long now = System.currentTimeMillis();
+                Long retryAt = stepSyncRetryAt.get(uid);
+                if (retryAt != null && now < retryAt && retryAt - now <= 120000L) {
+                    Log.record("同步步数[等待回查]：前次上传已受理，运动查询步数=" + stepCount
+                            + "，暂不重复上传，约" + ((retryAt - now + 999) / 1000) + "秒后可重试；保护地继续查询、兑换和巡护");
+                    return;
+                }
+                TimeUtil.sleep(0);
                 if (syncStepByRpcManager(ApplicationHook.getClassLoader(), step)) {
                     TimeUtil.sleep(0);
+                    stepSyncRetryAt.put(uid, System.currentTimeMillis() + 120000L);
                     Toast.show("同步步数：宿主已受理[" + step + "步]");
                     Log.record("同步步数：宿主已受理[" + step + "步]，后续任务按服务器步数回查");
-                    JSONObject confirmed = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep());
-                    int confirmedStep = !Boolean.FALSE.equals(confirmed.opt("success"))
-                            && "SUCCESS".equals(confirmed.optString("resultCode")) ? confirmed.optInt("stepCount", -1) : -1;
-                    if (confirmedStep >= step) {
-                        Status.flagToday("sport::syncStepPush");
-                        Log.record("同步步数：服务器已确认[" + confirmedStep + "步]，保护地仍按自身步数查询兑换");
-                    } else if (!"RPC_SKIPPED".equals(confirmed.optString("error"))) {
-                        Log.record("同步步数：宿主受理后服务器未确认，目标步数=" + step
-                                + "，查询步数=" + confirmedStep + "，业务状态=" + confirmed.optString("resultCode", "缺失")
-                                + "，保留后续同步机会；保护地继续查询、兑换和巡护");
+                    for (int check = 0; check < 3; check++) {
+                        if (check > 0) TimeUtil.sleep(check == 1 ? 5000 : 15000);
+                        java.util.Calendar current = MyUtils.getInstance();
+                        if (current.get(java.util.Calendar.YEAR) * 1000 + current.get(java.util.Calendar.DAY_OF_YEAR) != syncDay) {
+                            Log.record("同步步数[延迟回查]：已跨东八区日期，停止旧日确认，不标记新日完成");
+                            return;
+                        }
+                        JSONObject confirmed = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep(timezone));
+                        TimeUtil.sleep(0);
+                        java.util.Calendar confirmedAt = MyUtils.getInstance();
+                        if (confirmedAt.get(java.util.Calendar.YEAR) * 1000 + confirmedAt.get(java.util.Calendar.DAY_OF_YEAR) != syncDay) {
+                            Log.record("同步步数[延迟回查]：响应跨东八区日期，停止旧日确认，不标记新日完成");
+                            return;
+                        }
+                        int confirmedStep = Boolean.TRUE.equals(confirmed.opt("success"))
+                                && "SUCCESS".equals(confirmed.optString("resultCode")) ? confirmed.optInt("stepCount", -1) : -1;
+                        String state = confirmed.optString("resultCode");
+                        Log.record("同步步数[延迟回查]：第" + (check + 1) + "次，目标步数=" + step
+                                + "，运动查询步数=" + confirmedStep + "，业务状态=" + (state.matches("[A-Z0-9_]{1,40}") ? state : "缺失或格式无效"));
+                        if (confirmedStep >= step) {
+                            Status.flagToday("sport::syncStepPush");
+                            stepSyncRetryAt.remove(uid);
+                            Log.record("同步步数：服务器已确认[" + confirmedStep + "步]，保护地仍按自身步数查询兑换");
+                            return;
+                        }
+                        if (confirmedStep < 0) break;
                     }
+                    Log.record("同步步数：宿主受理后服务器未确认，暂缓重复上传2分钟，保留后续同步机会；保护地继续查询、兑换和巡护");
                 } else {
                     Log.record("同步运动步数失败：目标步数=" + step + "，本次未标记成功，后续任务仍按服务器步数判断");
                 }
@@ -337,6 +430,82 @@ public class AntSports extends ModelTask {
                 }
             }
         }
+    }
+
+    /** 页面按日期读取用户步数；设备计步记录和运动捐查询都不能替代此查询。 */
+    public static void queryLegacyPatrolSteps(ClassLoader loader) {
+        TimeUtil.sleep(0);
+        try {
+            Class<?> requestType = loader.loadClass("com.alipay.mobilelbs.rpc.stepcounter.StepProSingleQueryRequestPB");
+            Class<?> clientType = loader.loadClass("com.alipay.mobilelbs.rpc.stepcounter.StepProClientService");
+            Method query = clientType.getMethod("querySingleDateStep", requestType);
+            Class<?> common = loader.loadClass("com.alibaba.health.pedometer.intergation.rpc.CommonUtil");
+            Object hostUid = common.getMethod("getUserId").invoke(null);
+            if (!(hostUid instanceof String) || ((String) hostUid).isEmpty()
+                    || !hostUid.equals(UserIdMap.getCurrentUid())) {
+                Log.record("旧版保护地[页面步数读取]：宿主账号未就绪或与模块不一致，未发送查询；继续查询保护地自身状态");
+                return;
+            }
+            Class<?> launcher = loader.loadClass("com.alipay.mobile.framework.LauncherApplicationAgent");
+            Object agent = launcher.getMethod("getInstance").invoke(null);
+            Object context = launcher.getMethod("getMicroApplicationContext").invoke(agent);
+            Class<?> contextType = loader.loadClass("com.alipay.mobile.framework.MicroApplicationContext");
+            Class<?> rpcServiceType = loader.loadClass("com.alipay.mobile.framework.service.common.RpcService");
+            Object service = contextType.getMethod("findServiceByInterface", String.class).invoke(context, rpcServiceType.getName());
+            if (service == null) {
+                Log.record("旧版保护地[页面步数读取]：宿主RPC服务未就绪，未发送查询；继续查询保护地自身状态");
+                return;
+            }
+            Object client = rpcServiceType.getMethod("getPBRpcProxy", Class.class).invoke(service, clientType);
+            if (client == null) {
+                Log.record("旧版保护地[页面步数读取]：宿主RPC代理未就绪，未发送查询；继续查询保护地自身状态");
+                return;
+            }
+            Object request = requestType.getConstructor().newInstance();
+            String date = String.format(java.util.Locale.ROOT, "%tY-%<tm-%<td", MyUtils.getInstance());
+            requestType.getField("appKey").set(request, "60000002");
+            requestType.getField("os").set(request, "android");
+            requestType.getField("appVersion").set(request, "Android");
+            requestType.getField("userId").set(request, hostUid);
+            requestType.getField("deviceId").set(request, common.getMethod("getDeviceId").invoke(null));
+            requestType.getField("countDate").set(request, date);
+            String zone = nativeStepTimezone(loader);
+            if (zone == null) zone = "Asia/Shanghai";
+            requestType.getField("timezoneId").set(request, zone);
+            TimeUtil.sleep(0);
+            Log.record("旧版保护地[页面步数读取]：调用querySingleDateStep(alipay.mobilelbs.steppro.singlequery)，日期=" + date
+                    + "，时区=" + zone + "，appKey=60000002");
+            Object reply = query.invoke(client, request);
+            TimeUtil.sleep(0);
+            Object data = null;
+            if (reply != null) {
+                try { data = reply.getClass().getField("stepDataInfo").get(reply); }
+                catch (NoSuchFieldException ignored) { /* 已查询的回执仍记录状态，缺步数保持未知。 */ }
+            }
+            Log.record("旧版保护地[页面步数读取]：时区=" + zone
+                    + "，success=" + (reply == null ? "未返回回执" : stepReplyValue(reply, "success"))
+                    + "，statusCode=" + (reply == null ? "缺失" : stepReplyValue(reply, "statusCode"))
+                    + "，用户步数=" + (data == null ? "未知" : stepReplyValue(data, "count"))
+                    + "；继续查询保护地可兑换步数，不以页面读数直接兑换或标记完成");
+        } catch (TaskCancelledException e) { throw e;
+        } catch (ClassNotFoundException | NoSuchMethodException | NoSuchFieldException ignored) {
+            // 可选的原生页面读取入口不存在时保持静默，原有查询和巡护继续。
+        } catch (Throwable t) {
+            if (t.getCause() instanceof TaskCancelledException) throw (TaskCancelledException) t.getCause();
+            Log.record("旧版保护地[页面步数读取]：读取异常=" + t.getClass().getSimpleName() + "，保护地查询、兑换和巡护继续");
+        }
+    }
+
+    public static String nativeStepTimezone(ClassLoader loader) {
+        try {
+            Object zone = loader.loadClass("com.alibaba.health.pedometer.intergation.rpc.TimeZoneCompat").getMethod("a").invoke(null);
+            // 只接受已知时区ID，不把任意宿主字符串写进日志或请求；业务日期仍由GMT+8日历生成。
+            if (zone instanceof String && Arrays.asList(java.util.TimeZone.getAvailableIDs()).contains(zone)) return (String) zone;
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable e) {
+            if (e.getCause() instanceof TaskCancelledException) throw (TaskCancelledException) e.getCause();
+        }
+        return null;
     }
 
     // ---------------------------------------------------------------------
@@ -429,6 +598,25 @@ public class AntSports extends ModelTask {
         LinkedHashSet<Object> instances = new LinkedHashSet<>();
 
         try {
+            ClassLoader loader = clazz.getClassLoader();
+            Class<?> proxyType = loader.loadClass("com.alibaba.health.pedometer.core.proxy.SyncStepRecordProxy");
+            Class<?> healthProxy = loader.loadClass("com.alibaba.health.pedometer.core.proxy.api.HealthProxy");
+            Object registered = healthProxy.getMethod("get", Class.class).invoke(null, proxyType);
+            if (registered == null) {
+                initializeStepSdk(loader);
+                registered = healthProxy.getMethod("get", Class.class).invoke(null, proxyType);
+            }
+            if (clazz.isInstance(registered)) {
+                return Collections.singletonList(registered);
+            }
+        } catch (ClassNotFoundException | NoSuchMethodException ignored) {
+        } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
+            if (t.getCause() instanceof TaskCancelledException) throw (TaskCancelledException) t.getCause();
+            Log.record("同步步数[接收者]：宿主注册对象查询异常=" + t.getClass().getSimpleName());
+        }
+
+        try {
             Field instanceField = clazz.getDeclaredField("INSTANCE");
             if (Modifier.isStatic(instanceField.getModifiers())) {
                 instanceField.setAccessible(true);
@@ -468,8 +656,21 @@ public class AntSports extends ModelTask {
         return new ArrayList<>(instances);
     }
 
+    private static void initializeStepSdk(ClassLoader loader) throws ReflectiveOperationException {
+        Class<?> sdk = loader.loadClass("com.alibaba.health.pedometer.core.PedometerSDK");
+        if (Boolean.TRUE.equals(sdk.getMethod("hasInitialized").invoke(null))) return;
+        Class<?> launcher = loader.loadClass("com.alipay.mobile.framework.LauncherApplicationAgent");
+        Object agent = launcher.getMethod("getInstance").invoke(null);
+        Object context = launcher.getMethod("getMicroApplicationContext").invoke(agent);
+        Class<?> contextType = loader.loadClass("com.alipay.mobile.framework.MicroApplicationContext");
+        Class<?> integration = loader.loadClass("com.alibaba.health.pedometer.intergation.PedometerSDKIntegration");
+        integration.getMethod("initialize", contextType).invoke(null, context);
+        Log.record("同步步数[初始化]：宿主计步SDK就绪=" + Boolean.TRUE.equals(sdk.getMethod("hasInitialized").invoke(null)));
+    }
+
     private static boolean invokeSyncStepMethod(Method method, Object target, int step) {
         try {
+            syncStepTarget.set(step);
             method.setAccessible(true);
             Class<?> firstParamType = method.getParameterTypes()[0];
             Object stepArg = (firstParamType == long.class || firstParamType == Long.class) ? (Object) (long) step : (Object) step;
@@ -480,10 +681,14 @@ public class AntSports extends ModelTask {
             }
             return result == null && method.getReturnType() == void.class;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
+            if (t.getCause() instanceof TaskCancelledException) throw (TaskCancelledException) t.getCause();
             Log.record("同步步数[调用异常]：" + method.getDeclaringClass().getName() + "." + method.getName()
                     + "，异常=" + t.getClass().getSimpleName()
                     + (t.getCause() == null ? "" : "，原因类型=" + t.getCause().getClass().getSimpleName()));
             return false;
+        } finally {
+            syncStepTarget.remove();
         }
     }
 
@@ -2916,7 +3121,6 @@ public class AntSports extends ModelTask {
     public enum TaskStatus {
         WAIT_COMPLETE, WAIT_RECEIVE, HAS_RECEIVED;
     }
-
 
     public interface WalkPathTheme {
         int DA_MEI_ZHONG_GUO = 0;

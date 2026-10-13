@@ -540,15 +540,16 @@ import java.util.concurrent.*;
 public class PatrolSyncCheck {
  static final String TAG="test";
  static List<String> events=Collections.synchronizedList(new ArrayList<>());
- static int pushes, queries, exchanges, left, used, chance, firstCost, observed;
- static boolean accepted=true, cancel, offline, fail, refreshPatrol=true, refreshWalk=true, missingSync, finishContinuation, invalidWalkReadback, bulkExchange;
+ static int pushes, queries, exchanges, left, used, chance, firstCost, observed, delayedReadAt, walkReads, waitMillis;
+ static boolean accepted=true, cancel, offline, fail, refreshPatrol=true, refreshWalk=true, missingSync, finishContinuation, invalidWalkReadback, bulkExchange, invalidInitialRead, crossReadback, cancelDelayed;
  static List<String> runtimeLogs=new ArrayList<>();
- static int toasts, diagnostics, hour=12, departures, continuations;
+ static int toasts, diagnostics, hour=12, departures, continuations, pageReads;
+ static boolean pageRefresh, nativeBucket;
  static String patrolState="STANDING", responseDay="20261011";static int date=11;static boolean missingChance, badRecord;
  static class Toast {static void show(String s){toasts++;}}
  static CountDownLatch entered, release;
  static class TaskCancelledException extends RuntimeException {}
- static class TimeUtil {static void sleep(int ms){if(cancel)throw new TaskCancelledException();}}
+ static class TimeUtil {static void sleep(int ms){waitMillis+=ms;if(cancelDelayed&&ms>0)cancel=true;if(cancel)throw new TaskCancelledException();}}
  static class MyUtils {
   static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.set(2026,Calendar.OCTOBER,date,hour,0,0);return c;}
   static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}
@@ -560,9 +561,11 @@ public class PatrolSyncCheck {
  static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}
  static class Log {static void printStackTrace(String tag,Throwable t){assert t.getCause()==null&&!t.getMessage().contains("secret")&&t.getStackTrace().length>0;diagnostics++;}static void record(String s){runtimeLogs.add(s);}static void i(String s){}static void forest(String s){}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
  static class Field {int value;int getValue(){return value;}}
- static class AntSportsRpcCall {static String queryWalkStep(){return new JSONObject().put("resultCode","SUCCESS").put("stepCount",observed).put("success",!(invalidWalkReadback&&pushes>0)).toString();}}
+ static class AntSportsRpcCall {static String queryWalkStep(){return queryWalkStep("Asia/Shanghai");}static String queryWalkStep(String zone){if(nativeBucket)return new JSONObject().put("resultCode","SUCCESS").put("stepCount","Asia/Ho_Chi_Minh".equals(zone)?23660:0).put("success",true).toString();if(pushes>0 && ++walkReads==delayedReadAt)observed=22000;if(pushes>0&&crossReadback)date=12;return new JSONObject().put("resultCode","SUCCESS").put("stepCount",observed).put("success",!(invalidInitialRead||(invalidWalkReadback&&pushes>0))).toString();}}
  static class AntSports {
-  final Object stepSyncLock=new Object();final int SKIP_SYNC_STEP=18000;Field earliestSyncStepTime=new Field();boolean enabled=true;
+  static String nativeStepTimezone(ClassLoader loader){return nativeBucket?"Asia/Ho_Chi_Minh":null;}
+  static void queryLegacyPatrolSteps(ClassLoader loader){pageReads++;events.add("page-read");if(pageRefresh)left=23426;}
+  final Object stepSyncLock=new Object();final Map<String,Long> stepSyncRetryAt=new HashMap<>();int stepSyncRetryDay;final int SKIP_SYNC_STEP=18000;Field earliestSyncStepTime=new Field();boolean enabled=true;
   Boolean isEnable(){return enabled;}int tmpStepCount(){return 22000;}
   boolean syncStepByRpcManager(ClassLoader c,int step) throws Exception {
    pushes++;events.add("sync");if(missingSync)throw new NoSuchMethodException("step sync unavailable");if(fail)throw new IllegalStateException("secret",new RuntimeException("secret"));if(entered!=null){entered.countDown();if(!release.await(5,TimeUnit.SECONDS))throw new AssertionError("sync timeout");}
@@ -581,9 +584,17 @@ public class PatrolSyncCheck {
  }
  void patrolKeepGoing(String s,int n,int p){continuations++;if(finishContinuation)patrolState="STANDING";}
  @@PATROL@@
- static void reset(){sports=new AntSports();pushes=queries=exchanges=left=used=chance=firstCost=observed=0;accepted=refreshPatrol=refreshWalk=true;finishContinuation=invalidWalkReadback=bulkExchange=false;missingSync=false;UserIdMap.uid="A";runtimeLogs.clear();cancel=offline=Status.done=fail=false;toasts=diagnostics=departures=continuations=0;DailyTask.manual=false;hour=12;date=11;responseDay="20261011";missingChance=badRecord=false;Status.patrolDone.clear();patrolState="STANDING";entered=release=null;events.clear();}
+ static void reset(){sports=new AntSports();pushes=queries=exchanges=left=used=chance=firstCost=observed=delayedReadAt=walkReads=waitMillis=0;accepted=refreshPatrol=refreshWalk=true;finishContinuation=invalidWalkReadback=bulkExchange=invalidInitialRead=crossReadback=cancelDelayed=false;missingSync=false;UserIdMap.uid="A";runtimeLogs.clear();cancel=offline=Status.done=fail=false;toasts=diagnostics=departures=continuations=pageReads=0;pageRefresh=nativeBucket=false;DailyTask.manual=false;hour=12;date=11;responseDay="20261011";missingChance=badRecord=false;Status.patrolDone.clear();patrolState="STANDING";entered=release=null;events.clear();}
  public static void main(String[] args)throws Exception {
-  PatrolSyncCheck f=new PatrolSyncCheck();reset();f.queryUserPatrol();
+  PatrolSyncCheck pageFlow=new PatrolSyncCheck();reset();accepted=false;pageRefresh=true;bulkExchange=true;pageFlow.queryUserPatrol();
+  assert pageReads==1&&exchanges==1&&firstCost==23426&&departures==5:"page step read is missing before patrol query";
+  assert events.indexOf("sync")<events.indexOf("page-read")&&events.indexOf("page-read")<events.indexOf("query"):"sync then page read then patrol query";
+  pageFlow.queryUserPatrol();assert pageReads==1:"completed daily patrol must not repeat native page reads";
+  reset();sports.enabled=false;pageRefresh=true;bulkExchange=true;pageFlow.queryUserPatrol();assert pushes==0&&pageReads==1&&departures==5:"read and patrol must run when upload is disabled";
+  reset();hour=0;sports.earliestSyncStepTime.value=8;pageRefresh=true;bulkExchange=true;pageFlow.queryUserPatrol();assert pushes==0&&pageReads==1&&departures==5:"read and exchange cannot depend on upload time";
+  PatrolSyncCheck f=new PatrolSyncCheck();
+  reset();nativeBucket=true;sports.syncStepNow();nativeBucket=false;assert pushes==0&&!Status.done:"sync preflight must read the native timezone bucket before attempting another upload";
+  reset();f.queryUserPatrol();
   assert pushes==1&&exchanges==5&&used==10000&&firstCost==22000&&toasts==1;assert events.indexOf("sync")<events.indexOf("query")&&events.indexOf("query")<events.indexOf("exchange");
   reset();fail=true;f.queryUserPatrol();assert diagnostics==1&&toasts==0&&!Status.done&&queries==1;
   reset();used=10000;f.queryUserPatrol();assert pushes==1&&exchanges==0;
@@ -604,7 +615,16 @@ public class PatrolSyncCheck {
 
   reset();accepted=false;f.queryUserPatrol();assert queries==1&&exchanges==0&&!Status.done;sports.syncStepNow();assert pushes==2;
   reset();refreshWalk=false;refreshPatrol=false;f.queryUserPatrol();assert !Status.done&&exchanges==0:"host acceptance alone cannot mark daily synchronization complete";
-  sports.syncStepNow();assert pushes==2:"unconfirmed step sync must remain retryable";refreshWalk=true;
+  sports.syncStepNow();assert pushes==1:"accepted upload must not be repeated by the next module while business counters lag";
+  assert !Status.done;left=4000;f.queryUserPatrol();assert exchanges==2:"cooldown must still query and patrol confirmed available steps";
+  sports.stepSyncRetryAt.replaceAll((key,value)->0L);sports.syncStepNow();assert pushes==2:"unconfirmed sync must retry after short wait";refreshWalk=true;
+  reset();refreshWalk=false;delayedReadAt=2;f.queryUserPatrol();assert Status.done&&pushes==1&&waitMillis>=5000:"delayed readback must confirm without a second upload";
+  reset();refreshWalk=false;delayedReadAt=3;sports.syncStepNow();assert Status.done&&pushes==1&&waitMillis==20000:"final delayed readback must stay bounded";
+  reset();refreshWalk=false;refreshPatrol=false;f.queryUserPatrol();UserIdMap.uid="B";sports.syncStepNow();assert pushes==2:"short wait must be per account";
+  reset();refreshWalk=false;refreshPatrol=false;f.queryUserPatrol();date=12;responseDay="20261012";sports.syncStepNow();assert pushes==2:"new GMT+8 day must reset short wait";
+  reset();invalidInitialRead=true;left=4000;f.queryUserPatrol();assert pushes==0&&exchanges==2:"unknown initial sports steps must not upload but patrol confirmed steps remain usable";
+  reset();crossReadback=true;sports.syncStepNow();assert !Status.done&&runtimeLogs.stream().anyMatch(x->x.contains("响应跨东八区日期")):"old-day response must not mark new-day synchronization done";
+  reset();refreshWalk=false;cancelDelayed=true;try{f.queryUserPatrol();throw new AssertionError("delayed cancellation swallowed");}catch(TaskCancelledException expected){}assert queries==0&&!Status.done;
   reset();invalidWalkReadback=true;f.queryUserPatrol();assert !Status.done&&exchanges==5:"failed sports readback cannot seal sync but patrol must still exchange its confirmed steps";
   reset();sports.enabled=false;left=4000;f.queryUserPatrol();assert pushes==0&&exchanges==2;
   reset();sports.earliestSyncStepTime.value=13;f.queryUserPatrol();assert pushes==0&&queries==1;

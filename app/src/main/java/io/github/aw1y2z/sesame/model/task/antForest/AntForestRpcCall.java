@@ -9,6 +9,7 @@ import org.json.JSONObject;
 import io.github.aw1y2z.sesame.entity.AlipayVersion;
 import io.github.aw1y2z.sesame.entity.RpcEntity;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
+import io.github.aw1y2z.sesame.model.task.antSports.AntSports;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.RandomUtil;
@@ -436,43 +437,55 @@ public class AntForestRpcCall {
     }
     
     /* 巡护保护地 */
-    public static String queryUserPatrol() {
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryUserPatrol", "[{\"source\":\"ant_forest" + "\",\"timezoneId\":\"Asia/Shanghai\"}]");
+    private static JSONObject legacyPatrolPayload() throws JSONException {
+        String zone = AntSports.nativeStepTimezone(ApplicationHook.getClassLoader());
+        // 步数按宿主计步协议时区存储，业务日历和完成标记仍由调用方按GMT+8处理。
+        return MyUtils.newJSONObject().put("source", "ant_forest").put("timezoneId", zone == null ? "Asia/Shanghai" : zone);
+    }
+
+    public static String queryUserPatrol() throws JSONException {
+        JSONObject args = legacyPatrolPayload();
+        Log.record("旧版保护地[查询参数]：计步协议时区=" + args.optString("timezoneId") + "，业务日期按GMT+8判断");
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryUserPatrol", new JSONArray().put(args).toString());
     }
     
-    public static String queryMyPatrolRecord() {
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryMyPatrolRecord", "[{\"source" + "\":\"ant_forest\",\"timezoneId\":\"Asia/Shanghai\"}]");
+    public static String queryMyPatrolRecord() throws JSONException {
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryMyPatrolRecord", new JSONArray().put(legacyPatrolPayload()).toString());
     }
     
-    public static String switchUserPatrol(String targetPatrolId) {
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.switchUserPatrol", "[{\"source" + "\":\"ant_forest\",\"targetPatrolId\":" + targetPatrolId + ",\"timezoneId\":\"Asia/Shanghai\"}]");
+    public static String switchUserPatrol(String targetPatrolId) throws JSONException {
+        if (targetPatrolId == null || !targetPatrolId.matches("[0-9]{1,18}")) throw new IllegalArgumentException("Invalid patrol map id");
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.switchUserPatrol", new JSONArray()
+                .put(legacyPatrolPayload().put("targetPatrolId", Long.parseLong(targetPatrolId))).toString());
     }
     
-    public static String patrolGo(int nodeIndex, int patrolId) {
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.patrolGo", "[{\"nodeIndex\":" + nodeIndex + ",\"patrolId\":" + patrolId + ",\"source\":\"ant_forest\",\"timezoneId\":\"Asia/Shanghai\"}]");
+    public static String patrolGo(int nodeIndex, int patrolId) throws JSONException {
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.patrolGo", new JSONArray()
+                .put(legacyPatrolPayload().put("nodeIndex", nodeIndex).put("patrolId", patrolId)).toString());
     }
     
-    public static String patrolKeepGoing(int nodeIndex, int patrolId, String eventType) {
-        String args = null;
+    public static String patrolKeepGoing(int nodeIndex, int patrolId, String eventType) throws JSONException {
+        JSONObject react = MyUtils.newJSONObject();
         switch (eventType) {
             case "video":
-                args = "[{\"nodeIndex\":" + nodeIndex + ",\"patrolId\":" + patrolId + ",\"reactParam\":{\"viewed" + "\":\"Y\"},\"source\":\"ant_forest\",\"timezoneId\":\"Asia/Shanghai\"}]";
+                react.put("viewed", "Y");
                 break;
             case "chase":
-                args = "[{\"nodeIndex\":" + nodeIndex + ",\"patrolId\":" + patrolId + ",\"reactParam\":{\"sendChat" + "\":\"Y\"},\"source\":\"ant_forest\",\"timezoneId\":\"Asia/Shanghai\"}]";
+                react.put("sendChat", "Y");
                 break;
             case "quiz":
-                args = "[{\"nodeIndex\":" + nodeIndex + ",\"patrolId\":" + patrolId + ",\"reactParam\":{\"answer" + "\":\"correct\"},\"source\":\"ant_forest\",\"timezoneId\":\"Asia/Shanghai\"}]";
+                react.put("answer", "correct");
                 break;
             default:
-                args = "[{\"nodeIndex\":" + nodeIndex + ",\"patrolId\":" + patrolId + ",\"reactParam\":{}," + "\"source\":\"ant_forest\",\"timezoneId\":\"Asia/Shanghai\"}]";
                 break;
         }
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.patrolKeepGoing", args);
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.patrolKeepGoing", new JSONArray()
+                .put(legacyPatrolPayload().put("nodeIndex", nodeIndex).put("patrolId", patrolId).put("reactParam", react)).toString());
     }
     
-    public static String exchangePatrolChance(int costStep) {
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.exchangePatrolChance", "[{\"costStep\":" + costStep + ",\"source\":\"ant_forest\",\"timezoneId\":\"Asia/Shanghai\"}]");
+    public static String exchangePatrolChance(int costStep) throws JSONException {
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.exchangePatrolChance", new JSONArray()
+                .put(legacyPatrolPayload().put("costStep", costStep)).toString());
     }
     
     public static String AnimalConsumeProp(String propGroup, String propId, String propType) {

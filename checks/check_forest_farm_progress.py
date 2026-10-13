@@ -35,7 +35,8 @@ public class ForestFarmProgressCheck {
   .put("userPatrol",new JSONObject().put("currentNode",node)).put("events",new JSONArray().put(new JSONObject().put("nodeIndex",node).put("eventType",reacted?"reward":"material").put("reacted",reacted)
   .put("materialInfo",new JSONObject().put("materialType",type).put("materialId",node==30?12400068:400)))).toString();}
  static String ok(){return new JSONObject().put("resultCode","SUCCESS").toString();}
- static class AntSports {void syncStepNow(){}}static <T>T getModel(Class<T> t){return null;}
+ static class ApplicationHook {static ClassLoader getClassLoader(){return null;}}
+ static class AntSports {void syncStepNow(){}static void queryLegacyPatrolSteps(ClassLoader loader){}}static <T>T getModel(Class<T> t){return null;}
  static class DailyTask {static boolean skipFlag(String f,String n){return Status.flags.contains(f);}}
  void logLegacyPatrolState(String k,String s){}
  static class AntForestRpcCall {
