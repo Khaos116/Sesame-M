@@ -220,7 +220,6 @@ public class AntForestV2 extends ModelTask {
     private IntegerModelField returnWater18;
     private IntegerModelField returnWater10;
     private BooleanModelField receiveForestTaskAward;
-    private BooleanModelField energySceneTask;
 
     private BooleanModelField AutoAntForestVitalityTaskList;
     private SelectModelField AntForestVitalityTaskList;
@@ -359,9 +358,6 @@ public class AntForestV2 extends ModelTask {
         modelFields.addField(MonopolyTaskList = new SelectModelField("MonopolyTaskList", "新版保护地 | 黑名单列表", new LinkedHashSet<>(), AlipayMonopolyTaskList::getList).setDependsOn("AutoMonopolyTaskList"));
         modelFields.addField(consumeAnimalPropType = new ChoiceModelField("consumeAnimalPropType", "派遣动物伙伴", ConsumeAnimalPropType.NONE, ConsumeAnimalPropType.nickNames));
         modelFields.addField(receiveForestTaskAward = new BooleanModelField("receiveForestTaskAward", "森林任务", false));
-        modelFields.addField(energySceneTask = new BooleanModelField("energySceneTask", "种树攻略 | 场景任务", false)
-                .setDependsOn("receiveForestTaskAward")
-                .setDescription("逐个尝试完成场景卡下的行为子任务"));
         modelFields.addField(AutoAntForestVitalityTaskList = new BooleanModelField("AutoAntForestVitalityTaskList", "活力值 | 自动黑名单", true));
         modelFields.addField(AntForestVitalityTaskList = new SelectModelField("AntForestVitalityTaskList", "活力值 | 黑名单列表", new LinkedHashSet<>(), AlipayAntForestVitalityTaskList::getList).setDependsOn("AutoAntForestVitalityTaskList"));
         modelFields.addField(collectGiftBox = new BooleanModelField("collectGiftBox", "领取礼盒", false));
@@ -825,8 +821,14 @@ public class AntForestV2 extends ModelTask {
                         reachedOlder = true;
                         break;
                     }
+                    int e = record.optInt("energy", 0);
+                    // 只累加**进账**：明细混有支出（合种浇水等为负值），净额求和会与客户端
+                    // 「今日获得能量」口径不一致——那是只计收入的。
+                    if (e <= 0) {
+                        continue;
+                    }
                     scanned++;
-                    todayTotal += record.optInt("energy", 0);
+                    todayTotal += e;
                 }
                 if (reachedOlder || !resData.optBoolean("hasMore", false)) {
                     break;
@@ -2634,17 +2636,12 @@ public class AntForestV2 extends ModelTask {
                 // 不能因此跳过子任务——否则子任务里「已完成但未领奖」的奖励永远领不到。
                 if ("PARENT".equals(taskBaseInfo.optString("taskNode"))
                         && childTaskTypeList != null && childTaskTypeList.length() > 0) {
-                    boolean changed;
-                    if ("ENERGY_XUANJIAO".equals(taskType)) {
-                        // 已完成子任务一律领奖（纯领奖、无副作用，不受开关约束）；待办的才需要开关去尝试完成
-                        changed = doEnergySceneTask(childTaskTypeList, energySceneTask.getValue());
-                    } else {
-                        // 其余容器统一处理：先领「已完成但未领奖」的子任务，再按子任务自带的
-                        // autoCompleteTask 标记尝试待办项。不能按 taskType 白名单挑着做——
-                        // 未列举的容器（如「逛农场得落叶肥料」）会被静默跳过，子任务永远没人领。
-                        changed = awardFinishedChildren(childTaskTypeList);
-                        changed = doChildTask(childTaskTypeList, taskTitle) || changed;
-                    }
+                    // 统一处理：先领「已完成但未领奖」的子任务，再按子任务自带的 autoCompleteTask
+                    // 标记尝试待办项。不能按 taskType 白名单挑着做——未列举的容器会被静默跳过、
+                    // 子任务永远没人领；也不能无条件尝试：行为子任务（缴费/出行等）需真实操作，
+                    // 服务端只会回「不支持rpc调用」，尝试纯属白费请求。
+                    boolean changed = awardFinishedChildren(childTaskTypeList);
+                    changed = doChildTask(childTaskTypeList, taskTitle) || changed;
                     // 容器父任务自身的奖励同样要领：子任务可能都已领取，父任务却仍是 FINISHED 待领，
                     // 直接 continue 会把它永远漏掉。纯领奖、无副作用，不受开关约束。
                     if (TaskStatus.FINISHED.name().equals(taskStatus)) {
@@ -2923,90 +2920,6 @@ public class AntForestV2 extends ModelTask {
             Log.err(TAG, "doChildTask err:", th);
         }
         return changed;
-    }
-
-    /**
-     * 场景卡行为子任务（如选教卡下的无纸化阅读）：需用户真实操作后服务端才发能量，父任务只是容器、没有完成接口。
-     * 已完成→领奖、待办→限频尝试；限频、连续失败冷却、不写任务黑名单这些策略统一交给
-     * {@link TaskAttemptPolicy}，本方法只负责把两侧数据结构对齐。
-     *
-     * @param allowAttempt 待办子任务是否尝试完成（由「种树攻略 | 场景任务」开关控制）；已完成子任务一律领奖
-     */
-    private boolean doEnergySceneTask(JSONArray childTaskTypeList, boolean allowAttempt) {
-        boolean changed = false;
-        int awarded = 0;
-        int attempted = 0;
-        try {
-            for (int i = 0; i < childTaskTypeList.length(); i++) {
-                JSONObject taskInfo = childTaskTypeList.getJSONObject(i);
-                JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                JSONObject bizInfo = new JSONObject(taskBaseInfo.getString("bizInfo"));
-                String taskType = taskBaseInfo.getString("taskType");
-                String taskTitle = bizInfo.optString("taskTitle", taskType);
-                String taskStatus = taskBaseInfo.getString("taskStatus");
-                String sceneCode = taskBaseInfo.getString("sceneCode");
-                Outcome outcome;
-                if (TaskStatus.FINISHED.name().equals(taskStatus)) {
-                    outcome = TaskAttemptPolicy.handle(sceneCode + "/" + taskType, taskTitle,
-                            () -> receiveTaskAward(sceneCode, taskType, taskTitle), null, Log::forest,
-                            new TaskAttemptPolicy.Site("AntForestVitalityTaskList", "森林任务", taskType, sceneCode));
-                } else if (allowAttempt && TaskStatus.TODO.name().equals(taskStatus)) {
-                    // 不传 probe：这类子任务都是「真实行为型」（缴费/出行/回收等），finishTask 必然失败，
-                    // 失败原因由 attemptSceneTask 的返回值（UNSUPPORTED/UNABLE）已说明清楚。再挂 probe 只会
-                    // 让每个子任务多拉一次任务列表（外加 1.5s 延迟），单轮发出成百次无谓请求。
-                    outcome = TaskAttemptPolicy.handle(sceneCode + "/" + taskType, taskTitle, null,
-                            () -> attemptSceneTask(sceneCode, taskType, taskTitle), Log::forest,
-                            new TaskAttemptPolicy.Site("AntForestVitalityTaskList", "森林任务", taskType, sceneCode));
-                } else {
-                    continue;
-                }
-                // 领到奖 / 上报成功 / 已交兜底，都要再核一遍列表（新判定完成的子任务要能接着领）
-                if (outcome == Outcome.AWARDED) {
-                    awarded++;
-                } else if (outcome == Outcome.TRIGGERED || outcome == Outcome.DONE) {
-                    attempted++;
-                }
-                changed = changed || outcome == Outcome.AWARDED || outcome == Outcome.TRIGGERED
-                        || outcome == Outcome.DONE;
-            }
-            // 只在真动了时记一行（原来每轮无条件记，配合上层复核会刷屏）
-            if (changed) {
-                Log.other("场景卡[ENERGY_XUANJIAO]#共" + childTaskTypeList.length() + "个子任务#领奖"
-                        + awarded + "#上报" + attempted);
-            }
-        } catch (Throwable t) {
-            Log.err(TAG, "doEnergySceneTask err:", t);
-        }
-        return changed;
-    }
-
-    /**
-     * 场景卡子任务的完成上报：不写任务黑名单（失败只代表本次未完成），外部场景类失败交给兜底方案；
-     * 结论按 {@link Outcome} 分类，由 {@link TaskAttemptPolicy} 决定当天是否再试。
-     */
-    private Outcome attemptSceneTask(String sceneCode, String taskType, String taskTitle) {
-        try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.finishTask(sceneCode, taskType));
-            //检查并标记黑名单任务：兜底方案也做不了的同样按该规则记账（400000040 降级为连续确认）
-            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntForestVitalityTaskList", blackTaskKey(taskTitle), jo);
-            TimeUtil.sleep(500);
-            if (MessageUtil.checkSuccess(TAG, jo)) {
-                Log.forest("森林任务🧾️完成[" + taskTitle + "]");
-                return Outcome.DONE;
-            }
-            if (MessageUtil.isRetryable(jo) || MessageUtil.isServerBusy(jo)) {
-                return Outcome.RETRY;
-            }
-            // 不支持rpc调用（400000040）→ 由 TaskAttemptPolicy 代为伪申报
-            if (TaskAlternative.hit(jo, sceneCode)) {
-                return Outcome.UNSUPPORTED;
-            }
-            Log.forest("完成任务[" + taskTitle + "]失败");
-            return Outcome.UNABLE;
-        } catch (Throwable t) {
-            Log.err(TAG, "attemptSceneTask err:", t);
-        }
-        return Outcome.RETRY;
     }
 
     private void startEnergyRain() {
