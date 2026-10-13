@@ -42,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,7 +65,9 @@ import io.github.aw1y2z.sesame.util.diagnostics.RpcFailureJournal
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.receiveAsFlow
 import java.io.File
@@ -137,6 +140,8 @@ class MiuixLogViewerActivity : MiuixBaseActivity() {
 @Composable
 fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     val context = LocalContext.current
+    val shareScope = rememberCoroutineScope()
+    var sharing by remember(logType) { mutableStateOf(false) }
     var file by remember(logType) { mutableStateOf(logType.file) }
     LaunchedEffect(logType) {
         while (true) {
@@ -230,25 +235,42 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                         ToastUtil.show(context, "已清空")
                     }
                 },
-                onShare = if (logType == LogType.RUNTIME) {
+                onShare = if (logType == LogType.RUNTIME || logType == LogType.DEBUG) {
                     {
-                        // 分享带账号名的副本（runtime.日期.C158.log），不直接分享原文件：原文件名不带账号，多个账号分不清
-                        val shared = FileUtil.copyForShare(logType.file, File(context.cacheDir, "share"))
-                        if (shared == null) {
-                            ToastUtil.show(context, "分享失败")
-                        } else {
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                shared
-                            )
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                putExtra(Intent.EXTRA_SUBJECT, shared.name)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        if (!sharing) {
+                            sharing = true
+                            val source = file
+                            ToastUtil.show(context, "正在准备日志分享")
+                            shareScope.launch {
+                                try {
+                                    // 抓包文件可能很大，复制完整且带账号名的副本不能阻塞界面。
+                                    val shared = withContext(Dispatchers.IO) {
+                                        FileUtil.copyForShare(source, File(context.cacheDir, "share"))
+                                    }
+                                    if (shared == null) {
+                                        ToastUtil.show(context, "分享失败")
+                                    } else {
+                                        val uri = FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.fileprovider",
+                                            shared
+                                        )
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                            putExtra(Intent.EXTRA_SUBJECT, shared.name)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        activity.startActivity(Intent.createChooser(shareIntent, "分享日志"))
+                                    }
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (_: Exception) {
+                                    ToastUtil.show(context, "分享失败")
+                                } finally {
+                                    sharing = false
+                                }
                             }
-                            activity.startActivity(Intent.createChooser(shareIntent, "分享日志"))
                         }
                     }
                 } else null
