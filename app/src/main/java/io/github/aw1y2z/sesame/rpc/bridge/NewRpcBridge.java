@@ -145,7 +145,6 @@ public class NewRpcBridge implements RpcBridge {
                     RpcIntervalLimit.enterIntervalLimit(method);
                     if (RunGeneration.isStale() || Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
                     if (guard.shouldSkip()) return rpcEntity;
-                    if (headers != null) Log.record("RPC[附加请求头]：" + method + "，准备调用宿主，页面上下文=空");
                     newRpcCallMethod.invoke(
                             newRpcInstance, method, false, false, "json", parseObjectMethod.invoke(null, "{\"__apiCallStartTime\":" + System.currentTimeMillis() + ",\"apiCallLink\":\"XRiverNotFound\",\"execEngine\":\"XRiver\",\"operationType\":\"" + method + "\",\"requestData\":" + data + (relation == null ? "" : ",\"relationLocal\":" + relation) + (headers == null ? "" : ",\"headers\":" + headers) + "}"), "", headers == null ? null : parseObjectMethod.invoke(null, headers), true, false, 0, false, "", null, null, null, Proxy.newProxyInstance(loader, bridgeCallbackClazzArray, new InvocationHandler() {
                                 @Override
@@ -270,7 +269,6 @@ public class NewRpcBridge implements RpcBridge {
                     if (RunGeneration.isStale() || Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
                     if (guard.shouldSkip()) return rpcEntity;
                     synchronized (rpcEntity) {
-                        if (headers != null) Log.record("RPC[附加请求头]：" + method + "，准备调用宿主，页面上下文=空");
                         newRpcCallMethod.invoke(
                                 newRpcInstance, method, false, false, "json", parseObjectMethod.invoke(null, "{\"__apiCallStartTime\":" + System.currentTimeMillis() + ",\"apiCallLink\":\"XRiverNotFound\",\"execEngine\":\"XRiver\",\"operationType\":\"" + method + "\",\"requestData\":" + args + (headers == null ? "" : ",\"headers\":" + headers) + "}"), "", headers == null ? null : parseObjectMethod.invoke(null, headers), true, false, 0, false, "", null, null, null, Proxy.newProxyInstance(loader, bridgeCallbackClazzArray, new InvocationHandler() {
                                     @Override

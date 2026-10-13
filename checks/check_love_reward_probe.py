@@ -50,7 +50,7 @@ public class AntForestRpcCall {private static final String VERSION="20250818";''
 import java.util.*;import org.json.*;import io.github.aw1y2z.sesame.entity.RpcEntity;import io.github.aw1y2z.sesame.util.*;import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 public class ApplicationHook {
  public static boolean offline,grant,delayed,failBefore,failAfter,failedHome,duplicate,fraction,switched,cancelled,throwHome,noSubscription,invalidType,invalidSubscription;
- public static boolean cacheCleared,stuck,failedConfirm,mixed,badTeam,badAnimal,moreAnimals,grantAnimal,renewAnimal,missingExpiry,crossDay;
+ public static boolean cacheCleared,stuck,failedConfirm,skippedConfirm,mixed,badTeam,badAnimal,moreAnimals,grantAnimal,renewAnimal,missingExpiry,crossDay,crossDayAfterConfirm,unknownWidget,failCompletionSave;
  public static int bag=2,reads,homes,subscribes,confirms,animalReads,animalCount=1;public static long animalExpiry=1000;public static String widget="reward",homeCode="LoveEnergyShield";
  public static List<String> calls=new ArrayList<>();public static RpcEntity last;
  public static boolean isOffline(){return offline;}
@@ -78,9 +78,10 @@ public class ApplicationHook {
    assert "chInfo_ch_appcenter__chsub_9patch".equals(h.optString("source"));assert h.optString("source").equals(h.optString("ags-source"));
    assert body.optString("source").equals(h.optString("source"));assert !h.has("nb_url")&&!h.has("nbappid");
   }
-  if(m.endsWith("loveForestHome"))return new JSONObject().put("resultCode","SUCCESS").put("teamId","team").put("widgetStatus",cacheCleared?"callWater":widget).toString();
+  if(m.endsWith("loveForestHome"))return new JSONObject().put("resultCode","SUCCESS").put("teamId","team").put("widgetStatus",cacheCleared?(unknownWidget?"unknown":"callWater"):widget).toString();
   if(m.endsWith("loveHome")){
    homes++;if(cancelled)throw new TaskCancelledException();if(switched)UserIdMap.uid="B";
+   if(crossDayAfterConfirm&&homes==2)MyUtils.clock+=86400000;
    if(throwHome)throw new IllegalArgumentException("secret-token");if(grant)bag=3;
    if(grantAnimal)animalCount=2;if(renewAnimal)animalExpiry=2000;if(crossDay&&homes==1)MyUtils.clock+=86400000;
    if(failedHome)return "{\"error\":1009,\"success\":true}";
@@ -91,9 +92,10 @@ public class ApplicationHook {
    return new JSONObject().put("resData",home).toString();
   }
   if(m.endsWith("love.doAction")){
+   if(skippedConfirm)return "{\"resultCode\":\"RPC_SKIPPED\",\"error\":\"RPC_SKIPPED\",\"success\":false}";
    confirms++;assert body.optString("actionCode").equals("deleteRewardCache")&&body.optString("teamId").equals("team");
    if(failedConfirm)return "{\"resultCode\":\"FAIL\",\"success\":false}";
-   if(!stuck)cacheCleared=true;return "{\"resultCode\":\"SUCCESS\",\"success\":true}";
+   if(!stuck)cacheCleared=true;if(failCompletionSave)io.github.aw1y2z.sesame.data.RuntimeInfo.writable=false;return "{\"resultCode\":\"SUCCESS\",\"success\":true}";
   }
   if(m.endsWith("querySubscribeRelation")){
    subscribes++;assert e.getRequestHeaders()==null;assert "60000002".equals(body.optString("ownerId"));assert "entity".equals(body.optJSONArray("entityIds").optString(0));
@@ -107,7 +109,7 @@ import java.util.*;import org.json.*;import io.github.aw1y2z.sesame.hook.Applica
 public class LoveRewardProbeCheck {
  static void reset(){RuntimeInfo.values.clear();UserIdMap.uid="A";DailyTask.manual=false;Log.lines.clear();ApplicationHook.calls.clear();ApplicationHook.bag=2;
  RuntimeInfo.writable=true;ApplicationHook.reads=ApplicationHook.homes=ApplicationHook.subscribes=ApplicationHook.confirms=ApplicationHook.animalReads=0;ApplicationHook.animalCount=1;ApplicationHook.animalExpiry=1000;ApplicationHook.widget="reward";ApplicationHook.homeCode="LoveEnergyShield";
- ApplicationHook.cacheCleared=ApplicationHook.stuck=ApplicationHook.failedConfirm=ApplicationHook.mixed=ApplicationHook.badTeam=ApplicationHook.badAnimal=ApplicationHook.moreAnimals=ApplicationHook.grantAnimal=ApplicationHook.renewAnimal=ApplicationHook.missingExpiry=ApplicationHook.crossDay=false;
+ ApplicationHook.cacheCleared=ApplicationHook.stuck=ApplicationHook.failedConfirm=ApplicationHook.skippedConfirm=ApplicationHook.mixed=ApplicationHook.badTeam=ApplicationHook.badAnimal=ApplicationHook.moreAnimals=ApplicationHook.grantAnimal=ApplicationHook.renewAnimal=ApplicationHook.missingExpiry=ApplicationHook.crossDay=ApplicationHook.crossDayAfterConfirm=ApplicationHook.unknownWidget=ApplicationHook.failCompletionSave=false;
  ApplicationHook.offline=ApplicationHook.grant=ApplicationHook.delayed=ApplicationHook.failBefore=ApplicationHook.failAfter=ApplicationHook.failedHome=ApplicationHook.duplicate=ApplicationHook.fraction=ApplicationHook.switched=ApplicationHook.cancelled=ApplicationHook.throwHome=ApplicationHook.noSubscription=ApplicationHook.invalidType=ApplicationHook.invalidSubscription=false;}
  static boolean has(String s){return Log.lines.stream().anyMatch(x->x.contains(s));}
  public static void main(String[] args) throws Exception {
@@ -116,11 +118,22 @@ public class LoveRewardProbeCheck {
   MyUtils.clock=java.time.Instant.parse("2028-02-28T17:00:00Z").toEpochMilli();AntForestRpcCall.loveRewardHome();p=new JSONArray(ApplicationHook.last.getRequestData()).optJSONObject(0);assert p.optString("calenderStart").equals("20280201")&&p.optString("calenderEnd").equals("20280229");
   reset();ForestLoveReward.run();assert ApplicationHook.homes==2&&ApplicationHook.subscribes==1&&ApplicationHook.reads==3&&ApplicationHook.confirms==1 : Log.lines;assert has("不能确认本轮新发奖")&&!has("[结果]：观察")&&has("领奖提示已消除");
   assert !has("普通道具数量=")&&!has("七夕兔")&&!has("QIXITU_1.0_1DAYS")&&!has("LOVE2_PLANT_ENERGY_SHIELD") : "inventory contents leaked into runtime log";
-  assert ApplicationHook.calls.get(0).endsWith("queryPropList")&&ApplicationHook.calls.get(1).endsWith("queryAnimalPropList")&&ApplicationHook.calls.get(2).endsWith("loveForestHome")&&ApplicationHook.calls.get(3).endsWith("loveHome");
-  ForestLoveReward.run();assert ApplicationHook.homes==2&&has("间隔不足30分钟");DailyTask.manual=true;ForestLoveReward.run();assert ApplicationHook.confirms==1;
+  assert ApplicationHook.calls.get(0).endsWith("loveForestHome")&&ApplicationHook.calls.get(1).endsWith("queryPropList")&&ApplicationHook.calls.get(2).endsWith("queryAnimalPropList")&&ApplicationHook.calls.get(3).endsWith("loveHome");
+  int completedCalls=ApplicationHook.calls.size();ForestLoveReward.run();assert ApplicationHook.calls.size()==completedCalls&&!has("间隔不足30分钟");DailyTask.manual=true;ForestLoveReward.run();assert ApplicationHook.confirms==1&&ApplicationHook.reads==3;
+  DailyTask.manual=false;RuntimeInfo.getInstance().put("Forest::loveRewardConfirmProbeTime",1L);ForestLoveReward.run();assert ApplicationHook.calls.size()==completedCalls+1:"daily completion must survive the query interval";
   reset();ApplicationHook.stuck=true;ForestLoveReward.run();assert ApplicationHook.confirms==1&&has("仍未确认");
-  RuntimeInfo.getInstance().put("Forest::loveRewardConfirmProbeTime",1L);ForestLoveReward.run();assert ApplicationHook.confirms==1&&has("确认未重发");DailyTask.manual=true;ForestLoveReward.run();assert ApplicationHook.confirms==2;
-  DailyTask.manual=false;UserIdMap.uid="B";ForestLoveReward.run();assert ApplicationHook.confirms==3;
+  int waitingCalls=ApplicationHook.calls.size();ForestLoveReward.run();assert ApplicationHook.calls.size()==waitingCalls&&!has("间隔不足30分钟");
+  for(int attempt=2;attempt<=4;attempt++){RuntimeInfo.getInstance().put("Forest::loveRewardConfirmProbeTime",1L);ForestLoveReward.run();assert ApplicationHook.confirms==Math.min(3,attempt);}
+  assert has("3次");DailyTask.manual=true;ForestLoveReward.run();assert ApplicationHook.confirms==4;
+  DailyTask.manual=false;UserIdMap.uid="B";ForestLoveReward.run();assert ApplicationHook.confirms==5;
+  reset();ApplicationHook.failedConfirm=true;ForestLoveReward.run();ApplicationHook.failedConfirm=false;RuntimeInfo.getInstance().put("Forest::loveRewardConfirmProbeTime",1L);ForestLoveReward.run();assert ApplicationHook.confirms==2&&has("流程完成"):"failed confirmation must retry automatically";
+  reset();ApplicationHook.skippedConfirm=true;ForestLoveReward.run();assert ApplicationHook.confirms==0&&RuntimeInfo.getInstance().getString("Forest::loveRewardConfirmAttempt").isEmpty();ApplicationHook.skippedConfirm=false;RuntimeInfo.getInstance().put("Forest::loveRewardConfirmProbeTime",1L);ForestLoveReward.run();assert ApplicationHook.confirms==1;
+  reset();RuntimeInfo.getInstance().put("Forest::loveRewardConfirmAttempt",String.format(Locale.ROOT,"%1$tY%1$tm%1$td",MyUtils.getInstance())+"|team|LoveEnergyShield");ForestLoveReward.run();assert ApplicationHook.confirms==1&&has("流程完成"):"legacy attempt marker must allow a bounded retry";
+  reset();ApplicationHook.crossDayAfterConfirm=true;ForestLoveReward.run();assert RuntimeInfo.getInstance().getString("Forest::loveRewardFlowCompleteDay").isEmpty():"cross-day readback must not mark either day completed";
+  reset();ApplicationHook.unknownWidget=true;ForestLoveReward.run();assert RuntimeInfo.getInstance().getString("Forest::loveRewardFlowCompleteDay").isEmpty():"unknown non-reward state is not completion proof";
+  reset();ForestLoveReward.run();MyUtils.clock+=86400000;ApplicationHook.cacheCleared=false;RuntimeInfo.getInstance().put("Forest::loveRewardConfirmProbeTime",1L);ForestLoveReward.run();assert ApplicationHook.confirms==2:"GMT+8 next-day reward must not be blocked by yesterday's completion";
+  reset();ForestLoveReward.run();UserIdMap.uid="B";ApplicationHook.cacheCleared=false;ForestLoveReward.run();assert ApplicationHook.confirms==2:"one account's completion must not suppress another account";
+  reset();ApplicationHook.failCompletionSave=true;ForestLoveReward.run();assert RuntimeInfo.getInstance().getString("Forest::loveRewardFlowCompleteDay").isEmpty()&&has("完成记录未保存"):"failed persistence must not retain completion in memory";
   reset();ApplicationHook.grant=true;ForestLoveReward.run();assert has("[结果]：观察")&&ApplicationHook.reads==2;
   reset();ApplicationHook.delayed=true;ForestLoveReward.run();assert has("[结果]：观察")&&ApplicationHook.reads==3;
   reset();ApplicationHook.failBefore=true;ApplicationHook.grant=true;ForestLoveReward.run();assert has("无法判断到账")&&!has("[结果]：观察");
@@ -141,7 +154,7 @@ public class LoveRewardProbeCheck {
   reset();ApplicationHook.failedConfirm=true;ForestLoveReward.run();assert ApplicationHook.confirms==1&&!has("领奖提示已消除");
   reset();ApplicationHook.badAnimal=true;ForestLoveReward.run();assert has("无法判断到账");
   reset();ApplicationHook.moreAnimals=true;ForestLoveReward.run();assert has("完整性未知")&&!has("[结果]：观察");
-  reset();ApplicationHook.widget="callWater";ForestLoveReward.run();assert ApplicationHook.homes==0&&has("未处于去领奖状态");
+  reset();ApplicationHook.widget="callWater";ForestLoveReward.run();assert ApplicationHook.homes==0&&ApplicationHook.reads==0&&ApplicationHook.animalReads==0&&has("未处于去领奖状态");
   reset();ApplicationHook.offline=true;ForestLoveReward.run();assert ApplicationHook.calls.isEmpty();
   reset();ApplicationHook.switched=true;try{ForestLoveReward.run();throw new AssertionError("switch swallowed");}catch(TaskCancelledException expected){}assert ApplicationHook.subscribes==0&&ApplicationHook.reads==1;
   reset();ApplicationHook.cancelled=true;try{ForestLoveReward.run();throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}

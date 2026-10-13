@@ -822,7 +822,7 @@ public class AntForestRpcCall {
         request.put("calenderEnd", month + calendar.getActualMaximum(Calendar.DAY_OF_MONTH));
         Log.record("真爱奖励[页面参数]：calenderStart=" + request.optString("calenderStart")
                 + "，calenderEnd=" + request.optString("calenderEnd")
-                + "，GMT+8，请求头source/ags-source=chInfo_ch_appcenter__chsub_9patch；未携带真实页面上下文");
+                + "，GMT+8");
         return loveRewardRequest("loveHome", request);
     }
 

@@ -21,6 +21,7 @@ import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 final class ForestLoveReward {
     private static final String LAST_PROBE = "Forest::loveRewardConfirmProbeTime";
     private static final String LAST_CONFIRM = "Forest::loveRewardConfirmAttempt";
+    private static final String COMPLETE_DAY = "Forest::loveRewardFlowCompleteDay";
 
     static void run() {
         String stage = "入口";
@@ -32,17 +33,15 @@ final class ForestLoveReward {
                 Log.record("真爱奖励[未执行]：账号不可用或已离线");
                 return;
             }
+            RuntimeInfo runtime = RuntimeInfo.getInstance();
+            if (!DailyTask.isManual() && day.equals(runtime.getString(COMPLETE_DAY))) return;
             long now = System.currentTimeMillis();
-            long previous = RuntimeInfo.getInstance().getLong(LAST_PROBE, 0);
+            long previous = runtime.getLong(LAST_PROBE, 0);
             if (!DailyTask.isManual() && previous > 0 && now >= previous && now - previous < 1_800_000L) {
-                Log.record("真爱奖励[未执行]：测试查询间隔不足30分钟，可点击立即执行重新检查；未标记领取完成");
                 return;
             }
-            RuntimeInfo.getInstance().put(LAST_PROBE, now);
-            Log.record("真爱奖励[开始]：页面请求头测试，不受当天已浇水标记限制；不会再次浇水");
-            stage = "调用前背包";
-            Map<String, Long> before = inventory(stage, uid);
-            checkAccount(uid);
+            runtime.put(LAST_PROBE, now);
+            Log.record("真爱奖励[开始]：检查去领奖状态，不受当天已浇水标记限制；不会再次浇水");
             stage = "读取去领奖状态";
             JSONObject state = response(AntForestRpcCall.loveRewardForestHome(), stage);
             checkAccount(uid);
@@ -50,12 +49,12 @@ final class ForestLoveReward {
             String widget = safeCode(state.opt("widgetStatus"));
             Log.record("真爱奖励[入口状态]：widgetStatus=" + widget);
             if (!"reward".equals(widget)) {
-                Log.record("真爱奖励[未调用领奖页面]：入口未处于去领奖状态，未标记领取完成");
-                Map<String, Long> after = inventory("入口查询后背包", uid);
-                checkAccount(uid);
-                recordResult(before, after);
+                Log.record("真爱奖励[未调用领奖页面]：入口未处于去领奖状态，未查询背包");
                 return;
             }
+            stage = "调用前背包";
+            Map<String, Long> before = inventory(stage, uid);
+            checkAccount(uid);
             stage = "loveHome页面查询";
             JSONObject home = response(AntForestRpcCall.loveRewardHome(), stage);
             checkAccount(uid);
@@ -123,18 +122,37 @@ final class ForestLoveReward {
         }
         String attempt = day + "|" + teamId + "|" + code;
         RuntimeInfo runtime = RuntimeInfo.getInstance();
-        if (attempt.equals(runtime.getString(LAST_CONFIRM)) && !DailyTask.isManual()) {
-            Log.record("真爱奖励[确认未重发]：同一每日奖励已尝试确认，未标记到账；先查看回查与抓包结果");
+        String previous = runtime.getString(LAST_CONFIRM);
+        int attempts = attempt.equals(previous) ? 1 : 0;
+        if (previous.startsWith(attempt + "|")) {
+            try { attempts = Integer.parseInt(previous.substring(attempt.length() + 1)); }
+            catch (NumberFormatException e) {
+                Log.record("真爱奖励[确认未执行]：尝试次数记录无效，保留缓存");
+                return;
+            }
+            if (attempts < 0) {
+                Log.record("真爱奖励[确认未执行]：尝试次数记录无效，保留缓存");
+                return;
+            }
+        }
+        if (attempts >= 3 && !DailyTask.isManual()) {
+            Log.record("真爱奖励[确认未重发]：同一每日奖励已尝试3次，未确认完成；可手动立即执行重查");
             return;
         }
-        if (!runtime.putVerified(LAST_CONFIRM, attempt)) {
+        if (!runtime.putVerified(LAST_CONFIRM, attempt + "|" + (Math.min(attempts, 3) + 1))) {
             Log.record("真爱奖励[确认未执行]：尝试记录未保存，保留缓存");
             return;
         }
         checkAccount(uid);
         Log.record("真爱奖励[展示确认]：按官方弹窗回调调用deleteRewardCache，仅确认展示，不作为发放凭据");
-        response(AntForestRpcCall.loveRewardConfirm(teamId), "deleteRewardCache确认回执");
+        String raw = AntForestRpcCall.loveRewardConfirm(teamId);
+        JSONObject confirmed = response(raw, "deleteRewardCache确认回执");
         checkAccount(uid);
+        JSONObject receipt = MyUtils.newJSONObject(raw);
+        if ("RPC_SKIPPED".equals(receipt.optString("resultCode")) || "RPC_SKIPPED".equals(receipt.optString("error"))) {
+            boolean restored = runtime.putVerified(LAST_CONFIRM, previous);
+            Log.record("真爱奖励[确认未发送]：请求保护已跳过，" + (restored ? "本次不计尝试次数" : "尝试次数未恢复，保留记录"));
+        }
         JSONObject checkedHome = response(AntForestRpcCall.loveRewardHome(), "确认后页面回查");
         checkAccount(uid);
         JSONObject checkedState = response(AntForestRpcCall.loveRewardForestHome(), "确认后入口回查");
@@ -144,10 +162,21 @@ final class ForestLoveReward {
         boolean sameTeam = checkedTeam != null && teamId.equals(checkedTeam.opt("teamId"))
                 && checkedState != null && teamId.equals(checkedState.opt("teamId"));
         String widget = checkedState == null ? "未知" : safeCode(checkedState.opt("widgetStatus"));
+        boolean complete = confirmed != null && sameTeam && pending != null && pending.length() == 0
+                && ("water".equals(widget) || "callWater".equals(widget));
         Log.record("真爱奖励[确认后状态]：widgetStatus=" + widget + "，剩余展示="
                 + (pending == null ? "未知" : pending.length()) + "，"
-                + (sameTeam && pending != null && pending.length() == 0 && widget.equals(checkedState.opt("widgetStatus"))
-                && !"reward".equals(widget) ? "领奖提示已消除，资产结果另行回查" : "领奖提示是否消除仍未确认"));
+                + (complete ? "领奖提示已消除，资产结果另行回查" : "领奖提示是否消除仍未确认"));
+        if (complete) {
+            if (!day.equals(String.format(Locale.ROOT, "%1$tY%1$tm%1$td", MyUtils.getInstance()))) {
+                Log.record("真爱奖励[完成记录未保存]：回查已跨业务日期，下一轮重新检查");
+                return;
+            }
+            checkAccount(uid);
+            boolean saved = runtime.putVerified(COMPLETE_DAY, day);
+            Log.record("真爱奖励[流程完成]：确认回执及同队伍状态回查通过，"
+                    + (saved ? "已记录今日完成，自动调度不再重复查询" : "完成记录未保存，下一轮重新检查"));
+        }
     }
 
     private static void checkAccount(String uid) {
@@ -252,7 +281,7 @@ final class ForestLoveReward {
     private static void recordResult(Map<String, Long> before, Map<String, Long> after) {
         Log.record("真爱奖励[结果]：" + (before == null || after == null ? "背包数据不完整，无法判断到账"
                 : increased(before, after) ? "观察到背包资产数量或有效期增加，请结合奖励类型与抓包确认"
-                : "未观察到背包资产数量或有效期增加，不能确认本轮新发奖") + "；未写入当天领取完成标记");
+                : "未观察到背包资产数量或有效期增加，不能确认本轮新发奖") + "；背包变化仅作观察，流程完成情况见状态回查");
     }
 
     private static String safeCode(Object value) {

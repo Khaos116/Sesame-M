@@ -106,7 +106,6 @@ public class OldRpcBridge implements RpcBridge {
                     if (guard.shouldSkip()) return rpcEntity;
                     Object headers = rpcEntity.getRequestHeaders() == null ? null
                             : parseObjectMethod.invoke(null, rpcEntity.getRequestHeaders());
-                    if (headers != null) Log.record("RPC[附加请求头]：" + method + "，准备调用旧版宿主");
                     if (rpcCallMethod.getParameterTypes().length == 12) {
                         resp = rpcCallMethod.invoke(
                                 null, method, args, "", true, headers, null, false, curH5PageImpl, 0, "", false, -1);

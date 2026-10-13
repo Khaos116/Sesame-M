@@ -15,6 +15,7 @@ public class StepSyncSourcesCheck extends Parent {
  static class MyUtils {static JSONObject newJSONObject(String raw){try{return new JSONObject(raw);}catch(Exception e){return new JSONObject();}}static int hour=12;static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.set(2026,Calendar.OCTOBER,13,hour,0,0);return c;}}
  static class Log {static List<String> logs=new ArrayList<>();static String getFormatTime(){return "12:00:00";}static void record(String s){logs.add(s);}static void i(String t,String s){}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
  static class UserIdMap {static String uid="private credential must not be logged";static String getCurrentUid(){return uid;}}
+ static class ApplicationHook {static boolean offline;static boolean isOffline(){return offline;}}
  static class TaskCancelledException extends RuntimeException {}
  static class TimeUtil {static void sleep(long n){}}
  static ThreadLocal<Integer> syncStepTarget=new ThreadLocal<>();
@@ -65,6 +66,7 @@ public class StepSyncSourcesCheck extends Parent {
   List<Object> legacy=collectRpcManagerInstances(LegacyManager.class);check(legacy.contains(LegacyManager.INSTANCE),"legacy static singleton discovery must remain supported when registration is incompatible");
   ClassLoader loader=StepSyncSourcesCheck.class.getClassLoader();
   com.alipay.mobilelbs.rpc.stepcounter.StepProClientService pageClient=com.alipay.mobile.framework.service.common.RpcService.client;
+  ApplicationHook.offline=true;queryLegacyPatrolSteps(loader);check(pageClient.calls==0,"offline patrol page read must not send native RPC");ApplicationHook.offline=false;
   TimeZone.setDefault(TimeZone.getTimeZone("GMT-11"));Log.logs.clear();queryLegacyPatrolSteps(loader);
   check(pageClient.calls==1&&pageClient.request.timezoneId.equals("Asia/Shanghai")&&pageClient.request.countDate.equals("2026-10-13"),"page step query must use a GMT+8 date and matching timezone");
   check(pageClient.request.appKey.equals("60000002")&&pageClient.request.os.equals("android")&&pageClient.request.appVersion.equals("Android")&&pageClient.request.userId.equals(UserIdMap.uid),"preserve the native single-date request contract and current account");
@@ -122,10 +124,14 @@ files={
 request_code=r'''
 import org.json.*;
 public class LegacyProtocolRequestCheck {
- static class MyUtils {static JSONObject newJSONObject(){return new JSONObject();}static JSONObject newJSONObject(String s){return new JSONObject(s);}}
+ static class MyUtils {static JSONObject newJSONObject(){return new JSONObject();}static JSONObject newJSONObject(String s){return new JSONObject(s);}static java.util.Calendar getInstance(){java.util.Calendar c=java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("GMT+8"));c.set(java.util.Calendar.HOUR_OF_DAY,12);return c;}}
  static class AntSports {static String zone="Asia/Ho_Chi_Minh";static String nativeStepTimezone(ClassLoader loader){return zone;}}
- static class ApplicationHook {static String method,args;static ClassLoader getClassLoader(){return LegacyProtocolRequestCheck.class.getClassLoader();}static String requestString(String m,String a){method=m;args=a;return "{}";}}
- static class Log {static void record(String s){}}
+ static class ApplicationHook {static String method,args;static boolean missingSteps;static ClassLoader getClassLoader(){return LegacyProtocolRequestCheck.class.getClassLoader();}static String requestString(String m,String a){method=m;args=a;if(m.endsWith("steps.query")){JSONObject r=new JSONObject().put("resultCode","SUCCESS").put("success",true);if(!missingSteps)r.put("stepCount",new JSONArray(a).optJSONObject(0).optString("timeZone").equals("Asia/Ho_Chi_Minh")?23739:0);return r.toString();}return "{}";}}
+ static class Log {static void record(String s){}static String getFormatTime(){return "12:00:00";}static void other(String s){}static void err(String tag,String message,Throwable t){throw new AssertionError(t);}}
+ static class Status {static boolean done;static boolean hasFlagToday(String key){return done;}static void flagToday(String key){done=true;}}
+ static class MessageUtil {static boolean checkResultCode(String tag,JSONObject r){return "SUCCESS".equals(r.optString("resultCode"));}}
+ static class AntSportsRpcCall {static int donated,reported;static String queryWalkStep()throws JSONException{return LegacyProtocolRequestCheck.queryWalkStep();}static String queryWalkStep(String zone)throws JSONException{return LegacyProtocolRequestCheck.queryWalkStep(zone);}static void walkDonateSignInfo(int step){reported=step;}static String donateWalkHome(int step){return new JSONObject().put("resultCode","SUCCESS").put("walkDonateHomeModel",new JSONObject().put("walkUserInfoModel",new JSONObject().put("exchangeFlag",true))).toString();}static String donateWalkExchange(String activity,int step,String token){donated=step;return new JSONObject().put("resultCode","SUCCESS").put("donateExchangeResultModel",new JSONObject()).toString();}}
+ static class DonationFlow {static final String TAG="test";static class Field {int value;Field(int n){value=n;}int getValue(){return value;}}Field minExchangeCount=new Field(20000),latestExchangeTime=new Field(23);boolean canDonateWalkExchangeToday(){return true;}static String nativeStepTimezone(ClassLoader loader){return AntSports.nativeStepTimezone(loader);}@@DONATION_FLOW@@}
  @@REQUESTS@@
  @@WALK_REQUESTS@@
  static JSONObject payload(String operation){assert ApplicationHook.method.endsWith(operation);JSONArray a=new JSONArray(ApplicationHook.args);assert a.length()==1;JSONObject j=a.optJSONObject(0);assert j!=null&&j.optString("source").equals("ant_forest");assert j.optString("timezoneId").equals(AntSports.zone==null?"Asia/Shanghai":AntSports.zone):"patrol read/exchange/advance must use native step timezone";return j;}
@@ -145,6 +151,8 @@ public class LegacyProtocolRequestCheck {
   queryWalkStep();assert new JSONArray(ApplicationHook.args).optJSONObject(0).optString("timeZone").equals("Asia/Shanghai"):"original donation query must retain its timezone";
   queryWalkStep("Asia/Ho_Chi_Minh");JSONObject walk=new JSONArray(ApplicationHook.args).optJSONObject(0);assert walk.optString("timeZone").equals("Asia/Ho_Chi_Minh")&&walk.optString("appId").equals("healthstep")&&walk.optString("bizId").equals("donation")&&walk.optString("chInfo").equals("h5_donation_healthstep");
   queryWalkStep((String)null);assert new JSONArray(ApplicationHook.args).optJSONObject(0).optString("timeZone").equals("Asia/Shanghai");
+  java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("GMT-11"));AntSports.zone="Asia/Ho_Chi_Minh";new DonationFlow().queryWalkStep();assert AntSportsRpcCall.donated==23739&&AntSportsRpcCall.reported==23739&&Status.done:"donation flow must use the host timezone bucket, independent of the business timezone";
+  Status.done=false;AntSportsRpcCall.donated=0;ApplicationHook.missingSteps=true;DonationFlow late=new DonationFlow();late.latestExchangeTime.value=11;late.queryWalkStep();assert AntSportsRpcCall.donated==0&&!Status.done:"missing steps must not become a zero-step donation after deadline";ApplicationHook.missingSteps=false;
   System.out.println("PASS legacy patrol request contract: native timezone for query/exchange/advance/sync read; numeric IDs, reactions, full cost and original donation query preserved");
  }
 }
@@ -157,6 +165,7 @@ except ValueError:
 request_methods=["public static String queryUserPatrol(","public static String queryMyPatrolRecord(","public static String switchUserPatrol(","public static String patrolGo(","public static String patrolKeepGoing(","public static String exchangePatrolChance("]
 request_code=request_code.replace("@@REQUESTS@@",legacy_helper+"\n"+"\n".join(method(patrol_source,s) for s in request_methods))
 request_code=request_code.replace("@@WALK_REQUESTS@@",method("model/task/antSports/AntSportsRpcCall.java","public static String queryWalkStep()")+method("model/task/antSports/AntSportsRpcCall.java","public static String queryWalkStep(String timezoneId)"))
+request_code=request_code.replace("@@DONATION_FLOW@@",method(source,"private void queryWalkStep("))
 files["LegacyProtocolRequestCheck.java"]=request_code
 cache=Path(os.environ.get("GRADLE_USER_HOME",str(Path.home()/".gradle")))
 json_jar=str(sorted((cache/"caches/modules-2/files-2.1/org.json/json").glob("*/*/*.jar"))[-1])

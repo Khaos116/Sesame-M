@@ -435,6 +435,10 @@ public class AntSports extends ModelTask {
     /** 页面按日期读取用户步数；设备计步记录和运动捐查询都不能替代此查询。 */
     public static void queryLegacyPatrolSteps(ClassLoader loader) {
         TimeUtil.sleep(0);
+        if (ApplicationHook.isOffline()) {
+            Log.record("旧版保护地[页面步数读取]：账号已离线，未发送查询");
+            return;
+        }
         try {
             Class<?> requestType = loader.loadClass("com.alipay.mobilelbs.rpc.stepcounter.StepProSingleQueryRequestPB");
             Class<?> clientType = loader.loadClass("com.alipay.mobilelbs.rpc.stepcounter.StepProClientService");
@@ -1719,15 +1723,20 @@ public class AntSports extends ModelTask {
             return;
         }
         try {
-            JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep());
+            JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep(nativeStepTimezone(ApplicationHook.getClassLoader())));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
             //jo = jo.getJSONObject("dailyStepModel");
             //long stepLastTime = jo.getLong("stepLastTime");
-            int hour = Integer.parseInt(Log.getFormatTime().split(":")[0]);
-
-            int stepCount = jo.optInt("stepCount");
+            int hour = MyUtils.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+            Object count = jo.opt("stepCount");
+            if (!(count instanceof Number) || ((Number) count).doubleValue() != ((Number) count).intValue()
+                    || ((Number) count).intValue() < 0) {
+                Log.record("行走捐[步数查询]：步数字段缺失或无效，未发送捐步兑换");
+                return;
+            }
+            int stepCount = ((Number) count).intValue();
             if (stepCount < minExchangeCount.getValue() && hour < latestExchangeTime.getValue()) {
                 return;
             }
