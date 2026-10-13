@@ -128,6 +128,13 @@ public class AntForestV2 extends ModelTask {
      */
     private static final long MONOPOLY_MAX_TASK_SECONDS = 300L;
 
+    /**
+     * 活力兑换遇「系统繁忙」当日最多重试几次。
+     * <p>这是**临时**故障（服务端文案自己都写着"请稍后再试"），原先一遇它就打整日标记，
+     * 等于把当天后面所有能兑的额度全放弃。改为按次计数，用尽才当日停。
+     */
+    private static final int VITALITY_EXCHANGE_RETRY_MAX = 3;
+
     private static final AverageMath offsetTimeMath = new AverageMath(5);
 
     private static final Map<String, Long> usingProps = new ConcurrentHashMap<>();
@@ -3038,6 +3045,34 @@ public class AntForestV2 extends ModelTask {
         }
     }
 
+    /** 回读森林救援队（{@code GAME_DONE_SLJYD}）的任务状态；取不到返回 {@code null} */
+    private static String queryEnergyRainSljydStatus() {
+        try {
+            JSONObject jo = new JSONObject(AntForestRpcCall.queryEnergyRainEndGameList());
+            if (!MessageUtil.checkResultCode(TAG, jo)) {
+                return null;
+            }
+            JSONObject groupTask = jo.optJSONObject("energyRainEndGameGroupTask");
+            JSONArray taskInfoList = groupTask != null ? groupTask.optJSONArray("taskInfoList") : null;
+            if (taskInfoList == null) {
+                return null;
+            }
+            for (int i = 0; i < taskInfoList.length(); i++) {
+                JSONObject task = taskInfoList.optJSONObject(i);
+                JSONObject baseInfo = task != null ? task.optJSONObject("taskBaseInfo") : null;
+                if (baseInfo == null) {
+                    continue;
+                }
+                if ("GAME_DONE_SLJYD".equals(baseInfo.optString("taskType"))) {
+                    return baseInfo.optString("taskStatus");
+                }
+            }
+        } catch (Throwable t) {
+            Log.err(TAG, "queryEnergyRainSljydStatus err:", t);
+        }
+        return null;
+    }
+
     public static void checkAndDoEndGameTask() {
         try {
             // 1. 查询游戏任务列表
@@ -3047,7 +3082,9 @@ public class AntForestV2 extends ModelTask {
                 return;
             }
             if (!jo.has("energyRainEndGameGroupTask")) {
-                Status.flagToday("EnergyRain::PlayGame");
+                // 响应里没有任务组：可能今天确实没有，也可能是响应缺项。
+                // 不打当日标记，留给下一轮重试（多一次查询的成本远低于整天漏掉任务）。
+                Log.record("森林救援队🐱未取到任务组#稍后重试");
                 return;
             }
 
@@ -3062,23 +3099,9 @@ public class AntForestV2 extends ModelTask {
             }
 
             // 3. 仅当森林救援队(GAME_DONE_SLJYD)未完结时才上报，避免每轮重复发起外部请求
-            JSONObject groupTask = jo.optJSONObject("energyRainEndGameGroupTask");
-            JSONArray taskInfoList = groupTask != null ? groupTask.optJSONArray("taskInfoList") : null;
+            String sljydStatus = queryEnergyRainSljydStatus();
 
-            String sljydStatus = null;
-            if (taskInfoList != null) {
-                for (int i = 0; i < taskInfoList.length(); i++) {
-                    JSONObject task = taskInfoList.optJSONObject(i);
-                    JSONObject baseInfo = task != null ? task.optJSONObject("taskBaseInfo") : null;
-                    if (baseInfo == null) continue;
-                    if ("GAME_DONE_SLJYD".equals(baseInfo.optString("taskType"))) {
-                        sljydStatus = baseInfo.optString("taskStatus");
-                        break;
-                    }
-                }
-            }
-
-            // 需要初始化、或任务处于待办/未触发时上报；已完结/无任务则仅标记今日已处理
+            // 需要初始化、或任务处于待办/未触发时上报；已完结则仅标记今日已处理
             boolean needInit = jo.optBoolean("needInitTask", false);
             boolean shouldReport = needInit
                     || "TODO".equals(sljydStatus)
@@ -3086,7 +3109,21 @@ public class AntForestV2 extends ModelTask {
 
             if (shouldReport) {
                 GameTask.Forest_sljyd.report("森林", 1);
-                Status.flagToday("EnergyRain::PlayGame");
+                // 上报是异步的：等一会儿回读，确认任务已脱离待办才打当日标记。
+                // 原先发完就标记，服务端没接受时那天就不再重试，任务整天挂着领不到。
+                TimeUtil.sleep(3000);
+                String after = queryEnergyRainSljydStatus();
+                if (after != null && !"TODO".equals(after) && !"NOT_TRIGGER".equals(after)) {
+                    Status.flagToday("EnergyRain::PlayGame");
+                    Log.record("森林救援队🐱上报后确认完成(状态:" + after + ")");
+                } else {
+                    Log.record("森林救援队🐱上报后未确认(状态:" + after + ")#稍后重试");
+                }
+                return;
+            }
+            if (sljydStatus == null) {
+                // 列表里没取到这项：可能是响应不含该项，不能凭猜就打整日标记
+                Log.record("森林救援队🐱未取到任务状态#稍后重试");
                 return;
             }
             Log.record("森林救援队🐱无需上报(状态:" + sljydStatus + ")，今日跳过");
@@ -4923,9 +4960,15 @@ public class AntForestV2 extends ModelTask {
             JSONObject jo = new JSONObject(AntForestRpcCall.exchangeBenefit(spuId, skuId));
             if (jo.has("errorMessage")) {
                 String errorMessage = jo.optString("errorMessage");
-                //如果出错今天停止兑换
+                // 系统繁忙是临时故障：按次计数，用尽才当日停（见 VITALITY_EXCHANGE_RETRY_MAX）
                 if (errorMessage.equals("系统繁忙，请稍后再试。")) {
-                    Status.flagToday("forest::exchangeLimit::" + skuId);
+                    String retryKey = "forest::exchangeRetry::" + skuId;
+                    int tries = Status.getIntFlagToday(retryKey) + 1;
+                    Status.setIntFlagToday(retryKey, tries);
+                    if (tries >= VITALITY_EXCHANGE_RETRY_MAX) {
+                        Status.flagToday("forest::exchangeLimit::" + skuId);
+                        Log.record("活力兑换🎐系统繁忙连续" + tries + "次，今日停止兑换");
+                    }
                 }
             }
             return MessageUtil.checkResultCode(TAG, jo);
