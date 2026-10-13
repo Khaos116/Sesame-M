@@ -788,6 +788,7 @@ public class AntForestV2 extends ModelTask {
                 if (loveteamWater.getValue()) {
                     if (loveteamWaterNum.getValue() >= 20 && loveteamWaterNum.getValue() <= 10000) {
                         loveteam(loveteamWaterNum.getValue());
+                        ForestLoveReward.run();
                     }
                 }
 

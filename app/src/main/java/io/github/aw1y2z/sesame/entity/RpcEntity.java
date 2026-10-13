@@ -13,6 +13,8 @@ public class RpcEntity {
 
     private final String requestRelation;
 
+    private final String requestHeaders;
+
     //private final Long requestTime;
 
     private volatile Boolean hasResult = false;
@@ -36,10 +38,15 @@ public class RpcEntity {
     }*/
 
     public RpcEntity(String requestMethod, String requestData, String requestRelation) {
+        this(requestMethod, requestData, requestRelation, null);
+    }
+
+    public RpcEntity(String requestMethod, String requestData, String requestRelation, String requestHeaders) {
         this.requestThread = Thread.currentThread();
         this.requestMethod = requestMethod;
         this.requestData = requestData;
         this.requestRelation = requestRelation;
+        this.requestHeaders = requestHeaders;
         //this.requestTime = requestTime;
     }
 

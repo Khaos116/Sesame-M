@@ -263,6 +263,7 @@ public class GuardCheck {
     }
     static String payload;
     static int calls;
+    static JSONObject receivedHeaders, receivedRequest;
     static boolean throwDenied;
     static boolean expireOnCall;
     static boolean expireOnSuccess;
@@ -273,6 +274,8 @@ public class GuardCheck {
     public static void rpc(Object a,Object b,Object c,Object d,Object e,Object f,Object g,Object h,
                            Object i,Object j,Object k,Object l,Object m,Object n,Object o,Object p) {
         calls++;
+        receivedHeaders = (JSONObject) g;
+        receivedRequest = (JSONObject) e;
         if (expireOnCall) { generation.incrementAndGet(); throw new IllegalStateException("generation expired"); }
         if (throwDenied) throw new IllegalStateException("[1009]访问被拒绝");
         Runnable reply = () -> {
@@ -287,7 +290,9 @@ public class GuardCheck {
         if (interruptOnSuccess) Thread.currentThread().interrupt();
     }
     public static Object oldRpc(Object a,Object b,Object c,Object d,Object e,Object f,Object g,Object h,
-                                Object i,Object j,Object k,Object l) { calls++; if (expireOnSuccess) generation.incrementAndGet(); if (interruptOnSuccess) Thread.currentThread().interrupt(); return new GuardCheck(); }
+                                Object i,Object j,Object k,Object l) { calls++; receivedHeaders = (JSONObject)e; if (expireOnSuccess) generation.incrementAndGet(); if (interruptOnSuccess) Thread.currentThread().interrupt(); return new GuardCheck(); }
+    public static Object oldRpc13(Object a,Object b,Object c,Object d,Object e,Object f,Object g,Object h,
+                                  Object i,Object j,Object k,Object l,Object m) { return oldRpc(a,b,c,d,e,f,g,h,i,j,k,l); }
     public String getResponse() { return payload; }
     static void field(Object obj, String key, Object value) throws Exception {
         var field = obj.getClass().getDeclaredField(key); field.setAccessible(true); field.set(obj, value);
@@ -299,6 +304,16 @@ public class GuardCheck {
         field(bridge, "bridgeCallbackClazzArray", new Class<?>[]{Callback.class});
         field(bridge, "parseObjectMethod", GuardCheck.class.getMethod("parse", String.class));
         field(bridge, "newRpcCallMethod", GuardCheck.class.getMethod("rpc", types));
+        for (boolean async : new boolean[]{false, true}) {
+            reset(); calls = 0; payload = "{\"success\":true}";
+            RpcEntity withHeaders = new RpcEntity("headers.probe", "[{}]", null, "{\"source\":\"probe\",\"ags-source\":\"probe\"}");
+            if (async) bridge.newAsyncRequest(withHeaders, 1, 0); else bridge.requestObject(withHeaders, 1, 0);
+            assert calls == 1 && !withHeaders.getHasError() && "probe".equals(receivedHeaders.optString("ags-source"));
+            assert "probe".equals(receivedRequest.optJSONObject("headers").optString("source"));
+            RpcEntity withoutHeaders = new RpcEntity("ordinary.probe", "[{}]");
+            if (async) bridge.newAsyncRequest(withoutHeaders, 1, 0); else bridge.requestObject(withoutHeaders, 1, 0);
+            assert receivedHeaders == null && !receivedRequest.has("headers") : "headers leaked into an ordinary request";
+        }
         for (boolean async : new boolean[]{false, true}) {
             reset(); calls = 0; payload = "{\"success\":true,\"resultCode\":\"MGW200\"}";
             RpcEntity promplay = new RpcEntity("alipay.asset.promplaymatrix.play.trigger", "[{}]");
@@ -410,6 +425,18 @@ public class GuardCheck {
         OldRpcBridge old = new OldRpcBridge();
         field(old, "rpcCallMethod", GuardCheck.class.getMethod("oldRpc", java.util.Arrays.copyOf(types, 12)));
         field(old, "getResponseMethod", GuardCheck.class.getMethod("getResponse"));
+        field(old, "parseObjectMethod", GuardCheck.class.getMethod("parse", String.class));
+        for (int parameterCount : new int[]{12,13}) {
+            reset(); calls = 0; payload = "{\"success\":true}";
+            field(old, "rpcCallMethod", GuardCheck.class.getMethod(parameterCount == 12 ? "oldRpc" : "oldRpc13", java.util.Arrays.copyOf(types, parameterCount)));
+            RpcEntity withHeaders = new RpcEntity("headers.old.probe", "[{}]", null, "{\"source\":\"probe\",\"ags-source\":\"probe\"}");
+            old.requestObject(withHeaders, 1, 0);
+            assert calls == 1 && !withHeaders.getHasError() && "probe".equals(receivedHeaders.optString("ags-source"));
+            old.requestObject(new RpcEntity("ordinary.old.probe", "[{}]"), 1, 0);
+            assert receivedHeaders == null : "headers leaked into an ordinary old request";
+        }
+        field(old, "rpcCallMethod", GuardCheck.class.getMethod("oldRpc", java.util.Arrays.copyOf(types, 12)));
+        reset(); calls = 0;
         payload = "{\"success\":true,\"resultCode\":\"MGW200\"}";
         RpcEntity promplay = new RpcEntity("alipay.asset.promplaymatrix.play.prize.receive", "[{}]");
         old.requestObject(promplay, 3, 0);

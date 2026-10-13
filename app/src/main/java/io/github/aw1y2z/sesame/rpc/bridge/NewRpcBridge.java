@@ -134,6 +134,7 @@ public class NewRpcBridge implements RpcBridge {
         String method = rpcEntity.getRequestMethod();
         String data = rpcEntity.getRequestData();
         String relation = rpcEntity.getRequestRelation();
+        String headers = rpcEntity.getRequestHeaders();
         try {
             int count = 0;
             do {
@@ -144,8 +145,9 @@ public class NewRpcBridge implements RpcBridge {
                     RpcIntervalLimit.enterIntervalLimit(method);
                     if (RunGeneration.isStale() || Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
                     if (guard.shouldSkip()) return rpcEntity;
+                    if (headers != null) Log.record("RPC[附加请求头]：" + method + "，准备调用宿主，页面上下文=空");
                     newRpcCallMethod.invoke(
-                            newRpcInstance, method, false, false, "json", parseObjectMethod.invoke(null, "{\"__apiCallStartTime\":" + System.currentTimeMillis() + ",\"apiCallLink\":\"XRiverNotFound\",\"execEngine\":\"XRiver\",\"operationType\":\"" + method + "\",\"requestData\":" + data + (relation == null ? "" : ",\"relationLocal\":" + relation) + "}"), "", null, true, false, 0, false, "", null, null, null, Proxy.newProxyInstance(loader, bridgeCallbackClazzArray, new InvocationHandler() {
+                            newRpcInstance, method, false, false, "json", parseObjectMethod.invoke(null, "{\"__apiCallStartTime\":" + System.currentTimeMillis() + ",\"apiCallLink\":\"XRiverNotFound\",\"execEngine\":\"XRiver\",\"operationType\":\"" + method + "\",\"requestData\":" + data + (relation == null ? "" : ",\"relationLocal\":" + relation) + (headers == null ? "" : ",\"headers\":" + headers) + "}"), "", headers == null ? null : parseObjectMethod.invoke(null, headers), true, false, 0, false, "", null, null, null, Proxy.newProxyInstance(loader, bridgeCallbackClazzArray, new InvocationHandler() {
                                 @Override
                                 public Object invoke(Object proxy, Method innerMethod, Object[] args) {
                                     if (args.length == 1 && "sendJSONResponse".equals(innerMethod.getName())) {
@@ -256,6 +258,7 @@ public class NewRpcBridge implements RpcBridge {
         int id = rpcEntity.hashCode();
         String method = rpcEntity.getRequestMethod();
         String args = rpcEntity.getRequestData();
+        String headers = rpcEntity.getRequestHeaders();
         try {
             int count = 0;
             do {
@@ -267,8 +270,9 @@ public class NewRpcBridge implements RpcBridge {
                     if (RunGeneration.isStale() || Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
                     if (guard.shouldSkip()) return rpcEntity;
                     synchronized (rpcEntity) {
+                        if (headers != null) Log.record("RPC[附加请求头]：" + method + "，准备调用宿主，页面上下文=空");
                         newRpcCallMethod.invoke(
-                                newRpcInstance, method, false, false, "json", parseObjectMethod.invoke(null, "{\"__apiCallStartTime\":" + System.currentTimeMillis() + ",\"apiCallLink\":\"XRiverNotFound\",\"execEngine\":\"XRiver\",\"operationType\":\"" + method + "\",\"requestData\":" + args + "}"), "", null, true, false, 0, false, "", null, null, null, Proxy.newProxyInstance(loader, bridgeCallbackClazzArray, new InvocationHandler() {
+                                newRpcInstance, method, false, false, "json", parseObjectMethod.invoke(null, "{\"__apiCallStartTime\":" + System.currentTimeMillis() + ",\"apiCallLink\":\"XRiverNotFound\",\"execEngine\":\"XRiver\",\"operationType\":\"" + method + "\",\"requestData\":" + args + (headers == null ? "" : ",\"headers\":" + headers) + "}"), "", headers == null ? null : parseObjectMethod.invoke(null, headers), true, false, 0, false, "", null, null, null, Proxy.newProxyInstance(loader, bridgeCallbackClazzArray, new InvocationHandler() {
                                     @Override
                                     public Object invoke(Object proxy, Method innerMethod, Object[] innerArgs) {
                                         if (innerArgs.length == 1 && "sendJSONResponse".equals(innerMethod.getName())) {

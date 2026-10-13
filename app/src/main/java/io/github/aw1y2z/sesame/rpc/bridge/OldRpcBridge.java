@@ -25,6 +25,8 @@ public class OldRpcBridge implements RpcBridge {
 
     private Method getResponseMethod;
 
+    private Method parseObjectMethod;
+
     private Object curH5PageImpl;
 
     @Override
@@ -51,6 +53,7 @@ public class OldRpcBridge implements RpcBridge {
                         boolean.class, loader.loadClass(ClassUtil.JSON_OBJECT_NAME), String.class, boolean.class, h5PageClazz,
                         int.class, String.class, boolean.class, int.class, String.class);
                 getResponseMethod = loader.loadClass("com.alipay.mobile.nebulaappproxy.api.rpc.H5Response").getMethod("getResponse");
+                parseObjectMethod = loader.loadClass("com.alibaba.fastjson.JSON").getMethod("parseObject", String.class);
                 Log.i(TAG, "get oldRpcCallMethod successfully");
             } catch (Exception e) {
                 Log.i(TAG, "get oldRpcCallMethod err:");
@@ -61,6 +64,7 @@ public class OldRpcBridge implements RpcBridge {
 
     @Override
     public void unload() {
+        parseObjectMethod = null;
         getResponseMethod = null;
         rpcCallMethod = null;
         h5PageClazz = null;
@@ -100,12 +104,15 @@ public class OldRpcBridge implements RpcBridge {
                     RpcIntervalLimit.enterIntervalLimit(method);
                     if (RunGeneration.isStale() || Thread.currentThread().isInterrupted()) throw new TaskCancelledException();
                     if (guard.shouldSkip()) return rpcEntity;
+                    Object headers = rpcEntity.getRequestHeaders() == null ? null
+                            : parseObjectMethod.invoke(null, rpcEntity.getRequestHeaders());
+                    if (headers != null) Log.record("RPC[附加请求头]：" + method + "，准备调用旧版宿主");
                     if (rpcCallMethod.getParameterTypes().length == 12) {
                         resp = rpcCallMethod.invoke(
-                                null, method, args, "", true, null, null, false, curH5PageImpl, 0, "", false, -1);
+                                null, method, args, "", true, headers, null, false, curH5PageImpl, 0, "", false, -1);
                     } else {
                         resp = rpcCallMethod.invoke(
-                                null, method, args, "", true, null, null, false, curH5PageImpl, 0, "", false, -1, "");
+                                null, method, args, "", true, headers, null, false, curH5PageImpl, 0, "", false, -1, "");
                     }
                 } catch (Throwable t) {
                     if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;

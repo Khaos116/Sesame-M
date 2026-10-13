@@ -17,7 +17,9 @@ import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.Random;
 import java.util.stream.Collectors;
@@ -806,6 +808,55 @@ public class AntForestRpcCall {
         JSONObject request = MyUtils.newJSONObject();
         request.put("source", "chInfo_ch_appcenter__chsub_9patch");
         return ApplicationHook.requestString("alipay.greenmatrix.rpc.h5.love.loveHome", new JSONArray().put(request).toString());
+    }
+
+    public static String loveRewardForestHome() throws JSONException {
+        return loveRewardRequest("loveForestHome", MyUtils.newJSONObject());
+    }
+
+    public static String loveRewardHome() throws JSONException {
+        Calendar calendar = MyUtils.getInstance();
+        String month = String.format(Locale.ROOT, "%04d%02d", calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH) + 1);
+        JSONObject request = MyUtils.newJSONObject();
+        request.put("calenderStart", month + "01");
+        request.put("calenderEnd", month + calendar.getActualMaximum(Calendar.DAY_OF_MONTH));
+        Log.record("真爱奖励[页面参数]：calenderStart=" + request.optString("calenderStart")
+                + "，calenderEnd=" + request.optString("calenderEnd")
+                + "，GMT+8，请求头source/ags-source=chInfo_ch_appcenter__chsub_9patch；未携带真实页面上下文");
+        return loveRewardRequest("loveHome", request);
+    }
+
+    private static String loveRewardRequest(String action, JSONObject request) throws JSONException {
+        String source = "chInfo_ch_appcenter__chsub_9patch";
+        request.put("source", source);
+        JSONObject headers = MyUtils.newJSONObject();
+        headers.put("source", source);
+        headers.put("ags-source", source);
+        return ApplicationHook.requestString(new RpcEntity("alipay.greenmatrix.rpc.h5.love." + action,
+                new JSONArray().put(request).toString(), null, headers.toString()), 1, 0);
+    }
+
+    public static String loveRewardSubscribe(String entityId) throws JSONException {
+        JSONObject request = MyUtils.newJSONObject();
+        request.put("entityIds", new JSONArray().put(entityId));
+        request.put("ownerId", "60000002");
+        return ApplicationHook.requestString(new RpcEntity("alipay.lifemsgprod.message.querySubscribeRelation",
+                new JSONArray().put(request).toString()), 1, 0);
+    }
+
+    public static String loveRewardConfirm(String teamId) throws JSONException {
+        JSONObject request = MyUtils.newJSONObject();
+        request.put("actionCode", "deleteRewardCache");
+        request.put("teamId", teamId);
+        return loveRewardRequest("doAction", request);
+    }
+
+    public static String loveRewardAnimals() throws JSONException {
+        JSONObject request = MyUtils.newJSONObject();
+        request.put("source", "chInfo_ch_appcenter__chsub_9patch");
+        request.put("pageQuery", false);
+        return ApplicationHook.requestString(new RpcEntity("alipay.antforest.forest.h5.queryAnimalPropList",
+                new JSONArray().put(request).toString()), 1, 0);
     }
 
     public static String loveteamWater(String teamId, int waterNum) {
