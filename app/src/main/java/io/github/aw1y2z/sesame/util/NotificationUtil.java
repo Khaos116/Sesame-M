@@ -111,6 +111,9 @@ public class NotificationUtil {
             if (io.github.aw1y2z.sesame.data.AppConfig.INSTANCE.getEnableOnGoing()) {
                 builder.setOngoing(true);
             }
+            // 先把标题/正文/展开区填上：否则重载后不跑任务时，状态栏只剩一个没有文字的空通知
+            // （正常路径随后会被 setRunning/updateLastExecText 覆盖，这里只是保证不会空）
+            applyText();
             Notification mNotification = builder.build();
             if (context instanceof Service) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -217,17 +220,40 @@ public class NotificationUtil {
         return titleText + "｜本轮" + Statistics.getRoundCollected() + "g";
     }
 
+    /** 把标题/正文/展开区样式应用到 builder（不发通知） */
+    private static void applyText() {
+        builder.setContentTitle(titleWithEnergy());
+        if (!StringUtil.isEmpty(contentText)) {
+            builder.setContentText(contentText);
+        }
+        String bigText = StringUtil.isEmpty(contentText)
+                ? energyText()
+                : contentText + "\n" + energyText();
+        builder.setStyle(new Notification.BigTextStyle().bigText(bigText));
+    }
+
     private static void sendText() {
         try {
-            builder.setContentTitle(titleWithEnergy());
-            if (!StringUtil.isEmpty(contentText)) {
-                builder.setContentText(contentText);
-            }
-            String bigText = StringUtil.isEmpty(contentText)
-                    ? energyText()
-                    : contentText + "\n" + energyText();
-            builder.setStyle(new Notification.BigTextStyle().bigText(bigText));
+            applyText();
             mNotifyManager.notify(NOTIFICATION_ID, builder.build());
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+        }
+    }
+
+    /**
+     * 重载后未执行时刷新一次：只写「等待执行 + 下次执行时间」与能量行。
+     * <p>不写「上次执行」——这一轮并没有跑过，写现在的时刻会让人误以为刚执行完。
+     */
+    public static void updateIdleText() {
+        try {
+            String text = "等待执行";
+            if (nextExecTime > 0) {
+                text += "  下次执行 " + TimeUtil.getTimeStr(nextExecTime);
+            }
+            contentText = text;
+            lastNoticeTime = System.currentTimeMillis();
+            sendText();
         } catch (Exception e) {
             Log.printStackTrace(e);
         }

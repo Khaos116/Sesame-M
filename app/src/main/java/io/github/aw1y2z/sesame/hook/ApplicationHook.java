@@ -559,6 +559,16 @@ public class ApplicationHook extends XposedModule {
      * 因此这里只做需要 UI 反馈的快速前置检查，真正的重活统一交给 {@link #runInit} 在后台线程执行。
      */
     private Boolean initHandler(Boolean force) {
+        return initHandler(force, true);
+    }
+
+    /**
+     * @param exec 重载完成后是否**紧接着跑一轮**任务。
+     *             <p>true＝首启 / 切号 / 手动执行：重载完就该跑。
+     *             <p>false＝配置保存触发的重载：用户只是改了配置、并没有点"执行"，
+     *             不该被带着跑一轮；但仍要排上下一跳，否则重载清掉旧排期后链就断了。
+     */
+    private Boolean initHandler(Boolean force, boolean exec) {
         if (service == null) {
             return false;
         }
@@ -587,10 +597,10 @@ public class ApplicationHook extends XposedModule {
             }
             initializing = true;
             final Boolean f = force;
-            new Thread(() -> runInit(f), "Sesame-InitHandler").start();
+            new Thread(() -> runInit(f, exec), "Sesame-InitHandler").start();
             return null;
         }
-        return runInit(force);
+        return runInit(force, exec);
     }
 
     /**
@@ -598,7 +608,7 @@ public class ApplicationHook extends XposedModule {
      * 故整体跑在后台线程是安全的。
      * synchronized 保证同一时刻只有一处重载，防止切号与首启 / 广播重启并发触发重复初始化。
      */
-    private synchronized Boolean runInit(Boolean force) {
+    private synchronized Boolean runInit(Boolean force, boolean exec) {
         destroyHandler(force);
         try {
             if (force) {
@@ -663,7 +673,17 @@ public class ApplicationHook extends XposedModule {
                 init = true;
             }
             offline = false;
-            execHandler();
+            if (exec) {
+                execHandler();
+            } else {
+                // 只重载、不执行：但仍要排上下一跳——destroyHandler 已把旧排期清掉，
+                // 不补一条的话任务链就断了，之后无论等多久都不会再跑
+                execDelayedHandler(Math.max(BaseModel.getCheckInterval().getValue(), FALLBACK_INTERVAL));
+                // 重载会重建通知（stop + start），而这一轮不跑任务、没人再刷新正文，
+                // 状态栏会停在没有文字的空通知上；这里补一次，写上下次执行时间
+                NotificationUtil.updateIdleText();
+                Log.record("配置已重载#未触发执行，下一跳按间隔排队");
+            }
             return true;
         } catch (Throwable th) {
             Log.err(TAG, "startHandler err:", th);
@@ -1006,7 +1026,10 @@ public class ApplicationHook extends XposedModule {
 
     public static void restartByBroadcast() {
         try {
-            context.sendBroadcast(new Intent("com.eg.android.AlipayGphone.sesame.restart"));
+            Intent intent = new Intent("com.eg.android.AlipayGphone.sesame.restart");
+            // 宿主前台服务被销毁后的自救：重载完要紧接着跑一轮，否则要白等一个查询间隔
+            intent.putExtra("exec", true);
+            context.sendBroadcast(intent);
         } catch (Throwable th) {
             Log.err(TAG, "sesame sendBroadcast restart err:", th);
         }
@@ -1094,11 +1117,14 @@ public class ApplicationHook extends XposedModule {
                 switch (action) {
                     case "com.eg.android.AlipayGphone.sesame.restart":
                         String userId = intent.getStringExtra("userId");
+                        // 默认不执行：这条广播主要来自配置保存（字段页退出、需重挂 hook 的开关），
+                        // 用户并没点"执行"；宿主前台服务被销毁的自救路径会显式带 exec=true
+                        boolean execAfterRestart = intent.getBooleanExtra("exec", false);
                         if (StringUtil.isEmpty(userId) || Objects.equals(UserIdMap.getCurrentUid(), userId)) {
                             BroadcastReceiver.PendingResult r = goAsync();
                             new Thread(() -> {
                                 try {
-                                    initHandler(true);
+                                    initHandler(true, execAfterRestart);
                                 } catch (Throwable th) {
                                     Log.printStackTrace(TAG, th);
                                 }
