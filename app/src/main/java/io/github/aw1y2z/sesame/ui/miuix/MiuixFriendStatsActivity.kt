@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +31,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.aw1y2z.sesame.entity.FriendWatch
+import io.github.aw1y2z.sesame.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -50,13 +54,25 @@ class MiuixFriendStatsActivity : MiuixBaseActivity() {
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun FriendStatsScreen(activity: MiuixFriendStatsActivity) {
-    val friends = remember { FriendWatch.getList() }
+    // 好友表可能有几百条：读盘 + 逐条解析不能压在组合期的主线程上，否则首帧要等整份解析完
+    // 才出来（好友多时白屏 1s+）。null 表示还没读完，列表区据此显示"加载中"。
+    var friends by remember { mutableStateOf<List<FriendWatch>?>(null) }
     var query by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        friends = withContext(Dispatchers.IO) {
+            try {
+                FriendWatch.getList()
+            } catch (e: Throwable) {
+                // getList() 内部只兜了解析异常，读盘异常会穿透到这里；
+                // 不接住就会永远停在「加载中…」，比报错更难察觉
+                Log.printStackTrace(e)
+                emptyList()
+            }
+        }
+    }
 
-    val filtered = if (query.isBlank()) {
-        friends
-    } else {
-        friends.filter { it.name.contains(query, ignoreCase = true) }
+    val filtered = friends?.let { all ->
+        if (query.isBlank()) all else all.filter { it.name.contains(query, ignoreCase = true) }
     }
 
     Scaffold(
@@ -104,7 +120,7 @@ fun FriendStatsScreen(activity: MiuixFriendStatsActivity) {
                 )
             }
 
-            if (filtered.isEmpty()) {
+            if (filtered == null || filtered.isEmpty()) {
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -112,7 +128,11 @@ fun FriendStatsScreen(activity: MiuixFriendStatsActivity) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (query.isNotEmpty()) "(无匹配好友)" else "(空)",
+                        text = when {
+                            filtered == null -> "加载中…"
+                            query.isNotEmpty() -> "(无匹配好友)"
+                            else -> "(空)"
+                        },
                         fontSize = 14.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                     )
