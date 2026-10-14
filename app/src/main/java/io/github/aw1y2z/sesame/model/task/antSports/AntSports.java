@@ -1723,7 +1723,8 @@ public class AntSports extends ModelTask {
             return;
         }
         try {
-            JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep(nativeStepTimezone(ApplicationHook.getClassLoader())));
+            String timezone = nativeStepTimezone(ApplicationHook.getClassLoader());
+            JSONObject jo = MyUtils.newJSONObject(AntSportsRpcCall.queryWalkStep(timezone));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -1740,8 +1741,8 @@ public class AntSports extends ModelTask {
             if (stepCount < minExchangeCount.getValue() && hour < latestExchangeTime.getValue()) {
                 return;
             }
-            AntSportsRpcCall.walkDonateSignInfo(stepCount);
-            jo = MyUtils.newJSONObject(AntSportsRpcCall.donateWalkHome(stepCount));
+            AntSportsRpcCall.walkDonateSignInfo(stepCount, timezone);
+            jo = MyUtils.newJSONObject(AntSportsRpcCall.donateWalkHome(stepCount, timezone));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
@@ -1755,7 +1756,8 @@ public class AntSports extends ModelTask {
             JSONObject walkCharityActivityModel = walkDonateHomeModel.optJSONObject("walkCharityActivityModel");
             String activityId = walkCharityActivityModel != null ? walkCharityActivityModel.optString("activityId") : "";
 
-            jo = MyUtils.newJSONObject(AntSportsRpcCall.donateWalkExchange(activityId, stepCount, donateToken));
+            Log.record("行走捐[兑换]：步数=" + stepCount + "，计步时区=" + timezone);
+            jo = MyUtils.newJSONObject(AntSportsRpcCall.donateWalkExchange(activityId, stepCount, donateToken, timezone));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }

@@ -114,13 +114,16 @@ public class AntSportsRpcCall {
         return ApplicationHook.requestString("alipay.antsports.steps.query", new JSONArray().put(args).toString());
     }
     
-    public static String walkDonateSignInfo(int count) {
-        return ApplicationHook.requestString("alipay.charity.mobile.donate.walk.walkDonateSignInfo", "[{\"needDonateAction\":false,\"source\":\"walkDonateHome\",\"steps\":" + count + ",\"timezoneId" + "\":\"" + timeZone + "\"}]");
+    public static String walkDonateSignInfo(int count, String timezoneId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("needDonateAction", false).put("source", "walkDonateHome")
+                .put("steps", count).put("timezoneId", timezoneId == null ? "Asia/Shanghai" : timezoneId);
+        return ApplicationHook.requestString("alipay.charity.mobile.donate.walk.walkDonateSignInfo", new JSONArray().put(args).toString());
     }
     
-    public static String donateWalkHome(int steps) {
-        String args = "[{\"module\":\"3\",\"steps\":" + steps + ",\"timezoneId\":\"" + timeZone + "\"}]";
-        return ApplicationHook.requestString("alipay.charity.mobile.donate.walk.home", args);
+    public static String donateWalkHome(int steps, String timezoneId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("module", "3").put("steps", steps)
+                .put("timezoneId", timezoneId == null ? "Asia/Shanghai" : timezoneId);
+        return ApplicationHook.requestString("alipay.charity.mobile.donate.walk.home", new JSONArray().put(args).toString());
     }
     
     public static String donateExchangeRecord() {
@@ -129,8 +132,10 @@ public class AntSportsRpcCall {
     }
     
     //{"actId":"20160524001110000000000000001002","count":100000,"donateToken":"2088002795595507_1766240522284","timezoneId":"Asia/Shanghai","ver":"0"}]}
-    public static String donateWalkExchange(String actId, int count, String donateToken) {
-        return ApplicationHook.requestString("alipay.charity.mobile.donate.walk.exchange", "[{\"actId\":\"" + actId + "\",\"count\":" + count + ",\"donateToken\":\"" + donateToken + "\"," + "\"timezoneId\":\"" + timeZone + "\",\"ver\":0}]");
+    public static String donateWalkExchange(String actId, int count, String donateToken, String timezoneId) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("actId", actId).put("count", count).put("donateToken", donateToken)
+                .put("timezoneId", timezoneId == null ? "Asia/Shanghai" : timezoneId).put("ver", 0);
+        return ApplicationHook.requestString("alipay.charity.mobile.donate.walk.exchange", new JSONArray().put(args).toString());
     }
     
     /*
