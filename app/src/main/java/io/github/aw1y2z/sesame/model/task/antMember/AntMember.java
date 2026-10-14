@@ -716,6 +716,8 @@ public class AntMember extends ModelTask {
                 return;
             }
             Log.i("黄金票🙈[开始执行]");
+            // 先把预置黑名单落进字段值：任务处理是在循环里读该字段的，晚一步就会先发请求再拉黑
+            syncGoldTicketCandidates(null);
             JSONObject home = null;
             if (needCollect || needSignIn || needHomeCheck) {
                 home = queryGoldTicketHome();
@@ -966,29 +968,39 @@ public class AntMember extends ModelTask {
      * 改为随每次列表请求刷新候选，准入交给状态与黑名单生命周期。
      */
     private void syncGoldTicketCandidates(JSONArray list) {
-        if (list == null || list.length() == 0) {
-            return;
-        }
         try {
             GoldTicketTaskListMap.load();
+            // 预置黑名单登记在 MessageUtil（单一真相，配置页据此标注"默认"）
+            Set<String> preset = MessageUtil.presetBlackList("AntMember", "GoldTicketTaskList");
             int count = 0;
-            for (int i = 0; i < list.length(); i++) {
-                JSONObject task = list.optJSONObject(i);
-                if (task == null) {
-                    continue;
+            for (String title : preset) {
+                if (GoldTicketTaskListMap.get(title) == null) {
+                    GoldTicketTaskListMap.add(title, title);
+                    count++;
                 }
-                String title = task.optString("title");
-                if (title.isEmpty() || GoldTicketTaskListMap.get(title) != null) {
-                    continue;
+            }
+            if (list != null) {
+                for (int i = 0; i < list.length(); i++) {
+                    JSONObject task = list.optJSONObject(i);
+                    if (task == null) {
+                        continue;
+                    }
+                    String title = task.optString("title");
+                    if (title.isEmpty() || GoldTicketTaskListMap.get(title) != null) {
+                        continue;
+                    }
+                    GoldTicketTaskListMap.add(title, title);
+                    count++;
                 }
-                GoldTicketTaskListMap.add(title, title);
-                count++;
             }
             if (count > 0) {
                 GoldTicketTaskListMap.save();
                 AlipayGoldTicketTaskList.clear();
                 Log.record("同步任务🉑黄金票任务列表[新增" + count + "]");
             }
+            // 让预置项出现在配置页勾选列表里（注入进程写盘、配置页独立进程另读）
+            MessageUtil.syncTaskBlackList("黄金票任务", "GoldTicketTaskList",
+                    preset, new HashSet<>(), GoldTicketTaskList);
         } catch (Throwable t) {
             Log.err(TAG, "syncGoldTicketCandidates err:", t);
         }

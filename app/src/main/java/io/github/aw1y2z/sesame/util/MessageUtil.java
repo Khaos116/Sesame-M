@@ -358,6 +358,10 @@ public class MessageUtil {
                 "去雇佣芝麻大表鸽", "送你10.6元支付红包", "一键查询爱车估值"));
         PRESET_BLACKLIST.put("goldenbeans|GoldenBeansTaskList", setOf(
                 "GOLDEN_BEAN_TASK_XIANSHANGZHIFU", "GOLDEN_BEAN_TASK_YUEBAO", "TEST_PUSH_SUBSCRIBE"));
+        // 跳外部 App 的"真行为"任务：模块无法完成，且提交时服务端直接回 1009 风控
+        // （1009 会连累全部模块，只读查询也被拦），故直接预置拉黑
+        PRESET_BLACKLIST.put("AntMember|GoldTicketTaskList", setOf(
+                "为自己攒笔钱", "去体验余额宝自动攒", "设置股票快捷入口"));
     }
 
     private static Set<String> setOf(String... items) {
