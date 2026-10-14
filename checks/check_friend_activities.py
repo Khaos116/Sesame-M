@@ -90,7 +90,7 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
   for(int i=0;i<30;i++)luckyOverride.put(new JSONObject().put("taskId","other"+i).put("taskStatus","DONE"));
   luckyOverride.put(luckyRow).put(luckyRow).put(luckyRow);
   worker(30).luckyCard();assert sends==1&&opens==4:"34 rows/3 duplicates blocked valid lucky task";
-  assert Log.lines.stream().anyMatch(s->s.contains("原始条目=34，有效唯一任务=31，重复条目=3"));
+  assert Log.lines.stream().anyMatch(s->s.contains("有效任务=31，原始条目=34，重复条目=3"));
   reset();luckyOverride=new JSONArray().put(luckyRow).put(new JSONObject().put("taskId","conflict").put("taskStatus","TODO"))
     .put(new JSONObject().put("taskId","conflict").put("taskStatus","RECEIVED")).put(new JSONObject()).put("broken");
   worker(30).luckyCard();assert sends==1&&opens==4:"conflict/invalid rows blocked independent task";
@@ -105,7 +105,7 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
    JSONObject sparse=new JSONObject(full.toString());sparse.remove("taskShowInfo");
    luckyOverride=sparseFirst?new JSONArray().put(sparse).put(full).put(sparse).put(sparse):new JSONArray().put(full).put(sparse).put(sparse).put(sparse);
    worker(30).luckyCard();assert sends==1 : "capture sparse display copies blocked browse";
-   assert Log.lines.stream().anyMatch(s->s.contains("有效唯一任务=1，重复条目=3，无有效ID=0，冲突ID=0"));
+   assert Log.lines.stream().anyMatch(s->s.contains("有效任务=1，原始条目=4，重复条目=3，无有效ID=0，冲突ID=0"));
   }
   for(String capturedType:new String[]{"BROWSER","COMMON_COUNT_DOWN_SLIDING_VIEW","TRANSFORMER"}){
    for(boolean stringProps:new boolean[]{false,true}){
@@ -113,7 +113,7 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
     JSONObject info=new JSONObject().put("title","逛15s游戏中心 获得好运卡").put("taskType","WAITING_TIME");
     luckyOverride=new JSONArray().put(new JSONObject(luckyRow.toString()).put("taskExtProps",stringProps?props.toString():props).put("taskShowInfo",info));
     worker(30).luckyCard();assert sends==1 : "captured browse type blocked: "+capturedType;
-    assert Log.lines.stream().anyMatch(s->s.contains("类型="+capturedType));
+    assert Log.lines.stream().anyMatch(s->s.contains("限时任务等待15秒后领卡"));
    }
   }
   for(String state:new String[]{"NONE_SIGNUP","SIGNUP_COMPLETE","TODO"}){
@@ -134,7 +134,7 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
    reset();luckyOverride=new JSONArray().put(new JSONObject(luckyRow.toString()).put("taskExtProps",new JSONObject().put("TASK_TYPE",blockedType))
     .put("taskShowInfo",new JSONObject().put("title","设置宝藏特权优先付 获得好运卡")));
    worker(30).luckyCard();assert sends==0 : "unsupported business type submitted";
-   assert Log.lines.stream().anyMatch(s->s.contains("类型="+blockedType)&&s.contains("未发送报名/领卡请求"));
+   assert Log.lines.stream().anyMatch(s->s.contains("类型="+blockedType)&&s.contains("未发送报名/领卡请求"))==blockedType.equals("UNKNOWN_NEW_TYPE");
   }
   reset();luckyOverride=new JSONArray().put(new JSONObject(luckyRow.toString()).put("taskStatus"," none_signup ")
    .put("taskShowInfo",new JSONObject().put("title","浏览新活动").put("titleList",new JSONArray().put("获得好运卡"))));
@@ -142,7 +142,7 @@ code = base[:base.index('  static int queries,')].replace('public class SjActivi
   for(String excluded:new String[]{"去飞猪订国内机票 获得好运卡","去飞猪订门票 获得20张好运卡","订火车票 获得好运卡","订酒店 获得好运卡","办理一张大流量卡 获得好运卡","去还1笔信用卡 获得好运卡","0.01元购券包 获得好运卡","邀请好友 获得好运卡"}){
    reset();luckyOverride=new JSONArray().put(new JSONObject(luckyRow.toString()).put("taskShowInfo",new JSONObject().put("title",excluded).toString()));
    worker(30).luckyCard();assert sends==0&&opens==2 : "excluded lucky task was submitted: "+excluded;
-   assert Log.lines.stream().anyMatch(s->s.contains("未发送报名/领卡请求"));
+   assert Log.lines.stream().noneMatch(s->s.contains("未发送报名/领卡请求")) : "known local exclusions should be silent";
   }
   luckyOverride=null;
   reset();luckyOverride=new JSONArray().put(new JSONObject(luckyRow.toString()).put("taskShowInfo",new JSONObject().put("title","去飞猪逛一逛 获得好运卡").toString()));

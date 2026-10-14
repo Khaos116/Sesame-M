@@ -11,7 +11,6 @@ public final class DailyTask {
     public static boolean skip(String key, String label) {
         if (isManual()) { Status.clearFlag(PREFIX + key); return false; }
         if (!Status.hasFlagToday(PREFIX + key)) return false;
-        Log.record(label + "：当天已经成功执行，自动调度跳过；可点击立即执行重新检查");
         return true;
     }
 
@@ -20,7 +19,6 @@ public final class DailyTask {
     /** 复用业务已确认的成功标记；不适用于尝试、限额或失败标记。 */
     public static boolean skipFlag(String flag, String label) {
         if (isManual() || !Status.hasFlagToday(flag)) return false;
-        Log.record(label + "：当天已经成功执行，自动调度跳过；可点击立即执行重新检查");
         return true;
     }
 

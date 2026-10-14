@@ -8,6 +8,8 @@ import io.github.aw1y2z.sesame.data.ModelGroup;
 import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.model.task.rewardSupport.IsolatedRewardTask;
 import io.github.aw1y2z.sesame.util.Log;
+import io.github.aw1y2z.sesame.util.DailyTask;
+import io.github.aw1y2z.sesame.util.MyUtils;
 
 /** 黄金票每周福利：只消费服务端当天返回的档位。移植自 GR 分支，见 docs/MyFix.md。 */
 public final class WeeklyWelfare extends IsolatedRewardTask {
@@ -52,7 +54,7 @@ public final class WeeklyWelfare extends IsolatedRewardTask {
             @Override public WeeklyWelfareFlow.Offer query() throws Exception {
                 JSONObject response = run.query(PREFIX + "index", INDEX);
                 WeeklyWelfareFlow.Offer offer = today(response);
-                if (offer == null) {
+                if (offer == null && DailyTask.isManual()) {
                     JSONObject result = response.optJSONObject("result");
                     JSONObject upsert = result == null ? null : result.optJSONObject("upsertData");
                     JSONObject sign = upsert == null ? null : upsert.optJSONObject("sign");
@@ -68,7 +70,7 @@ public final class WeeklyWelfare extends IsolatedRewardTask {
 
             @Override public boolean sign(WeeklyWelfareFlow.Offer offer) throws Exception {
                 JSONObject signed = run.onceToday("sign", PREFIX + "trigger", new JSONArray()
-                        .put(new JSONObject().put("basePrize", new BigDecimal(offer.basePrize))
+                        .put(MyUtils.newJSONObject().put("basePrize", new BigDecimal(offer.basePrize))
                                 .put("prizeNum", offer.prize).put("type", "SIGN")).toString(),
                         () -> signIn.getValue());
                 if (signed != null) Log.record(getName() + "：签到接口返回成功");

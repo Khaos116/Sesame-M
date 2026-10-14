@@ -143,23 +143,62 @@ public class MyUtils {
     public static boolean closeUnRpc() { return enabled; }
     public static boolean closeVerification() { return enabled; }
     public static boolean closeErrorFunction() { return enabled; }
+    public static JSONObject newJSONObject() { return new JSONObject(); }
     public static JSONObject newJSONObject(String s) {
         try { return new JSONObject(s); } catch (Exception e) { return new JSONObject(); }
     }
 }
 """)
+    write("data/AppConfig.java", """
+package io.github.aw1y2z.sesame.data;
+public class AppConfig {
+    public static final AppConfig INSTANCE = new AppConfig();
+    public boolean error = true, runtime = true;
+    public boolean getEnableViewErrorLog() { return error; }
+    public boolean getEnableViewRuntimeLog() { return runtime; }
+}
+""")
     write("util/Log.java", """
 package io.github.aw1y2z.sesame.util;
 public class Log {
-    public static String lastDebug, lastError;
+    public static String lastDebug, lastError, lastRuntime;
+    private static final ThreadLocal<Integer> staleLogDropped = ThreadLocal.withInitial(() -> 0);
+    private static final ThreadLocal<String> MODULE_TAG = new ThreadLocal<>();
+    private static String withUser(String s) { return s; }
+    private static class Sink {
+        final boolean error;
+        Sink(boolean error) { this.error = error; }
+        void i(String s) { if(error) lastError=s; else lastRuntime=s; }
+    }
+    private static Sink errorLogger() { return new Sink(true); }
+    private static Sink runtimeLoggerOf(String tag) { return new Sink(false); }
     public static final java.util.List<String> records = new java.util.ArrayList<>();
     public static void record(String s) { records.add(s); }
     public static void i(String... s) { }
-    public static void error(String s) { lastError = s; }
     public static void debug(String s) { lastDebug = s; }
     public static void printStackTrace(Throwable t) { }
     public static void printStackTrace(String tag, Throwable t) { }
     public static void err(String tag, String msg, Throwable t) { lastError = tag + ", " + msg; }
+""" + "\n".join(method("util/Log.java", s) for s in ("private static void writeError(String s)",
+    "private static void writeError(String details, String summary)", "public static void error(String s)",
+    "public static void errorWithSummary(")) + """
+    public static void main(String[] args) {
+        var config=io.github.aw1y2z.sesame.data.AppConfig.INSTANCE;
+        for(boolean error : new boolean[]{false,true}) for(boolean runtime : new boolean[]{false,true}) {
+            config.error=error; config.runtime=runtime; lastError=lastRuntime=null;
+            errorWithSummary("request + response details", "short reason");
+            assert error ? "request + response details".equals(lastError) : lastError==null;
+            assert runtime ? "short reason".equals(lastRuntime) : lastRuntime==null;
+        }
+        config.error=config.runtime=true;
+        error("ordinary exception stack");
+        assert lastError.equals("ordinary exception stack") && lastRuntime.equals(lastError);
+        lastError=lastRuntime=null;
+        var previous=RunGeneration.bind(0,()->1L);
+        try { errorWithSummary("old details", "old summary"); assert lastError==null&&lastRuntime==null&&staleLogDropped.get()==1; }
+        finally { RunGeneration.restore(previous); }
+        System.out.println("PASS production error/runtime routing: separate details, independent switches, original errors and stale-generation suppression");
+    }
 }
 """)
     write("hook/ApplicationHook.java", """
@@ -411,6 +450,18 @@ public class GuardCheck {
             normal.setResponseObject(json(payload), payload);
             assert RpcLog.responseData(normal).equals(payload);
             assert RpcLog.requestData(normal).equals("[{}]");
+            payload = "{ \"success\":false, \"resultCode\":\"BUSINESS_FAIL\", \"memo\":\"步数不足，请继续努力\", \"data\":{\"token\":\"SECRET_TOKEN\",\"remainingStep\":0,\"detail\":\"keep diagnostic fields\"}, \"result\":{\"upsertData\":{\"sign\":{\"timeline\":[{\"day\":3,\"signed\":false}],\"display\":\"{ \\\"token\\\": \\\"literal fixture\\\" }\"}}} }";
+            RpcEntity compact = new RpcEntity("other.detailed.failure", "[{\"donateToken\":\"SECRET_TOKEN\",\"taskId\":\"failedTask\",\"count\":23167}]");
+            if (async) bridge.newAsyncRequest(compact, 1, 0); else bridge.requestObject(compact, 1, 0);
+            assert compact.getResponseString().equals(payload) && compact.getHasError();
+            assert Log.lastError.contains("BUSINESS_FAIL") && Log.lastError.contains("步数不足");
+            assert Log.lastError.contains(compact.getRequestData()) && Log.lastError.endsWith(payload) : "error diagnostics rewrote the original request/response, sign object or string format";
+            assert Log.lastError.contains("failedTask") && Log.lastError.contains("23167") && Log.lastError.contains("remainingStep") && Log.lastError.contains("keep diagnostic fields");
+            assert Log.lastRuntime.contains("BUSINESS_FAIL") && Log.lastRuntime.contains("步数不足") && !Log.lastRuntime.contains("failedTask") && !Log.lastRuntime.contains("remainingStep") && !Log.lastRuntime.contains("SECRET_TOKEN");
+            for (String sensitive : new String[]{"token=SECRET_TOKEN", "授权码SECRET_TOKEN", "https://secret.invalid", "2088123456789012", "{body:SECRET_TOKEN}", "x".repeat(120)+" token=SECRET_TOKEN"}) {
+                String summary = RpcLog.errorSummary(json("{\"success\":false,\"memo\":\""+sensitive+"\"}"));
+                assert !summary.contains("SECRET_TOKEN") && !summary.contains("2088123456789012") && summary.contains("已省略");
+            }
             reset(); calls = 0; throwDenied = true;
             RpcEntity denied = new RpcEntity("other.denied", "[{}]");
             if (async) bridge.newAsyncRequest(denied, 3, 0); else bridge.requestObject(denied, 3, 0);
@@ -434,6 +485,11 @@ public class GuardCheck {
             assert calls == 1 && !withHeaders.getHasError() && "probe".equals(receivedHeaders.optString("ags-source"));
             old.requestObject(new RpcEntity("ordinary.old.probe", "[{}]"), 1, 0);
             assert receivedHeaders == null : "headers leaked into an ordinary old request";
+            payload = "{\"success\":false,\"resultCode\":\"BUSINESS_FAIL\",\"memo\":\"步数不足\",\"remainingStep\":0}";
+            RpcEntity oldFailure = new RpcEntity("failure.old.probe", "[{\"taskId\":\"oldTask\",\"donateToken\":\"SECRET_TOKEN\"}]");
+            old.requestObject(oldFailure, 1, 0);
+            assert Log.lastError.contains(oldFailure.getRequestData()) && Log.lastError.endsWith(payload) : "old bridge error details must retain original bytes";
+            assert Log.lastRuntime.contains("步数不足") && !Log.lastRuntime.contains("oldTask") && !Log.lastRuntime.contains("remainingStep");
         }
         field(old, "rpcCallMethod", GuardCheck.class.getMethod("oldRpc", java.util.Arrays.copyOf(types, 12)));
         reset(); calls = 0;
@@ -956,6 +1012,7 @@ public class GuardCheck {
     cp = os.pathsep.join((str(JSON), str(LOMBOK)))
     subprocess.run(["javac", "-encoding", "UTF-8", "-cp", cp, "-processorpath", str(LOMBOK),
                     "-d", tmp, *map(str, out.rglob("*.java"))], check=True)
+    subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + cp, "io.github.aw1y2z.sesame.util.Log"], check=True)
     subprocess.run(["java", "-ea", "-Drpc.report.root=" + str(out / "reports"), "-cp", tmp + os.pathsep + cp,
                     "io.github.aw1y2z.sesame.rpc.intervallimit.GuardCheck"], check=True, timeout=30)
     subprocess.run(["java", "-ea", "-Drpc.report.root=" + str(out / "reports"), "-cp", tmp + os.pathsep + cp,

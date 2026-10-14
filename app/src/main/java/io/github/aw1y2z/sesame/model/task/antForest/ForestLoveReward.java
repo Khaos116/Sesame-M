@@ -41,15 +41,14 @@ final class ForestLoveReward {
                 return;
             }
             runtime.put(LAST_PROBE, now);
-            Log.record("真爱奖励[开始]：检查去领奖状态，不受当天已浇水标记限制；不会再次浇水");
+            Log.record("真爱奖励[开始]：检查去领奖状态");
             stage = "读取去领奖状态";
             JSONObject state = response(AntForestRpcCall.loveRewardForestHome(), stage);
             checkAccount(uid);
             if (state == null) return;
             String widget = safeCode(state.opt("widgetStatus"));
-            Log.record("真爱奖励[入口状态]：widgetStatus=" + widget);
             if (!"reward".equals(widget)) {
-                Log.record("真爱奖励[未调用领奖页面]：入口未处于去领奖状态，未查询背包");
+                Log.record("真爱奖励[未执行]：未处于去领奖状态，widgetStatus=" + widget);
                 return;
             }
             stage = "调用前背包";
@@ -61,16 +60,9 @@ final class ForestLoveReward {
             if (home != null) {
                 JSONObject team = home.optJSONObject("teamInfo");
                 JSONArray rewards = team == null ? null : team.optJSONArray("popupRewardList");
-                Log.record("真爱奖励[页面返回]：展示记录=" + (rewards == null ? "缺失" : rewards.length())
-                        + "，展示记录不代表新领取，需完成官方确认流程");
-                if (rewards != null) for (int i = 0; i < rewards.length(); i++) {
-                    JSONObject reward = rewards.optJSONObject(i);
-                    if (reward == null) continue;
-                    Log.record("真爱奖励[奖励展示]：rewardCode=" + safeCode(reward.opt("rewardCode"))
-                            + "，provideType=" + safeCode(reward.opt("provideType"))
-                            + "，rewardRepeat=" + (reward.opt("rewardRepeat") instanceof Boolean
-                            ? reward.optBoolean("rewardRepeat") : "未知"));
-                }
+                JSONObject reward = rewards != null && rewards.length() == 1 ? rewards.optJSONObject(0) : null;
+                Log.record("真爱奖励[奖励展示]：记录=" + (rewards == null ? "缺失" : rewards.length())
+                        + (reward == null ? "" : "，rewardCode=" + safeCode(reward.opt("rewardCode"))));
                 JSONObject properties = home.optJSONObject("pageProperties");
                 Object subscriptionValue = properties == null ? null : properties.opt("subscribeId");
                 String subscription = subscriptionValue instanceof String ? (String) subscriptionValue : "";
@@ -144,7 +136,7 @@ final class ForestLoveReward {
             return;
         }
         checkAccount(uid);
-        Log.record("真爱奖励[展示确认]：按官方弹窗回调调用deleteRewardCache，仅确认展示，不作为发放凭据");
+        Log.record("真爱奖励[展示确认]：调用deleteRewardCache并回查");
         String raw = AntForestRpcCall.loveRewardConfirm(teamId);
         JSONObject confirmed = response(raw, "deleteRewardCache确认回执");
         checkAccount(uid);
@@ -164,9 +156,8 @@ final class ForestLoveReward {
         String widget = checkedState == null ? "未知" : safeCode(checkedState.opt("widgetStatus"));
         boolean complete = confirmed != null && sameTeam && pending != null && pending.length() == 0
                 && ("water".equals(widget) || "callWater".equals(widget));
-        Log.record("真爱奖励[确认后状态]：widgetStatus=" + widget + "，剩余展示="
-                + (pending == null ? "未知" : pending.length()) + "，"
-                + (complete ? "领奖提示已消除，资产结果另行回查" : "领奖提示是否消除仍未确认"));
+        if (!complete) Log.record("真爱奖励[确认后状态]：widgetStatus=" + widget + "，剩余展示="
+                + (pending == null ? "未知" : pending.length()) + "，领奖提示是否消除仍未确认");
         if (complete) {
             if (!day.equals(String.format(Locale.ROOT, "%1$tY%1$tm%1$td", MyUtils.getInstance()))) {
                 Log.record("真爱奖励[完成记录未保存]：回查已跨业务日期，下一轮重新检查");
@@ -174,8 +165,8 @@ final class ForestLoveReward {
             }
             checkAccount(uid);
             boolean saved = runtime.putVerified(COMPLETE_DAY, day);
-            Log.record("真爱奖励[流程完成]：确认回执及同队伍状态回查通过，"
-                    + (saved ? "已记录今日完成，自动调度不再重复查询" : "完成记录未保存，下一轮重新检查"));
+            Log.record("真爱奖励[流程完成]：领奖提示已消除，widgetStatus=" + widget + "，"
+                    + (saved ? "已记录今日完成" : "完成记录未保存，下一轮重新检查"));
         }
     }
 
@@ -191,7 +182,7 @@ final class ForestLoveReward {
         boolean success = !RpcRequestGuard.isFailure(root) && !RpcRequestGuard.isFailure(result)
                 && (Boolean.TRUE.equals(result.opt("success")) || "SUCCESS".equals(result.opt("resultCode"))
                 || "200".equals(String.valueOf(result.opt("resultCode"))));
-        Log.record("真爱奖励[" + stage + "]：回执=" + (raw == null || raw.isEmpty() ? "未返回" : "已返回")
+        if (!success) Log.record("真爱奖励[" + stage + "]：回执=" + (raw == null || raw.isEmpty() ? "未返回" : "已返回")
                 + "，success=" + success + "，resultCode=" + safeCode(result.opt("resultCode"))
                 + "，error=" + safeCode(result.opt("error")) + "，errorCode=" + safeCode(result.opt("errorCode")));
         return success ? result : null;
@@ -279,6 +270,7 @@ final class ForestLoveReward {
     }
 
     private static void recordResult(Map<String, Long> before, Map<String, Long> after) {
+        if (before != null && after != null && !increased(before, after) && !DailyTask.isManual()) return;
         Log.record("真爱奖励[结果]：" + (before == null || after == null ? "背包数据不完整，无法判断到账"
                 : increased(before, after) ? "观察到背包资产数量或有效期增加，请结合奖励类型与抓包确认"
                 : "未观察到背包资产数量或有效期增加，不能确认本轮新发奖") + "；背包变化仅作观察，流程完成情况见状态回查");

@@ -158,7 +158,9 @@ public class NewRpcBridge implements RpcBridge {
                                             if (RpcRequestGuard.isFailure(response)) {
                                                 rpcEntity.setError();
                                                 if (!RpcRequestGuard.isNonFriend(method, response)) {
-                                                    Log.error("new rpc response | id: " + rpcEntity.hashCode() + " | method: " + rpcEntity.getRequestMethod() + " args: " + RpcLog.requestData(rpcEntity) + " | data: " + RpcLog.responseData(rpcEntity));
+                                                    String prefix = "new rpc response | id: " + rpcEntity.hashCode() + " | method: " + rpcEntity.getRequestMethod();
+                                                    Log.errorWithSummary(prefix + " args: " + RpcLog.requestData(rpcEntity)
+                                                            + " | data: " + RpcLog.responseData(rpcEntity), prefix + " | " + RpcLog.errorSummary(response));
                                                 }
                                             }
                                         } catch (Exception e) {
@@ -284,7 +286,9 @@ public class NewRpcBridge implements RpcBridge {
                                                     if (RpcRequestGuard.isFailure(response)) {
                                                         rpcEntity.setError();
                                                         if (!RpcRequestGuard.isNonFriend(method, response)) {
-                                                            Log.error("new rpc response | id: " + rpcEntity.hashCode() + " | method: " + rpcEntity.getRequestMethod() + " args: " + RpcLog.requestData(rpcEntity) + " | data: " + RpcLog.responseData(rpcEntity));
+                                                            String prefix = "new rpc response | id: " + rpcEntity.hashCode() + " | method: " + rpcEntity.getRequestMethod();
+                                                            Log.errorWithSummary(prefix + " args: " + RpcLog.requestData(rpcEntity)
+                                                                    + " | data: " + RpcLog.responseData(rpcEntity), prefix + " | " + RpcLog.errorSummary(response));
                                                         }
                                                     }
                                                     Thread thread = rpcEntity.getRequestThread();

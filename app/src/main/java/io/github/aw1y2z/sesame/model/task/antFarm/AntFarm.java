@@ -3178,7 +3178,7 @@ public class AntFarm extends ModelTask {
                         Log.record("饲料领取🎖️任务[" + task.optString("title", "") + "]小额[" + awardCount + "个]直接领取");
                     } else {
                         unReceiveTaskAward++;
-                        Log.record("饲料领取：跳过[" + task.optString("title", "") + "]，待领=" + awardCount
+                        if (unReceiveTaskAward == 1) Log.record("饲料领取：跳过[" + task.optString("title", "") + "]，待领=" + awardCount
                                 + "g，库存=" + foodStock + "g，上限=" + foodStockLimit + "g；本次未发送领奖请求");
                         return false;
                     }

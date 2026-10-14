@@ -116,7 +116,8 @@ public class LoveRewardProbeCheck {
   TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));
   reset();AntForestRpcCall.loveRewardHome();JSONObject p=new JSONArray(ApplicationHook.last.getRequestData()).optJSONObject(0);assert p.optString("calenderStart").equals("20260301")&&p.optString("calenderEnd").equals("20260331");
   MyUtils.clock=java.time.Instant.parse("2028-02-28T17:00:00Z").toEpochMilli();AntForestRpcCall.loveRewardHome();p=new JSONArray(ApplicationHook.last.getRequestData()).optJSONObject(0);assert p.optString("calenderStart").equals("20280201")&&p.optString("calenderEnd").equals("20280229");
-  reset();ForestLoveReward.run();assert ApplicationHook.homes==2&&ApplicationHook.subscribes==1&&ApplicationHook.reads==3&&ApplicationHook.confirms==1 : Log.lines;assert has("不能确认本轮新发奖")&&!has("[结果]：观察")&&has("领奖提示已消除");
+  reset();ForestLoveReward.run();assert ApplicationHook.homes==2&&ApplicationHook.subscribes==1&&ApplicationHook.reads==3&&ApplicationHook.confirms==1 : Log.lines;assert !has("不能确认本轮新发奖")&&!has("[结果]：观察")&&has("领奖提示已消除");
+  assert Log.lines.size()==4&&!has("success=true")&&!has("页面参数") : Log.lines;
   assert !has("普通道具数量=")&&!has("七夕兔")&&!has("QIXITU_1.0_1DAYS")&&!has("LOVE2_PLANT_ENERGY_SHIELD") : "inventory contents leaked into runtime log";
   assert ApplicationHook.calls.get(0).endsWith("loveForestHome")&&ApplicationHook.calls.get(1).endsWith("queryPropList")&&ApplicationHook.calls.get(2).endsWith("queryAnimalPropList")&&ApplicationHook.calls.get(3).endsWith("loveHome");
   int completedCalls=ApplicationHook.calls.size();ForestLoveReward.run();assert ApplicationHook.calls.size()==completedCalls&&!has("间隔不足30分钟");DailyTask.manual=true;ForestLoveReward.run();assert ApplicationHook.confirms==1&&ApplicationHook.reads==3;
@@ -151,10 +152,11 @@ public class LoveRewardProbeCheck {
   reset();ApplicationHook.badTeam=true;ForestLoveReward.run();assert ApplicationHook.confirms==0;
   reset();ApplicationHook.crossDay=true;ForestLoveReward.run();assert ApplicationHook.confirms==0&&has("业务日期已变化");
   reset();RuntimeInfo.writable=false;ForestLoveReward.run();assert ApplicationHook.confirms==0&&has("尝试记录未保存");
-  reset();ApplicationHook.failedConfirm=true;ForestLoveReward.run();assert ApplicationHook.confirms==1&&!has("领奖提示已消除");
+  reset();ApplicationHook.failedConfirm=true;ForestLoveReward.run();assert ApplicationHook.confirms==1&&!has("领奖提示已消除")&&has("deleteRewardCache确认回执")&&has("success=false");
+  reset();DailyTask.manual=true;ForestLoveReward.run();assert has("不能确认本轮新发奖")&&has("流程完成");
   reset();ApplicationHook.badAnimal=true;ForestLoveReward.run();assert has("无法判断到账");
   reset();ApplicationHook.moreAnimals=true;ForestLoveReward.run();assert has("完整性未知")&&!has("[结果]：观察");
-  reset();ApplicationHook.widget="callWater";ForestLoveReward.run();assert ApplicationHook.homes==0&&ApplicationHook.reads==0&&ApplicationHook.animalReads==0&&has("未处于去领奖状态");
+  reset();ApplicationHook.widget="callWater";ForestLoveReward.run();assert ApplicationHook.homes==0&&ApplicationHook.reads==0&&ApplicationHook.animalReads==0&&has("未处于去领奖状态")&&Log.lines.size()==2;
   reset();ApplicationHook.offline=true;ForestLoveReward.run();assert ApplicationHook.calls.isEmpty();
   reset();ApplicationHook.switched=true;try{ForestLoveReward.run();throw new AssertionError("switch swallowed");}catch(TaskCancelledException expected){}assert ApplicationHook.subscribes==0&&ApplicationHook.reads==1;
   reset();ApplicationHook.cancelled=true;try{ForestLoveReward.run();throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}

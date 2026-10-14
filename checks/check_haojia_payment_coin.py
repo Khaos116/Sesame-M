@@ -74,7 +74,7 @@ public class HaoJiaPaymentCoinCheck {
    assert !Log.messages.contains("查询调用，根成功校验=true") : "successful component queries still spam runtime";
    assert Log.messages.contains("本轮新完成浏览任务=1项") : "new task success was not summarized";
    int previousRequests=requests;
-   run(true,true,true,4);assert Log.messages.contains("当天已经成功执行")&&mutations==4&&requests==previousRequests : "completed daily flow sent requests again";
+   run(true,true,true,4);assert !Log.messages.contains("当天已经成功执行")&&mutations==4&&requests==previousRequests : "completed daily flow must skip silently without requests";
    DailyTask.manual(()->{run(true,true,true,4);return null;});assert requests>previousRequests&&mutations==4:"manual run failed to refresh completed task";
    reset();
    for(int i=0;i<15;i++)extraRows.add(task().put("code","extra"+i).put("taskStatus",i<8?"finish":"init").put("rewardStatus",i<6?"success":"init").put("recordNo","").put("advanceType","eventPush"));

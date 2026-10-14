@@ -173,7 +173,7 @@ public class OtherTask extends ModelTask {
 
     private void runFriendActivity(boolean browse, int budget) {
         String label = browse ? "赚金币浏览" : "好运卡（朋友版）";
-        Log.record(label + "：开关已开启，独立每日操作预算=" + budget);
+        if (DailyTask.isManual()) Log.record(label + "：独立每日操作预算=" + budget);
         if (budget <= 0) { Log.record(label + "：预算为0，本轮未执行"); return; }
         try {
             FriendActivityTasks tasks = new FriendActivityTasks(new SjActivityTasks(new OtherRequestGate(), budget,

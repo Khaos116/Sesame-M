@@ -181,7 +181,9 @@ public class OldRpcBridge implements RpcBridge {
                     if (RpcRequestGuard.isFailure(resultObject)) {
                         rpcEntity.setError();
                         if (!RpcRequestGuard.isNonFriend(method, resultObject)) {
-                            Log.error("old rpc response | id: " + id + " | method: " + method + " args: " + RpcLog.requestData(rpcEntity) + " | data:" + RpcLog.responseData(rpcEntity));
+                            String prefix = "old rpc response | id: " + id + " | method: " + method;
+                            Log.errorWithSummary(prefix + " args: " + RpcLog.requestData(rpcEntity)
+                                    + " | data:" + RpcLog.responseData(rpcEntity), prefix + " | " + RpcLog.errorSummary(resultObject));
                         }
                     }
                     return rpcEntity;

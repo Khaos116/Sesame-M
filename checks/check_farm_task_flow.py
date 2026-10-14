@@ -43,6 +43,11 @@ public class FarmFlowCheck {
  @@METHODS@@
  static JSONObject task(String id,String state){return new JSONObject().put("taskId",id).put("bizKey",id).put("title",id).put("taskStatus",state).put("awardType","ALLPURPOSE").put("awardCount",30);}
  public static void main(String[] args){
+  FarmFlowCheck full=new FarmFlowCheck();full.foodStock=full.foodStockLimit;
+  for(int i=0;i<3;i++)assert !full.receiveFarmTaskAward(task("full"+i,"FINISHED"));
+  assert full.unReceiveTaskAward==3&&AntFarmRpcCall.claims==0&&full.foodStock==full.foodStockLimit;
+  assert Log.lines.stream().filter(s->s.startsWith("饲料领取：跳过")).count()==1 : "full feed stock logged once per task";
+  Log.lines.clear();
   FarmFlowCheck f=new FarmFlowCheck();Status.flagToday("farm::sign");DailyTask.done("farm::familySign");
   AntFarmRpcCall.rows=new JSONArray().put(task("browse","TODO"));f.runFarmTaskRounds();
   assert f.completions==1&&AntFarmRpcCall.claims==1&&AntFarmRpcCall.signs==0 : "signed today must not stop ordinary feed tasks";

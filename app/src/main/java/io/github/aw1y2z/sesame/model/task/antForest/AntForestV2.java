@@ -1257,8 +1257,7 @@ public class AntForestV2 extends ModelTask {
             userHomeObject = MyUtils.newJSONObject(AntForestRpcCall.queryFriendHomePage(userId));
             long end = System.currentTimeMillis();
             long serverTime = userHomeObject.optLong("now");
-            int offsetTime = offsetTimeMath.nextInteger((int) ((start + end) / 2 - serverTime));
-            Log.i("服务器时间：" + serverTime + "，本地与服务器时间差：" + offsetTime);
+            offsetTimeMath.nextInteger((int) ((start + end) / 2 - serverTime));
         } catch (Throwable t) {
             if (t instanceof io.github.aw1y2z.sesame.util.TaskCancelledException) throw (io.github.aw1y2z.sesame.util.TaskCancelledException) t;
             Log.printStackTrace(t);

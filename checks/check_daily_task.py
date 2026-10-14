@@ -23,7 +23,7 @@ public class Log {static String last; public static void record(String text){las
 public class DailyCheck {
  public static void main(String[] args) throws Exception {
   assert !DailyTask.skip("x","任务"); DailyTask.done("x"); assert DailyTask.skip("x","任务");
-  assert Log.last.contains("当天已经成功执行");
+  assert Log.last==null : "daily completion skip should be silent";
   Status.uid="B"; assert !DailyTask.skip("x","任务"); DailyTask.done("x");
   Status.uid="A"; Status.day=11; assert !DailyTask.skip("x","任务"); Status.day=10;
   Status.flagToday("receipt"); Status.flagToday("budget");
@@ -31,6 +31,7 @@ public class DailyCheck {
   assert !DailyTask.skip("x","任务") : "failed manual run retained stale completion";
   assert Status.hasFlagToday("receipt")&&Status.hasFlagToday("budget");
   Status.flagToday("confirmedSign"); assert DailyTask.skipFlag("confirmedSign", "签到");
+  assert Log.last==null : "confirmed business completion skip should be silent";
   DailyTask.manual(()->{assert !DailyTask.skipFlag("confirmedSign", "签到"); return null;});
   assert Status.hasFlagToday("confirmedSign");
   Status.uid="B"; assert !DailyTask.skipFlag("confirmedSign", "签到"); Status.uid="A";

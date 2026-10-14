@@ -820,9 +820,6 @@ public class AntForestRpcCall {
         JSONObject request = MyUtils.newJSONObject();
         request.put("calenderStart", month + "01");
         request.put("calenderEnd", month + calendar.getActualMaximum(Calendar.DAY_OF_MONTH));
-        Log.record("真爱奖励[页面参数]：calenderStart=" + request.optString("calenderStart")
-                + "，calenderEnd=" + request.optString("calenderEnd")
-                + "，GMT+8");
         return loveRewardRequest("loveHome", request);
     }
 

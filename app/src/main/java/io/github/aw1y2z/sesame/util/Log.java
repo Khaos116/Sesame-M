@@ -216,6 +216,10 @@ public class Log {
      * 错误日志双写（异常日志 + 运行日志）：消息统一带 uid 前缀。
      */
     private static void writeError(String s) {
+        writeError(s, s);
+    }
+
+    private static void writeError(String details, String summary) {
         // 本代已作废：此后本线程的错误日志都是收尾噪音（成片 catch(Throwable) 各打一行），整段静音；
         // 丢弃条数累计，任务收尾时报告，避免把这段时间的真故障无声吞掉
         if (RunGeneration.isStale()) {
@@ -227,12 +231,11 @@ public class Log {
         if (!toError && !toRuntime) {
             return;
         }
-        String msg = withUser(s);
         if (toError) {
-            errorLogger().i(msg);
+            errorLogger().i(withUser(details));
         }
         if (toRuntime) {
-            runtimeLoggerOf(MODULE_TAG.get()).i(msg);
+            runtimeLoggerOf(MODULE_TAG.get()).i(withUser(summary));
         }
     }
 
@@ -371,6 +374,10 @@ public class Log {
 
     public static void error(String s) {
         writeError(s);
+    }
+
+    public static void errorWithSummary(String details, String summary) {
+        writeError(details, summary);
     }
 
     public static void error(String TAG, String msg) {

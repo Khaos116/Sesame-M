@@ -150,9 +150,13 @@ final class SjActivityTasks {
     }
 
     boolean accepted(String domain, String label) {
+        return accepted(domain, label, true);
+    }
+
+    boolean accepted(String domain, String label, boolean record) {
         current();
         if (!RuntimeInfo.getInstance().putVerified(RECEIPT + domain, null)) return false;
-        Log.record("📤 " + label + "：接口已确认受理");
+        if (record) Log.record("📤 " + label + "：接口已确认受理");
         return true;
     }
 

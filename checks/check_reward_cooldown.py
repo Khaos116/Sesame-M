@@ -99,7 +99,7 @@ def check_reward_cooldown() -> None:
         """)
         write(out, "io/github/aw1y2z/sesame/util/MyUtils.java", """
             package io.github.aw1y2z.sesame.util; import org.json.JSONObject;
-            public final class MyUtils { public static JSONObject newJSONObject(String raw) {
+            public final class MyUtils { public static JSONObject newJSONObject(){return new JSONObject();} public static JSONObject newJSONObject(String raw) {
                 try {return new JSONObject(raw);}catch(Exception invalid){return new JSONObject();}
             } }
         """)
@@ -198,8 +198,11 @@ def check_reward_cooldown() -> None:
                     state.reset();ApplicationHook.response="{\"success\":true,\"result\":{}}";
                     var luck=new io.github.aw1y2z.sesame.model.task.luckCard.LuckCardStatus();luck.getFields();luck.run();
                     require("com.alipay.pcreditcardweb.activity.LuckCard.consult".equals(ApplicationHook.lastMethod)&&"[{}]".equals(ApplicationHook.lastArgs),"SJ empty object envelope lost");
-                    state.reset();var weekly=new io.github.aw1y2z.sesame.model.task.weeklyWelfare.WeeklyWelfare();weekly.getFields();weekly.run();
+                    state.reset();io.github.aw1y2z.sesame.util.Log.messages="";var weekly=new io.github.aw1y2z.sesame.model.task.weeklyWelfare.WeeklyWelfare();weekly.getFields();weekly.run();
+                    require(io.github.aw1y2z.sesame.util.Log.messages.contains("UNKNOWN_STATE")&&!io.github.aw1y2z.sesame.util.Log.messages.contains("根结构="),"automatic unknown state lost reason or dumped schema");
                     require(state.getLong("WeeklyWelfare.nextConfirmedQuery",0L)==0L&&weekly.check(),"UNKNOWN_STATE blocked next run");
+                    io.github.aw1y2z.sesame.util.DailyTask.manual(()->{weekly.run();return null;});
+                    require(io.github.aw1y2z.sesame.util.Log.messages.contains("根结构="),"manual check lost schema diagnostics");
                     ApplicationHook.response="{\"success\":true,\"result\":{\"MODE_FLAG\":{},\"MODE_OPTIONAL_FLAG\":{},\"responseCarry\":{},\"thorCarry\":{},\"upsertData\":{\"goldbillInfo\":{}}}}";weekly.run();
                     require(state.getLong("WeeklyWelfare.nextConfirmedQuery",0L)==0L&&weekly.check(),"goldbill-only page was treated as a weekly sign offer");
                     ApplicationHook.response="{\"success\":true,\"result\":{\"upsertData\":{\"sign\":{\"timeline\":[{\"isToday\":\"true\",\"signed\":\"true\",\"day\":\"3\"}]}}}}";weekly.run();
