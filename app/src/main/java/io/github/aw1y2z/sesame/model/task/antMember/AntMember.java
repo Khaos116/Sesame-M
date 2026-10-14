@@ -17,7 +17,9 @@ import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy.Outcome;
 import io.github.aw1y2z.sesame.entity.AlipayAntMemberTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayMemberCreditSesameTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayWelfareFundTaskList;
+import io.github.aw1y2z.sesame.entity.AlipayGoldTicketTaskList;
 import io.github.aw1y2z.sesame.entity.MemberBenefit;
+import io.github.aw1y2z.sesame.util.idMap.GoldTicketTaskListMap;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
@@ -80,8 +82,15 @@ public class AntMember extends ModelTask {
     private BooleanModelField promise;
     private SelectModelField promiseList;
     private BooleanModelField enableGameCenter;
-    private BooleanModelField enableGoldTicket;
+
+    /** 黄金票：总开关 enableGoldTicketTask 之下分为签到 / 提取 / 任务三路 */
+    private BooleanModelField enableGoldTicketTask;
+    private BooleanModelField enableGoldTicketSign;
     private BooleanModelField enableGoldTicketConsume;
+    private BooleanModelField enableGoldTicketBrowse;
+    private BooleanModelField AutoGoldTicketTaskList;
+    private SelectModelField GoldTicketTaskList;
+
     private BooleanModelField KuaiDiFuLiJia;
 
     /** 网商银行福利金 */
@@ -110,8 +119,12 @@ public class AntMember extends ModelTask {
         //modelFields.addField(promise = new BooleanModelField("promise", "生活记录 | 坚持做", false));
         //modelFields.addField(promiseList = new SelectModelField("promiseList", "生活记录 | 坚持做列表", new LinkedHashSet<>(), PromiseSimpleTemplate::getList));
         modelFields.addField(KuaiDiFuLiJia = new BooleanModelField("KuaiDiFuLiJia", "我的快递 | 福利加", false));
-        modelFields.addField(enableGoldTicket = new BooleanModelField("enableGoldTicket", "黄金票 | 签到与收取", false));
-        modelFields.addField(enableGoldTicketConsume = new BooleanModelField("enableGoldTicketConsume", "黄金票 | 提取/兑换黄金", false));
+        modelFields.addField(enableGoldTicketTask = new BooleanModelField("enableGoldTicketTask", "黄金票 | 开启", false));
+        modelFields.addField(enableGoldTicketSign = new BooleanModelField("enableGoldTicketSign", "黄金票 | 签到", false).setDependsOn("enableGoldTicketTask"));
+        modelFields.addField(enableGoldTicketConsume = new BooleanModelField("enableGoldTicketConsume", "黄金票 | 提取", false).setDependsOn("enableGoldTicketTask"));
+        modelFields.addField(enableGoldTicketBrowse = new BooleanModelField("enableGoldTicketBrowse", "黄金票 | 任务", false).setDependsOn("enableGoldTicketTask"));
+        modelFields.addField(AutoGoldTicketTaskList = new BooleanModelField("AutoGoldTicketTaskList", "黄金票任务 | 自动黑名单", true).setDependsOn("enableGoldTicketBrowse"));
+        modelFields.addField(GoldTicketTaskList = new SelectModelField("GoldTicketTaskList", "黄金票任务 | 黑名单列表", new LinkedHashSet<>(), AlipayGoldTicketTaskList::getList).setDependsOn("AutoGoldTicketTaskList"));
         modelFields.addField(welfareFund = new BooleanModelField("welfareFund", "福利金 | 开启", false));
         modelFields.addField(welfareFundSign = new BooleanModelField("welfareFundSign", "福利金 | 签到", true).setDependsOn("welfareFund"));
         modelFields.addField(welfareFundTask = new BooleanModelField("welfareFundTask", "福利金 | 任务", true).setDependsOn("welfareFund"));
@@ -164,7 +177,7 @@ public class AntMember extends ModelTask {
                 RecommendTask();
                 OrdinaryTask();
             }
-            if (enableGoldTicket.getValue() || enableGoldTicketConsume.getValue()) {
+            if (enableGoldTicketTask.getValue()) {
                 goldTicket();
             }
             if (enableGameCenter.getValue()) {
@@ -686,43 +699,51 @@ public class AntMember extends ModelTask {
     
     private void goldTicket() {
         try {
-            boolean doSignIn = enableGoldTicket.getValue();
+            boolean doSignIn = enableGoldTicketSign.getValue();
+            boolean doTask = enableGoldTicketBrowse.getValue();
             boolean doConsume = enableGoldTicketConsume.getValue();
-            if (!doSignIn && !doConsume) {
+            if (!doSignIn && !doTask && !doConsume) {
                 return;
             }
+            // 收取随签到：待收的票是签到等行为攒下的，归在「签到」这一路
+            boolean needCollect = doSignIn && !Status.hasFlagToday("goldTicket::collect");
             boolean needSignIn = doSignIn && !Status.hasFlagToday("goldTicket::sign");
-            boolean needHomeCheck = doSignIn && !Status.hasFlagToday("goldTicket::home");
-            boolean needWelfare = doSignIn && !Status.hasFlagToday("goldTicket::welfare");
+            boolean needHomeCheck = doTask && !Status.hasFlagToday("goldTicket::home");
+            boolean needWelfare = doTask && !Status.hasFlagToday("goldTicket::welfare");
             boolean needConsume = doConsume && !Status.hasFlagToday("goldTicket::consume");
-            if (!needSignIn && !needHomeCheck && !needWelfare && !needConsume) {
+            if (!needCollect && !needSignIn && !needHomeCheck && !needWelfare && !needConsume) {
                 Log.i("黄金票🙈[今日已处理，跳过]");
                 return;
             }
             Log.i("黄金票🙈[开始执行]");
             JSONObject home = null;
-            if (needSignIn || needHomeCheck) {
+            if (needCollect || needSignIn || needHomeCheck) {
                 home = queryGoldTicketHome();
             }
-            if (needSignIn) {
+            if (needCollect || needSignIn) {
                 if (home == null) {
-                    Log.error("黄金票🙈[首页查询失败]无法判断签到状态");
-                } else if (doGoldTicketSignIn(home)) {
-                    Status.flagToday("goldTicket::sign");
-                }
-            }
-            if (needHomeCheck) {
-                if (home == null) {
-                    Log.error("黄金票🙈[首页查询失败]跳过收取与任务扫描");
+                    Log.error("黄金票🙈[首页查询失败]跳过签到与收取");
                 } else {
-                    doGoldTicketCollect(home);
-                    if (handleGoldTicketHomeTasks(home)) {
-                        Status.flagToday("goldTicket::home");
+                    if (needCollect) {
+                        doGoldTicketCollect(home);
+                        Status.flagToday("goldTicket::collect");
+                    }
+                    if (needSignIn && doGoldTicketSignIn(home)) {
+                        Status.flagToday("goldTicket::sign");
                     }
                 }
             }
+            // 首页与福利中心的任务列表有重叠，本轮已提交过的任务名记在这里，避免重复提交
+            Set<String> handledTitles = new HashSet<>();
+            if (needHomeCheck) {
+                if (home == null) {
+                    Log.error("黄金票🙈[首页查询失败]跳过任务扫描");
+                } else if (handleGoldTicketHomeTasks(home, handledTitles)) {
+                    Status.flagToday("goldTicket::home");
+                }
+            }
             if (needWelfare) {
-                if (handleGoldTicketWelfareTasks()) {
+                if (handleGoldTicketWelfareTasks(handledTitles)) {
                     Status.flagToday("goldTicket::welfare");
                 }
             }
@@ -940,11 +961,37 @@ public class AntMember extends ModelTask {
         return "NONE_SIGNUP".equals(status) || "SIGNUP_EXPIRED".equals(status);
     }
 
-    private boolean isGoldTicketKnownAutoTask(JSONObject task) {
-        String taskId = task.optString("taskId");
-        return "AP10247402".equals(taskId) || "AP11249033".equals(taskId)
-                || "AP13250426".equals(taskId) || "AP19360380".equals(taskId)
-                || "AP15280470".equals(taskId) || "AP16338809".equals(taskId);
+    /**
+     * 任务候选同步为黑名单选项。原先是写死 6 个 taskId 的白名单，活动一换任务就全部跳过；
+     * 改为随每次列表请求刷新候选，准入交给状态与黑名单生命周期。
+     */
+    private void syncGoldTicketCandidates(JSONArray list) {
+        if (list == null || list.length() == 0) {
+            return;
+        }
+        try {
+            GoldTicketTaskListMap.load();
+            int count = 0;
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject task = list.optJSONObject(i);
+                if (task == null) {
+                    continue;
+                }
+                String title = task.optString("title");
+                if (title.isEmpty() || GoldTicketTaskListMap.get(title) != null) {
+                    continue;
+                }
+                GoldTicketTaskListMap.add(title, title);
+                count++;
+            }
+            if (count > 0) {
+                GoldTicketTaskListMap.save();
+                AlipayGoldTicketTaskList.clear();
+                Log.record("同步任务🉑黄金票任务列表[新增" + count + "]");
+            }
+        } catch (Throwable t) {
+            Log.err(TAG, "syncGoldTicketCandidates err:", t);
+        }
     }
 
     private JSONArray extractGoldTicketHomeTodoTasks(JSONObject home) {
@@ -999,37 +1046,109 @@ public class AntMember extends ModelTask {
         }
     }
 
-    private boolean pushGoldTicketTask(String taskId, String action) {
+    /**
+     * 推送任务。返回 null 表示未完成，且响应体已放进 {@link #goldTicketPushLastResponse}
+     * 供拉黑判定使用（拉黑逻辑读的是响应里的错误文案，丢了响应就无法计数）。
+     */
+    private JSONObject pushGoldTicketTask(String taskId) {
+        goldTicketPushLastResponse = null;
         try {
             String response = AntMemberRpcCall.taskQueryPush(taskId);
             if (response == null || response.isEmpty()) {
-                return false;
+                return null;
             }
             JSONObject result = new JSONObject(response);
+            goldTicketPushLastResponse = result;
             if (!goldTicketOk(TAG, result)) {
-                return false;
+                return null;
             }
             JSONObject r = result.optJSONObject("result");
             JSONObject pushResult = r != null ? r.optJSONObject("pushResult") : null;
             boolean done = pushResult != null ? pushResult.optBoolean("done", true) : true;
-            return done;
+            return done ? result : null;
         } catch (Throwable t) {
             Log.printStackTrace(TAG, t);
-            return false;
+            return null;
         }
     }
 
+    /** 最近一次推送的响应体，仅用于拉黑判定 */
+    private JSONObject goldTicketPushLastResponse;
+
+    /** 未完成项计数；列表自身可能含同名重复项，按任务名去重后再数 */
     private int countGoldTicketPendingAutoTasks(JSONArray todo) {
         if (todo == null || todo.length() == 0) {
             return 0;
         }
+        Set<String> titles = new HashSet<>();
+        for (int i = 0; i < todo.length(); i++) {
+            JSONObject task = todo.optJSONObject(i);
+            if (task == null) {
+                continue;
+            }
+            if (!"RECEIVE_SUCCESS".equalsIgnoreCase(task.optString("taskProcessStatus"))) {
+                titles.add(task.optString("title", task.optString("taskId")));
+            }
+        }
+        return titles.size();
+    }
+
+    /**
+     * 处理黄金票任务列表（首页 / 福利中心共用）。
+     * 准入按状态而不按 taskId：未完成就尝试报名+完成，失败交自动黑名单，
+     * 由它按「连续 3 次命中」的周期决定何时停手。
+     */
+    private int processGoldTicketTasks(JSONArray todo, String source, Set<String> blackList) {
+        return processGoldTicketTasks(todo, source, blackList, null);
+    }
+
+    private int processGoldTicketTasks(JSONArray todo, String source, Set<String> blackList, Set<String> handledTitles) {
+        if (todo == null || todo.length() == 0) {
+            return 0;
+        }
+        syncGoldTicketCandidates(todo);
         int pending = 0;
         for (int i = 0; i < todo.length(); i++) {
             JSONObject task = todo.optJSONObject(i);
             if (task == null) {
                 continue;
             }
-            if (isGoldTicketKnownAutoTask(task)) {
+            String taskId = task.optString("taskId");
+            String title = task.optString("title", taskId);
+            String status = task.optString("taskProcessStatus");
+            if (taskId.isEmpty() || title.isEmpty()) {
+                continue;
+            }
+            if ("RECEIVE_SUCCESS".equalsIgnoreCase(status)) {
+                continue;
+            }
+            // 黑名单跳过静默：条目由用户在配置页维护，内容恒定，不打日志
+            if (blackList != null && blackList.contains(title)) {
+                continue;
+            }
+            // 两处列表重叠时只提交一次
+            if (handledTitles != null && !handledTitles.add(title)) {
+                continue;
+            }
+            String amount = task.optString("amount");
+            if (isGoldTicketSignupRequired(status)) {
+                String triggerRes = AntMemberRpcCall.goldBillTaskTrigger(taskId);
+                JSONObject triggerJson = parseGoldTicket(triggerRes);
+                if (!goldTicketOk(TAG, triggerJson)) {
+                    markGoldTicketBlackList(source, title, triggerJson);
+                    pending++;
+                    continue;
+                }
+                Log.i("黄金票🙈[" + source + "任务报名成功]#" + title);
+                TimeUtil.sleep(500);
+            }
+            // 推送响应只有 success，没有回执也没有金额：这里只能记「已提交」，
+            // 是否真完成交给随后的复查（复查未完成即进黑名单）
+            if (pushGoldTicketTask(taskId) != null) {
+                Log.other("黄金票🙈[" + source + "任务已提交]#" + title
+                        + (amount.isEmpty() ? "" : "#可得[" + amount + "份]"));
+            } else {
+                markGoldTicketBlackList(source, title, goldTicketPushLastResponse);
                 pending++;
             }
         }
@@ -1037,73 +1156,34 @@ public class AntMember extends ModelTask {
     }
 
     /**
-     * 处理黄金票任务列表（首页 / 福利中心共用）。
-     * 仅放开已确认可自动闭环的已知 taskId，避免误判未知任务。
+     * 任务未完成时交自动黑名单计数。响应体为空（连报文都没拿到）时无法判定原因，
+     * 只记日志不计数，避免网络抖动被当成"任务不可做"而误拉黑。
      */
-    private int processGoldTicketTasks(JSONArray todo, String source) {
-        if (todo == null || todo.length() == 0) {
-            return 0;
+    private void markGoldTicketBlackList(String source, String title, JSONObject jo) {
+        Log.record("黄金票📋[" + source + "任务未完成]#" + title);
+        if (jo == null) {
+            return;
         }
-        int pending = 0;
-        for (int i = 0; i < todo.length(); i++) {
-            JSONObject task = todo.optJSONObject(i);
-            if (task == null) {
-                continue;
-            }
-            if (!isGoldTicketKnownAutoTask(task)) {
-                continue;
-            }
-            String taskId = task.optString("taskId");
-            String title = task.optString("title", taskId);
-            String status = task.optString("taskProcessStatus");
-            if (isGoldTicketRewardReady(status)) {
-                if (pushGoldTicketTask(taskId, "receive")) {
-                    Log.other("黄金票🙈[" + source + "任务领取成功]#" + title);
-                } else {
-                    pending++;
-                }
-            } else if (isGoldTicketSignupRequired(status)) {
-                String triggerRes = AntMemberRpcCall.goldBillTaskTrigger(taskId);
-                if (triggerRes != null && !triggerRes.isEmpty()) {
-                    try {
-                        if (goldTicketOk(TAG, new JSONObject(triggerRes))) {
-                            Log.other("黄金票🙈[" + source + "任务报名成功]#" + title);
-                            if (pushGoldTicketTask(taskId, "send")) {
-                                Log.other("黄金票🙈[" + source + "任务完成]#" + title);
-                            } else {
-                                pending++;
-                            }
-                        } else {
-                            pending++;
-                        }
-                    } catch (JSONException e) {
-                        Log.printStackTrace(TAG, e);
-                        pending++;
-                    }
-                } else {
-                    pending++;
-                }
-            } else if ("SIGNUP_COMPLETE".equals(status)) {
-                if (pushGoldTicketTask(taskId, "send")) {
-                    Log.other("黄金票🙈[" + source + "任务完成]#" + title);
-                } else {
-                    pending++;
-                }
-            } else {
-                if (pushGoldTicketTask(taskId, "send")) {
-                    Log.other("黄金票🙈[" + source + "任务完成]#" + title);
-                } else {
-                    pending++;
-                }
-            }
-        }
-        return pending;
+        MessageUtil.checkResultCodeAndMarkTaskBlackList("GoldTicketTaskList", title, jo);
     }
 
-    private boolean handleGoldTicketHomeTasks(JSONObject home) {
+    /** requestString 在请求体非法/宿主解析失败时返回 null，统一兜底 */
+    private JSONObject parseGoldTicket(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        try {
+            return new JSONObject(raw);
+        } catch (Throwable t) {
+            Log.err(TAG, "黄金票响应解析失败:" + StringUtil.truncate(raw, 200), t);
+            return null;
+        }
+    }
+
+    private boolean handleGoldTicketHomeTasks(JSONObject home, Set<String> handledTitles) {
         try {
             JSONArray todo = extractGoldTicketHomeTodoTasks(home);
-            processGoldTicketTasks(todo, "首页");
+            processGoldTicketTasks(todo, "首页", GoldTicketTaskList.getValue(), handledTitles);
             JSONObject refreshed = queryGoldTicketHome();
             if (refreshed == null) {
                 Log.other("黄金票🙈[首页任务复查失败]暂不写入今日完成");
@@ -1120,14 +1200,18 @@ public class AntMember extends ModelTask {
         }
     }
 
-    private boolean handleGoldTicketWelfareTasks() {
+    /**
+     * 福利中心与首页的任务列表有重叠（同一条任务两处都在列），
+     * 上一路已提交过的不再重复提交一遍，否则同一条会被打两次且多挨一次风控。
+     */
+    private boolean handleGoldTicketWelfareTasks(Set<String> handledTitles) {
         try {
             JSONArray todo = queryGoldTicketWelfareTodoTasks();
             if (todo == null) {
                 Log.error("黄金票🙈[福利中心任务查询失败]");
                 return false;
             }
-            processGoldTicketTasks(todo, "福利中心");
+            processGoldTicketTasks(todo, "福利中心", GoldTicketTaskList.getValue(), handledTitles);
             JSONArray refreshed = queryGoldTicketWelfareTodoTasks();
             if (refreshed == null) {
                 Log.other("黄金票🙈[福利中心任务复查失败]暂不写入今日完成");

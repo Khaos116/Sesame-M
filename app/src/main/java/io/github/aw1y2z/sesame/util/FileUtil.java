@@ -577,6 +577,10 @@ public class FileUtil {
         return getFile(MAIN_DIRECTORY_FILE, "WelfareFundTask.json");
     }
 
+    public static File getGoldTicketTaskListMapFile() {
+        return getFile(MAIN_DIRECTORY_FILE, "GoldTicketTask.json");
+    }
+
     public static File getGoldenBeansTaskListMapFile() {
         return getFile(MAIN_DIRECTORY_FILE, "GoldenBeansTask.json");
     }
