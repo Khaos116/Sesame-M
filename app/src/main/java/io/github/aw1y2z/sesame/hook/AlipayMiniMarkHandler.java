@@ -11,7 +11,14 @@ import io.github.aw1y2z.sesame.util.StringUtil;
  * 提供获取支付宝小程序标记的接口（对应原Kotlin的AlipayMiniMarkHandler）
  */
 public class AlipayMiniMarkHandler implements io.github.aw1y2z.sesame.hook.HttpHandler {
-    
+
+    /** 鉴权令牌；未配置（null/空白）时本路由一律拒绝，不做「无令牌即放行」 */
+    private final String secretToken;
+
+    public AlipayMiniMarkHandler(String secretToken) {
+        this.secretToken = secretToken;
+    }
+
     /**
      * 处理HTTP请求
      * 仅支持GET请求，其他请求返回405 Method Not Allowed
@@ -22,6 +29,10 @@ public class AlipayMiniMarkHandler implements io.github.aw1y2z.sesame.hook.HttpH
      */
     @Override
     public NanoHTTPD.Response handle(NanoHTTPD.IHTTPSession session, String body) {
+        // 本类不继承 BaseHandler，需在此自行校验同一套令牌
+        if (!BaseHandler.verifyToken(secretToken, session)) {
+            return createResponse(NanoHTTPD.Response.Status.UNAUTHORIZED, "{\"status\":\"unauthorized\"}");
+        }
         // 匹配请求方法，仅处理GET
         if (session.getMethod() == NanoHTTPD.Method.GET) {
             return handleGetRequest(session);

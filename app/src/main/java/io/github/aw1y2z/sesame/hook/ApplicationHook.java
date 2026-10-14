@@ -604,6 +604,37 @@ public class ApplicationHook extends XposedModule {
     }
 
     /**
+     * 本地 HTTP 服务的鉴权令牌：首次生成后落盘复用
+     * （硬编码会随公开分发的 APK 泄漏，等于把通用 RPC 代理的钥匙一起发出去）。
+     * <p>读写失败返回空串——空令牌在 {@link BaseHandler#verifyToken} 里是拒绝，宁可服务不可用也不放行。
+     */
+    private static String resolveHttpToken() {
+        try {
+            java.io.File tokenFile = FileUtil.getHttpTokenFile();
+            String existing = FileUtil.readFromFile(tokenFile);
+            if (existing != null && !existing.trim().isEmpty()) {
+                return existing.trim();
+            }
+            // 32 字节随机数的十六进制串
+            byte[] raw = new byte[32];
+            new java.security.SecureRandom().nextBytes(raw);
+            StringBuilder sb = new StringBuilder(raw.length * 2);
+            for (byte b : raw) {
+                sb.append(String.format("%02x", b));
+            }
+            String token = sb.toString();
+            if (FileUtil.write2File(token, tokenFile)) {
+                Log.record("已生成 HTTP 鉴权令牌（存于 http_token.txt）");
+                return token;
+            }
+            Log.record("HTTP 鉴权令牌写入失败，本次不启动 HTTP 服务");
+        } catch (Throwable t) {
+            Log.err(TAG, "resolveHttpToken err:", t);
+        }
+        return "";
+    }
+
+    /**
      * 真正执行重载，必须在非主线程调用。UI 相关（Toast / 权限提示）已内部切回主线程，
      * 故整体跑在后台线程是安全的。
      * synchronized 保证同一时刻只有一处重载，防止切号与首启 / 广播重启并发触发重复初始化。
@@ -620,7 +651,7 @@ public class ApplicationHook extends XposedModule {
                 }
 
                 //调用 startIfNeeded 方法，参数与 Kotlin 保持一致
-                ModuleHttpServerManager.getInstance().startIfNeeded(8080, "ET3vB^#td87sQqKaY*eMUJXP", processName, "com.eg.android.AlipayGphone");
+                ModuleHttpServerManager.getInstance().startIfNeeded(8080, resolveHttpToken(), processName, "com.eg.android.AlipayGphone");
 
                 UserIdMap.initUser(userId);
                 Model.initAllModel();
@@ -1139,6 +1170,10 @@ public class ApplicationHook extends XposedModule {
                         BroadcastReceiver.PendingResult r2 = goAsync();
                         new Thread(() -> {
                             try {
+                                // 「执行」前必须重载配置：模块开关的 isEnable() 读的是进程内存里的
+                                // enableField，而配置刚在 UI 侧改过（保存触发的 restart 广播可能还没到）。
+                                // 不重载会出现「刚开启的模块点了执行却不跑」。
+                                ConfigV2.load(UserIdMap.getCurrentUid());
                                 if (StringUtil.isEmpty(groupCode)) {
                                     initHandler(false);
                                 } else if (ModelGroup.BASE == ModelGroup.getByCode(groupCode)) {

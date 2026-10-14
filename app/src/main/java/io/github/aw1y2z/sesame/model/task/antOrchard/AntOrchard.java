@@ -1026,7 +1026,8 @@ public class AntOrchard extends ModelTask {
             Log.farm("芭芭农场🌳" + scene.nickname() + "施肥#消耗[" + cost + "g肥料]"
                     + (batch ? "#一键5次" : "") + "#目标[" + targetSpreadTimes() + "次]");
 
-            // 检查施肥进度：单次只加 0.01%(1) 或 一键5次只加 0.05%(5) 即被限制施肥，当天不再施肥
+            // 检查施肥进度：单次只加 0.01%(1) 或 一键5次只加 0.05%(5) 即被限制施肥，当天不再施肥。
+            // 这是**风控信号**：服务端受理了请求却只让进度挪最小一格，继续施只会白耗肥料，故当日停。
             if (taobaoData.has("currentStage")) {
                 JSONObject stage = taobaoData.getJSONObject("currentStage");
                 int newProgress = stage.optInt("totalValue", fertilizerProgress);

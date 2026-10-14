@@ -345,6 +345,14 @@ public class FileUtil {
     public static File getTokenConfigFile() {
         return new File(MAIN_DIRECTORY_FILE, "token_config.json");
     }
+
+    /**
+     * 本地 HTTP 服务的鉴权令牌文件：首次启动随机生成，之后各次启动复用同一份
+     * （硬编码在源码里会随公开分发的 APK 一起泄漏）。
+     */
+    public static File getHttpTokenFile() {
+        return new File(MAIN_DIRECTORY_FILE, "http_token.txt");
+    }
     
     public static boolean setTokenConfigFile(String json) {
         return write2File(json, new File(MAIN_DIRECTORY_FILE, "token_config.json"));
