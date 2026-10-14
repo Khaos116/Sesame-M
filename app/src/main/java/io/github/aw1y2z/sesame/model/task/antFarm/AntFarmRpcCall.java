@@ -477,7 +477,7 @@ public class AntFarmRpcCall {
     }
 
     public static String saveOrnaments(String animalId, String farmId, String ornaments) {
-        return ApplicationHook.requestString("com.alipay.antfarm.saveOrnaments", "[{\"animalId\":\"" + animalId + "\",\"farmId\":\"" + farmId + "\",\"ornaments\":\"" + ornaments + "\",\"requestType\":\"NORMAL\"," + "\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"version\":\"" + VERSION + "\"}]");
+        return ApplicationHook.requestString("com.alipay.antfarm.saveOrnaments", "[{\"animalId\":\"" + StringUtil.escapeJson(animalId) + "\",\"farmId\":\"" + StringUtil.escapeJson(farmId) + "\",\"ornaments\":\"" + StringUtil.escapeJson(ornaments) + "\",\"requestType\":\"NORMAL\"," + "\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"version\":\"" + VERSION + "\"}]");
     }
 
     // 亲密家庭

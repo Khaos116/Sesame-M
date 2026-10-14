@@ -41,11 +41,11 @@ public class AntMemberRpcCall {
     }
 
     public static String applyTask(String darwinName, Long taskConfigId) {
-        return ApplicationHook.requestString("alipay.antmember.biz.rpc.membertask.h5.applyTask", "[{\"darwinExpParams\":{\"darwinName\":\"" + darwinName + "\"},\"sourcePassMap\":{\"innerSource\":\"\",\"source\":\"myTab\",\"unid\":\"\"},\"taskConfigId\":" + taskConfigId + "}]");
+        return ApplicationHook.requestString("alipay.antmember.biz.rpc.membertask.h5.applyTask", "[{\"darwinExpParams\":{\"darwinName\":\"" + StringUtil.escapeJson(darwinName) + "\"},\"sourcePassMap\":{\"innerSource\":\"\",\"source\":\"myTab\",\"unid\":\"\"},\"taskConfigId\":" + taskConfigId + "}]");
     }
 
     public static String executeTask(String bizParam, String bizSubType) {
-        return ApplicationHook.requestString("alipay.antmember.biz.rpc.membertask.h5.executeTask", "[{\"bizOutNo\":\"" + (System.currentTimeMillis() - 16000L) + "\",\"bizParam\":\"" + bizParam + "\",\"bizSubType\":\"" + bizSubType + "\",\"bizType\":\"BROWSE\"}]");
+        return ApplicationHook.requestString("alipay.antmember.biz.rpc.membertask.h5.executeTask", "[{\"bizOutNo\":\"" + (System.currentTimeMillis() - 16000L) + "\",\"bizParam\":\"" + StringUtil.escapeJson(bizParam) + "\",\"bizSubType\":\"" + StringUtil.escapeJson(bizSubType) + "\",\"bizType\":\"BROWSE\"}]");
     }
 
     public static String queryAllStatusTaskList() {
