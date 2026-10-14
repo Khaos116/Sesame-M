@@ -348,7 +348,7 @@ public class MessageUtil {
         PRESET_BLACKLIST.put("AntFarm|AntFarmDoFarmTaskList", setOf(
                 "线上支付", "用花呗完成一笔支付"));
         PRESET_BLACKLIST.put("AntFarm|AntFarmDrawMachineTaskList", setOf(
-                "伸出援手，点亮希望", "消耗饲料换机会"));
+                "伸出援手 点亮希望", "消耗饲料换机会"));
         PRESET_BLACKLIST.put("AntOrchard|AntOrchardTaskList", setOf(
                 "完成1笔旧衣回收", "完成1单手机数码回收"));
         // 芝麻粒：仍预置拉黑的只剩真实交易/履约类（下单/租赁/订酒店/回收/雇佣/付钱/查车）
