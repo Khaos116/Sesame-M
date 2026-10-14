@@ -7,8 +7,6 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Bundle;
-import lombok.Getter;
-import lombok.Setter;
 import io.github.aw1y2z.sesame.R;
 import io.github.aw1y2z.sesame.util.Log;
 

@@ -1,6 +1,5 @@
 package io.github.aw1y2z.sesame.model.normal.base;
 
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -13,7 +12,6 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.entity.AlipayrpcRequest;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.CaptchaHook;
-import io.github.aw1y2z.sesame.model.task.antForest.AntForestRpcCall;
 import lombok.Getter;
 
 import io.github.aw1y2z.sesame.data.Model;

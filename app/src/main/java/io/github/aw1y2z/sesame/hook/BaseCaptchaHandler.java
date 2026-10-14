@@ -11,7 +11,6 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.RandomUtil;
-import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 /**
  * 验证码处理程序的基类，提供处理滑动验证码的通用逻辑。

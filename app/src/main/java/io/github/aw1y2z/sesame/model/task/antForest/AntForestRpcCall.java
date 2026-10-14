@@ -9,17 +9,13 @@ import org.json.JSONObject;
 import io.github.aw1y2z.sesame.entity.AlipayVersion;
 import io.github.aw1y2z.sesame.entity.RpcEntity;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
-import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.StringUtil;
-import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.Random;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 public class AntForestRpcCall {
     

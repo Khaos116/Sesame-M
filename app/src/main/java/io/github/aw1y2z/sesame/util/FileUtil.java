@@ -1,6 +1,5 @@
 package io.github.aw1y2z.sesame.util;
 
-import static io.github.aw1y2z.sesame.util.idMap.UserIdMap.getShowName;
 import android.os.Build;
 import android.os.Environment;
 import io.github.aw1y2z.sesame.hook.Toast;

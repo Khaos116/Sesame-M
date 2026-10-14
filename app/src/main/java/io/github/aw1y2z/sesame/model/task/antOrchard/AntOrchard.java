@@ -3,7 +3,6 @@ package io.github.aw1y2z.sesame.model.task.antOrchard;
 import io.github.aw1y2z.sesame.data.ConfigV2;
 import io.github.aw1y2z.sesame.entity.AlipayAntOrchardTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayOrchardChouChouLeTaskList;
-import io.github.aw1y2z.sesame.entity.AlipayMemberCreditSesameTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayPlantScene;
 import io.github.aw1y2z.sesame.entity.AlipayUser;
 import io.github.aw1y2z.sesame.data.ModelFields;
@@ -12,7 +11,6 @@ import io.github.aw1y2z.sesame.data.task.ModelTask;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy.Outcome;
 import io.github.aw1y2z.sesame.data.task.TaskAward;
-import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
@@ -20,9 +18,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.ChoiceModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.IntegerModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
-import io.github.aw1y2z.sesame.model.task.antFarm.AntFarmRpcCall;
 import io.github.aw1y2z.sesame.model.task.antGame.GameTask;
-import io.github.aw1y2z.sesame.model.task.antMember.AntMemberRpcCall;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Status;
@@ -38,17 +34,13 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 import io.github.aw1y2z.sesame.util.*;
-import io.github.aw1y2z.sesame.util.idMap.AntFarmDoFarmTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.AntOrchardTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.OrchardChouChouLeTaskListMap;
-import io.github.aw1y2z.sesame.util.idMap.MemberCreditSesameTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.PlantSceneIdMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 import java.util.*;
 
-import android.content.Context;
-import android.content.Intent;
 
 public class AntOrchard extends ModelTask {
     private static final String TAG = "AntOrchard";

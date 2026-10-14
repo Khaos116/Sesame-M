@@ -9,7 +9,6 @@ import com.elvishew.xlog.printer.file.FilePrinter;
 import com.elvishew.xlog.printer.file.backup.NeverBackupStrategy;
 import com.elvishew.xlog.printer.file.clean.NeverCleanStrategy;
 import com.elvishew.xlog.printer.file.naming.FileNameGenerator;
-import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;

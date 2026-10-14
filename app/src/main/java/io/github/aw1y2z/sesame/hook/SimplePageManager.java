@@ -15,7 +15,6 @@ import android.widget.TextView;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
@@ -23,7 +22,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.github.aw1y2z.sesame.util.compat.XC_MethodHook;
-import io.github.aw1y2z.sesame.util.XHelpers;
 
 /**
  * A simplified PageManager - only keeps Activity monitoring and Dialog tracking.

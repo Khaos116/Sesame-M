@@ -75,7 +75,6 @@ import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 import lombok.Getter;
 
 import androidx.annotation.NonNull;
-import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
 import io.github.libxposed.api.XposedModuleInterface;
 

@@ -3,7 +3,6 @@ package io.github.aw1y2z.sesame.hook;
 import android.content.Context;
 import android.os.Handler;
 
-import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 import io.github.aw1y2z.sesame.util.Log;
 
 public class Toast {

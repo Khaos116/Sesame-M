@@ -12,7 +12,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import io.github.aw1y2z.sesame.util.Status;
-import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Statistics;
