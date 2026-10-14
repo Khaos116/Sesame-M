@@ -21,6 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import io.github.aw1y2z.sesame.data.AppConfig;
 import io.github.aw1y2z.sesame.util.compat.XC_MethodHook;
 
 /**
@@ -148,7 +149,11 @@ public class SimplePageManager {
                 continue;
             }
             Log.d(TAG, "  - 对话框: " + dialog.getClass().getName() + ", 正在显示: " + dialog.isShowing());
-            debugPrintAllTextViews(decorView, 0);
+            // 整棵树只在「抓包记录」打开时才遍历：一次验证码要反复走 tryGetTopView，
+            // 无条件递归会把每个节点的文本重复刷进日志
+            if (AppConfig.INSTANCE.getEnableDebugLog()) {
+                debugPrintAllTextViews(decorView, 0);
+            }
             
             io.github.aw1y2z.sesame.hook.SimpleViewImage viewImage = new io.github.aw1y2z.sesame.hook.SimpleViewImage(decorView);
             ArrayList<io.github.aw1y2z.sesame.hook.SimpleViewImage> results = (ArrayList<SimpleViewImage>) SimpleXpathParser.evaluate(viewImage, xpath);
@@ -160,7 +165,7 @@ public class SimplePageManager {
     }
     
     /**
-     * 打印所有 TextView 的文本内容（用于调试）
+     * 打印所有 TextView 的文本内容；只应由 {@link #tryGetTopView} 在「抓包记录」打开时调用
      */
     private static void debugPrintAllTextViews(View view, int depth) {
         String indent = "  ".repeat(depth);
