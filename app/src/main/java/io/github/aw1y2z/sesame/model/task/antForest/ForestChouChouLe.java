@@ -167,13 +167,16 @@ public class ForestChouChouLe {
                         }
                         // ==================== 活力值兑换任务 =====================
                         if (taskType.equals("NORMAL_DRAW_EXCHANGE_VITALITY") && taskStatus.equals("TODO")) {
-                            // 一次补齐：按剩余次数连做（该类任务由服务端给额度，可能不止 2 次）。
+                            // 一次补齐：按剩余次数连做。额度以服务端 rightsTimes/rightsTimesLimit 为准
+                            // （它才是权威，本任务每天固定 2 次），本地只记"本轮已做几次"用于换 key 去重。
                             // 每次兑换消耗 20 活力值，故每次前都重查活力值。
-                            // 次数按当日累计：TaskAttemptPolicy 的当日标记一旦落下就整日只过一次，
-                            // 达不到"做满 N 次"，故这里用整型标记自行记账，做满 rightsTimesLimit 才停。
                             String exchangeKey = "forest::chouchoule::exchangeTotal::" + taskSceneCode + "/" + taskType;
                             int doneToday = Status.getIntFlagToday(exchangeKey);
-                            int remain = (rightsTimesLimit > 0 ? rightsTimesLimit : doneToday + 1) - doneToday;
+                            int remain = rightsTimesLimit - rightsTimes;
+                            if (remain <= 0) {
+                                // 服务端名额已用满：当日无事可做，不必再试探
+                                continue;
+                            }
                             for (int cnt = 0; cnt < remain; cnt++) {
                                 int totalVitalityAmount = 0;
                                 try {
@@ -191,7 +194,8 @@ public class ForestChouChouLe {
                                     Log.forest("森林寻宝🧾活力值" + totalVitalityAmount + "不能兑换");
                                     break;
                                 }
-                                // 每次用不同的 key：handle 的当日标记按 key 计，同一 key 第二次会被挡住
+                                // 用"本轮已做几次"作 key：同一次兑换重拉列表时会命中同一条当日标记、
+                                // 不会重复请求；不同次数各自成键，不至于第一次就把后面几次一起挡死。
                                 Outcome exchangeOutcome = TaskAttemptPolicy.handle(
                                         "forest::chouchoule::exchange::" + taskSceneCode + "/" + taskType
                                                 + "#" + doneToday,
@@ -200,7 +204,8 @@ public class ForestChouChouLe {
                                         Log::forest,
                                         new TaskAttemptPolicy.Site("AntForestHuntTaskList", "森林寻宝",
                                                 taskType, taskSceneCode,
-                                                (k) -> probeChouChouLeStatus(sceneCode, taskSceneCode, taskType)));
+                                                (k) -> probeChouChouLeStatus(sceneCode, taskSceneCode, taskType),
+                                                (k) -> rightsTimes >= rightsTimesLimit));
                                 if (exchangeOutcome != Outcome.DONE && exchangeOutcome != Outcome.TRIGGERED
                                         && exchangeOutcome != Outcome.AWARDED) {
                                     break; // 做不了就收手，不再空转剩余次数
