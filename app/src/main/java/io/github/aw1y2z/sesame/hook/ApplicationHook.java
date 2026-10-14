@@ -625,7 +625,7 @@ public class ApplicationHook extends XposedModule {
     }
 
     private Boolean initHandler(Boolean force) {
-        return initHandler(force, null);
+        return initHandler(force, null, true);
     }
 
     /**
@@ -636,6 +636,11 @@ public class ApplicationHook extends XposedModule {
      * 后台线程里仍然走 TaskLifecycle 守卫，避免和切号并发。
      */
     private Boolean initHandler(Boolean force, TaskLifecycle.Freeze owner) {
+        return initHandler(force, owner, true);
+    }
+
+    /** 配置保存只重载并恢复排期；首启、切号及手动执行仍立即运行。 */
+    private Boolean initHandler(Boolean force, TaskLifecycle.Freeze owner, boolean exec) {
         if (service == null) {
             return false;
         }
@@ -666,7 +671,7 @@ public class ApplicationHook extends XposedModule {
             final Boolean f = force;
             new Thread(() -> {
                 try {
-                    runInit(f, owner);
+                    runInit(f, owner, exec);
                 } catch (Throwable t) {
                     initializing = false;
                     Log.err(TAG, "Sesame-InitHandler err:", t);
@@ -674,7 +679,7 @@ public class ApplicationHook extends XposedModule {
             }, "Sesame-InitHandler").start();
             return null;
         }
-        return runInit(force, owner);
+        return runInit(force, owner, exec);
     }
 
     /**
@@ -683,13 +688,13 @@ public class ApplicationHook extends XposedModule {
      * synchronized 保证同一时刻只有一处重载，防止切号与首启 / 广播重启并发触发重复初始化；
      * TaskLifecycle 守卫防止和账号切换窗口重叠。
      */
-    private synchronized Boolean runInit(Boolean force, TaskLifecycle.Freeze owner) {
+    private synchronized Boolean runInit(Boolean force, TaskLifecycle.Freeze owner, boolean exec) {
         try (TaskLifecycle.Work work = TaskLifecycle.enterInitialization(owner)) {
             if (work == null) {
                 Log.i(TAG, "重载被 TaskLifecycle 拒绝（账号切换窗口期），本次跳过，等下次触发");
                 return false;
             }
-            boolean initialized = initializeHandler(force);
+            boolean initialized = initializeHandler(force, exec);
             if (initialized && owner == null) BaseModel.initData();
             return initialized;
         } finally {
@@ -698,7 +703,7 @@ public class ApplicationHook extends XposedModule {
     }
 
     @SuppressLint("WakelockTimeout")
-    private Boolean initializeHandler(Boolean force) {
+    private Boolean initializeHandler(Boolean force, boolean exec) {
         destroyHandler(force);
         init = false;
         try {
@@ -773,7 +778,13 @@ public class ApplicationHook extends XposedModule {
             }
             offline = false;
             init = true;
-            execHandler();
+            if (exec) {
+                execHandler();
+            } else {
+                execDelayedHandler(Math.max(BaseModel.getCheckInterval().getValue(), FALLBACK_INTERVAL));
+                NotificationUtil.updateIdleText();
+                Log.record("配置已重载#未触发执行，下一跳按间隔排队");
+            }
             return true;
         } catch (Throwable th) {
             Log.err(TAG, "startHandler err:", th);
@@ -1181,7 +1192,10 @@ public class ApplicationHook extends XposedModule {
 
     public static void restartByBroadcast() {
         try {
-            context.sendBroadcast(new Intent("com.eg.android.AlipayGphone.sesame.restart"));
+            Intent intent = new Intent("com.eg.android.AlipayGphone.sesame.restart");
+            // 宿主前台服务被销毁后的自救：重载完要紧接着跑一轮，否则要白等一个查询间隔
+            intent.putExtra("exec", true);
+            context.sendBroadcast(intent);
         } catch (Throwable th) {
             Log.err(TAG, "sesame sendBroadcast restart err:", th);
         }
@@ -1293,11 +1307,14 @@ public class ApplicationHook extends XposedModule {
                 switch (action) {
                     case "com.eg.android.AlipayGphone.sesame.restart":
                         String userId = intent.getStringExtra("userId");
+                        // 默认不执行：这条广播主要来自配置保存（字段页退出、需重挂 hook 的开关），
+                        // 用户并没点"执行"；宿主前台服务被销毁的自救路径会显式带 exec=true
+                        boolean execAfterRestart = intent.getBooleanExtra("exec", false);
                         if (StringUtil.isEmpty(userId) || Objects.equals(UserIdMap.getCurrentUid(), userId)) {
                             BroadcastReceiver.PendingResult r = goAsync();
                             new Thread(() -> {
                                 try {
-                                    initHandler(true);
+                                    initHandler(true, null, execAfterRestart);
                                 } catch (Throwable th) {
                                     Log.printStackTrace(TAG, th);
                                 }

@@ -118,10 +118,12 @@ public class EnergyManureCheck {
         long today=day.getTimeInMillis();EnergyManureCheck work=new EnergyManureCheck();
         records(page(true,10,record(today+1,5)),page(false,0,record(today+2,7)));work.syncTodayCollectedFromServer();assert Statistics.total==12&&Statistics.updates==1;
         records(page(true,10,record(today,5),record(today-1,100)));work.syncTodayCollectedFromServer();assert Statistics.total==5;
-        for(String bad:List.of("invalid","{}",page(true,10,record(today,7)),page(false,0,new JSONObject()),page(false,0,record(today,-1)))){
+        records(page(true,10,record(today,5)),page(false,0,record(today,-7),record(today,0),record(today,3)));work.syncTodayCollectedFromServer();assert Statistics.total==8:"income only, ignore spending and zero";
+        for(String bad:List.of("invalid","{}",page(true,10,record(today,7)),page(false,0,new JSONObject()),page(false,0,record(today,1).put("energy","invalid")))){
             records(page(true,10,record(today,5)),bad);work.syncTodayCollectedFromServer();assert Statistics.total==99&&Statistics.updates==0:bad;
         }
         records(page(false,0,record(today,Integer.MAX_VALUE),record(today,1)));work.syncTodayCollectedFromServer();assert Statistics.updates==0;
+        records(page(false,0,record(today,1).put("energy",2147483648L)));work.syncTodayCollectedFromServer();assert Statistics.updates==0:"large income must not wrap to negative and be skipped";
         records();for(int i=1;i<=20;i++)AntForestRpcCall.records.add(page(true,i,record(today,1)));
         work.syncTodayCollectedFromServer();assert Statistics.updates==0:"truncated pages overwrote totals";
         records(page(false,0,record(today,8)));AntForestRpcCall.switchAccount=true;work.syncTodayCollectedFromServer();assert Statistics.updates==0;

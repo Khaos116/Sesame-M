@@ -18,11 +18,13 @@ public class FarmFamilyCheck {
  static class SelectModelField {Set<String> values=new HashSet<>();Set<String> getValue(){return values;}}
  Int familyAssignStrategy=new Int(0),familyShareMode=new Int(1);SelectModelField familyShareList=new SelectModelField();
  static class UserIdMap {static String uid="self";static String getCurrentUid(){return uid;}static String getShowName(String id){return id;}}
- static class MyUtils {static JSONObject newJSONObject(){return new JSONObject();}static JSONObject newJSONObject(String raw){try{return new JSONObject(raw);}catch(Exception e){return new JSONObject();}}}
+ static class MyUtils {static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.setTimeInMillis(System.now);return c;}static JSONObject newJSONObject(){return new JSONObject();}static JSONObject newJSONObject(String raw){try{return new JSONObject(raw);}catch(Exception e){return new JSONObject();}}}
+ String ownerGroupId="group";
+ static class StringUtil {static boolean isEmpty(String s){return s==null||s.isEmpty();}static String truncate(String s,int n){return s;}}
  static class RandomUtil {static int nextInt(int a,int b){assert b>a;return a;}}
  static class TimeUtil {static boolean cancel;static void sleep(long ms){if(cancel)throw new TaskCancelledException();}}
  static class Status {static Set<String> flags=new HashSet<>();static Map<String,Integer> counts=new HashMap<>();static boolean hasFlagToday(String f){return flags.contains(f);}static void flagToday(String f){flags.add(f);}static int getIntFlagToday(String f){return counts.getOrDefault(f,0);}static void setIntFlagToday(String f,int n){counts.put(f,n);}}
- static class Log {static int successes,fallback;static void record(String s){if(s.contains("随机策略"))fallback++;}static void farm(String s){successes++;}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
+ static class Log {static int successes,fallback;static void record(String s){if(s.contains("随机策略"))fallback++;}static void farm(String s){successes++;}static void err(String t,String s,Throwable e){throw new AssertionError(e);}static void printStackTrace(String t,Throwable e){throw new AssertionError(e);}}
  static class MessageUtil {static boolean checkMemo(String t,JSONObject j){return "SUCCESS".equals(j.optString("memo"));}static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}
  static class AlipayUser {String id;AlipayUser(String id){this.id=id;}String getId(){return id;}static List<AlipayUser> users;static List<AlipayUser> getList(){return users;}}
  static JSONObject row(String id,int today,int total,int donated){return new JSONObject().put("userId",id).put("todayIntimateNum",today).put("totalIntimateNum",total).put("userDonateCount",donated);}
@@ -38,7 +40,16 @@ public class FarmFamilyCheck {
    return fail?"unknown":new JSONObject().put("memo","SUCCESS").put("resultCode","SUCCESS").toString();
   }
  }
- static class AntFarmRpcCall {@@RPC@@}
+ static class AntFarmRpcCall {
+  static String tips;static int greetings;
+  static String familyTaskTips(JSONArray a){return tips;}
+  static String OpenAIPrivatePolicy(){return "{memo:'SUCCESS'}";}
+  static String deliverSubjectRecommend(JSONArray users){return "{memo:'SUCCESS',deliverId:'id'}";}
+  static String deliverContentExpand(String a,String b,String c,String d,String e,String f,String g,boolean h,JSONArray users){return "{memo:'SUCCESS',deliverId:'id',content:'hello'}";}
+  static String QueryExpandContent(String id){return "{memo:'SUCCESS',content:'hello'}";}
+  static String deliverMsgSend(String group,JSONArray users,String content,String id){greetings++;return "{memo:'SUCCESS'}";}
+  @@RPC@@
+ }
  @@METHODS@@
  static void reset(FarmFamilyCheck f){Status.flags.clear();Status.counts.clear();ApplicationHook.assigned.clear();ApplicationHook.invited.clear();ApplicationHook.contribution=state();ApplicationHook.fail=ApplicationHook.switchUid=ApplicationHook.rollover=ApplicationHook.cancelAfter=TimeUtil.cancel=false;UserIdMap.uid="self";System.now=java.time.Instant.parse("2026-10-07T12:00:00Z").toEpochMilli();f.familyAssignStrategy.value=0;f.familyShareMode.value=1;f.familyShareList.values.clear();Log.successes=Log.fallback=0;AlipayUser.users=new ArrayList<>();for(String id:List.of("self","family","a","b","b","c","blocked"))AlipayUser.users.add(new AlipayUser(id));}
  public static void main(String[] args){TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));FarmFamilyCheck f=new FarmFamilyCheck();reset(f);List<String> members=new ArrayList<>(List.of("self","a","b","c"));
@@ -60,12 +71,19 @@ public class FarmFamilyCheck {
   reset(f);f.familyShareMode.value=0;f.familyShareList.values.addAll(List.of("a","b"));ApplicationHook.fail=true;f.familyShareToFriends("group\"\\",family,blocked);f.familyShareToFriends("group\"\\",family,blocked);assert ApplicationHook.invited.size()==2;
   for(int change:new int[]{1,2,3}){reset(f);ApplicationHook.switchUid=change==1;ApplicationHook.rollover=change==2;ApplicationHook.cancelAfter=change==3;try{f.familyShareToFriends("group\"\\",family,blocked);assert change!=3;}catch(TaskCancelledException e){assert change==3;}assert ApplicationHook.invited.size()==1&&Log.successes==0;}
   reset(f);TimeUtil.cancel=true;try{f.assignFamilyMember(config(),members);throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}assert ApplicationHook.assigned.isEmpty();
+  for(String tips:List.of("{memo:'SUCCESS'}","{memo:'SUCCESS',familyTaskTips:[]}","{memo:'SUCCESS',familyTaskTips:[{bizKey:'GREETING',taskStatus:'NOT_TRIGGER'}]}","{memo:'SUCCESS',familyTaskTips:[{bizKey:'OTHER',taskStatus:'TODO'}]}")) {
+   reset(f);System.now=java.time.Instant.parse("2026-10-07T00:00:00Z").toEpochMilli();AntFarmRpcCall.greetings=0;AntFarmRpcCall.tips=tips;
+   f.deliverMsgSend(new JSONArray(),List.of("self","friend"));assert Status.flags.isEmpty()&&AntFarmRpcCall.greetings==0:"missing/not-yet-created greeting must not block the day";
+   AntFarmRpcCall.tips="{memo:'SUCCESS',familyTaskTips:[{bizKey:'GREETING',taskStatus:'TODO'}]}";
+   f.deliverMsgSend(new JSONArray(),List.of("self","friend"));assert Status.hasFlagToday("antFarm::deliverMsgSend")&&AntFarmRpcCall.greetings==1:"later greeting must remain executable";
+   f.deliverMsgSend(new JSONArray(),List.of("self","friend"));assert AntFarmRpcCall.greetings==1;
+  }
   java.lang.System.out.println("PASS family contribution ordering/fallback, preserved candidates, selected/excluded friends, caps, single attempts, escaped RPC JSON and UID/day/cancellation guards");
  }
 }
 '''
 code = code.replace('@@RPC@@', '\n'.join(method(rpc,s) for s in ('public static String familyTreadMill(', 'public static String assignFamilyMember(', 'public static String batchInviteP2P(')))
-code = code.replace('@@METHODS@@', '\n'.join(method(farm,s) for s in ('private static int rankingInt(', 'private static String rankingDay(', 'private static String lowestFamilyContributor(', 'private void assignFamilyMember(', 'private void familyShareToFriends(')))
+code = code.replace('@@METHODS@@', '\n'.join(method(farm,s) for s in ('private static int rankingInt(', 'private static String rankingDay(', 'private static String lowestFamilyContributor(', 'private void assignFamilyMember(', 'private void familyShareToFriends(', 'private static String extractGreetingContent(', 'private void deliverMsgSend(')))
 cache = Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1/org.json/json'
 jar = sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar','-javadoc.jar')))[-1]
 with tempfile.TemporaryDirectory(prefix='sesame-family-') as tmp:

@@ -713,8 +713,66 @@ public class SyncProbeCheck {
 '''
 sync_probe = sync_probe.replace("@@PROBE@@", method("model/task/antSports/AntSports.java", "private static boolean syncStepByRpcManager("))
 
+reload_check = r'''
+import org.json.*;import java.util.*;
+public class ReloadCheck {
+ static final String TAG="reload";static final int FALLBACK_INTERVAL=180000,VITALITY_EXCHANGE_RETRY_MAX=3;
+ boolean initializing=true,init,offline;int executions;long delayed;
+ static class Log {static void i(String t,String s){}static void record(String s){}static void printStackTrace(Throwable t){throw new AssertionError(t);}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
+ static class BaseModel {static int data;static void initData(){data++;}static Interval getCheckInterval(){return new Interval();}static class Interval{int getValue(){return interval;}}}
+ static int interval=300000;static boolean rejectInit,throwInit;
+ void execHandler(){executions++;}void execDelayedHandler(long delay){delayed=delay;NotificationUtil.nextExecTime=delay;}
+ boolean initializeHandler(Boolean force,boolean exec){if(throwInit)throw new IllegalStateException();if(rejectInit)return false;@@SCHEDULE@@}
+ Boolean initHandler(Boolean force,TaskLifecycle.Freeze owner,boolean exec){return runInit(force,owner,exec);}
+ @@INIT@@
+ @@LIFECYCLE@@
+ static class StringUtil {static boolean isEmpty(String s){return s==null||s.isEmpty();}}
+ static class TimeUtil {static String getTimeStr(long n){return "NEXT";}}
+ static class Statistics {enum TimeType {DAY}enum DataType {COLLECTED}static int getRoundCollected(){return 7;}static int getData(TimeType t,DataType d){return 10;}}
+ static class Notification {static class BigTextStyle{String text;BigTextStyle bigText(String s){text=s;return this;}}}
+ static class Builder {String title,text,big;void setContentTitle(String s){title=s;}void setContentText(String s){text=s;}void setStyle(Notification.BigTextStyle s){big=s.text;}Builder build(){return this;}}
+ static class Manager {void notify(int id,Builder b){}}
+ static class NotificationUtil {
+  static Builder builder=new Builder();static Manager mNotifyManager=new Manager();static final int NOTIFICATION_ID=99;
+  static String titleText="Sesame-M",contentText="";static long nextExecTime,lastNoticeTime;
+  @@NOTICE@@
+ }
+ static class MyUtils {static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
+ static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}
+ static class Status {static Set<String> flags=new HashSet<>();static Map<String,Integer> counts=new HashMap<>();static void flagToday(String k){flags.add(k);}static int getIntFlagToday(String k){return counts.getOrDefault(k,0);}static void setIntFlagToday(String k,int v){counts.put(k,v);}}
+ static class AntForestRpcCall {static String reply="{}";static String exchangeBenefit(String spu,String sku){return reply;}}
+ @@EXCHANGE@@
+ public static void main(String[] args){ReloadCheck h=new ReloadCheck();
+  assert h.runInit(true,null,false)&&h.executions==0&&h.delayed==300000&&h.init&&!h.initializing&&BaseModel.data==1;
+  assert NotificationUtil.contentText.equals("等待执行  下次执行 NEXT")&&NotificationUtil.builder.title.contains("本轮7g")&&NotificationUtil.builder.big.contains("本日收取能量 10g");
+  interval=0;h.delayed=0;assert h.runInit(true,null,false)&&h.delayed==FALLBACK_INTERVAL;
+  assert h.initHandler(true)&&h.executions==1&&TaskLifecycle.isIdle();
+  TaskLifecycle.Freeze owner=TaskLifecycle.freezeIfIdle();assert owner!=null;
+  int data=BaseModel.data;h.initializing=true;assert !h.runInit(true,null,false)&&!h.initializing&&BaseModel.data==data;
+  assert h.initHandler(true,owner)&&h.executions==2&&BaseModel.data==data;TaskLifecycle.thaw(owner);assert TaskLifecycle.isOpen()&&TaskLifecycle.isIdle();
+  rejectInit=true;assert !h.runInit(true,null,false)&&BaseModel.data==data;rejectInit=false;
+  throwInit=true;h.initializing=true;try{h.runInit(true,null,false);throw new AssertionError();}catch(IllegalStateException expected){}assert !h.initializing&&TaskLifecycle.isIdle();throwInit=false;
+  AntForestRpcCall.reply="{errorMessage:'系统繁忙，请稍后再试。'}";
+  for(int i=1;i<=VITALITY_EXCHANGE_RETRY_MAX;i++){assert !h.exchangeBenefit("spu","one");assert Status.flags.contains("forest::exchangeLimit::one")== (i==VITALITY_EXCHANGE_RETRY_MAX);}
+  assert !h.exchangeBenefit("spu","two")&&!Status.flags.contains("forest::exchangeLimit::two");
+  Status.flags.clear();Status.counts.clear();assert !h.exchangeBenefit("spu","one")&&!Status.flags.contains("forest::exchangeLimit::one");
+  AntForestRpcCall.reply="{}";assert !h.exchangeBenefit("spu","other")&&!Status.counts.containsKey("forest::exchangeRetry::other");
+  System.out.println("PASS config reload scheduling, idle notice, startup/switch execution, lifecycle guard and per-day/SKU busy retry cap");
+ }
+}
+'''
+hook = 'hook/ApplicationHook.java'
+initialize = method(hook, 'private Boolean initializeHandler(')
+schedule = initialize[initialize.index('            offline = false;'):initialize.index('        } catch (Throwable th)')]
+reload_check = reload_check.replace('@@SCHEDULE@@', schedule)
+reload_check = reload_check.replace('@@INIT@@', '\n'.join(method(hook,s) for s in ('private Boolean initHandler(Boolean force)', 'private Boolean initHandler(Boolean force, TaskLifecycle.Freeze owner)', 'private synchronized Boolean runInit(')))
+life = (SOURCE/'data/task/TaskLifecycle.java').read_text(encoding='utf-8').split('\n',1)[1].replace('public final class TaskLifecycle', 'static final class TaskLifecycle')
+reload_check = reload_check.replace('@@LIFECYCLE@@',life)
+reload_check = reload_check.replace('@@NOTICE@@', '\n'.join(method('util/NotificationUtil.java',s) for s in ('private static String energyText(', 'private static String titleWithEnergy(', 'private static void applyText(', 'private static void sendText(', 'public static void updateIdleText(')))
+reload_check = reload_check.replace('@@EXCHANGE@@',method('model/task/antForest/AntForestV2.java','private static Boolean exchangeBenefit('))
+
 with tempfile.TemporaryDirectory(prefix="sesame-merge-") as tmp:
-    for name, source in (("MergeCheck", code), ("FlowCheck", flows), ("UpstreamFixCheck", fixes), ("ToastCheck", toast), ("PatrolSyncCheck", patrol), ("LoveWaterRequestCheck", love_request), ("SyncProbeCheck", sync_probe)):
+    for name, source in (("MergeCheck", code), ("FlowCheck", flows), ("UpstreamFixCheck", fixes), ("ToastCheck", toast), ("PatrolSyncCheck", patrol), ("LoveWaterRequestCheck", love_request), ("SyncProbeCheck", sync_probe), ("ReloadCheck",reload_check)):
         java = Path(tmp) / (name + ".java")
         java.write_text(source, encoding="utf-8")
         subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(json_jar), "-d", tmp, str(java)], check=True)
