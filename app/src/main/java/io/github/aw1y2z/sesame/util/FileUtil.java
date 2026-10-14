@@ -10,7 +10,11 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 public class FileUtil {
@@ -445,16 +449,36 @@ public class FileUtil {
         return getFile(getUserDataDirectoryFile(userId), "status.json");
     }
     
-    public static File getStatisticsFile() {
-        File statisticsFile = getFile(MAIN_DIRECTORY_FILE, "statistics.json");
-        if (statisticsFile.exists()) {
-            // 遗留自检：真正写失败时 write2File 已会 Toast + 打异常日志，这里降为调试日志，避免每次读写都刷一行
-            Log.debug(TAG + ", [statistics]读:" + statisticsFile.canRead() + ";写:" + statisticsFile.canWrite());
+    /**
+     * 账号维度的统计文件；userId 为空时回退主目录（与 {@link #getStatusFile} 同构）。
+     * <p>统计必须按账号分文件：全局单文件时切号会把上一个账号的日/月值带到新账号。
+     */
+    public static File getStatisticsFile(String userId) {
+        return getFile(getUserDataDirectoryFile(userId), "statistics.json");
+    }
+
+    /** 未按账号分目录的旧统计文件：只作一次性迁移的来源，迁完不再使用 */
+    public static File getLegacyStatisticsFile() {
+        return getFile(MAIN_DIRECTORY_FILE, "statistics.json");
+    }
+
+    /**
+     * 已有统计文件的账号 uid（界面按账号分页展示用），按目录名排序保证顺序稳定。
+     * <p>同时用于判断旧的全局文件还能不能当迁移来源：已有账号落过盘就不该再让别的账号继承它。
+     */
+    public static List<String> listAccountStatisticsUids() {
+        List<String> uids = new ArrayList<>();
+        File[] dirs = CONFIG_DIRECTORY_FILE.listFiles();
+        if (dirs == null) {
+            return uids;
         }
-        else {
-            Log.debug(TAG + ", statisticsFile.json文件不存在");
+        Arrays.sort(dirs, Comparator.comparing(File::getName));
+        for (File dir : dirs) {
+            if (dir.isDirectory() && new File(dir, "statistics.json").exists()) {
+                uids.add(dir.getName());
+            }
         }
-        return statisticsFile;
+        return uids;
     }
     
     public static File getTreeIdMapFile() {

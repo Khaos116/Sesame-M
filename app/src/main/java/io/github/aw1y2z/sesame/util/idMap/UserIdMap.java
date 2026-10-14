@@ -22,8 +22,9 @@ public class UserIdMap {
     
     private static final Map<String, UserEntity> readOnlyUserMap = Collections.unmodifiableMap(userMap);
     
+    /** 当前账号；volatile：切号在别的线程发生，读方必须能看到最新值 */
     @Getter
-    private static String currentUid = null;
+    private static volatile String currentUid = null;
     
     public static Map<String, UserEntity> getUserMap() {
         return readOnlyUserMap;

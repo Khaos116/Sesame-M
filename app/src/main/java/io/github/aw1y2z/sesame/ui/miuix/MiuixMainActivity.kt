@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -41,6 +43,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -81,7 +84,6 @@ import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.File
-import java.util.Calendar
 
 class MiuixMainActivity : MiuixBaseActivity() {
 
@@ -89,8 +91,10 @@ class MiuixMainActivity : MiuixBaseActivity() {
 
     /** 可观察的激活状态：HomeTab 等页面订阅它，onServiceBind/广播更新时自动重组刷新 */
     var uiRunType by mutableStateOf<RunType>(RunType.DISABLE)
-    var statisticsText by mutableStateOf("")
     var hasPermission by mutableStateOf(false)
+
+    /** 统计分页：首项是「全部账号合计」，其后按账号；由 refreshStatistics() 重新读取 */
+    var statisticsPages by mutableStateOf<List<StatisticsPage>>(emptyList())
 
     /** 统计版本号：load / 广播刷新后自增,首页 StatisticsTable 订阅它来触发重组 */
     var statisticsVersion by mutableStateOf(0)
@@ -237,8 +241,13 @@ class MiuixMainActivity : MiuixBaseActivity() {
     fun refreshStatistics() {
         if (!hasPermission) return
         try {
-            Statistics.load()
-            Statistics.updateDay(Calendar.getInstance())
+            // 统计按账号分文件，界面一次读全部账号：首项是合计（默认显示），其后是各账号。
+            // 不再读单例：界面进程没有「当前账号」的概念，读单例只会拿到没有归属的那一份。
+            val perAccount = FileUtil.listAccountStatisticsUids().map { uid ->
+                StatisticsPage(uid, UserIdMap.getAccountLabel(uid) ?: uid, Statistics.readFrom(uid))
+            }
+            val total = Statistics.aggregate(perAccount.map { it.statistics })
+            statisticsPages = listOf(StatisticsPage(null, "全部账号合计", total)) + perAccount
             statisticsVersion++
         } catch (e: Exception) {
             Log.printStackTrace(e)
@@ -329,19 +338,6 @@ class MiuixMainActivity : MiuixBaseActivity() {
             PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
         }
         packageManager.setComponentEnabledSetting(alias, newState, PackageManager.DONT_KILL_APP)
-    }
-
-    fun exportStatistics(): Uri? {
-        return FileUtil.getExportedStatisticsFile()?.let { Uri.fromFile(it) }
-    }
-
-    fun importStatistics(): Boolean {
-        val src = FileUtil.getExportedStatisticsFile()
-        if (src != null && FileUtil.copyTo(src, FileUtil.getStatisticsFile())) {
-            statisticsText = Statistics.getText(this)
-            return true
-        }
-        return false
     }
 
     override fun onPause() {
@@ -518,13 +514,66 @@ fun StatusRow(label: String, value: String) {
     }
 }
 
+/** 首页「数据统计」的一块：标签 + 该账号的数据；列表首项是全部账号合计 */
+data class StatisticsPage(val userId: String?, val label: String, val statistics: Statistics)
+
 @Composable
 fun StatisticsTable(activity: MiuixMainActivity) {
-    // 左右补 16dp：卡片( CardColumn )自带的 16dp 之外，再补上行内边距，
-    // 让表格文字与「模块状态」那些行的标签左边界对齐（都是 48dp），否则整块会贴着卡片边缘更靠左
-
-    // 订阅 statisticsVersion：load / 广播刷新后自增,触发本表重组读取最新单例数据
+    // 订阅 statisticsVersion：load / 广播刷新后自增,触发本表重组读取最新数据
     activity.statisticsVersion
+    val pages = activity.statisticsPages
+    if (pages.isEmpty()) {
+        return
+    }
+    // 左右滑动切换账号，默认停在首项（全部账号合计）。
+    // 循环滑动：页数取超大值、真实下标取模，滑到最后一页继续滑就回到第一页（两个方向都能一直滑）。
+    // 起始页对齐到 0（合计），并放在中间，使左右两侧都有足够页可滑。
+    val initialPage = remember(pages.size) {
+        val base = Int.MAX_VALUE / 2
+        base - base % pages.size
+    }
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { Int.MAX_VALUE })
+    // 每次进入首页都回到首项（合计）：pagerState 自身会记住上次页码，不归位就不算「默认显示合计」
+    LaunchedEffect(pages.size) {
+        pagerState.scrollToPage(initialPage)
+    }
+    val current = pagerState.currentPage % pages.size
+    Column(
+        Modifier
+            .fillMaxWidth()
+            // 左右补 16dp：卡片( CardColumn )自带的 16dp 之外，再补上行内边距，
+            // 让表格文字与「模块状态」那些行的标签左边界对齐（都是 48dp），否则整块会贴着卡片边缘更靠左
+            // 上下补 16dp：卡片本身不带内边距（各部分自备留白），不补的话表头会贴住卡片上边缘
+            .padding(horizontal = 16.dp, vertical = 16.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = pages[current].label,
+                style = MiuixTheme.textStyles.headline1,
+                color = MiuixTheme.colorScheme.primary
+            )
+            Spacer(Modifier.weight(1f))
+            if (pages.size > 1) {
+                // 明示这一块可以左右滑动，否则用户不知道还有别的账号
+                Text(
+                    text = "${current + 1}/${pages.size}  左右滑动",
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+                )
+            }
+        }
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth()) { page ->
+            StatisticsGrid(pages[page % pages.size].statistics)
+        }
+    }
+}
+
+/** 单个账号（或合计）的统计表：行=项目、列=今日/本月/今年 */
+@Composable
+private fun StatisticsGrid(statistics: Statistics) {
     val rows = listOf(
         "收" to listOf(DataType.COLLECTED),
         "帮" to listOf(DataType.HELPED),
@@ -535,12 +584,7 @@ fun StatisticsTable(activity: MiuixMainActivity) {
     val columns = listOf(TimeType.DAY, TimeType.MONTH, TimeType.YEAR)
     val headers = listOf("今日", "本月", "今年")
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            // 上下补 16dp：卡片本身不带内边距（各部分自备留白），不补的话表头会贴住卡片上边缘
-            .padding(horizontal = 16.dp, vertical = 16.dp)
-    ) {
+    Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth()) {
             Box(Modifier.weight(1f))
             headers.forEach { header ->
@@ -567,7 +611,7 @@ fun StatisticsTable(activity: MiuixMainActivity) {
                     Text(text = label, style = MiuixTheme.textStyles.headline1, color = MiuixTheme.colorScheme.onBackground)
                 }
                 columns.forEach { timeType ->
-                    val value = types.sumOf { Statistics.getData(timeType, it) }
+                    val value = types.sumOf { statistics.dataOf(timeType, it) }
                     Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         // 数值用 body2：与 preference 行的摘要/值同级（原来硬编码 15sp，夹在 14sp/17sp 之间最显割裂）
                         Text(text = value.toString(), style = MiuixTheme.textStyles.body2, color = MiuixTheme.colorScheme.onBackground)
