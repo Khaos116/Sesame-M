@@ -521,10 +521,14 @@ public class AntOrchard extends ModelTask {
                         }
                         String label = rightsTimesLimit > 1
                                 ? title + "(" + (rightsTimes + 1) + "/" + rightsTimesLimit + ")" : title;
+                        // key 必须带档位：多次任务每推进一档都是新的尝试，不带档位会让第一档落下的
+                        // 当日标记把后续档位全挡下、任务停在第一档。单次任务保持原 key，语义不变。
+                        String policyKey = "orchard::optionalplay::" + sceneCode + "/" + taskType
+                                + (rightsTimesLimit > 1 ? "#" + rightsTimes : "");
                         // 走统一策略：400000040 时由 TaskAttemptPolicy 代为 doFarmTask 伪申报，
                         // 裸调 finishTask 会把 UNSUPPORTED 吞成 false，兜底永不触发
                         Outcome outcome = TaskAttemptPolicy.handle(
-                                "orchard::optionalplay::" + sceneCode + "/" + taskType, label, null,
+                                policyKey, label, null,
                                 () -> attemptFinishOptionalPlayTask(sceneCode, taskType, label), Log::farm,
                                 new TaskAttemptPolicy.Site("AntOrchardTaskList", "农场乐园限定任务",
                                         taskType, sceneCode, TaskAlternative.DEFAULT_VERSION, null,
