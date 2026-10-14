@@ -1,35 +1,18 @@
 # 检查问题 AI 反馈
 
-检查对象：`my_dev` 分支，HEAD `c8699e3d` 加工作区未提交改动（上一轮隐患的处理，第二轮）。
-检查方式：只读审查，未改代码。
+检查对象：`my_dev` 分支，HEAD `50422ab7` 加工作区未提交改动（日志精简第三版）。
+检查方式：只读审查，未改代码。要求：只精简运行日志，其它日志不精简。
 
-验证结果：`check_love_reward_probe`、`check_rpc_guard`、`check_step_sync_sources`、`check_upstream_merge` 通过，Debug 的 Java 编译通过。其余回归本轮没有重跑。
+验证结果：`check_rpc_guard`、`check_love_reward_probe`、`check_friend_activities`、`check_daily_task`、`check_farm_task_flow`、`check_step_sync_sources` 通过。
 
-当前无待处理的代码问题。上一轮第 1、2、3、5 项已处理，第 4 项没有改，仍是低优先级，见最后一节。
+当前无待处理的代码问题。
 
-## 上一轮各项的核对结果
+## 上一轮问题的核对结果
 
-第 1 项已修复。`AntSports.java` 的行走捐步数查询改用宿主计步时区，取不到时回退 `Asia/Shanghai`；小时判断改用 GMT+8 日历；步数字段缺失或无效时写日志并停止，不再按 0 步继续。
+已修复。`NewRpcBridge.java` 两处、`OldRpcBridge.java` 一处的错误日志改回直接写 `RpcLog.requestData(rpcEntity)` 和 `RpcLog.responseData(rpcEntity)`，与改动前的内容一致；`RpcLog.errorData`、`redact`、`redactText` 已删除，源码中没有残留引用。
 
-第 2 项已修复。`ForestLoveReward.java`：
+## 当前改动范围
 
-- 新增当天完成记录，确认回执成功、同队伍展示清空、入口变为 `water` 或 `callWater` 时写入，之后自动调度不再查询。
-- 30 分钟间隔内不再写日志。
-- 入口不是 `reward` 时只查一次入口状态，不查背包。
-- 桥里的“RPC[附加请求头]”日志和“测试”字样已删除。
-
-第 3 项已修复。确认请求改为当天最多尝试 3 次；请求被本地保护跳过时恢复原记录，不计次数。旧格式的记录按已尝试 1 次处理。
-
-第 5 项已处理。`queryLegacyPatrolSteps` 开头加了离线检查。
-
-第 6、7 项是说明性质，没有改动，不需要改。
-
-## 仍未处理（低优先级）：步数同步在服务器步数已达标时不记当天标记
-
-位置：`AntSports.java` 的 `syncStepNow`，“同步步数[上传前]…跳过重复上传”那一段。
-
-服务器步数已达到目标时，每次进入都会查一次步数并写一行日志，当天不会停。不影响功能。要处理的话，在这个分支里记当天标记即可。
-
-## 仍需实机确认：行走捐后续接口的时区
-
-`AntSportsRpcCall.java` 里行走捐签到、首页、兑换和行走路线接口仍固定 `Asia/Shanghai`。本轮只改了步数查询。实机开启行走捐后，看运行日志里当天是否正常兑换；如果步数查到了但兑换失败，再把这几个接口也改成宿主计步时区。
+- RPC 失败：错误日志写参数和回执原文，运行日志只写接口名、状态码和简短原因（`RpcLog.errorSummary`）。
+- `Log.writeError(details, summary)`：只有 `Log.errorWithSummary` 传入不同内容；其它 `Log.error` 走 `writeError(s, s)`，错误日志和运行日志的内容与原来一致。
+- 业务代码里删减或收窄的都是 `Log.record` / `Log.i`，两者只写运行日志。调试日志和各分类日志没有改动。
