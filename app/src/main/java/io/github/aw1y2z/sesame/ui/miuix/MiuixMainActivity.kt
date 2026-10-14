@@ -145,7 +145,9 @@ class MiuixMainActivity : MiuixBaseActivity() {
                 if (!market.isNullOrBlank()) {
                     return market
                 }
-            } catch (_: Throwable) {
+            } catch (e: Throwable) {
+                // 取不到市场名就退回内部型号：显示会退化（小米/红米尤其明显），异常要留痕
+                Log.debug("getDeviceDisplayName: " + e)
             }
             return Build.MODEL ?: Build.DEVICE ?: ""
         }
@@ -351,7 +353,9 @@ class MiuixMainActivity : MiuixBaseActivity() {
         handler.removeCallbacks(titleRunner)
         try {
             unregisterReceiver(broadcastReceiver)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            // 未注册成功时注销会抛，属正常路径，留痕即可
+            Log.debug("unregisterReceiver: " + e)
         }
     }
 }

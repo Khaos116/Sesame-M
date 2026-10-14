@@ -860,7 +860,9 @@ public class Status {
             path = statusFile.getAbsolutePath();
             // 「已存在但不可写」这一情形 write2File 已自行 Toast，这里不重复弹
             permissionToastShown = statusFile.exists() && !statusFile.canWrite();
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            // 路径取不到不影响后续提示（path 已有兜底文案），留痕即可
+            Log.debug(TAG + " 取状态文件路径失败: " + t);
         }
         Log.system(TAG, "保存 status.json " + reason + "，当日进度可能未被持久化: " + path);
         if (error != null) {

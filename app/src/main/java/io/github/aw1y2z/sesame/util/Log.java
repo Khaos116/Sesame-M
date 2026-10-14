@@ -436,7 +436,9 @@ public class Log {
             if (newD != null) {
                 d = newD;
             }
-        } catch (ParseException ignored) {
+        } catch (ParseException e) {
+            // 解析不了就退回「当前时间」：调用方仍拿到可用值，但要留痕
+            debug("时间解析失败，退回当前时间: " + timers);
         }
         timeStamp = d.getTime();
         return timeStamp;

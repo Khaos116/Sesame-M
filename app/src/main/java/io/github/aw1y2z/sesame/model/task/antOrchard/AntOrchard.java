@@ -1419,6 +1419,8 @@ public class AntOrchard extends ModelTask {
                         try {
                             rightsTimesLimit = Integer.parseInt(limitStr);
                         } catch (Exception ignored) {
+                            // 坏值等于没给：这条任务会被当单档跑，必须留痕
+                            Log.i(TAG, "rightsTimesLimit 非法，按单档处理: " + limitStr);
                         }
                     }
                 }

@@ -58,7 +58,9 @@ public class RuntimeInfo {
             if (!joAll.has(userId)) {
                 joAll.put(userId, new JSONObject());
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            // put 失败只是这次没建出空节点，读侧各有兜底，但异常要留痕
+            Log.debug(TAG + " 初始化用户节点失败: " + e);
         }
         try {
             joCurrent = joAll.getJSONObject(userId);

@@ -15,9 +15,12 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 public class FileUtil {
     private static final String TAG = FileUtil.class.getSimpleName();
+    /** 账号目录名白名单：uid 由宿主给出，拼进路径前必须挡住「..」与路径分隔符 */
+    private static final Pattern USER_ID_PATTERN = Pattern.compile("[0-9A-Za-z_-]+");
     //路径
     public static final String CONFIG_DIRECTORY_NAME = "sesame-M";
     public static final File MAIN_DIRECTORY_FILE = getMainDirectoryFile();
@@ -326,8 +329,8 @@ public class FileUtil {
     }
     
     public static File getConfigV2File(String userId) {
-        File file = new File(CONFIG_DIRECTORY_FILE + "/" + userId, "config_v2.json");
-        if (!file.exists()) {
+        File file = getFile(getUserDataDirectoryFile(userId), "config_v2.json");
+        if (!file.exists() && isSafeUserId(userId)) {
             File oldFile = new File(CONFIG_DIRECTORY_FILE, "config_v2-" + userId + ".json");
             if (oldFile.exists()) {
                 if (write2File(readFromFile(oldFile), file)) {
@@ -342,7 +345,7 @@ public class FileUtil {
     }
     
     public static boolean setConfigV2File(String userId, String json) {
-        return write2File(json, new File(CONFIG_DIRECTORY_FILE + "/" + userId, "config_v2.json"));
+        return write2File(json, getFile(getUserDataDirectoryFile(userId), "config_v2.json"));
     }
     
     public static File getTokenConfigFile() {
@@ -378,8 +381,7 @@ public class FileUtil {
     }
     
     public static File runtimeInfoFile(String userId) {
-        File runtimeInfoFile = new File(CONFIG_DIRECTORY_FILE + "/" + userId, "runtimeInfo.json");
-        return ensureFileExists(runtimeInfoFile);
+        return ensureFileExists(getFile(getUserDataDirectoryFile(userId), "runtimeInfo.json"));
     }
     
     public static File getCooperationIdMapFile(String userId) {
@@ -408,9 +410,18 @@ public class FileUtil {
     
     /**
      * 账号数据目录：userId 为空（「默认」配置）时回退到主目录，避免 {@code new File(dir, null)} 抛 NPE。
+     * <p>uid 不合法时同样回退主目录：宁可落到共享目录，也不能让 {@code ..} 拼出目录之外的路径。
      */
     private static File getUserDataDirectoryFile(String userId) {
-        return StringUtil.isEmpty(userId) ? MAIN_DIRECTORY_FILE : new File(CONFIG_DIRECTORY_FILE, userId);
+        if (!isSafeUserId(userId)) {
+            return MAIN_DIRECTORY_FILE;
+        }
+        return new File(CONFIG_DIRECTORY_FILE, userId);
+    }
+
+    /** uid 能否安全用作目录名（空 uid 表示「默认」配置，走主目录回退） */
+    private static boolean isSafeUserId(String userId) {
+        return userId != null && USER_ID_PATTERN.matcher(userId).matches();
     }
 
     /**
@@ -438,7 +449,9 @@ public class FileUtil {
         if (!file.exists()) {
             try {
                 file.createNewFile();
-            } catch (Throwable ignored) {
+            } catch (Throwable t) {
+                // 建不出空文件不致命（后续写入会各自报错），但要留痕，否则只看到「写不进去」
+                Log.debug(TAG + " 建文件失败: " + file.getName() + " " + t);
             }
         }
         return file;
@@ -955,7 +968,8 @@ public class FileUtil {
                     clearFile(f);
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            Log.debug(TAG + " 清空日志失败: " + logName + " " + t);
         }
     }
 

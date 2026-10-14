@@ -3,7 +3,6 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 
@@ -11,9 +10,13 @@
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
 
+    <!--
+      usesCleartextTraffic 保留为 true：配置页的「自定义AI | 测试响应」按钮在模块 App 进程里
+      请求用户自填的接口地址，该地址可能是 http 的局域网/自建端点，禁明文会让测试直接失败。
+    -->
     <application
         android:name=".SesameApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@drawable/logo"
         android:label="@string/app_name"
         android:description="@string/module_description"
