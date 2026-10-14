@@ -778,6 +778,9 @@ public class AntForestV2 extends ModelTask {
             } catch (InterruptedException ie) {
                 Log.i(TAG, "执行中断-蚂蚁森林");
             }
+            // 倍卡额外能量放到最后收：此时本轮的能量（含异步收取的好友能量）才累积完，
+            // 放在收取之前只能收到上一轮攒下的部分
+            collectRobExpandEnergy();
             Statistics.save();
             FriendWatch.save();
         }
@@ -1667,18 +1670,48 @@ public class AntForestV2 extends ModelTask {
             }
             for (int i = 0; i < ja.length(); i++) {
                 JSONObject jo = ja.getJSONObject(i);
-                String propGroup = jo.getString("propGroup");
-                Long endTime = jo.getLong("endTime");
-                String propId = jo.getString("propId");
-                String propType = jo.getString("propType");
-                usingProps.put(propGroup, endTime);
-                if (PropGroup.robExpandCard.name().equals(propGroup)) {
-                    collectRobExpandEnergy(jo.optString("extInfo"), propId, propType);
-                }
+                usingProps.put(jo.getString("propGroup"), jo.getLong("endTime"));
             }
             forestExtensions();
         } catch (Throwable th) {
             Log.err(TAG, "updateUsingPropsEndTime err:", th);
+        }
+    }
+
+    /**
+     * 收取倍卡额外能量（本轮收尾调用）。倍卡额度是本轮收取行为累积出来的，
+     * 先收只能收到上一轮攒下的部分，本轮领到的要等到下一轮；且好友能量是异步收取，
+     * 必须等子任务跑完再查，否则查到的仍是未累积的旧值。
+     */
+    private void collectRobExpandEnergy() {
+        if (!collectRobExpandEnergyEnable.getValue()) {
+            return;
+        }
+        try {
+            JSONObject joHomePage = new JSONObject(AntForestRpcCall.queryHomePage());
+            if (MessageUtil.checkResultCode(TAG, joHomePage)) {
+                collectRobExpandEnergy(joHomePage);
+            }
+        } catch (Throwable th) {
+            Log.err(TAG, "collectRobExpandEnergy err:", th);
+        }
+    }
+
+    /** 从首页响应里取出在用的倍卡并收取 */
+    private void collectRobExpandEnergy(JSONObject joHomePage) {
+        try {
+            JSONArray ja = joHomePage.getJSONArray("loginUserUsingPropNew");
+            if (ja.length() == 0) {
+                ja = joHomePage.getJSONArray("usingUserPropsNew");
+            }
+            for (int i = 0; i < ja.length(); i++) {
+                JSONObject jo = ja.getJSONObject(i);
+                if (PropGroup.robExpandCard.name().equals(jo.getString("propGroup"))) {
+                    collectRobExpandEnergy(jo.optString("extInfo"), jo.getString("propId"), jo.getString("propType"));
+                }
+            }
+        } catch (Throwable th) {
+            Log.err(TAG, "collectRobExpandEnergy err:", th);
         }
     }
 
