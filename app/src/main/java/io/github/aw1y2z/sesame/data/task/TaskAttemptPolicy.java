@@ -268,6 +268,12 @@ public class TaskAttemptPolicy {
         final StatusProbe probe;
         /** 当日额度是否用尽；null 表示无此判据。命中只打当日标记、不进黑名单 */
         final ExhaustedProbe exhausted;
+        /**
+         * 该任务的完成条件是**服务端的真实行为计数**（如累计开箱数），申报类动作推不动它。
+         * <p>为 true 时：伪申报失败**不进自动黑名单**——伪申报本来就不是它的完成路径，
+         * 按"兜底未生效"拉黑会把它永久停掉（表现为奖励再也领不到）。
+         */
+        final boolean realAction;
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode) {
             this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, null, null);
@@ -306,9 +312,15 @@ public class TaskAttemptPolicy {
             this(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, null);
         }
 
-        /** 带「当日打满」判据的完整形态。 */
+        /** 带「当日打满」判据的简写形态（无 forge、非真实行为类）。 */
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
                     Forge forge, StatusProbe probe, ExhaustedProbe exhausted) {
+            this(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, exhausted, false);
+        }
+
+        /** 完整形态：{@code realAction=true} 表示完成条件在服务端真实行为计数上（如累计开箱） */
+        public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
+                    Forge forge, StatusProbe probe, ExhaustedProbe exhausted, boolean realAction) {
             this.listField = listField;
             this.logPrefix = logPrefix;
             this.bizKey = bizKey;
@@ -317,6 +329,7 @@ public class TaskAttemptPolicy {
             this.forge = forge;
             this.probe = probe;
             this.exhausted = exhausted;
+            this.realAction = realAction;
         }
     }
 
@@ -382,7 +395,8 @@ public class TaskAttemptPolicy {
         // 必须限定同一天：日任务次日会重新回到待办，那是新实例，据此拉黑会误伤能做的任务。
         // 可靠性依据：伪申报被服务端接受后任务会很快判定完成，故"同一天内再次出现"才是兜底没写成的可靠证据；
         // 跨天出现一律按新实例处理。
-        if (isSameDayTriggered(key) && autoBlackList(site, title)) {
+        // 真实行为类任务不走这条：伪申报不是它的完成路径，判"兜底未生效"是错怪
+        if (isSameDayTriggered(key) && (site == null || !site.realAction) && autoBlackList(site, title)) {
             clearTriggered(key);
             Status.flagToday(flag);
             log.accept("任务尝试🧊兜底未生效[" + title + "]#已交自动黑名单");

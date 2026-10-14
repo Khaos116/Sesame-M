@@ -91,6 +91,8 @@ public class AntMember extends ModelTask {
     private BooleanModelField AutoWelfareFundTaskList;
     private SelectModelField WelfareFundTaskList;
 
+
+
     @Override
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();
@@ -177,7 +179,6 @@ public class AntMember extends ModelTask {
                 queryPointBallList();
                 
             }
-            // 网商银行福利金（余额/签到/任务）
             if (welfareFund.getValue()) {
                 WelfareFund.run(welfareFundSign.getValue(), welfareFundTask.getValue(),
                         AutoWelfareFundTaskList.getValue(), WelfareFundTaskList.getValue());

@@ -293,6 +293,15 @@ public class AntForestRpcCall {
         return ApplicationHook.requestString("com.alipay.antiep.finishTask", "[{\"outBizNo\":\"" + outBizNo + "\"," + "\"requestType\":\"H5\",\"sceneCode\":\"" + sceneCode + "\"," + "\"source\":\"ANTFOREST\",\"taskType\":\"" + taskType + "\"}]");
     }
     
+    /**
+     * 上报「已在森林页面看过一眼」。{@code EFFECTIVE_TASK} 类活力值任务（如「每日浇水免费拿绿植」）
+     * 的完成条件就是这个动作本身，不是标题里写的那件事；参数固定、可安全重放。
+     */
+    public static String takeLookEnd() {
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.takeLookEnd",
+                "[{\"contactsStatus\":\"N\",\"source\":\"chInfo_ch_appcenter__chsub_9patch\",\"version\":\"20250716\"}]");
+    }
+
     public static String popupTask() {
         return ApplicationHook.requestString("alipay.antforest.forest.h5.popupTask", "[{\"fromAct\":\"pop_task\"," + "\"needInitSign\":false,\"source\":\"chInfo_ch_appcenter__chsub_9patch\",\"statusList\":[\"TODO\"," + "\"FINISHED\"],\"version\":\"" + VERSION + "\"}]");
     }
