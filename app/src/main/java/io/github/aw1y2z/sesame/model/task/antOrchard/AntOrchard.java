@@ -1774,9 +1774,7 @@ public class AntOrchard extends ModelTask {
 
                 // 处理已完成的任务奖励（已在triggerTbTask中统一处理）
             }
-            // 本日已完成的不再重复上报：静默（每轮恒定的状态，模块汇总行已交代本轮跑过）。
-            // 首轮做成时的「肥料任务🧾完成[…]第N次」由 finishTaskTwice 打，那才是结果，照常保留。
-            // 核对本轮 doFarmTask 的结果（响应不可信，以任务列表为准）
+            // 接口成功也可能未推进任务，完成日志统一以任务列表核对为准。
             verifyPendingTasksByList();
         } catch (TaskCancelledException e) { throw e;
         } catch (Throwable t) {
@@ -1830,7 +1828,10 @@ public class AntOrchard extends ModelTask {
                     // taskId 当作 taskType 传给 finishTask（该 RPC 的参数名就叫 taskType）
                     String via = finishTaskTwice(sceneCode, title, taskId);
                     if (via != null) {
-                        Log.farm("肥料任务🧾完成[" + title + "]第" + (rightsTimes + cnt + 1) + "次");
+                        // 接口成功不代表任务进度已更新，交给列表核对。
+                        Log.farm("肥料任务🕓已触发[" + title + "]第" + (rightsTimes + cnt + 1) + "次#" + via
+                                + "，结果以任务列表为准");
+                        pendingVerifyTasks.put(taskId, title);
                     } else {
                         break;
                     }
@@ -1841,19 +1842,25 @@ public class AntOrchard extends ModelTask {
 
             // 处理触发型任务
             if ("TRIGGER".equals(actionType) || "ADD_HOME".equals(actionType) || "PUSH_SUBSCRIBE".equals(actionType)) {
-                // taskId 当作 taskType 传递
+                // taskId 当作 taskType 传递，完成结果仍需列表核对。
                 String via = finishTaskTwice(sceneCode, title, taskId);
                 if (via != null) {
-                    Log.farm("肥料任务🧾完成[" + title + "]");
+                    Log.farm("肥料任务🕓已触发[" + title + "]#" + via + "，结果以任务列表为准");
+                    pendingVerifyTasks.put(taskId, title);
                 }
                 return true;
             }
 
-            //配合黑名单的兜底操作
+            // 未知动作类型：成功触发后当日防重；失败或取消不消耗机会。
+            if (Status.hasFlagToday("orchard::fallback::" + taskId)) {
+                return true;
+            }
             String via = finishTaskTwice(sceneCode, title, taskId);
             if (via != null) {
-                Log.farm("肥料任务🧾完成[" + title + "]");
+                Status.flagToday("orchard::fallback::" + taskId);
+                Log.farm("肥料任务🕓已触发[" + title + "]#" + via + "，结果以任务列表为准");
             }
+            pendingVerifyTasks.put(taskId, title);
             return true;
         } catch (Throwable t) {
             if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;

@@ -75,9 +75,10 @@ public class MergeReviewCheck {
  static class AntOrchardVisitTask {static int floats;static void floatBall(JSONObject task,int budget){floats++;}}
  static class AntOrchardRpcCall {
   static JSONArray snapshot;static boolean cancelFinish;static int writes;
+  static String finishReply="{\"code\":\"400000040\"}",farmReply="{\"code\":\"102\"}";
   static String orchardListTask(){return new JSONObject().put("success",true).put("taskList",snapshot).toString();}
-  static String finishTask(String scene,String id){writes++;if(cancelFinish)throw new TaskCancelledException();return "{\"code\":\"400000040\"}";}
-  static String doFarmTask(String id,String scene){writes++;return "{\"code\":\"102\"}";}
+  static String finishTask(String scene,String id){writes++;if(cancelFinish)throw new TaskCancelledException();return finishReply;}
+  static String doFarmTask(String id,String scene){writes++;return farmReply;}
  }
  static class Orchard {
   enum TaskStatus {TODO,FINISHED,RECEIVED}
@@ -183,6 +184,38 @@ public class MergeReviewCheck {
    orchard.verifyPendingTasksByList();assert MessageUtil.marks==("TODO".equals(state)?1:0);assert Log.lines.size()==1;
   }
   orchard.pendingVerifyTasks.put("id","browse");AntOrchardRpcCall.snapshot=new JSONArray();Log.lines.clear();orchard.verifyPendingTasksByList();assert Log.lines.size()==1:"Valid disappearance confirms completion";
+  for(String action:List.of("VISIT","XLIGHT","TRIGGER","ADD_HOME","PUSH_SUBSCRIBE","JUMP")) {
+   for(boolean primary:List.of(true,false)) {
+    Status.flags.clear();Log.lines.clear();MessageUtil.marks=0;AntOrchardRpcCall.writes=0;
+    AntOrchardRpcCall.finishReply=primary?"{\"success\":true}":"{\"code\":\"400000040\"}";
+    AntOrchardRpcCall.farmReply="{\"success\":true}";
+    JSONObject task=new JSONObject().put("taskId","confirmed").put("actionType",action).put("sceneCode","scene")
+      .put("taskDisplayConfig",new JSONObject().put("title","browse")).put("rightsTimes",1).put("rightsTimesLimit",3);
+    assert orchard.realFinishOrchardTask(task);
+    assert orchard.pendingVerifyTasks.containsKey("confirmed"):"Every successful response still requires a task-list probe";
+    assert Log.lines.stream().noneMatch(s->s.contains("🧾完成")):"RPC success must never report task completion";
+    assert AntOrchardRpcCall.writes==(primary?1:2)*((action.equals("VISIT")||action.equals("XLIGHT"))?2:1);
+    AntOrchardRpcCall.snapshot=new JSONArray().put(new JSONObject().put("taskId","confirmed").put("taskStatus","TODO"));
+    orchard.verifyPendingTasksByList();assert MessageUtil.marks==1;
+    assert Log.lines.stream().noneMatch(s->s.contains("🧾完成")):"Unchanged TODO must not be reported as complete";
+    if(action.equals("JUMP")) {
+     int writes=AntOrchardRpcCall.writes;orchard.realFinishOrchardTask(task);
+     assert AntOrchardRpcCall.writes==writes:"Successful fallback dispatch must retain upstream daily dedup";
+    }
+    Status.flags.clear();Log.lines.clear();assert orchard.realFinishOrchardTask(task);
+    AntOrchardRpcCall.snapshot=new JSONArray().put(new JSONObject().put("taskId","confirmed").put("taskStatus","FINISHED"));
+    orchard.verifyPendingTasksByList();assert Log.lines.stream().filter(s->s.contains("已按任务列表核对")).count()==1;
+   }
+  }
+  Status.flags.clear();AntOrchardRpcCall.writes=0;
+  AntOrchardRpcCall.finishReply="{\"code\":\"400000040\"}";AntOrchardRpcCall.farmReply="{\"code\":\"102\"}";
+  JSONObject fallback=new JSONObject().put("taskId","retry").put("actionType","JUMP").put("sceneCode","scene")
+    .put("taskDisplayConfig",new JSONObject().put("title","retry"));
+  orchard.realFinishOrchardTask(fallback);orchard.realFinishOrchardTask(fallback);
+  assert AntOrchardRpcCall.writes==4&&!Status.hasFlagToday("orchard::fallback::retry"):"Transient fallback failure must remain retryable today";
+  orchard.pendingVerifyTasks.clear();AntOrchardRpcCall.cancelFinish=true;AntOrchardRpcCall.writes=0;
+  try{orchard.realFinishOrchardTask(fallback);throw new AssertionError("Fallback swallowed cancellation");}catch(TaskCancelledException expected){}
+  assert AntOrchardRpcCall.writes==1&&!Status.hasFlagToday("orchard::fallback::retry"):"Cancellation must not consume daily fallback opportunity";
   AntOrchardRpcCall.cancelFinish=true;AntOrchardRpcCall.writes=0;
   try{orchard.finishTaskTwice("scene","browse","id");throw new AssertionError("Orchard completion swallowed cancellation");}catch(TaskCancelledException expected){}
   assert AntOrchardRpcCall.writes==1:"Cancellation must not dispatch the fallback request";
