@@ -37,7 +37,7 @@ public class MergeReviewCheck {
   static void add(String k,String v){}static void save(){}}
  static class WelfareFundRpcCall {
   static String state,type,reply;static int signups,sends,receives,reads,progress=-1;static boolean delayed,signupFailure,sendBusy;
-  static String signConsult(){return "{}";}
+  static String signApply(){return "{}";}
   static String taskQuery(){reads++;String current=!delayed&&(sends>0||receives>0)&&reply.contains("true")?"RECEIVE_SUCCESS":state;
    JSONObject item=new JSONObject().put("taskId","id").put("taskProcessStatus",current).put("sendCampTriggerType",type)
     .put("taskExtProps",new JSONObject().put("TASK_MORPHO_DETAIL","{\"title\":\"browse\"}"));
@@ -84,7 +84,7 @@ public class MergeReviewCheck {
   static class Field<T> {T value;Field(T value){this.value=value;}T getValue(){return value;}}
   Field<Set<String>> AntOrchardTaskList=new Field<>(Set.of());Field<Boolean> orchardFloatBallTask=new Field<>(true);
   Field<Integer> orchardVisitDailyBudget=new Field<>(1);int finished,extras;boolean runReal;
-  static class Log {static void farm(String s){MergeReviewCheck.Log.lines.add(s);}static void i(String s){}static void err(String a,String b,Throwable t){throw new AssertionError(t);}}
+  static class Log {static void farm(String s){MergeReviewCheck.Log.lines.add(s);}static void i(String s){}static void i(String tag,String s){}static void err(String a,String b,Throwable t){throw new AssertionError(t);}}
   Map<String,String> pendingVerifyTasks=new LinkedHashMap<>();
   @@ORCHARD_VERIFY_CFG@@
   @@ORCHARD_BLACK@@
@@ -126,7 +126,8 @@ public class MergeReviewCheck {
   String escaped="quoted\"\\\n";WelfareRpc.taskTrigger(escaped,"signup");
   assert escaped.equals(new JSONArray(ApplicationHook.args).optJSONObject(0).optString("appletId"));
   for(String stage:List.of("signup","send","receive")){WelfareRpc.taskTrigger("id",stage);assert ApplicationHook.tries==1;}
-  WelfareRpc.signConsult();assert ApplicationHook.tries==1;
+  WelfareRpc.signApply();assert ApplicationHook.tries==1;
+  assert new JSONArray(ApplicationHook.args).optJSONObject(0).optString("operation").equals("signApply");
   WelfareRpc.signCalendarQuery(7);assert ApplicationHook.tries==3;
   WelfareRpc.taskQuery();assert ApplicationHook.tries==3;
   AntMemberRpcCall.failPage=2;assert probePointCertStatus(2,8,"cert")==TaskAttemptPolicy.ProbeResult.UNKNOWN;

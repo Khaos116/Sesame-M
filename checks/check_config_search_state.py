@@ -47,6 +47,7 @@ import androidx.compose.runtime.snapshots.Snapshot
 import kotlinx.coroutines.*
 
 class Field(val name: String?, var value: Any?) {
+    val code: String get() = name ?: ""
     val description: String? = null
     fun setObjectValue(next: Any?) { value = next }
 }
@@ -60,7 +61,7 @@ val displayed = linkedMapOf<String, Display>()
     SideEffect { displayed[title] = Display(checked, onCheckedChange) }
 }
 @Composable fun GroupFieldRow(activity: Any?, userId: String?, groupCode: String,
-                             row: FieldRow, onDependencyChanged: () -> Unit) {
+                             row: FieldRow, onDependencyChanged: (() -> Unit)?) {
     val field = row.field
     val onFieldChanged: (() -> Unit)? = onDependencyChanged
     @@SWITCH@@
@@ -70,6 +71,8 @@ val displayed = linkedMapOf<String, Display>()
     val userId: String? = "A"
     val groupCode = "FOREST"
     var depVersion by remember { mutableStateOf(0) }
+    val bumpDependency: () -> Unit = remember { { depVersion++ } }
+    val dependencyCodes = setOf("monopolyPatrol")
     @@ROWS@@
 }
 class NoNodes : AbstractApplier<Unit>(Unit) {

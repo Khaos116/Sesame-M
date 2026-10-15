@@ -19,6 +19,7 @@ public class LogCheck {
         static void write(String s, File f) throws IOException { Files.writeString(f.toPath(), s); }
     }
     static class Log {
+        static void debug(String text) { }
         static ThreadLocal<SimpleDateFormat> DATE_FORMAT_THREAD_LOCAL = ThreadLocal.withInitial(() -> {
             SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd");
             f.setTimeZone(TimeZone.getTimeZone("GMT+8")); return f;

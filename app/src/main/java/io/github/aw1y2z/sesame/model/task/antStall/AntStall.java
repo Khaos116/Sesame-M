@@ -24,7 +24,6 @@ import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.model.task.antFarm.AntFarm.TaskStatus;
 import io.github.aw1y2z.sesame.model.task.readingDada.ReadingDada;
 import io.github.aw1y2z.sesame.util.*;
-import io.github.aw1y2z.sesame.util.idMap.AntFarmDoFarmTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.AntStallTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 

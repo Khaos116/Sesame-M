@@ -43,9 +43,9 @@ public class ModuleHttpServer extends NanoHTTPD {
         super("127.0.0.1", port);
         // 原Kotlin init块中的路由注册逻辑
         register("/debugHandler", new DebugHandler(secretToken), "调试接口");
-        register("/getAlipayMiniMark", new AlipayMiniMarkHandler(), "获取支付宝小程序标记");
+        register("/getAlipayMiniMark", new AlipayMiniMarkHandler(secretToken), "获取支付宝小程序标记");
         // 依赖宿主代理注册的授权服务；服务未就绪或授权失败时仍返回失败。
-        register("/getAuthCode", new AuthCodeHandler(), "获取OAuth2授权码（依赖宿主授权服务）");
+        register("/getAuthCode", new AuthCodeHandler(secretToken), "获取OAuth2授权码（依赖宿主授权服务）");
     }
     
     /**

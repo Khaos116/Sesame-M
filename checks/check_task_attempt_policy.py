@@ -82,6 +82,8 @@ public class MergePolicyCheck {
  static JSONObject task(String type,String status){return new JSONObject().put("taskBaseInfo",
   new JSONObject().put("sceneCode","scene").put("taskType",type).put("taskStatus",status));}
  public static void main(String[] args)throws Exception {
+  int[] polls={0};assert TaskAttemptPolicy.probeWithPolling(k->++polls[0]<4?TaskAttemptPolicy.ProbeResult.TODO:TaskAttemptPolicy.ProbeResult.FINISHED,"async")==TaskAttemptPolicy.ProbeResult.FINISHED&&polls[0]==4;
+  polls[0]=0;assert TaskAttemptPolicy.probeWithPolling(k->{polls[0]++;return TaskAttemptPolicy.ProbeResult.UNKNOWN;},"unknown")==TaskAttemptPolicy.ProbeResult.UNKNOWN&&polls[0]==1:"Invalid query must stop polling";
   Status.disk.put("A",new Status());Status.disk.put("B",new Status());
   Status.disk.get("A").intFlagLogList.put("count",7);Status.disk.get("B").intFlagLogList.put("count",2);
   assert Status.getIntFlagToday("count")==7;UserIdMap.uid="B";Status.setIntFlagToday("count",3);
@@ -301,7 +303,7 @@ replacements = {
     "@@RETRY@@": method("util/MessageUtil.java", "public static boolean isRetryable("),
     "@@FARM_ATTEMPT@@": method("model/task/antFarm/AntFarm.java", "private Outcome attemptFarmTask(").replace("Outcome", "TaskAttemptPolicy.Outcome"),
     "@@STATUS@@": "\n".join(method("util/Status.java", s) for s in (
-        "private static void ensureLoadedForCurrentUid(", "public static synchronized Boolean hasFlagToday(",
+        "private static String ensureLoadedForCurrentUid(", "public static synchronized Boolean hasFlagToday(",
         "public static synchronized void clearFlag(",
         "public static synchronized void flagToday(String tag)", "public static synchronized int getIntFlagToday(",
         "public static synchronized void setIntFlagToday(")),

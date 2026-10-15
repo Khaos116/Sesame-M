@@ -149,6 +149,7 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
             delay(1000)
         }
     }
+    val logReader = remember(logType) { LogTailReader() }
     var entries by remember(logType) { mutableStateOf(emptyList<LogEntry>()) }
     val listState = rememberLazyListState()
     // 搜索文本
@@ -161,17 +162,18 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     fun updateEntries(updated: List<LogEntry>, reset: Boolean = false) {
         // 在替换数据前读取位置；index 0 是最新一条，排在列表顶部。
         val followTop = reset || entries.isEmpty() || !listState.canScrollBackward
+        if (!reset && updated === entries) return
         entries = updated
         if (followTop) listState.requestScrollToItem(0)
     }
     // 实时刷新：文件被写入时重新加载尾部，做到打开日志页能看到正在执行的过程，
     // 不用手动关闭重开。参照 Sesame-AG 的 FileObserver + debounce 思路，
-    // 但沿用本页已有的"整段重读"逻辑，不引入它那套 ViewModel/多日志分类体系。
+    // 只解析新增的完整行，保留跟随、历史阅读和账号切换行为。
     val fileUpdateChannel = remember(logType) { Channel<Unit>(Channel.CONFLATED) }
     LaunchedEffect(fileUpdateChannel, file) {
-        updateEntries(withContext(Dispatchers.IO) { loadLogEntries(file) }, reset = true)
+        updateEntries(withContext(Dispatchers.IO) { logReader.poll(file) }, reset = true)
         fileUpdateChannel.receiveAsFlow().collect {
-            updateEntries(withContext(Dispatchers.IO) { loadLogEntries(file) })
+            updateEntries(withContext(Dispatchers.IO) { logReader.poll(file) })
             delay(300)
         }
     }
@@ -229,7 +231,7 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                 },
                 onClear = {
                     if (FileUtil.clearFile(file)) {
-                        updateEntries(loadLogEntries(file), reset = true)
+                        updateEntries(logReader.reload(file), reset = true)
                         searchQuery = ""
                         selectedTag = null
                         ToastUtil.show(context, "已清空")
@@ -551,13 +553,12 @@ private const val MAX_LOG_ENTRIES = 5000
  * 从文件尾部读取文本,最多 maxBytes 字节。
  * 若非从头读取,会丢弃首个可能被截断的行。
  */
-private fun readTailText(file: File, maxBytes: Long): String {
-    val length = file.length()
-    if (length <= 0L) {
-        return ""
-    }
-    val start = maxOf(0L, length - maxBytes)
+private fun readTailText(file: File, maxBytes: Long): Pair<Long, String> {
+    if (!file.exists()) return 0L to ""
     RandomAccessFile(file, "r").use { raf ->
+        val length = raf.length()
+        if (length <= 0L) return 0L to ""
+        val start = maxOf(0L, length - maxBytes)
         raf.seek(start)
         val bytes = ByteArray((length - start).toInt())
         raf.readFully(bytes)
@@ -566,7 +567,7 @@ private fun readTailText(file: File, maxBytes: Long): String {
             val idx = text.indexOf('\n')
             text = if (idx >= 0) text.substring(idx + 1) else ""
         }
-        return text
+        return length to text
     }
 }
 
@@ -574,45 +575,141 @@ private fun readTailText(file: File, maxBytes: Long): String {
  * 读取日志文件并按行解析为条目;无时间戳的行合并到上一条(多行日志聚合为同一卡片)。
  * 仅读取文件尾部,并限制最大条目数,保证大文件也能快速打开。
  */
-private fun loadLogEntries(file: File?): List<LogEntry> {
-    if (file == null || !file.exists()) {
-        return emptyList()
+private val TIME_REGEX = Regex("^(\\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+(?:(\\w+):\\s*)?(.*)$")
+
+private class LogTailReader {
+    private val entries = ArrayDeque<LogEntry>()
+
+    /** 已解析到的文件偏移,下次从这里继续读 */
+    private var consumed = 0L
+
+    /** 尚无换行的尾部残行:写入方可能只写了一半,留到下次与新增内容拼接 */
+    private var pending = ""
+    private var lineNumber = 0
+    private var initialized = false
+    private var currentFile: File? = null
+    private var snapshot: List<LogEntry> = emptyList()
+
+    /** 读取新增内容并返回条目快照;无新增时返回上一次的同一个实例 */
+    fun poll(target: File): List<LogEntry> {
+        if (target != currentFile) {
+            // 跨天等导致目标文件变化:重新整份加载
+            currentFile = target
+            initialized = false
+        }
+        val length = if (target.exists()) target.length() else 0L
+        if (!initialized || length < consumed || length - consumed > MAX_TAIL_BYTES) {
+            // 首次打开,或文件被清空/轮转:整份重读尾部
+            reset()
+            try {
+                loadTail(target)
+            } catch (e: Exception) {
+                initialized = false
+                return snapshot
+            }
+            initialized = true
+            return publish()
+        }
+        if (length == consumed) {
+            return snapshot
+        }
+        val appended = readAppended(target) ?: return snapshot
+        consumed += appended.first
+        appendLines(pending + appended.second)
+        pending = ""
+        return publish()
     }
-    // 各类日志均已带 TAG: 前缀(如 "13:34:10.251 RUNTIME: 执行结束-庄园");
-    // TAG 可选是为了兼容旧日志文件里没有前缀的历史行。
-    val timeRegex = Regex("^(\\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+(?:(\\w+):\\s*)?(.*)$")
-    val entries = ArrayDeque<LogEntry>()
-    return try {
-        val text = readTailText(file, MAX_TAIL_BYTES)
-        var lineNumber = 0
-        for (line in text.lineSequence()) {
+
+    /** 强制整份重读(如日志被清空后) */
+    fun reload(target: File): List<LogEntry> {
+        initialized = false
+        return poll(target)
+    }
+
+    private fun reset() {
+        entries.clear()
+        snapshot = emptyList()
+        consumed = 0L
+        pending = ""
+        lineNumber = 0
+    }
+
+    private fun publish(): List<LogEntry> {
+        snapshot = entries.toList()
+        return snapshot
+    }
+
+    /** 整份读取文件尾部,并把「还没写完的最后一行」留作 pending */
+    private fun loadTail(target: File) {
+        val (length, text) = readTailText(target, MAX_TAIL_BYTES)
+        val cut = text.lastIndexOf('\n')
+        if (cut < 0) {
+            pending = text
+        } else {
+            appendLines(text.substring(0, cut + 1))
+            pending = text.substring(cut + 1)
+        }
+        consumed = length
+    }
+
+    /**
+     * 从 consumed 读到文件末尾,返回(已消费字节数, 文本);还没有完整的一行时返回 null。
+     *
+     * <p>只取到最后一个换行为止:换行字节不会出现在多字节序列中间,这样既不会把半个字符
+     * 解成乱码,也不会丢掉「写到一半的那一行」。
+     */
+    private fun readAppended(target: File): Pair<Long, String>? {
+        return try {
+            RandomAccessFile(target, "r").use { raf ->
+                val length = raf.length()
+                if (length <= consumed || length - consumed > MAX_TAIL_BYTES) {
+                    return null
+                }
+                raf.seek(consumed)
+                val bytes = ByteArray((length - consumed).toInt())
+                raf.readFully(bytes)
+                val newline = bytes.lastIndexOf('\n'.code.toByte())
+                if (newline < 0) {
+                    return null
+                }
+                (newline + 1).toLong() to String(bytes, 0, newline + 1, Charsets.UTF_8)
+            }
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    /** 按行解析并追加;无时间戳的行视为上一条的续行,合并到同一张卡片 */
+    private fun appendLines(text: String) {
+        if (text.isEmpty()) {
+            return
+        }
+        val lines = text.split('\n')
+        // 结尾的换行不构成一行,split 会多出一个空串,直接跳过
+        val count = if (lines.last().isEmpty()) lines.size - 1 else lines.size
+        for (i in 0 until count) {
+            val line = lines[i].removeSuffix("\r")
             lineNumber++
-            val match = timeRegex.find(line)
+            val match = TIME_REGEX.find(line)
             if (match != null) {
                 entries.addLast(
                     LogEntry(
                         lineNumber = lineNumber,
                         time = match.groupValues[1],
-                        tag = match.groups[2]?.value,
+                        tag = match.groupValues[2].takeIf { it.isNotEmpty() },
                         body = match.groupValues[3]
                     )
                 )
+            } else if (entries.isNotEmpty()) {
+                val last = entries.removeLast()
+                entries.addLast(last.copy(body = last.body + "\n" + line))
             } else {
-                // 无时间戳:视为上一条的续行,合并到同卡片
-                if (entries.isNotEmpty()) {
-                    val last = entries.removeLast()
-                    entries.addLast(last.copy(body = last.body + "\n" + line))
-                } else {
-                    entries.addLast(LogEntry(lineNumber, null, null, line))
-                }
+                entries.addLast(LogEntry(lineNumber, null, null, line))
             }
             // 超出上限时丢弃最早的条目,保证内存占用可控
             while (entries.size > MAX_LOG_ENTRIES) {
                 entries.removeFirst()
             }
         }
-        entries.toList()
-    } catch (e: Throwable) {
-        emptyList()
     }
 }

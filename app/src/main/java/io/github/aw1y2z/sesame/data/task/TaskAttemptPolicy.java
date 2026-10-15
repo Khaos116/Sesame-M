@@ -51,6 +51,17 @@ public class TaskAttemptPolicy {
     /** 兜底记录保留时长：任务消失后不会有人来清理，超过此时长直接丢弃 */
     private static final long TRIGGERED_STALE = 604800000L;
 
+    /**
+     * 伪申报兜底当日最多几发。多发无用：同一发没让列表变完成，再发同样的请求也不会变。
+     * <p>该计数**与当日标记独立**：调用方重拉列表会换新 key（多档任务带档位），
+     * 只有计数才挡得住"换个键又把同一发打一遍"。
+     */
+    private static final int TRIGGER_MAX_PER_DAY = 1;
+
+    /** 列表复核的轮询间隔与轮数：服务端异步落定的任务（如森林「消耗活力值得机会」）要十几秒才变完成 */
+    private static final long PROBE_INTERVAL_MS = 3000L;
+    private static final int PROBE_ROUNDS = 6;
+
     /** 处理结论 */
     public enum Outcome {
         /** 列表已确认完成（{@link #isDone}；完成任务后可能仍待领奖） */
@@ -198,6 +209,18 @@ public class TaskAttemptPolicy {
         }
     }
 
+    /**
+     * 当日额度是否已用尽（如 {@code rightsTimes >= rightsTimesLimit}）。
+     * <p>与 {@link StatusProbe} 同源：探针本已拉到响应，次数信息顺手可取，不额外发请求。
+     * <p>命中时只打**当日标记**、当日不再尝试；**不进黑名单**——这类任务是每日重置的，
+     * 次日服务端次数归零、标记随 status.json 跨天清空，自然恢复尝试。
+     * <p>判据取服务端的**名额**而非本地记账：`rightsTimes`（已用）/`rightsTimesLimit`（额度），
+     * 二者相等即当日做满。服务端才是额度的权威，本地记账只用于避免重复请求。
+     */
+    public interface ExhaustedProbe {
+        boolean exhausted(String key);
+    }
+
     /** 领奖动作，返回 true 表示领取成功 */
     public interface Award {
         boolean run();
@@ -235,6 +258,14 @@ public class TaskAttemptPolicy {
         final Forge forge;
         /** 列表状态探针；null 表示调用点自行判定，领奖动作已经回查时不重复传入。 */
         final StatusProbe probe;
+        /** 当日额度是否用尽；null 表示无此判据。命中只打当日标记、不进黑名单 */
+        final ExhaustedProbe exhausted;
+        /**
+         * 该任务的完成条件是**服务端的真实行为计数**（如累计开箱数），申报类动作推不动它。
+         * <p>为 true 时：伪申报失败**不进自动黑名单**——伪申报本来就不是它的完成路径，
+         * 按"兜底未生效"拉黑会把它永久停掉（表现为奖励再也领不到）。
+         */
+        final boolean realAction;
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode) {
             this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, null);
@@ -246,6 +277,12 @@ public class TaskAttemptPolicy {
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, StatusProbe probe) {
             this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, probe);
+        }
+
+        /** 带「当日打满」判据的简写形态（无 forge）。 */
+        public Site(String listField, String logPrefix, String bizKey, String taskSceneCode,
+                    StatusProbe probe, ExhaustedProbe exhausted) {
+            this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, probe, exhausted);
         }
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version) {
@@ -264,6 +301,18 @@ public class TaskAttemptPolicy {
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
                     Forge forge, StatusProbe probe) {
+            this(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, null);
+        }
+
+        /** 带「当日打满」判据的简写形态（无 forge、非真实行为类）。 */
+        public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
+                    Forge forge, StatusProbe probe, ExhaustedProbe exhausted) {
+            this(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, exhausted, false);
+        }
+
+        /** 完整形态：{@code realAction=true} 表示完成条件在服务端真实行为计数上（如累计开箱） */
+        public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
+                    Forge forge, StatusProbe probe, ExhaustedProbe exhausted, boolean realAction) {
             this.listField = listField;
             this.logPrefix = logPrefix;
             this.bizKey = bizKey;
@@ -271,6 +320,8 @@ public class TaskAttemptPolicy {
             this.version = version;
             this.forge = forge;
             this.probe = probe;
+            this.exhausted = exhausted;
+            this.realAction = realAction;
         }
     }
 
@@ -352,8 +403,7 @@ public class TaskAttemptPolicy {
             if (outcome == Outcome.SKIPPED) return outcome;
             // 列表复核：完成与否一律以任务列表为准——只有列表能宣布"完成"，响应不可信
             if (site != null && site.probe != null) {
-                TimeUtil.sleep(1500);
-                ProbeResult pr = site.probe.probe(key);
+                ProbeResult pr = probeWithPolling(site.probe, key);
                 blacklistAllowed = pr != ProbeResult.UNKNOWN;
                 if (isDone(pr)) {
                     listDone = true;
@@ -376,6 +426,8 @@ public class TaskAttemptPolicy {
         if (listDone) {
             return Outcome.DONE;
         }
+        // 开箱依赖实际额度，尚未凑够时不走申报兜底，也不锁死当天后续检查。
+        if (site != null && site.realAction) return outcome;
         // 行为伪造：把任务要求的真实行为用接口做出来；能伪造就不必退到伪申报
         if ((outcome == Outcome.UNABLE || outcome == Outcome.UNSUPPORTED)
                 && site != null && site.forge != null && site.forge.run()) {
@@ -387,11 +439,19 @@ public class TaskAttemptPolicy {
             if (site == null || site.bizKey == null || site.bizKey.isEmpty()
                     || site.taskSceneCode == null || site.version == null || site.version.isEmpty()) {
                 outcome = Outcome.UNABLE;
+            } else if (Status.getIntFlagToday("attemptTrigger::" + sanitize(key)) >= TRIGGER_MAX_PER_DAY) {
+                // 伪申报当天已试过仍没做成 ⇒ 双保险没生效。按原有语义**收手并落当日标记**（进自动拉黑，
+                // 避免每轮重打同一发）。触发计数与当日标记无关，故重拉列表换 key 时依然挡得住。
+                log.accept("任务尝试⏳未完成[" + title + "]#今日不再尝试");
+                Status.flagToday(flag);
+                return Outcome.UNABLE;
             } else {
                 // 伪申报：doFarmTask 响应不可信（常回 102 而任务已生效），成败一律以任务列表为准
                 JSONObject triggered = TaskAlternative.trigger(null, null, title, site.bizKey, site.taskSceneCode,
                         site.version, site.logPrefix, log::accept);
                 if (triggered == null) return Outcome.RETRY;
+                String triggerKey = "attemptTrigger::" + sanitize(key);
+                Status.setIntFlagToday(triggerKey, Status.getIntFlagToday(triggerKey) + 1);
                 markTriggered(key);
                 Status.flagToday(flag);
                 return Outcome.TRIGGERED;
@@ -409,6 +469,18 @@ public class TaskAttemptPolicy {
         }
         Status.flagToday(flag);
         return outcome;
+    }
+
+    private static ProbeResult probeWithPolling(StatusProbe probe, String key) {
+        ProbeResult pr = null;
+        for (int round = 1; round <= PROBE_ROUNDS; round++) {
+            TimeUtil.sleep(PROBE_INTERVAL_MS);
+            pr = probe.probe(key);
+            if (pr == null || pr == ProbeResult.UNKNOWN || isDone(pr)) {
+                return pr == null ? ProbeResult.UNKNOWN : pr;
+            }
+        }
+        return pr;
     }
 
     /**

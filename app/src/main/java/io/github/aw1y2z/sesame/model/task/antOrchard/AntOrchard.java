@@ -3,7 +3,6 @@ package io.github.aw1y2z.sesame.model.task.antOrchard;
 import io.github.aw1y2z.sesame.data.ConfigV2;
 import io.github.aw1y2z.sesame.entity.AlipayAntOrchardTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayOrchardChouChouLeTaskList;
-import io.github.aw1y2z.sesame.entity.AlipayMemberCreditSesameTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayPlantScene;
 import io.github.aw1y2z.sesame.entity.AlipayUser;
 import io.github.aw1y2z.sesame.data.ModelFields;
@@ -14,7 +13,6 @@ import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy.Outcome;
 import io.github.aw1y2z.sesame.data.task.TaskAward;
-import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.Toast;
 import io.github.aw1y2z.sesame.model.base.TaskCommon;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
@@ -25,7 +23,6 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectAndCountModelField;
 import io.github.aw1y2z.sesame.model.task.antFarm.AntFarmRpcCall;
 import io.github.aw1y2z.sesame.model.task.antGame.GameTask;
-import io.github.aw1y2z.sesame.model.task.antMember.AntMemberRpcCall;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Status;
@@ -42,17 +39,13 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 import io.github.aw1y2z.sesame.util.*;
-import io.github.aw1y2z.sesame.util.idMap.AntFarmDoFarmTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.AntOrchardTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.OrchardChouChouLeTaskListMap;
-import io.github.aw1y2z.sesame.util.idMap.MemberCreditSesameTaskListMap;
 import io.github.aw1y2z.sesame.util.idMap.PlantSceneIdMap;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 import java.util.*;
 
-import android.content.Context;
-import android.content.Intent;
 
 public class AntOrchard extends ModelTask {
     private BooleanModelField orchardFloatBallTask, orchardManualVisitAward;
@@ -689,6 +682,10 @@ public class AntOrchard extends ModelTask {
                         }
                         String label = rightsTimesLimit > 1
                                 ? title + "(" + (rightsTimes + 1) + "/" + rightsTimesLimit + ")" : title;
+                        // key 必须带档位：多次任务每推进一档都是新的尝试，不带档位会让第一档落下的
+                        // 当日标记把后续档位全挡下、任务停在第一档。单次任务保持原 key，语义不变。
+                        String policyKey = "orchard::optionalplay::" + sceneCode + "/" + taskType
+                                + (rightsTimesLimit > 1 ? "#" + rightsTimes : "");
                         // 走统一策略：400000040 时由 TaskAttemptPolicy 代为 doFarmTask 伪申报，
                         // 裸调 finishTask 会把 UNSUPPORTED 吞成 false，兜底永不触发
                         Outcome outcome = TaskAttemptPolicy.handle(
@@ -1818,6 +1815,8 @@ public class AntOrchard extends ModelTask {
                         try {
                             rightsTimesLimit = Integer.parseInt(limitStr);
                         } catch (Exception ignored) {
+                            // 坏值等于没给：这条任务会被当单档跑，必须留痕
+                            Log.i(TAG, "rightsTimesLimit 非法，按单档处理: " + limitStr);
                         }
                     }
                 }

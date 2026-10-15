@@ -93,6 +93,12 @@ public class StatisticsAccountCheck {
         assert Statistics.setDayCollectedFromServer(-1)==0;eq(8);
         assert Statistics.getData(Statistics.TimeType.MONTH,Statistics.DataType.COLLECTED)==8;
         UserIdMap.uid="A";assert Statistics.setDayCollectedFromServer(11)==4;eq(11);Statistics.save();
+        Statistics a=Statistics.readFrom("A"), b=Statistics.readFrom("B");
+        assert a.dataOf(Statistics.TimeType.DAY,Statistics.DataType.COLLECTED)==11;
+        assert b.dataOf(Statistics.TimeType.DAY,Statistics.DataType.COLLECTED)==8;
+        assert Statistics.aggregate(java.util.List.of(a,b)).dataOf(Statistics.TimeType.DAY,Statistics.DataType.COLLECTED)==19;
+        eq(11); // Reading every account for UI must not replace or modify the singleton.
+        assert Statistics.readFrom("../invalid").dataOf(Statistics.TimeType.DAY,Statistics.DataType.COLLECTED)==0;
         UserIdMap.uid="B";Statistics.load("B");eq(8);
         assert Files.readString(Path.of(args[0], "statistics.json")).contains("99");
         assert Files.isRegularFile(FileUtil.getStatisticsFile("A").toPath());
@@ -129,7 +135,7 @@ assert 'getFile(getAccountDataDirectory(userId), "AutoBlackList.json")' in file_
 assert 'if (!AccountFolderName.isValidUid(userId))' in file_util
 assert 'String userId = uidOfLogFolder(folder);' in file_util
 assert "FileUtil.getPublishedUserId()" in activity
-assert "Statistics.load(userId)" in activity
+assert "Statistics.readFrom(uid)" in activity and "Statistics.aggregate(" in activity
 assert "if (folder != previousFolder)" in activity
 assert 'FriendWatch.getList(userId)' in (SOURCE / "ui/miuix/MiuixFriendStatsActivity.kt").read_text(encoding="utf-8")
 assert hook.index("UserIdMap.initUser(userId)") < hook.index("Statistics.load();", hook.index("UserIdMap.initUser(userId)")) < hook.index("Model.initAllModel();", hook.index("UserIdMap.initUser(userId)"))

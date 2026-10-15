@@ -332,6 +332,7 @@ public class MessageUtil {
         BLACKLIST_LIST_TARGETS.put("AntOrchardTaskList", new String[]{"AntOrchard", "农场肥料任务"});
         BLACKLIST_LIST_TARGETS.put("OrchardChouChouLeTaskList", new String[]{"AntOrchard", "农场抽抽乐任务"});
         BLACKLIST_LIST_TARGETS.put("WelfareFundTaskList", new String[]{"AntMember", "福利金任务"});
+        BLACKLIST_LIST_TARGETS.put("GoldTicketTaskList", new String[]{"AntMember", "黄金票任务"});
         BLACKLIST_LIST_TARGETS.put("GoldenBeansTaskList", new String[]{"goldenbeans", "金豆夺宝任务"});
         BLACKLIST_LIST_TARGETS.put("AntStallTaskList", new String[]{"AntStall", "新村任务"});
         BLACKLIST_LIST_TARGETS.put("AntSportsTaskList", new String[]{"AntSports", "运动任务"});
@@ -356,7 +357,7 @@ public class MessageUtil {
         PRESET_BLACKLIST.put("AntFarm|AntFarmDoFarmTaskList", setOf(
                 "到店付款", "线上支付", "逛闪购外卖1元起吃", "用花呗完成一笔支付"));
         PRESET_BLACKLIST.put("AntFarm|AntFarmDrawMachineTaskList", setOf(
-                "伸出援手，点亮希望", "消耗饲料换机会"));
+                "伸出援手 点亮希望", "消耗饲料换机会"));
         PRESET_BLACKLIST.put("AntOrchard|AntOrchardTaskList", setOf(
                 "完成1笔旧衣回收", "完成1单手机数码回收", "下载蚂蚁阿福看健康攻略", "逛一逛快手", "逛一逛签到领现金",
                 "逛好物最高得1500肥料"));
@@ -367,6 +368,10 @@ public class MessageUtil {
                 "去雇佣芝麻大表鸽", "送你10.6元支付红包", "一键查询爱车估值"));
         PRESET_BLACKLIST.put("goldenbeans|GoldenBeansTaskList", setOf(
                 "GOLDEN_BEAN_TASK_XIANSHANGZHIFU", "GOLDEN_BEAN_TASK_YUEBAO", "TEST_PUSH_SUBSCRIBE"));
+        // 跳外部 App 的"真行为"任务：模块无法完成，且提交时服务端直接回 1009 风控
+        // （1009 会连累全部模块，只读查询也被拦），故直接预置拉黑
+        PRESET_BLACKLIST.put("AntMember|GoldTicketTaskList", setOf(
+                "为自己攒笔钱", "去体验余额宝自动攒", "设置股票快捷入口"));
     }
 
     private static Set<String> setOf(String... items) {

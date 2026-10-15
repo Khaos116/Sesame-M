@@ -59,6 +59,19 @@ public class ConfigV2 {
                 for (ModelField<?> configModelField : configModelFields.values()) {
                     ModelField<?> modelField = modelFields.get(configModelField.getCode());
                     try {
+                        // 黄金票拆分开关时保留旧账号已启用的签到、任务与提取，显式新配置优先。
+                        if (modelField == null && "AntMember".equals(modelCode)) {
+                            ModelField<?> legacy = modelFields.get("enableGoldTicket");
+                            ModelField<?> consume = modelFields.get("enableGoldTicketConsume");
+                            String code = configModelField.getCode();
+                            if ("enableGoldTicketTask".equals(code)) {
+                                configModelField.setObjectValue((legacy != null && Boolean.TRUE.equals(legacy.getValue()))
+                                        || (consume != null && Boolean.TRUE.equals(consume.getValue())));
+                            } else if (legacy != null && ("enableGoldTicketSign".equals(code) || "enableGoldTicketBrowse".equals(code))
+                                    && legacy.getValue() instanceof Boolean) {
+                                configModelField.setObjectValue(legacy.getValue());
+                            }
+                        }
                         if (modelField != null) {
                             Object value = modelField.getValue();
                             // 兼容曾保存为“场景列表 + 统一次数”的版本；旧 Map 原样保留。

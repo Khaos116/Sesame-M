@@ -559,7 +559,7 @@ public class AntFarmRpcCall {
     }
 
     public static String saveOrnaments(String animalId, String farmId, String ornaments) {
-        return ApplicationHook.requestString("com.alipay.antfarm.saveOrnaments", "[{\"animalId\":\"" + animalId + "\",\"farmId\":\"" + farmId + "\",\"ornaments\":\"" + ornaments + "\",\"requestType\":\"NORMAL\"," + "\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"version\":\"" + VERSION + "\"}]");
+        return ApplicationHook.requestString("com.alipay.antfarm.saveOrnaments", "[{\"animalId\":\"" + StringUtil.escapeJson(animalId) + "\",\"farmId\":\"" + StringUtil.escapeJson(farmId) + "\",\"ornaments\":\"" + StringUtil.escapeJson(ornaments) + "\",\"requestType\":\"NORMAL\"," + "\"sceneCode\":\"ANTFARM\",\"source\":\"H5\",\"version\":\"" + VERSION + "\"}]");
     }
 
     // 亲密家庭
@@ -631,7 +631,7 @@ public class AntFarmRpcCall {
         return ApplicationHook.requestString("com.alipay.antfarm.OpenAIPrivatePolicy", args);
     }*/
     public static String OpenAIPrivatePolicy() throws JSONException {
-        JSONObject args = new JSONObject();
+        JSONObject args = MyUtils.newJSONObject();
         args.put("privatePolicyIdList", new JSONArray().put("AI_CHICK_PRIVATE_POLICY"));
         args.put("requestType", "NORMAL");
         args.put("sceneCode", "ANTFARM");
@@ -642,7 +642,7 @@ public class AntFarmRpcCall {
     }
 
     public static String deliverSubjectRecommend(JSONArray userIds) throws JSONException {
-        JSONObject args = new JSONObject();
+        JSONObject args = MyUtils.newJSONObject();
         args.put("friendUserIds", userIds);
         args.put("requestType", "NORMAL");
         args.put("sceneCode", "ChickFamily");
@@ -652,7 +652,7 @@ public class AntFarmRpcCall {
     }
 
     public static String deliverContentExpand(String ariverRpcTraceId, String eventId, String eventName, String memo, String resultCode, String sceneId, String sceneName, boolean success, JSONArray userIds) throws JSONException {
-        JSONObject args = new JSONObject();
+        JSONObject args = MyUtils.newJSONObject();
         args.put("ariverRpcTraceId", ariverRpcTraceId);
         args.put("eventId", eventId);
         args.put("eventName", eventName);
@@ -670,7 +670,7 @@ public class AntFarmRpcCall {
     }
 
     public static String QueryExpandContent(String deliverId) throws JSONException {
-        JSONObject args = new JSONObject();
+        JSONObject args = MyUtils.newJSONObject();
         args.put("deliverId", deliverId);
         args.put("requestType", "NORMAL");
         args.put("sceneCode", "ANTFARM");
@@ -680,7 +680,7 @@ public class AntFarmRpcCall {
     }
 
     public static String deliverMsgSend(String groupId, JSONArray userIds, String content, String deliverId) throws JSONException {
-        JSONObject args = new JSONObject();
+        JSONObject args = MyUtils.newJSONObject();
         args.put("content", content);
         args.put("deliverId", deliverId);
         args.put("friendUserIds", userIds);
@@ -756,9 +756,9 @@ public class AntFarmRpcCall {
     public static String exchangeBenefit(String spuId, String skuId, String activityId, String sceneCode, String source) {
         String requestId = generateRequestId();
         try {
-            JSONObject requestDataItem = new JSONObject();
+            JSONObject requestDataItem = MyUtils.newJSONObject();
 
-            JSONObject context = new JSONObject();
+            JSONObject context = MyUtils.newJSONObject();
             context.put("activityId", activityId);
 
             requestDataItem.put("context", context);
@@ -885,7 +885,7 @@ public class AntFarmRpcCall {
      */
     public static String getFitmentItemList(String activityId, int pageSize, String labelType, int startIndex) {
         try {
-            JSONObject args = new JSONObject();
+            JSONObject args = MyUtils.newJSONObject();
             args.put("activityId", activityId);
             if (labelType != null && !labelType.isEmpty()) {
                 args.put("labelType", labelType);
@@ -909,9 +909,9 @@ public class AntFarmRpcCall {
     public static String exchangeBenefit(String spuId, String skuId, String activityId) {
         String requestId = generateRequestId();
         try {
-            JSONObject requestDataItem = new JSONObject();
+            JSONObject requestDataItem = MyUtils.newJSONObject();
 
-            JSONObject context = new JSONObject();
+            JSONObject context = MyUtils.newJSONObject();
             context.put("activityId", activityId);
 
             requestDataItem.put("context", context);

@@ -3,7 +3,8 @@ package io.github.aw1y2z.sesame.model.task.greenFinance;
 import org.json.JSONArray;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
-import io.github.aw1y2z.sesame.model.common.rpcCall.BaseTaskRpcCall;
+import io.github.aw1y2z.sesame.model.common.rpcCall.BasePromoTaskRpcCall;
+import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 /**
@@ -11,7 +12,7 @@ import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
  *
  * @author xiong
  */
-public class GreenFinanceRpcCall extends BaseTaskRpcCall {
+public class GreenFinanceRpcCall extends BasePromoTaskRpcCall {
 
     /**
      * 绿色经营首页
@@ -44,7 +45,7 @@ public class GreenFinanceRpcCall extends BaseTaskRpcCall {
      */
     public static String signInQuery(String sceneId) {
         return ApplicationHook.requestString("com.alipay.loanpromoweb.promo.signin.query",
-                "[{\"cycleCount\":7,\"cycleType\":\"d\",\"extInfo\":{},\"needContinuous\":1,\"sceneId\":\"" + sceneId + "\"}]");
+                "[{\"cycleCount\":7,\"cycleType\":\"d\",\"extInfo\":{},\"needContinuous\":1,\"sceneId\":\"" + StringUtil.escapeJson(sceneId) + "\"}]");
     }
 
     /**
@@ -55,7 +56,7 @@ public class GreenFinanceRpcCall extends BaseTaskRpcCall {
      */
     public static String queryUserTickItem(String firstBehaviorType) {
         return ApplicationHook.requestString("com.alipay.mcaplatformunit.common.mobile.newservice.GreenFinanceTickService.queryUserTickItem",
-                "[{\"custType\":\"MERCHANT\",\"firstBehaviorType\":\"" + firstBehaviorType + "\",\"uid\":\"" + UserIdMap.getCurrentUid() + "\"}]");
+                "[{\"custType\":\"MERCHANT\",\"firstBehaviorType\":\"" + StringUtil.escapeJson(firstBehaviorType) + "\",\"uid\":\"" + UserIdMap.getCurrentUid() + "\"}]");
     }
 
     /**

@@ -92,15 +92,24 @@ jobs:
             gh release upload "$TAG" apks/*.apk --repo "$XPOSED_REPO" --clobber
           else
             echo "creating release $TAG"
+            # 凭据走 credential helper，而不是写进 clone URL：
+            # URL 形式会被留在 .git/config 与 git 的错误输出里，等于 token 落盘并可能随日志外发。
+            # 先置空一次 credential.helper 清掉环境里可能已有的助手（helper 是叠加的，
+            # 先响应的那个会抢答并可能给出别的账号的凭据），再挂上本次要用的。
+            GIT_CRED='!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
+
             # 3. 克隆模块仓库
-            git clone https://x-access-token:${GH_TOKEN}@github.com/${XPOSED_REPO}.git xposed_repo
+            git -c credential.helper= -c credential.helper="$GIT_CRED" \
+              clone "https://github.com/${XPOSED_REPO}.git" xposed_repo
             cd xposed_repo
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
 
-            # 4. 强制创建附注标签，并推送到远程（关键：加上了 -f 参数）
+            # 4. 强制创建附注标签并强推（-f 必须保留）：
+            # 目标仓库可能已由官方机器人建过同名标签，必须用「回填主仓库原始提交日期」的
+            # 附注标签覆盖它，否则模块仓库的版本排序会按发布时间排错
             GIT_COMMITTER_DATE="$ORIGINAL_DATE" git tag -f -a "$TAG" -m "Release $TAG"
-            git push -f origin "$TAG"
+            git -c credential.helper= -c credential.helper="$GIT_CRED" push -f origin "$TAG"
 
             # 5. 使用 --verify-tag 验证刚才推送的标签，并创建 Release
             gh release create "$TAG" ../apks/*.apk \

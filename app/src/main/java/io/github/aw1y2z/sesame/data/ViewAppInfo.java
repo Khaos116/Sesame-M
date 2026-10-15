@@ -92,7 +92,9 @@ public final class ViewAppInfo {
                 return runType = RunType.MODEL;
             }
             return runType = RunType.DISABLE;
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            // 读不到就按未激活处理，但失败原因必须留痕：用户报「模块未激活」时全靠这一行
+            Log.printStackTrace(t);
         }
         return runType = RunType.DISABLE;
     }

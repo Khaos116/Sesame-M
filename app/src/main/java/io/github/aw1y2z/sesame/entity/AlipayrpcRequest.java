@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import io.github.aw1y2z.sesame.util.idMap.PlantSceneIdMap;
 import io.github.aw1y2z.sesame.util.idMap.rpcRequestMap;
 
 public class AlipayrpcRequest extends IdAndName {

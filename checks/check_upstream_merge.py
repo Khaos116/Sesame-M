@@ -18,7 +18,7 @@ for signature in (
     "private static boolean goldTicketOk(", "private JSONObject getGoldTicketAssetInfo(",
     "private boolean doGoldTicketSignIn(", "private JSONArray extractGoldTicketHomeTodoTasks(",
     "private void doGoldTicketConsume(",
-    "private boolean isGoldTicketKnownAutoTask(", "private int countGoldTicketPendingAutoTasks(",
+    "private int countGoldTicketPendingAutoTasks(",
 ):
     code += method(member, signature) + "\n"
 code += method("model/task/antForest/AntForestV2.java", "private static int teamState(") + "\n"
@@ -29,6 +29,8 @@ static class MyUtils {
     static JSONObject newJSONObject() { return new JSONObject(); }
     static JSONObject newJSONObject(String raw) { try { return raw == null ? new JSONObject() : new JSONObject(raw); } catch (JSONException e) { return new JSONObject(); } }
 }
+static class Field { Set<String> value=new HashSet<>(); Set<String> getValue(){return value;} }
+Field GoldTicketTaskList=new Field();
 static class Log {
     static int errors;
     static void printStackTrace(String tag, Throwable t) { errors++; }
@@ -76,6 +78,9 @@ public static void main(String[] args) throws Exception {
     assert check.countGoldTicketPendingAutoTasks(new JSONArray().put(1)) == -1;
     assert check.countGoldTicketPendingAutoTasks(new JSONArray().put(new JSONObject())) == -1;
     assert check.countGoldTicketPendingAutoTasks(new JSONArray().put(new JSONObject().put("taskId", "AP10247402"))) == 1;
+    assert check.countGoldTicketPendingAutoTasks(new JSONArray().put(new JSONObject().put("taskId", "NEW_SERVER_TASK"))) == 1;
+    check.GoldTicketTaskList.value.add("NEW_SERVER_TASK");
+    assert check.countGoldTicketPendingAutoTasks(new JSONArray().put(new JSONObject().put("taskId", "NEW_SERVER_TASK"))) == 0;
     JSONObject asset = new JSONObject().put("availableAmount", 2900).put("minExchangeAmount", 100);
     JSONObject result = new JSONObject().put("assetInfo", asset).put("productList", new JSONArray().put(1));
     consume(check, result);
@@ -476,7 +481,7 @@ public class UpstreamFixCheck {
  static class FileUtil {static boolean success;static int writes;static File getStatusFile(String s){return new File("never-created-status.json");}static boolean write2File(String s,File f){writes++;return success;}}
  static class JsonUtil {static boolean fail;static String toFormatJsonString(Object o){if(fail)throw new IllegalStateException("serialization");return "{}";}}
  static class MessageUtil {static void sweepExpiredBlackList(){}static void sweepReleasedDefaults(){}}
- static class Status {static final String TAG="check";static final Status INSTANCE=new Status();static boolean saveFailureNotified;static int unloads;long saveTime;Set<String> flags=new HashSet<>();static void unload(){unloads++;INSTANCE.flags.clear();}static void ensureLoadedForCurrentUid(){}
+ static class Status {static final String TAG="check";static final Status INSTANCE=new Status();static boolean saveFailureNotified;static int unloads;long saveTime;Set<String> flags=new HashSet<>();static void unload(){unloads++;INSTANCE.flags.clear();}static String ensureLoadedForCurrentUid(){return UserIdMap.getCurrentUid();}
  @@STATUS@@
  }
  static class Statistics {enum DataType{COLLECTED}static int collected;static void addData(DataType type,int amount){collected+=amount;}}

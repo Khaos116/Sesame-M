@@ -10,6 +10,7 @@ import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.util.StringUtil;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 public class AntOrchardRpcCall {
@@ -235,7 +236,7 @@ public class AntOrchardRpcCall {
     }
 
     public static String switchPlantScene(String sceneName) {
-        return ApplicationHook.requestString("com.alipay.antorchard.switchPlantScene", "[{\"plantScene\":\"" + sceneName + "\",\"requestType\":\"NORMAL\",\"sceneCode\":\"ORCHARD\",\"source\":\"ANTFARM_ORCHARD\"}]");
+        return ApplicationHook.requestString("com.alipay.antorchard.switchPlantScene", "[{\"plantScene\":\"" + StringUtil.escapeJson(sceneName) + "\",\"requestType\":\"NORMAL\",\"sceneCode\":\"ORCHARD\",\"source\":\"ANTFARM_ORCHARD\"}]");
     }
 
     public static String choosePrize(String orderId) {

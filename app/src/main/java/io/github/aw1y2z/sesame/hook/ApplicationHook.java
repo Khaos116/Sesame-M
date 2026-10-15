@@ -75,7 +75,6 @@ import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 import lombok.Getter;
 
 import androidx.annotation.NonNull;
-import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
 import io.github.libxposed.api.XposedModuleInterface;
 
@@ -683,6 +682,37 @@ public class ApplicationHook extends XposedModule {
     }
 
     /**
+     * 本地 HTTP 服务的鉴权令牌：首次生成后落盘复用
+     * （硬编码会随公开分发的 APK 泄漏，等于把通用 RPC 代理的钥匙一起发出去）。
+     * <p>读写失败返回空串——空令牌在 {@link BaseHandler#verifyToken} 里是拒绝，宁可服务不可用也不放行。
+     */
+    private static String resolveHttpToken() {
+        try {
+            java.io.File tokenFile = FileUtil.getHttpTokenFile();
+            String existing = FileUtil.readFromFile(tokenFile);
+            if (existing != null && !existing.trim().isEmpty()) {
+                return existing.trim();
+            }
+            // 32 字节随机数的十六进制串
+            byte[] raw = new byte[32];
+            new java.security.SecureRandom().nextBytes(raw);
+            StringBuilder sb = new StringBuilder(raw.length * 2);
+            for (byte b : raw) {
+                sb.append(String.format("%02x", b));
+            }
+            String token = sb.toString();
+            if (FileUtil.write2File(token, tokenFile)) {
+                Log.record("已生成 HTTP 鉴权令牌（存于 http_token.txt）");
+                return token;
+            }
+            Log.record("HTTP 鉴权令牌写入失败，本次不启动 HTTP 服务");
+        } catch (Throwable t) {
+            Log.err(TAG, "resolveHttpToken err:", t);
+        }
+        return "";
+    }
+
+    /**
      * 真正执行重载，必须在非主线程调用。UI 相关（Toast / 权限提示）已内部切回主线程，
      * 故整体跑在后台线程是安全的。
      * synchronized 保证同一时刻只有一处重载，防止切号与首启 / 广播重启并发触发重复初始化；
@@ -716,7 +746,7 @@ public class ApplicationHook extends XposedModule {
                 }
 
                 //调用 startIfNeeded 方法，参数与 Kotlin 保持一致
-                ModuleHttpServerManager.getInstance().startIfNeeded(8080, "ET3vB^#td87sQqKaY*eMUJXP", processName, "com.eg.android.AlipayGphone");
+                ModuleHttpServerManager.getInstance().startIfNeeded(8080, resolveHttpToken(), processName, "com.eg.android.AlipayGphone");
 
                 if (!Objects.equals(userId, UserIdMap.getCurrentUid())) {
                     try {
@@ -1328,44 +1358,42 @@ public class ApplicationHook extends XposedModule {
                         String groupCode = intent.getStringExtra("group");
                         String modelCode = intent.getStringExtra("model");
                         String manualAction = intent.getStringExtra("taskAction");
-                        boolean reloadExecutionConfig = intent.getBooleanExtra("reloadConfig", false);
                         String executeUid = intent.getStringExtra("userId");
                         if (!StringUtil.isEmpty(modelCode) && (StringUtil.isEmpty(executeUid) || !Objects.equals(executeUid, UserIdMap.getCurrentUid()))) {
                             Log.record("手动任务账号不匹配，忽略请求");
                             break;
                         }
+                        long executeGeneration = TaskLifecycle.generation();
                         BroadcastReceiver.PendingResult r2 = goAsync();
                         new Thread(() -> {
                             try {
-                                if (!StringUtil.isEmpty(modelCode)) {
-                                    boolean started = false;
-                                    try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
-                                        if (work != null && Objects.equals(executeUid, UserIdMap.getCurrentUid())) {
-                                            if (reloadExecutionConfig) { ModelTask.stopAllTask();ConfigV2.load(executeUid); }
-                                            started = ModelTask.startNamedTask(modelCode, executeUid, manualAction == null ? "" : manualAction);
-                                        }
-                                    }
-                                    Log.record("手动执行【" + modelCode + "】" + (started ? "已启动" : "未启动，请检查开关、账号或任务状态"));
-                                } else if (StringUtil.isEmpty(groupCode)) {
-                                    initHandler(false);
-                                } else if (ModelGroup.BASE == ModelGroup.getByCode(groupCode)) {
+                                if (StringUtil.isEmpty(modelCode) && StringUtil.isEmpty(groupCode)) {
+                                    if (executeGeneration == TaskLifecycle.generation()) initHandler(false);
+                                    return;
+                                }
+                                try (TaskLifecycle.Work work = TaskLifecycle.enter(executeGeneration)) {
+                                    if (work == null) return;
+                                    String currentUid = UserIdMap.getCurrentUid();
+                                    if (!StringUtil.isEmpty(modelCode) && !Objects.equals(executeUid, currentUid)) return;
                                     ModelTask.stopAllTask();
-                                    Log.record("开始执行全部任务");
-                                    io.github.aw1y2z.sesame.util.DailyTask.manual(() -> { ModelTask.startAllTask(false); return null; });
-                                } else {
-                                    ModelTask.stopAllTask();
-                                    // 先打"开始"再启动：森林 isSync=true 会同步阻塞到跑完，
-                                    // 若把提示放在 startGroupTask 之后，它会排在森林的执行日志之后（实测晚 20 秒）
-                                    Log.record("开始执行分组【" + ModelGroup.getName(groupCode) + "】任务");
-                                    int count = ModelTask.startGroupTask(groupCode);
-                                    if (count == 0) {
-                                        Log.record("分组【" + ModelGroup.getName(groupCode) + "】无可执行任务");
+                                    ConfigV2.load(currentUid);
+                                    if (!StringUtil.isEmpty(modelCode)) {
+                                        boolean started = ModelTask.startNamedTask(modelCode, executeUid, manualAction == null ? "" : manualAction);
+                                        Log.record("手动执行【" + modelCode + "】" + (started ? "已启动" : "未启动，请检查开关、账号或任务状态"));
+                                    } else if (ModelGroup.BASE == ModelGroup.getByCode(groupCode)) {
+                                        Log.record("开始执行全部任务");
+                                        io.github.aw1y2z.sesame.util.DailyTask.manual(() -> { ModelTask.startAllTask(false); return null; });
+                                    } else {
+                                        Log.record("开始执行分组【" + ModelGroup.getName(groupCode) + "】任务");
+                                        int count = ModelTask.startGroupTask(groupCode);
+                                        if (count == 0) Log.record("分组【" + ModelGroup.getName(groupCode) + "】无可执行任务");
                                     }
                                 }
                             } catch (Throwable th) {
                                 Log.printStackTrace(TAG, th);
+                            } finally {
+                                r2.finish();
                             }
-                            r2.finish();
                         }, "Sesame-Execute").start();
                         break;
                     case "com.eg.android.AlipayGphone.sesame.reLogin":

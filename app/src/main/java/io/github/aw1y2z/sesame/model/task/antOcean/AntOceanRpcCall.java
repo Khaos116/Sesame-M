@@ -6,11 +6,9 @@ import org.json.JSONObject;
 import io.github.aw1y2z.sesame.util.MyUtils;
 
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
-import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.StringUtil;
 
-import java.util.Set;
 
 /**
  * @author Constanline

@@ -114,12 +114,15 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
      * 统一落盘入口（二级/三级/四级同款实现）：
      * 先用 hasFieldChanges() 短路「无字段级改动」的情况，确认有改动后走 force=true，
      * 避免 ConfigV2.save() 内部再重复做一次全量序列化比较。
+     * <p>写盘失败也要出声：只提示成功会让用户以为存上了，实际改动无声消失。
      */
     fun save() {
         if (!ConfigV2.hasFieldChanges()) return
         if (ConfigV2.save(userId, true)) {
             ToastUtil.show(this, "保存成功！")
             sendRestartIfNeeded()
+        } else {
+            ToastUtil.show(this, "保存失败，改动未落盘")
         }
     }
 

@@ -1,6 +1,5 @@
 package io.github.aw1y2z.sesame.util;
 
-import static io.github.aw1y2z.sesame.util.idMap.UserIdMap.getShowName;
 import android.os.Build;
 import android.os.Environment;
 import io.github.aw1y2z.sesame.entity.UserEntity;
@@ -12,7 +11,11 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 public class FileUtil {
@@ -400,8 +403,8 @@ public class FileUtil {
     }
     
     public static File getConfigV2File(String userId) {
-        File file = new File(CONFIG_DIRECTORY_FILE + "/" + userId, "config_v2.json");
-        if (!file.exists()) {
+        File file = getFile(getUserDataDirectoryFile(userId), "config_v2.json");
+        if (!file.exists() && isSafeUserId(userId)) {
             File oldFile = new File(CONFIG_DIRECTORY_FILE, "config_v2-" + userId + ".json");
             if (oldFile.exists()) {
                 if (write2File(readFromFile(oldFile), file)) {
@@ -416,11 +419,19 @@ public class FileUtil {
     }
     
     public static boolean setConfigV2File(String userId, String json) {
-        return write2File(json, new File(CONFIG_DIRECTORY_FILE + "/" + userId, "config_v2.json"));
+        return write2File(json, getFile(getUserDataDirectoryFile(userId), "config_v2.json"));
     }
     
     public static File getTokenConfigFile() {
         return new File(MAIN_DIRECTORY_FILE, "token_config.json");
+    }
+
+    /**
+     * 本地 HTTP 服务的鉴权令牌文件：首次启动随机生成，之后各次启动复用同一份
+     * （硬编码在源码里会随公开分发的 APK 一起泄漏）。
+     */
+    public static File getHttpTokenFile() {
+        return new File(MAIN_DIRECTORY_FILE, "http_token.txt");
     }
     
     public static boolean setTokenConfigFile(String json) {
@@ -444,8 +455,7 @@ public class FileUtil {
     }
     
     public static File runtimeInfoFile(String userId) {
-        File runtimeInfoFile = new File(CONFIG_DIRECTORY_FILE + "/" + userId, "runtimeInfo.json");
-        return ensureFileExists(runtimeInfoFile);
+        return ensureFileExists(getFile(getUserDataDirectoryFile(userId), "runtimeInfo.json"));
     }
     
     public static File getCooperationIdMapFile(String userId) {
@@ -486,9 +496,19 @@ public class FileUtil {
     
     /**
      * 账号数据目录：userId 为空（「默认」配置）时回退到主目录，避免 {@code new File(dir, null)} 抛 NPE。
+     * <p>非空非法uid必须拒绝，不能回退共享目录误写默认配置。
      */
     private static File getUserDataDirectoryFile(String userId) {
-        return StringUtil.isEmpty(userId) ? MAIN_DIRECTORY_FILE : new File(CONFIG_DIRECTORY_FILE, userId);
+        if (StringUtil.isEmpty(userId)) {
+            return MAIN_DIRECTORY_FILE;
+        }
+        if (!isSafeUserId(userId)) throw new IllegalArgumentException("无效账号 UID");
+        return new File(CONFIG_DIRECTORY_FILE, userId);
+    }
+
+    /** uid 能否安全用作目录名（空 uid 表示「默认」配置，走主目录回退） */
+    private static boolean isSafeUserId(String userId) {
+        return AccountFolderName.isValidUid(userId);
     }
 
     /**
@@ -516,7 +536,9 @@ public class FileUtil {
         if (!file.exists()) {
             try {
                 file.createNewFile();
-            } catch (Throwable ignored) {
+            } catch (Throwable t) {
+                // 建不出空文件不致命（后续写入会各自报错），但要留痕，否则只看到「写不进去」
+                Log.debug(TAG + " 建文件失败: " + file.getName() + " " + t);
             }
         }
         return file;
@@ -540,6 +562,25 @@ public class FileUtil {
             Log.debug(TAG + ", statisticsFile.json文件不存在");
         }
         return statisticsFile;
+    }
+
+    public static File getLegacyStatisticsFile() {
+        return getFile(MAIN_DIRECTORY_FILE, "statistics.json");
+    }
+
+    public static List<String> listAccountStatisticsUids() {
+        List<String> uids = new ArrayList<>();
+        File[] dirs = CONFIG_DIRECTORY_FILE.listFiles();
+        if (dirs == null) {
+            return uids;
+        }
+        Arrays.sort(dirs, Comparator.comparing(File::getName));
+        for (File dir : dirs) {
+            if (dir.isDirectory() && AccountFolderName.isValidUid(dir.getName()) && new File(dir, "statistics.json").exists()) {
+                uids.add(dir.getName());
+            }
+        }
+        return uids;
     }
 
     private static File getAccountDataDirectory(String userId) {
@@ -639,6 +680,10 @@ public class FileUtil {
 
     public static File getWelfareFundTaskListMapFile() {
         return getFile(MAIN_DIRECTORY_FILE, "WelfareFundTask.json");
+    }
+
+    public static File getGoldTicketTaskListMapFile() {
+        return getFile(MAIN_DIRECTORY_FILE, "GoldTicketTask.json");
     }
 
     public static File getGoldenBeansTaskListMapFile() {
@@ -1204,7 +1249,8 @@ public class FileUtil {
                     clearFile(f);
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            Log.debug(TAG + " 清空日志失败: " + logName + " " + t);
         }
     }
 

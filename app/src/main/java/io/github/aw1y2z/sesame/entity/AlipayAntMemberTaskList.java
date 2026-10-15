@@ -4,10 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.idMap.AntMemberTaskListMap;
-import io.github.aw1y2z.sesame.util.idMap.ForestHuntIdMap;
-import io.github.aw1y2z.sesame.util.idMap.MemberCreditSesameTaskListMap;
 
 public class AlipayAntMemberTaskList extends IdAndName {
     private static List<AlipayAntMemberTaskList> list;

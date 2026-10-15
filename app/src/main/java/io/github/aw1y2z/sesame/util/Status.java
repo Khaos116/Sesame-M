@@ -791,14 +791,19 @@ public class Status {
      * uid 与内存状态归属不一致（启动早期 uid 未就绪、切号）时，按当前 uid 重新加载。
      * <p>读写两条路径都要过：只在 save() 里挡，挡不住用错状态做判断；只在 hasFlagToday()
      * 里挡，挡不住把错状态写回真实账号。切号不丢内存标记——置位入口都即时落盘。
+     *
+     * @return 对齐后**内存状态的归属 uid**。落盘目标必须以它为准：切号可能正好落在
+     *         「读到当前 uid」与「按该 uid 写盘」之间，拿新 uid 去写旧状态就成了
+     *         「A 账号的标记写进 B 账号的文件」。
      */
-    private static void ensureLoadedForCurrentUid() {
+    private static String ensureLoadedForCurrentUid() {
         String currentUid = UserIdMap.getCurrentUid();
         if (StringUtil.isEmpty(currentUid) || currentUid.equals(loadedUid)) {
-            return;
+            return loadedUid;
         }
         Log.system(TAG, "状态归属由[" + loadedUid + "]变为[" + currentUid + "]，按当前账号重新加载");
         load();
+        return loadedUid;
     }
 
     public static synchronized Status load() {
@@ -864,13 +869,14 @@ public class Status {
     }
     
     public static synchronized void save(Calendar nowCalendar) {
-        String currentUid = UserIdMap.getCurrentUid();
-        if (StringUtil.isEmpty(currentUid)) {
+        if (StringUtil.isEmpty(UserIdMap.getCurrentUid())) {
             Log.record("用户为空，状态保存失败");
             throw new RuntimeException("用户为空，状态保存失败");
         }
-        // 落盘前先对齐归属：uid 未就绪时内存可能是空状态，直接写会清掉真实账号当天的 status.json
-        ensureLoadedForCurrentUid();
+        // 落盘前先对齐归属：uid 未就绪时内存可能是空状态，直接写会清掉真实账号当天的 status.json。
+        // 目标文件按「内存状态的归属」取，而不是再读一次当前 uid：切号可能正好落在两步之间，
+        // 拿新 uid 去写旧状态就是「把 A 账号的标记写进 B 账号的文件」。
+        String currentUid = ensureLoadedForCurrentUid();
         if (updateDay(nowCalendar)) {
             Log.system(TAG, "重置 status.json");
         }
@@ -917,7 +923,9 @@ public class Status {
             path = statusFile.getAbsolutePath();
             // 「已存在但不可写」这一情形 write2File 已自行 Toast，这里不重复弹
             permissionToastShown = statusFile.exists() && !statusFile.canWrite();
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            // 路径取不到不影响后续提示（path 已有兜底文案），留痕即可
+            Log.debug(TAG + " 取状态文件路径失败: " + t);
         }
         Log.system(TAG, "保存 status.json " + reason + "，当日进度可能未被持久化: " + path);
         if (error != null) {

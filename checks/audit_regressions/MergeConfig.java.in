@@ -71,6 +71,19 @@ public class MergeConfigCheck {
     }
     public static void main(String[] args) throws Exception {
         var test = INSTANCE;
+        var member = new ModelFields();
+        for (String code : List.of("enableGoldTicketTask", "enableGoldTicketSign", "enableGoldTicketBrowse", "enableGoldTicketConsume")) member.addField(field(code, false));
+        ModelTask.configs.put("AntMember", new ModelConfig("AntMember", member));
+        var oldMember = new ModelFields(); oldMember.addField(field("enableGoldTicket", true));
+        test.setModelFieldsMap(Map.of("AntMember", oldMember));
+        for (String code : List.of("enableGoldTicketTask", "enableGoldTicketSign", "enableGoldTicketBrowse")) assert Boolean.TRUE.equals(member.get(code).getValue());
+        oldMember.addField(field("enableGoldTicketTask", false)); oldMember.addField(field("enableGoldTicketBrowse", false));
+        test.setModelFieldsMap(Map.of("AntMember", oldMember));
+        assert Boolean.FALSE.equals(member.get("enableGoldTicketTask").getValue()) && Boolean.FALSE.equals(member.get("enableGoldTicketBrowse").getValue());
+        oldMember = new ModelFields(); oldMember.addField(field("enableGoldTicketConsume", true));
+        test.setModelFieldsMap(Map.of("AntMember", oldMember));
+        assert Boolean.TRUE.equals(member.get("enableGoldTicketTask").getValue()) && Boolean.TRUE.equals(member.get("enableGoldTicketConsume").getValue());
+        ModelTask.configs.remove("AntMember");
         var scenes = new SelectAndCountModelField("orchardSpreadManureSceneList", "scenes",
                 new LinkedHashMap<>(), Collections.<IdAndName>emptyList());
         var orchard = new ModelFields(); orchard.addField(scenes);

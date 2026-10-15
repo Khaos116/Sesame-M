@@ -8,11 +8,9 @@ import android.widget.TextView;
 
 import io.github.aw1y2z.sesame.util.compat.XC_MethodHook;
 import io.github.aw1y2z.sesame.util.XHelpers;
-import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 import io.github.aw1y2z.sesame.util.Log;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 
 /**
  * 支付宝滑块验证码Hook工具类（UI层拦截）

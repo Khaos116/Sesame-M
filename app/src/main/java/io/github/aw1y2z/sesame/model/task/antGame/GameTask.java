@@ -20,7 +20,6 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Random;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 游戏任务上报工具类

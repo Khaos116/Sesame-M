@@ -74,7 +74,7 @@ public class WelfareFund {
             return;
         }
         try {
-            JSONObject jo = parse(WelfareFundRpcCall.signConsult());
+            JSONObject jo = parse(WelfareFundRpcCall.signApply());
             if (!ok(jo)) {
                 return;
             }

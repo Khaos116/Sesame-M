@@ -14,6 +14,7 @@ jars = sorted(cache.glob("*/*/json-*.jar"))
 assert jars, "Build the project first to cache org.json"
 pkg = "io.github.aw1y2z.sesame"
 sources = {
+    "util/StringUtil": "public class StringUtil {" + method("util/StringUtil.java", "public static String escapeJson(") + "}",
     "util/MyUtils": '''import org.json.*; public class MyUtils {
         public static JSONObject newJSONObject(){return new JSONObject();}
         public static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}

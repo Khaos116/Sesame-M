@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.aw1y2z.sesame.entity.FriendWatch
 import io.github.aw1y2z.sesame.util.FileUtil
+import io.github.aw1y2z.sesame.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -59,13 +63,23 @@ class MiuixFriendStatsActivity : MiuixBaseActivity() {
 @Composable
 fun FriendStatsScreen(activity: MiuixFriendStatsActivity) {
     val userId = activity.currentUserId
-    val friends = remember(userId) { userId?.let { FriendWatch.getList(userId) } ?: emptyList() }
+    var friends by remember(userId) { mutableStateOf<List<FriendWatch>?>(null) }
     var query by remember { mutableStateOf("") }
+    LaunchedEffect(userId) {
+        friends = withContext(Dispatchers.IO) {
+            try {
+                if (userId != null) FriendWatch.getList(userId) else emptyList()
+            } catch (e: Throwable) {
+                // getList() 内部只兜了解析异常，读盘异常会穿透到这里；
+                // 不接住就会永远停在「加载中…」，比报错更难察觉
+                Log.printStackTrace(e)
+                emptyList()
+            }
+        }
+    }
 
-    val filtered = if (query.isBlank()) {
-        friends
-    } else {
-        friends.filter { it.name.contains(query, ignoreCase = true) }
+    val filtered = friends?.let { all ->
+        if (query.isBlank()) all else all.filter { it.name.contains(query, ignoreCase = true) }
     }
 
     Scaffold(
@@ -113,7 +127,7 @@ fun FriendStatsScreen(activity: MiuixFriendStatsActivity) {
                 )
             }
 
-            if (filtered.isEmpty()) {
+            if (filtered == null || filtered.isEmpty()) {
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -121,7 +135,11 @@ fun FriendStatsScreen(activity: MiuixFriendStatsActivity) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (query.isNotEmpty()) "(无匹配好友)" else "(空)",
+                        text = when {
+                            filtered == null -> "加载中…"
+                            query.isNotEmpty() -> "(无匹配好友)"
+                            else -> "(空)"
+                        },
                         fontSize = 14.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                     )

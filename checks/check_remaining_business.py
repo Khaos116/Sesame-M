@@ -36,6 +36,7 @@ public class RemainingCheck {
         static void beginDeferBlackList() { } static void endDeferBlackList(boolean apply) { }
         static void MarkTaskBlackList(String a,String b,String c,String d) { } }
     static class Status { static Set<String> flags=new HashSet<>(); static boolean hasFlagToday(String key) { return flags.contains(key); }
+        static Map<String,Integer> counts=new HashMap<>();static int getIntFlagToday(String key){return counts.getOrDefault(key,0);}static void setIntFlagToday(String key,int value){counts.put(key,value);}
         static void flagToday(String key) { flags.add(key); } static void ancientTreeToday(String city) { flags.add("ancient:"+city); } }
     static class RuntimeInfo { static RuntimeInfo value=new RuntimeInfo(); Map<String,String> map=new HashMap<>();
         static RuntimeInfo getInstance() { return value; } String getString(String key) { return map.getOrDefault(key,""); } void put(String key,String item) { map.put(key,item); } }

@@ -5,7 +5,6 @@ import android.os.Build;
 import io.github.aw1y2z.sesame.entity.AlipayAntFarmDoFarmTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayAntFarmDrawMachineTaskList;
 import io.github.aw1y2z.sesame.entity.GameCenterMallItem;
-import io.github.aw1y2z.sesame.model.task.antForest.AntForestRpcCall;
 import io.github.aw1y2z.sesame.model.task.antGame.GameTask;
 import io.github.aw1y2z.sesame.model.task.antMember.AntMemberRpcCall;
 import io.github.aw1y2z.sesame.util.idMap.AntFarmDoFarmTaskListMap;
@@ -4581,6 +4580,7 @@ public class AntFarm extends ModelTask {
                     if (taskType.isEmpty() || sceneCode.isEmpty() || title.isEmpty()) continue;
                     String attemptKey = sceneCode + "/" + taskType + "#" + rightsTimes;
                     String awardKey = "farm::optionalplay::award::" + attemptKey + "#" + awardCount;
+                    String actionType = bizInfo.optString("actionType", "");
 
                     // 黑名单任务跳过
                     if (AntFarmDrawMachineTaskList.getValue().contains(title)) {
@@ -4620,11 +4620,28 @@ public class AntFarm extends ModelTask {
                         }
                         String label = rightsTimesLimit > 1
                                 ? title + "(" + (rightsTimes + 1) + "/" + rightsTimesLimit + ")" : title;
-                        Outcome outcome = TaskAttemptPolicy.handle("farm::optionalplay::" + attemptKey, label, null,
-                                () -> finishOptionalPlayTask(sceneCode, taskType, label), Log::farm,
-                                new TaskAttemptPolicy.Site("AntFarmDrawMachineTaskList", "庄园乐园限定任务", taskType, sceneCode,
-                                        k -> probeOptionalPlayStatus(sceneCode, taskType, rightsTimes)));
-                        progressed |= outcome != Outcome.TRIED_TODAY && outcome != Outcome.SKIPPED;
+                        // key 必须带轮次：多次任务每推进一档都是**新的**尝试，不带轮次会让第一档打上的
+                        // 当日标记把后续档位全挡下、任务停在第一档。单次任务保持原 key，语义不变。
+                        String policyKey = "farm::optionalplay::" + sceneCode + "/" + taskType
+                                + (rightsTimesLimit > 1 ? "#" + rightsTimes : "");
+                        // 走统一策略：完成后按列表核对，400000040 时由策略代为伪申报；
+                        // 开箱类任务的尝试动作 = 真去开箱（申报完成对它是无效动作）
+                        final boolean unwrapTask = isUnwrapAction(actionType);
+                        final String taskTitleForLog = title;
+                        Outcome outcome = TaskAttemptPolicy.handle(
+                                policyKey, label, null,
+                                () -> unwrapTask
+                                        ? openFarmLeyuanBoxes(taskTitleForLog)
+                                        : finishOptionalPlayTask(sceneCode, taskType, label), Log::farm,
+                                new TaskAttemptPolicy.Site("AntFarmDrawMachineTaskList", "庄园乐园限定任务",
+                                        taskType, sceneCode, TaskAlternative.DEFAULT_VERSION, null,
+                                        (k) -> probeOptionalPlayStatus(sceneCode, taskType, rightsTimes),
+                                        null,
+                                        unwrapTask));
+                        // 被当日标记挡下（已试过）不算推进，否则每轮都白转一遍
+                        if (outcome != Outcome.TRIED_TODAY && outcome != Outcome.SKIPPED) {
+                            progressed = true;
+                        }
                     }
                 }
 
@@ -4641,11 +4658,62 @@ public class AntFarm extends ModelTask {
         }
     }
 
+    /** 开箱类动作（累计开箱 N 个）：完成条件在服务端的开箱计数上，只能真开箱，申报无效 */
+    private static boolean isUnwrapAction(String actionType) {
+        return "ACC_UNWRAP".equals(actionType) || "UNWRAP".equals(actionType);
+    }
+
     /**
-     * 乐园限定任务完成上报：{@code com.alipay.antiep.finishTask}。
-     * 该接口对"逛一逛/玩游戏"类外部场景常回 400000040（不支持 rpc 调用），
-     * 此时用 taskType 作 bizKey 走一次 doFarmTask 伪申报兜底；两条路都失败才判定做不了。
+     * 开箱类乐园任务的尝试动作：把当前可开宝箱逐个开掉（庄园侧接口一次开一个）。
+     * <p>没有可开的箱子时返回 UNABLE——任务没完成是"箱子不够"，不是接口不行，不能退到伪申报。
      */
+    private Outcome openFarmLeyuanBoxes(String taskTitle) {
+        try {
+            TimeUtil.sleep(0);
+            JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.queryGameList());
+            if (!jo.optBoolean("success")) {
+                return Outcome.RETRY;
+            }
+            JSONObject drawRights = jo.optJSONObject("gameCenterDrawRights");
+            if (drawRights == null || !(drawRights.opt("quotaCanUse") instanceof Number)) {
+                return Outcome.RETRY;
+            }
+            int quotaCanUse = drawRights.optInt("quotaCanUse", -1);
+            if (quotaCanUse < 0) return Outcome.RETRY;
+            if (quotaCanUse <= 0) {
+                Log.farm("小鸡乐园🎁[开宝箱]暂无可开宝箱#待攒够箱子");
+                return Outcome.UNABLE;
+            }
+            int opened = 0;
+            // 上限防服务端不扣额度时死循环；正常由 quotaCanUse 归零退出
+            for (int i = 0; i < MAX_GAME_DRAW_ROUND && quotaCanUse > 0; i++) {
+                TimeUtil.sleep(0);
+                JSONObject drawRes = MyUtils.newJSONObject(AntFarmRpcCall.drawGameCenterAward(1));
+                if (!drawRes.optBoolean("success")) {
+                    break;
+                }
+                JSONObject nextRights = drawRes.optJSONObject("gameCenterDrawRights");
+                if (nextRights == null || !(nextRights.opt("quotaCanUse") instanceof Number)
+                        || nextRights.optInt("quotaCanUse", -1) < 0
+                        || nextRights.optInt("quotaCanUse") >= quotaCanUse) {
+                    Log.markUnresolved();
+                    Log.record("小鸡乐园[开箱回查]：额度缺失或未减少，本轮停止");
+                    return Outcome.RETRY;
+                }
+                quotaCanUse = nextRights.optInt("quotaCanUse");
+                opened++;
+                TimeUtil.sleep(3000);
+            }
+            Log.farm("小鸡乐园🎁开宝箱×" + opened + "#用于[" + taskTitle + "]");
+            return opened > 0 ? Outcome.DONE : Outcome.UNABLE;
+        } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
+            Log.err(TAG, "openFarmLeyuanBoxes err:", t);
+        }
+        return Outcome.RETRY;
+    }
+
+    /** 乐园限定任务完成上报：{@code com.alipay.antiep.finishTask}。 */
     private Outcome finishOptionalPlayTask(String sceneCode, String taskType, String taskTitle) {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.finishTask(taskType, sceneCode));

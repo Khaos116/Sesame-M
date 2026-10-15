@@ -31,7 +31,9 @@ limits = re.findall(r"^private const val MAX_(?:TAIL_BYTES|LOG_ENTRIES) = .+$", 
 assert len(limits) == 2
 code += "\n".join(limits) + "\n"
 code += method(source_path, "private fun readTailText(") + "\n"
-code += method(source_path, "private fun loadLogEntries(") + "\n"
+code += re.search(r"^private val TIME_REGEX = .+$", source, re.MULTILINE)[0] + "\n"
+code += method(source_path, "private class LogTailReader") + "\n"
+code += "fun loadLogEntries(file: File): List<LogEntry> = LogTailReader().poll(file)\n"
 code += method("ui/miuix/MiuixMainActivity.kt", "private fun accountDisplayName(") + "\n"
 code += '''
 // Account I/O and JSON boundary doubles; run the production label/fallback logic.
@@ -75,8 +77,34 @@ fun main() {
     println("PASS: account label and missing/invalid profile UID fallback")
     val file = File.createTempFile("sesame-log-follow", ".log")
     try {
+        val reader = LogTailReader()
+        file.writeText("20:00:00.000 I: first\\n")
+        val first = reader.poll(file)
+        check(first.size == 1 && reader.poll(file) === first)
+        val bytes = "20:00:01.000 I: 中文\\n".toByteArray(Charsets.UTF_8)
+        file.appendBytes(bytes.copyOfRange(0, bytes.size - 3))
+        check(reader.poll(file) === first) { "unfinished UTF-8 line must wait" }
+        file.appendBytes(bytes.copyOfRange(bytes.size - 3, bytes.size))
+        val second = reader.poll(file)
+        check(second.size == 2 && second.last().body == "中文" && reader.poll(file) === second)
+        file.writeText("20:00:02.000 I: reset\\n")
+        check(reader.poll(file).single().body == "reset")
+        file.writeText("20:00:03.000 I: snapshot\\n")
+        val growingFile = object : File(file.path) {
+            var reads = 0
+            override fun length(): Long {
+                if (++reads == 3) file.appendText("20:00:04.000 I: appended during poll\\n")
+                return super.length()
+            }
+        }
+        val growingReader = LogTailReader()
+        growingReader.poll(growingFile)
+        growingReader.poll(growingFile)
+        check(growingReader.poll(growingFile).last().body == "appended during poll") {
+            "tail snapshot must not consume bytes appended after it was read"
+        }
         for (category in listOf("森林", "庄园", "金豆", "其他")) {
-            file.writeText("20:00:00.000 $category 旧记录\\n20:00:01.000 $category 新记录\\n续行")
+            file.writeText("20:00:00.000 $category 旧记录\\n20:00:01.000 $category 新记录\\n续行\\n")
             val displayed = loadLogEntries(file).asReversed()
             check(displayed.size == 2) { "$category records must remain separate" }
             check(displayed[0].time == "20:00:01.000" && displayed[0].tag == null)
@@ -86,7 +114,7 @@ fun main() {
         println("PASS: four untagged categories display newest first and preserve continuation lines")
         check(MAX_LOG_ENTRIES == 5000 && MAX_TAIL_BYTES == 4 * 1024 * 1024L)
         val padding = " 好家任务已完成✅".repeat(15)
-        file.writeText((0..5099).joinToString("\\n") { "12:00:00.000 I: entry $it$padding" })
+        file.writeText((0..5099).joinToString("\\n", postfix="\\n") { "12:00:00.000 I: entry $it$padding" })
         check(file.length() > 1024 * 1024L && file.length() < MAX_TAIL_BYTES)
         var entries = emptyList<LogEntry>()
         val listState = ListState()
@@ -114,7 +142,7 @@ fun main() {
         check(listState.requests == 5 && entries.isEmpty())
         updateEntries(loadLogEntries(file))
         check(listState.requests == 6)
-        file.writeText("旧记录".repeat((MAX_TAIL_BYTES / 9).toInt() + 10) + "\\n12:00:05.000 OTHER: ✅ 最新结果\\n详情")
+        file.writeText("旧记录".repeat((MAX_TAIL_BYTES / 9).toInt() + 10) + "\\n12:00:05.000 OTHER: ✅ 最新结果\\n详情\\n")
         val tail = loadLogEntries(file)
         check(tail.size == 1 && tail.single().body == "✅ 最新结果\\n详情")
         check(!tail.single().body.contains('�'))

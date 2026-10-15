@@ -53,12 +53,14 @@ public class RuntimeInfo {
         joAll = MyUtils.newJSONObject(content);
         try {
             if (!joAll.has(userId)) {
-                joAll.put(userId, new JSONObject());
+                joAll.put(userId, MyUtils.newJSONObject());
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            // put 失败只是这次没建出空节点，读侧各有兜底，但异常要留痕
+            Log.debug(TAG + " 初始化用户节点失败: " + e);
         }
         JSONObject current = joAll.optJSONObject(userId);
-        joCurrent = current != null ? current : new JSONObject();
+        joCurrent = current != null ? current : MyUtils.newJSONObject();
     }
 
     public synchronized void save() {

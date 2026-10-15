@@ -118,7 +118,7 @@ class goldenbeansRpcCall {static String TASK_TYPE_EXCHANGE="exchange",VERSION="v
  static String pullOf(String a,String b,String...c){if(cancelPull)throw new TaskCancelledException();if(snapshot!=null)return snapshot;syncs++;return new JSONObject().put("success",true).put("taskList",new JSONArray().put(new JSONObject().put("sceneCode","scene").put("taskId","task").put("taskStatus",syncs==1?"TODO":"FINISHED"))).toString();}}
 
 @@ALTERNATIVE@@
-class Status {static java.util.Set<String> flags=new java.util.HashSet<>();static boolean hasFlagToday(String s){return flags.contains(s);}static void flagToday(String s){flags.add(s);}}
+class Status {static java.util.Set<String> flags=new java.util.HashSet<>();static java.util.Map<String,Integer> counts=new java.util.HashMap<>();static int getIntFlagToday(String s){return counts.getOrDefault(s,0);}static void setIntFlagToday(String s,int n){counts.put(s,n);}static boolean hasFlagToday(String s){return flags.contains(s);}static void flagToday(String s){flags.add(s);}}
 class MessageUtil {static int marks;static void MarkTaskBlackListPermanent(String a,String b,String c,String d){}static void MarkTaskBlackList(String a,String b,String c,String d){marks++;}
  static void beginDeferBlackList(){}static void endDeferBlackList(boolean keep){}
  static boolean isUnsupportedRpc(JSONObject j){return "400000040".equals(j.optString("code"));}

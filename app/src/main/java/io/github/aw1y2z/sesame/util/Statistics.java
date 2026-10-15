@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 
 import java.io.File;
 import java.util.Calendar;
+import java.util.List;
 
 import io.github.aw1y2z.sesame.R;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
@@ -108,43 +109,102 @@ public class Statistics {
     }
     
     public static synchronized int getData(TimeType tt, DataType dt) {
-        Statistics stat = INSTANCE;
-        int data = 0;
-        TimeStatistics ts = null;
+        return INSTANCE.dataOf(tt, dt);
+    }
+
+    public int dataOf(TimeType tt, DataType dt) {
+        TimeStatistics ts;
         switch (tt) {
             case YEAR:
-                ts = stat.year;
+                ts = year;
                 break;
             case MONTH:
-                ts = stat.month;
+                ts = month;
                 break;
-            case DAY:
-                ts = stat.day;
+            default:
+                ts = day;
                 break;
         }
-        if (ts != null) {
-            switch (dt) {
-                case TIME:
-                    data = ts.time;
-                    break;
-                case COLLECTED:
-                    data = ts.collected;
-                    break;
-                case HELPED:
-                    data = ts.helped;
-                    break;
-                case WATERED:
-                    data = ts.watered;
-                    break;
-                case WATEREDCOUNT:
-                    data = ts.wateredcount;
-                    break;
-                case WATERINGCOUNT:
-                    data = ts.wateringcount;
-                    break;
+        switch (dt) {
+            case TIME:
+                return ts.time;
+            case COLLECTED:
+                return ts.collected;
+            case HELPED:
+                return ts.helped;
+            case WATERED:
+                return ts.watered;
+            case WATEREDCOUNT:
+                return ts.wateredcount;
+            case WATERINGCOUNT:
+                return ts.wateringcount;
+            default:
+                return 0;
+        }
+    }
+
+    public static Statistics aggregate(List<Statistics> list) {
+        Statistics total = new Statistics();
+        int yearTime = 0;
+        int monthTime = 0;
+        int dayTime = 0;
+        for (Statistics s : list) {
+            if (s == null) {
+                continue;
             }
+            total.year.add(s.year);
+            total.month.add(s.month);
+            total.day.add(s.day);
+            yearTime = Math.max(yearTime, s.year.time);
+            monthTime = Math.max(monthTime, s.month.time);
+            dayTime = Math.max(dayTime, s.day.time);
         }
-        return data;
+        total.year.time = yearTime;
+        total.month.time = monthTime;
+        total.day.time = dayTime;
+        return total;
+    }
+
+    public static Statistics readFrom(String userId) {
+        Statistics statistics = new Statistics();
+        try {
+            if (!AccountFolderName.isValidUid(userId)) return statistics;
+            File file = FileUtil.getStatisticsFile(userId);
+            if (!file.exists()) {
+                return statistics;
+            }
+            String json = FileUtil.readFromFile(file);
+            JsonUtil.copyMapper().readerForUpdating(statistics).readValue(json);
+            // 只动内存地按当前时间归零：模块当天还没跑时，首页不该还显示昨天的「今日」
+            statistics.updateDayOf(MyUtils.getInstance());
+        }
+        catch (Throwable t) {
+            Log.printStackTrace(TAG, t);
+            return new Statistics();
+        }
+        return statistics;
+    }
+
+    public boolean updateDayOf(Calendar nowCalendar) {
+        int ye = nowCalendar.get(Calendar.YEAR);
+        int mo = nowCalendar.get(Calendar.MONTH) + 1;
+        int da = nowCalendar.get(Calendar.DAY_OF_MONTH);
+        if (ye != year.time) {
+            year.reset(ye);
+            month.reset(mo);
+            day.reset(da);
+        }
+        else if (mo != month.time) {
+            month.reset(mo);
+            day.reset(da);
+        }
+        else if (da != day.time) {
+            day.reset(da);
+        }
+        else {
+            return false;
+        }
+        return true;
     }
     
     public static String getText() {
@@ -246,25 +306,7 @@ public class Statistics {
     }
     
     public static Boolean updateDay(Calendar nowCalendar) {
-        int ye = nowCalendar.get(Calendar.YEAR);
-        int mo = nowCalendar.get(Calendar.MONTH) + 1;
-        int da = nowCalendar.get(Calendar.DAY_OF_MONTH);
-        if (ye != INSTANCE.year.time) {
-            INSTANCE.year.reset(ye);
-            INSTANCE.month.reset(mo);
-            INSTANCE.day.reset(da);
-        }
-        else if (mo != INSTANCE.month.time) {
-            INSTANCE.month.reset(mo);
-            INSTANCE.day.reset(da);
-        }
-        else if (da != INSTANCE.day.time) {
-            INSTANCE.day.reset(da);
-        }
-        else {
-            return false;
-        }
-        return true;
+        return INSTANCE.updateDayOf(nowCalendar);
     }
     
     public enum TimeType {
@@ -288,6 +330,14 @@ public class Statistics {
             reset(i);
         }
         
+        void add(TimeStatistics other) {
+            collected += other.collected;
+            helped += other.helped;
+            watered += other.watered;
+            wateredcount += other.wateredcount;
+            wateringcount += other.wateringcount;
+        }
+
         public void reset(int i) {
             time = i;
             collected = 0;

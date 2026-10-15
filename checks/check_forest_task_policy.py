@@ -15,6 +15,9 @@ public class ForestTaskPolicyCheck {
  enum TaskStatus {TODO,FINISHED,RECEIVED}
  static class Field<T> {T value;Field(T v){value=v;}T getValue(){return value;}}
  Field<Set<String>> AntForestVitalityTaskList=new Field<>(new HashSet<>());
+ boolean isUnwrapAction(String type){return "ACC_UNWRAP".equals(type)||"UNWRAP".equals(type);}
+ TaskAttemptPolicy.Outcome openForestLeyuanBoxes(String title){return TaskAttemptPolicy.Outcome.UNABLE;}
+ TaskAttemptPolicy.Forge forestVitalityForge(String type,String scene,String title){return null;}
  static class MyUtils {static boolean closeUnRpc(){return false;}static JSONObject newJSONObject(){return new JSONObject();}
   static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
  static class TimeUtil {static void sleep(long n){}static boolean isLessThanSecondOfDays(long a,long b){return a/86400000L<b/86400000L;}}
@@ -80,6 +83,8 @@ public class ForestTaskPolicyCheck {
  }
  static class Farm {
   Field<Set<String>> AntFarmDrawMachineTaskList=new Field<>(new HashSet<>());
+  boolean isUnwrapAction(String type){return "ACC_UNWRAP".equals(type)||"UNWRAP".equals(type);}
+  TaskAttemptPolicy.Outcome openFarmLeyuanBoxes(String title){return TaskAttemptPolicy.Outcome.UNABLE;}
   @@FARM_OPTIONAL@@
  }
  static class AntOrchardRpcCall {
@@ -113,9 +118,9 @@ public class ForestTaskPolicyCheck {
   reset();AntForestRpcCall.replies.put("unsupported","{\"success\":false,\"code\":\"400000040\"}");AntForestRpcCall.snapshot=new JSONArray().put(task("unsupported","TODO"));
   f.queryOptionalPlay();check(ApplicationHook.fallback==1,"Optional play must retain unsupported-RPC fallback");
   reset();AntForestRpcCall.replies.put("unsupported","{\"success\":true}");
-  f.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==3,"Forest unchanged TODO must not spin");
+  f.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==8,"Forest unchanged TODO must stop after six probes and one list refresh");
   Farm farm=new Farm();reset();AntForestRpcCall.replies.put("unsupported","{\"success\":true}");
-  farm.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==3,"Farm unchanged TODO must not spin");
+  farm.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==8,"Farm unchanged TODO must stop after six probes and one list refresh");
   Orchard orchard=new Orchard();
   for(Runnable run:List.<Runnable>of(farm::queryOptionalPlay,f::queryOptionalPlay,orchard::queryOptionalPlay)) {
    reset();AntForestRpcCall.optionalStage=0;run.run();check(AntForestRpcCall.optionalStage==8&&AntForestRpcCall.writes==8,"Eight-stage optional task stopped early");
