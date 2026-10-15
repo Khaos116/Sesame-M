@@ -38,6 +38,7 @@ public final class TaskAlternative {
      * GOLDENBEAN_GAME_CZ_XDDQ_AI / GROUP_DAILY_GAME_CZ / 2026cc_cz6ylyb_fz  → 游戏充值
      * ORCHARD_NORMAL_KUAIDI100 / ORCHARD_NORMAL_JIUYIHUISHOU_VISIT          → 寄件/回收
      * IP_chouchoule_juankuan                                                → 捐款
+     * IP_chouchoule_choukuan                                                → 筹款（庄园装扮抽抽乐"伸出援手，点亮希望"等）
      * </pre>
      *
      * <p><b>不要再加 {@code taobao} 这类宽泛词、也不要匹配任务标题</b>：标题/宽泛词会把外跳类
@@ -61,8 +62,8 @@ public final class TaskAlternative {
             "kuaidi", "huishou",
             // 酒店
             "jiudian",
-            // 捐款：需真实付款，伪申报会被判风险操作
-            "juankuan",
+            // 捐款/筹款：需真实付款，伪申报会被判风险操作（choukuan=抽抽乐筹款类，如 庄园装扮抽抽乐"伸出援手，点亮希望"）
+            "juankuan", "choukuan",
     };
 
     /** 英文短词：两侧不得紧邻字母（数字/下划线/连字符/首尾都算边界）。 */
