@@ -412,9 +412,12 @@ public class AntForestV2 extends ModelTask {
     @Override
     public void boot(ClassLoader classLoader) {
         super.boot(classLoader);
-        FixedOrRangeIntervalLimit queryIntervalLimit = new FixedOrRangeIntervalLimit(queryInterval.getValue(), 10, 10000);
-        RpcIntervalLimit.addIntervalLimit("alipay.antforest.forest.h5.queryHomePage", queryIntervalLimit);
-        RpcIntervalLimit.addIntervalLimit("alipay.antforest.forest.h5.queryFriendHomePage", queryIntervalLimit);
+        // 两个接口各自持有独立的限流实例：IntervalLimit 的锁与时间戳都在实例上，
+        // 共用会让好友家查询与首页查询互相抢同一个节流窗口，逐个好友收取时成倍拉长整轮耗时
+        RpcIntervalLimit.addIntervalLimit("alipay.antforest.forest.h5.queryHomePage",
+                new FixedOrRangeIntervalLimit(queryInterval.getValue(), 10, 10000));
+        RpcIntervalLimit.addIntervalLimit("alipay.antforest.forest.h5.queryFriendHomePage",
+                new FixedOrRangeIntervalLimit(queryInterval.getValue(), 10, 10000));
         RpcIntervalLimit.addIntervalLimit("alipay.antmember.forest.h5.collectEnergy", 0);
         RpcIntervalLimit.addIntervalLimit("alipay.antmember.forest.h5.queryEnergyRanking", 100);
         RpcIntervalLimit.addIntervalLimit("alipay.antforest.forest.h5.fillUserRobFlag", 500);
@@ -755,9 +758,6 @@ public class AntForestV2 extends ModelTask {
 
                 }
                 ForestEnergyInfo();
-
-                // 本轮所有收取动作已做完：用服务端明细校准今日收取能量（见 syncTodayCollectedFromServer）
-                syncTodayCollectedFromServer();
             }
         } catch (Throwable t) {
             Log.err(TAG, "AntForestV2.run err:", t);
@@ -778,9 +778,10 @@ public class AntForestV2 extends ModelTask {
             } catch (InterruptedException ie) {
                 Log.i(TAG, "执行中断-蚂蚁森林");
             }
-            // 倍卡额外能量放到最后收：此时本轮的能量（含异步收取的好友能量）才累积完，
-            // 放在收取之前只能收到上一轮攒下的部分
+            // 倍卡与校准都放在异步子任务跑完之后（好友能量是异步收取的，先查只能看到旧值）：
+            // 先收倍卡，再由校准按服务端明细覆盖今日收取——顺序反了校准就统计不到这笔
             collectRobExpandEnergy();
+            syncTodayCollectedFromServer();
             Statistics.save();
             FriendWatch.save();
         }
@@ -1700,9 +1701,16 @@ public class AntForestV2 extends ModelTask {
     /** 从首页响应里取出在用的倍卡并收取 */
     private void collectRobExpandEnergy(JSONObject joHomePage) {
         try {
-            JSONArray ja = joHomePage.getJSONArray("loginUserUsingPropNew");
-            if (ja.length() == 0) {
-                ja = joHomePage.getJSONArray("usingUserPropsNew");
+            // 组队版首页把在用道具放在 usingUserProps（个人版在 loginUserUsingPropNew），三个字段都取
+            JSONArray ja = joHomePage.optJSONArray("loginUserUsingPropNew");
+            if (ja == null || ja.length() == 0) {
+                ja = joHomePage.optJSONArray("usingUserPropsNew");
+            }
+            if (ja == null || ja.length() == 0) {
+                ja = joHomePage.optJSONArray("usingUserProps");
+            }
+            if (ja == null) {
+                return;
             }
             for (int i = 0; i < ja.length(); i++) {
                 JSONObject jo = ja.getJSONObject(i);
@@ -2613,7 +2621,10 @@ public class AntForestV2 extends ModelTask {
         queryVitalityYouthTaskList();
         try {
             boolean doubleCheck = true;
-            while (doubleCheck) {
+            // 复核最多 5 轮：领奖/上报后要重取列表（新判定完成的任务要能接着处理），
+            // 但服务端若对已处理任务仍回需要继续，这里就会无上限空转刷请求，故与下方循环同样设上限兜底。
+            int listPass = 0;
+            while (doubleCheck && listPass++ < 5) {
                 JSONObject jo = new JSONObject(AntForestRpcCall.queryTaskList());
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
                     doubleCheck = false;
