@@ -1,48 +1,44 @@
 # 检查问题 AI 反馈
 
-检查对象：`my_dev` 合并提交 `a8c56f4c`（合入上游 `6b195926`，上游新增 `489021fc`、`0e2e6650`、`8ec8ab21`、`82e6e28b` 及合并提交）。
-检查方式：只读审查，未改代码。逐项对照上游原始提交、合并前的 `24955ca5` 和合并结果，并检查涉及功能的完整调用链。
+检查对象：`my_dev` 分支，HEAD `448979d5` 加工作区未提交改动（信用宝箱、科学放生、真爱双奖励确认）。
+检查方式：只读审查，未改代码。对照 Seedum FluxV15 5406 动态模块（semper.js 20261012，`.git/seedum-fluxv15-5406/runtime-cloud`）的字节码：信用宝箱看函数 2698（查询和判断）、3430（领取），科学放生看函数 3268（查询和判断）。
 
-验证结果：`check_upstream_merge`、`check_farm_family`、`check_forest_farm_progress`、`check_forest_task_policy`、`check_upstream_energy_manure`、`check_daily_task`、`check_account_switch` 通过。
+验证结果：`check_seedum_features`、`check_ocean_friend_flow`、`check_love_reward_probe` 通过。
 
-当前无待处理的代码问题。
+用户反馈：科学放生实机流程正常；信用宝箱因没有宝箱，尚未实测领取。
 
-## 逐项核对
+**更正上一轮第 2 项**：上一轮建议信用宝箱改用会员场景的三个条件（`needReceive`、`taskPrizePopup`、`needReceiveTaskCertCnt`），这是推测，撤回。Seedum 的 2698 对会员场景和信用场景共用同一个函数，只读 `data.taskModule.needReceive`，且要求它是布尔 `true` 才调用领取；`taskPrizePopup`、`needReceiveTaskCertCnt` 在整个模块里都没有被读取。M 只认 `needReceive` 是对的。
 
-### 配置保存不触发执行（`ApplicationHook`、`NotificationUtil`）
+## 问题 1：两条入口诊断日志每轮都写，开关关闭也写
 
-- `exec` 参数从 `initHandler` 经 `runInit` 传到 `initializeHandler`，M 的 `TaskLifecycle.Freeze` 所有者和后台初始化线程都保留。
-- `sesame.restart` 广播默认 `exec=false`。发送方只有配置保存（字段页、设置页、配置导入、`broadcastRestart`），以及前台服务被销毁时的 `restartByBroadcast`，后者显式带 `exec=true`。手动执行走另一条广播，不受影响；首启、切号仍调用 `initHandler(true)`，会立即执行。
-- 不执行时调用 `execDelayedHandler(max(检查间隔, 60 秒))` 续上排期，并用 `updateIdleText` 刷新通知；`nextExecTime` 由 `execDelayedHandler` 先写入，通知能显示下次执行时间。
+位置：`AntMember.java` `run()` 开头的 `Log.i("信用宝箱[入口]：当前账号开关=...")`；`AntOcean.java` `run()` 开头的 `Log.i("科学放生[入口]：...")`。
 
-### 小鸡乐园开箱与刷任务（`AntFarm.drawGameCenterAward`）
+`Log.i` 写运行日志，两行都不判断开关，每个账号每轮各打一行。科学放生已实测，这行可以删除；信用宝箱的入口日志等实测确认后删除，或先改成只在开关开启时打印。
 
-- 合并结果比上游更严格：额度字段缺失时停止；开箱回执次数缺失或没有减少时停止；刷任务前重新查询真实额度作为基线。
-- `remainToTask = limit - beforeUsed`，取自开箱后的回查结果；上游用的是开箱前的值，合并结果更准确。
-- 当日重试计数用 `Status.getIntFlagToday/setIntFlagToday`，按 GMT+8 跨天清空。旧标记 `antFarm::gameDrawTaskSkip` 已没有引用。
-- 补了 `TaskCancelledException` 的向上抛出。
+## 问题 2：缺少 needReceive 字段时，M 当成接口失败，Seedum 当成没有宝箱
 
-### 家庭道早安（`AntFarm.deliverMsgSend`）
+位置：`AntMember.java` `creditGameCenterPending` / `creditGameCenterTaskPrize`。
 
-与上游一致。只有发送成功才记当天完成；任务列表为空或不是 TODO 时只跳过本轮。函数只在 06:00–10:00（GMT+8）运行，不会全天反复查询。
+Seedum 2698（0x00c5–0x00e9）在 `taskModule` 为 null 时用空对象代替，之后 `needReceive` 不是布尔 `true` 就直接跳过领取，不报错。
 
-### 森林救援队（`AntForestV2.checkAndDoEndGameTask`）
+M 在 `needReceive` 缺失或不是布尔值时，写“接口失败或待领状态无效”并调用 `Log.markUnresolved()`。如果服务端在没有宝箱时不返回这个字段，每轮都会多一行失败日志，会员模块每轮都被标为未完成。
 
-- 上报后等待 3 秒再回查，只有 `FINISHED` 或 `RECEIVED` 才记当天完成。上游的条件是“非空，且不是 TODO 或 NOT_TRIGGER”，合并结果更严格。
-- 只在 `canPlayGame` 为真且当天未完成时调用；未知状态只写一行日志，不会重复上报。
+处理：查询本身成功（`memberFeaturePayload` 通过）但 `taskModule` 或 `needReceive` 缺失时，按“暂无待领宝箱”处理，与 Seedum 一致；只有查询失败才记失败。
 
-### 活力兑换系统繁忙
+## 与 Seedum 的行为差异（M 的取舍，不算缺陷）
 
-与上游一致，按商品记当日次数，满 3 次才停止当天兑换。
+- **信用宝箱不产生宝箱**：Seedum 2698 在 `dailyTaskCertCnt < dailyTaskCertCntUpperLimit` 时会先替用户完成游戏任务（0x0165 开始的分支，信用场景走 h4l/l4l/p4l/q4l 几项），宝箱是这样产生的。M 按设计只领取已有的宝箱，不玩游戏，所以不手动玩游戏就不会有宝箱。这也是这次测不到的原因。
+- **信用宝箱连续领取**：Seedum 领取成功后重新查询，`needReceive` 仍为 true 就再领一次，直到没有。M 每轮只领一次，回查仍有待领就留到下一轮。
+- **科学放生**：Seedum 3268 只要任一阶段 `exchangeStatus === "canExchange"` 就调用兑换，兑换成功就重新查询再来，没有次数上限，也不核对阶段是否推进。M 加了每轮 10 次上限和阶段推进核对，比 Seedum 严格；`phaseList` 缺失时 Seedum 静默跳过，M 记失败，影响同问题 2，但实测接口正常返回，暂不需要改。
 
-### 能量统计只计收入
+## 已核对、没问题的点
 
-`energy <= 0` 的记录跳过，也不计入 `scanned`。`energy` 字段必须是数字的类型校验仍在前面，分页完整性、溢出、账号和跨日检查都保留。
+- 请求参数与 Seedum 一致：信用宝箱 `sceneId=zmyxzx_XCJNCE`、`source=zmxy_mc_xddpcz00`、`deviceLevel`/`unityDeviceLevel=high`；科学放生 `source=ANT_OCEAN` 和 `uniqueId`。
+- 真爱双奖励：`dailyRewardCode` 只接受一条已知每日奖励，加至多一条在 `pageProperties.awards` 目录里有记录的首次阶段奖励；其它组合都拒绝。
+- 三项规则：没有新增日期计算；新载荷用 `MyUtils.newJSONObject()` 创建；读取都用 `opt*` 并判空。
 
-### 移除选教卡场景任务
+## Codex 处理记录（2026-10-15）
 
-`energySceneTask` 字段、`doEnergySceneTask`、`attemptSceneTask` 已删除，源码、检查和文档中没有残留引用。容器任务统一走 `awardFinishedChildren` 和 `doChildTask`，已完成的奖励照常领取。
-
-## 行为变化（上游设计，非缺陷）
-
-- 任务正在运行时保存配置：重载会先停止当前这一轮（原来就是这样），但之后不再立即重跑，要等一个检查间隔。改完配置想马上看效果，需要手动执行。
+- 问题1：删除科学放生的临时入口诊断；信用宝箱入口移到开关开启分支，关闭时不写。
+- 问题2：已用回归复现成功空查询误标未完成；初查缺少/null的taskModule或needReceive改按暂无奖励处理。错误类型、失败查询仍报未确认，领取后的回查仍要求明确布尔状态，避免缺字段被误报为领取成功。
+- 保留只领取已有信用宝箱、每轮一次批量领取及已实测科学放生流程，不恢复自动游戏推进。最终92/92全量回归、Normal Debug Java/Kotlin编译及diff空白检查通过；本轮未重新打Release包，信用宝箱实际领取仍待有奖励时验证。
