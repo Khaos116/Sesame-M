@@ -109,26 +109,36 @@ public class ForestChouChouLe {
                             if (!handledThisRun.add(taskType)) {
                                 continue;
                             }
-                            if (taskStatus.equals("FINISHED") || taskStatus.equals("RECEIVED")) {
+                            // 领奖按"任务+档位"打当日标记：已领过再领会回失败、走"已按列表确认领取"，
+                            // 不标记的话每一轮都会重试并重复刷同一条日志。
+                            String claimKey = "forest::chouchoule::exchange::award::" + taskSceneCode
+                                    + "/" + taskType + "#" + rightsTimes;
+                            if ((taskStatus.equals("FINISHED") || taskStatus.equals("RECEIVED"))
+                                    && !Status.hasFlagToday(claimKey)) {
                                 TimeUtil.sleep(2000);
                                 JSONObject sginRes = new JSONObject(AntForestRpcCall.receiveTaskAwardopengreen("task_entry", taskSceneCode, taskType));
+                                boolean claimed = false;
                                 if (MessageUtil.checkSuccess(TAG, sginRes)) {
                                     int incAwardCount = sginRes.getInt("incAwardCount");
                                     Log.forest("森林寻宝🎖️[" + taskName + "]获得抽奖*" + incAwardCount);
+                                    claimed = true;
                                     if (rightsTimesLimit - rightsTimes > 0) {
                                         doublecheck = true;
                                     }
                                 } else {
-                                    TaskAward.confirmReceivedOrBlackList("森林寻宝🎖️",
+                                    claimed = TaskAward.confirmReceivedOrBlackList("森林寻宝🎖️",
                                             k -> probeChouChouLeStatus(sceneCode, taskSceneCode, taskType), taskName,
                                             taskName,
                                             () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("AntForestHuntTaskList", taskName, sginRes),
                                             msg -> Log.forest(msg));
                                 }
-                                // 名额已用满（2/2）才算真正做完；否则继续向下兑换下一档
-                                if (rightsTimes >= rightsTimesLimit) {
-                                    continue;
+                                if (claimed) {
+                                    Status.flagToday(claimKey);
                                 }
+                            }
+                            // 名额已用满（2/2）才算真正做完；否则继续向下兑换下一档
+                            if (rightsTimes >= rightsTimesLimit) {
+                                continue;
                             }
                             // TODO 起步，或 FINISHED 但尚有余次：补齐剩余兑换次数（每档兑换后顺带领奖）
                             int remain = rightsTimesLimit - rightsTimes;
@@ -172,11 +182,17 @@ public class ForestChouChouLe {
                                 }
                                 doneToday++;
                                 Status.setIntFlagToday(exchangeKey, doneToday);
-                                // 每兑换一档都可能到达领奖里程碑（1/2、2/2），到就先领奖再走下一档
-                                TimeUtil.sleep(1500);
-                                JSONObject sginRes2 = new JSONObject(AntForestRpcCall.receiveTaskAwardopengreen("task_entry", taskSceneCode, taskType));
-                                if (MessageUtil.checkSuccess(TAG, sginRes2)) {
-                                    Log.forest("森林寻宝🎖️[" + taskName + "]获得抽奖*" + sginRes2.getInt("incAwardCount"));
+                                // 每兑换一档都可能到达领奖里程碑（1/2、2/2），到就先领奖再走下一档；
+                                // 同样按"任务+档位"打当日标记，避免重拉列表时重复领奖/重复刷日志
+                                String loopClaimKey = "forest::chouchoule::exchange::award::" + taskSceneCode
+                                        + "/" + taskType + "#" + (rightsTimes + cnt + 1);
+                                if (!Status.hasFlagToday(loopClaimKey)) {
+                                    TimeUtil.sleep(1500);
+                                    JSONObject sginRes2 = new JSONObject(AntForestRpcCall.receiveTaskAwardopengreen("task_entry", taskSceneCode, taskType));
+                                    if (MessageUtil.checkSuccess(TAG, sginRes2)) {
+                                        Log.forest("森林寻宝🎖️[" + taskName + "]获得抽奖*" + sginRes2.getInt("incAwardCount"));
+                                        Status.flagToday(loopClaimKey);
+                                    }
                                 }
                                 doublecheck = true;
                                 TimeUtil.sleep(1000);
