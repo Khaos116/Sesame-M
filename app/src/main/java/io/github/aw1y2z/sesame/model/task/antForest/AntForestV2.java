@@ -3468,16 +3468,25 @@ public class AntForestV2 extends ModelTask {
                         // 其余任务仍走 finishTask 上报
                         final boolean unwrapTask = isUnwrapAction(actionType);
                         final String taskTitleForLog = title;
+                        if (unwrapTask) {
+                            // 开箱类任务（如"开10个乐园宝箱"）的完成条件是服务端累计开箱计数，需多日累计，
+                            // 单次只能开掉当天额度；且 doforestgame 已用同一 quotaCanUse 池开过当日宝箱，
+                            // 这里再开必然读到 0。故不走 TaskAttemptPolicy 的"一次做完"语义（会把累计任务误判成失败/打今日标记），
+                            // 直接开箱、开不到就交给每日累计与 Finished 分支领奖。
+                            Outcome uo = openForestLeyuanBoxes(taskTitleForLog);
+                            if (uo == Outcome.DONE) {
+                                progressed = true;
+                            }
+                            continue;
+                        }
                         Outcome outcome = TaskAttemptPolicy.handle(
                                 policyKey, label, null,
-                                () -> unwrapTask
-                                        ? openForestLeyuanBoxes(taskTitleForLog)
-                                        : attemptFinishTask(sceneCode, taskType, label), Log::forest,
+                                () -> attemptFinishTask(sceneCode, taskType, label), Log::forest,
                                 new TaskAttemptPolicy.Site("AntForestVitalityTaskList", "森林乐园限定任务",
                                         taskType, sceneCode, TaskAlternative.DEFAULT_VERSION, null,
                                         (k) -> probeOptionalPlayStatus(sceneCode, taskType),
                                         (k) -> probeOptionalPlayExhausted(sceneCode, taskType),
-                                        unwrapTask));
+                                        false));
                         // 被当日标记挡下（已试过）不算推进，否则每轮都白转一遍
                         if (outcome != Outcome.TRIED_TODAY && outcome != Outcome.SKIPPED) {
                             progressed = true;
