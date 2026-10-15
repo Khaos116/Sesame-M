@@ -720,7 +720,9 @@ public class AntStall extends ModelTask {
                     Outcome outcome = TaskAttemptPolicy.handle("stall::xlight::" + title, title, null,
                             () -> attemptXlightTask(title), Log::farm,
                             new TaskAttemptPolicy.Site("AntStallTaskList", "新村任务", taskType, "ANTSTALL_TASK",
-                                    (k) -> probeStallStatus(taskType)));
+                                    (k) -> probeStallStatus(taskType))
+                                    // 本家值：ANTSTALL_TASK + AST
+                                    .withScene("ANTSTALL_TASK").withSource("AST"));
                     return outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
                 }
                 default:
@@ -826,8 +828,11 @@ public class AntStall extends ModelTask {
         Outcome outcome = TaskAttemptPolicy.handle("stall::" + taskType, title, null,
                 () -> attemptFinishTask(taskType, title), Log::farm,
                 new TaskAttemptPolicy.Site("AntStallTaskList", "新村任务", taskType, "ANTSTALL_TASK",
-                        (k) -> probeStallStatus(taskType)));
-        return outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
+                        (k) -> probeStallStatus(taskType))
+                        .withScene("ANTSTALL_TASK").withSource("AST"));
+        // 只有列表已确认完成（DONE）才算做成：TRIGGERED 只是伪申报已发出，
+        // 按它返回 true 会让调用点打「完成」——那是假完成
+        return outcome == Outcome.DONE;
     }
 
     /** 新村任务完成上报：不写任务黑名单（失败只代表本次未完成）；taskSceneCode 固定 ANTSTALL_TASK */

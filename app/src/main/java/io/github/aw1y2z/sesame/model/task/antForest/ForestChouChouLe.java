@@ -175,7 +175,8 @@ public class ForestChouChouLe {
                                         new TaskAttemptPolicy.Site("AntForestHuntTaskList", "森林寻宝",
                                                 taskType, taskSceneCode,
                                                 (k) -> probeChouChouLeStatus(sceneCode, taskSceneCode, taskType),
-                                                (k) -> rightsTimes >= rightsTimesLimit));
+                                                (k) -> rightsTimes >= rightsTimesLimit)
+                                                .withScene(taskSceneCode).withSource("ADBASICLIB"));
                                 if (exchangeOutcome != Outcome.DONE && exchangeOutcome != Outcome.TRIGGERED
                                         && exchangeOutcome != Outcome.AWARDED) {
                                     break; // 做不了就收手，不再空转剩余次数
@@ -404,7 +405,9 @@ public class ForestChouChouLe {
         Outcome outcome = TaskAttemptPolicy.handle(policyKey, taskName, null,
                 () -> attemptChouChouLeTask(taskType, taskSceneCode, taskName, xlight), Log::forest,
                 new TaskAttemptPolicy.Site("AntForestHuntTaskList", "森林寻宝", taskType, taskSceneCode,
-                        (k) -> probeChouChouLeStatus(activitySceneCode, taskSceneCode, taskType)));
+                        (k) -> probeChouChouLeStatus(activitySceneCode, taskSceneCode, taskType))
+                        // 本家值：任务场景 + ADBASICLIB
+                        .withScene(taskSceneCode).withSource("ADBASICLIB"));
         return outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
     }
 

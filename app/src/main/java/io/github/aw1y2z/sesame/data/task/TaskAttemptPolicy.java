@@ -275,6 +275,16 @@ public class TaskAttemptPolicy {
          * 按"兜底未生效"拉黑会把它永久停掉（表现为奖励再也领不到）。
          */
         final boolean realAction;
+        /**
+         * 伪申报（doFarmTask）用的场景码：**必须是本任务所属模组的场景**（庄园 {@code ANTFARM}、
+         * 农场 {@code ORCHARD}…），冒用会被判"场景不合法"。默认 {@link TaskAlternative#DEFAULT_SCENE_CODE}。
+         */
+        final String sceneCode;
+        /**
+         * 伪申报（doFarmTask）用的来源：取**本家 RPC 的 source**（农场 {@code ANTFARM_ORCHARD}、
+         * 新村 {@code AST}…）。默认 {@link TaskAlternative#DEFAULT_SOURCE}。
+         */
+        final String source;
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode) {
             this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, null, null);
@@ -322,6 +332,22 @@ public class TaskAttemptPolicy {
         /** 完整形态：{@code realAction=true} 表示完成条件在服务端真实行为计数上（如累计开箱） */
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
                     Forge forge, StatusProbe probe, ExhaustedProbe exhausted, boolean realAction) {
+            this(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, exhausted, realAction,
+                    TaskAlternative.DEFAULT_SCENE_CODE);
+        }
+
+        /** 完整形态 + 指定伪申报场景码（农场传 ORCHARD、森林传 ANTFOREST…），来源用默认 H5。 */
+        public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
+                    Forge forge, StatusProbe probe, ExhaustedProbe exhausted, boolean realAction,
+                    String sceneCode) {
+            this(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, exhausted, realAction,
+                    sceneCode, TaskAlternative.DEFAULT_SOURCE);
+        }
+
+        /** 完整形态 + 指定伪申报场景码与来源。 */
+        public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
+                    Forge forge, StatusProbe probe, ExhaustedProbe exhausted, boolean realAction,
+                    String sceneCode, String source) {
             this.listField = listField;
             this.logPrefix = logPrefix;
             this.bizKey = bizKey;
@@ -331,6 +357,20 @@ public class TaskAttemptPolicy {
             this.probe = probe;
             this.exhausted = exhausted;
             this.realAction = realAction;
+            this.sceneCode = sceneCode;
+            this.source = source;
+        }
+
+        /** 返回一个只把伪申报场景码换掉的副本；用法 {@code new Site(...).withScene("ORCHARD")}。 */
+        public Site withScene(String sceneCode) {
+            return new Site(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, exhausted,
+                    realAction, sceneCode, source);
+        }
+
+        /** 返回一个只把伪申报来源换掉的副本；用法 {@code new Site(...).withSource("AST")}。 */
+        public Site withSource(String source) {
+            return new Site(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, exhausted,
+                    realAction, sceneCode, source);
         }
     }
 
@@ -469,7 +509,7 @@ public class TaskAttemptPolicy {
             } else {
                 // 伪申报：doFarmTask 响应不可信（常回 102 而任务已生效），成败一律以任务列表为准
                 TaskAlternative.trigger(null, null, title, site.bizKey, site.taskSceneCode,
-                        site.version, site.logPrefix, log::accept);
+                        site.version, site.sceneCode, site.source, site.logPrefix, log::accept);
                 String triggerKey = "attemptTrigger::" + sanitize(key);
                 Status.setIntFlagToday(triggerKey, Status.getIntFlagToday(triggerKey) + 1);
                 markTriggered(key);
