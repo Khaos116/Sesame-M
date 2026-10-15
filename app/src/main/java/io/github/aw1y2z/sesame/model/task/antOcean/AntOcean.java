@@ -83,6 +83,7 @@ public class AntOcean extends ModelTask {
     private BooleanModelField replica;
     private BooleanModelField antfishEnable;  // 开启摸鱼功能
     private BooleanModelField antfishAutoTask;  // 自动完成任务获得次数
+    private BooleanModelField antfishScientificRelease;
 
 
     @Override
@@ -100,6 +101,7 @@ public class AntOcean extends ModelTask {
         modelFields.addField(replica = new BooleanModelField("replica", "潘多拉海域", false));
         modelFields.addField(antfishEnable = new BooleanModelField("antfishEnable", "海洋摸鱼 | 开启摸鱼", false));
         modelFields.addField(antfishAutoTask = new BooleanModelField("antfishAutoTask", "海洋摸鱼 | 摸鱼任务", false).setDependsOn("antfishEnable"));
+        modelFields.addField(antfishScientificRelease = new BooleanModelField("antfishScientificRelease", "海洋摸鱼 | 科学放生", false).setDependsOn("antfishEnable").setDescription("按服务端项目规则兑换科学放生证书，仅处理服务端标记可兑换的阶段"));
         modelFields.addField(AutoAntOceanFishBlackList = new BooleanModelField("AutoAntOceanFishBlackList", "海洋摸鱼 | 自动黑名单", true).setDependsOn("antfishAutoTask"));
         modelFields.addField(AntOceanFishBlackList = new SelectModelField("AntOceanFishBlackList", "摸鱼任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntOceanFishBlackList::getList).setDependsOn("AutoAntOceanFishBlackList"));
         return modelFields;
@@ -1421,11 +1423,94 @@ public class AntOcean extends ModelTask {
 
             // 4. 执行摸鱼
             touchfish();
-
+            if (antfishScientificRelease.getValue()) {
+                antfishScientificRelease();
+            }
 
         } catch (Throwable t) {
             if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "antfishRun err:", t);
+        }
+    }
+
+    private static List<String> antfishProjectPhases(JSONObject root) {
+        if (RpcRequestGuard.isFailure(root)) return null;
+        String code = root.optString("resultCode");
+        if (!"SUCCESS".equals(code) && !"100".equals(code)) return null;
+        JSONObject project = root.optJSONObject("project");
+        JSONArray phases = project == null ? null : project.optJSONArray("phaseList");
+        if (phases == null) return null;
+        List<String> states = new ArrayList<>();
+        for (int i = 0; i < phases.length(); i++) {
+            JSONObject phase = phases.optJSONObject(i);
+            if (phase == null || !(phase.opt("exchangeStatus") instanceof String)
+                    || phase.optString("exchangeStatus").isEmpty()) return null;
+            states.add(phase.optString("exchangeStatus"));
+        }
+        return states;
+    }
+
+    /** Seedum 5406 / Semper 20261012：exchangeProject 无阶段参数，靠项目回查确认推进。 */
+    private void antfishScientificRelease() {
+        String stage = "查询";
+        try {
+            TimeUtil.sleep(0);
+            JSONObject detail = MyUtils.newJSONObject(AntOceanRpcCall.antfishQueryProjectDetail());
+            TimeUtil.sleep(0);
+            if (detail.optBoolean("localRuleSkip") && "RPC_SKIPPED".equals(detail.optString("error"))) return;
+            List<String> phases = antfishProjectPhases(detail);
+            if (phases == null) {
+                Log.markUnresolved();
+                Log.record("科学放生[查询/queryProjectDetail]：接口失败或项目阶段无效，resultCode="
+                        + detail.optString("resultCode", "未提供") + "，本轮未兑换");
+                return;
+            }
+            if (!phases.contains("canExchange")) {
+                Log.record("科学放生[查询]：暂无可兑换阶段");
+                return;
+            }
+            // shortcut: 每轮最多处理10个已就绪阶段，更多阶段留待下一轮。
+            for (int i = 0; i < 10 && phases.contains("canExchange"); i++) {
+                stage = "兑换";
+                TimeUtil.sleep(0);
+                JSONObject exchanged = MyUtils.newJSONObject(AntOceanRpcCall.antfishExchangeProject());
+                stage = "回查";
+                TimeUtil.sleep(0);
+                detail = MyUtils.newJSONObject(AntOceanRpcCall.antfishQueryProjectDetail());
+                TimeUtil.sleep(0);
+                List<String> after = antfishProjectPhases(detail);
+                boolean progressed = false;
+                // shortcut: 按phaseList阶段顺序回查；若服务端重排，改用经抓包确认的阶段ID。
+                if (after != null && after.size() == phases.size()) {
+                    for (int j = 0; j < phases.size(); j++) {
+                        if ("canExchange".equals(phases.get(j)) && !"canExchange".equals(after.get(j))) {
+                            progressed = true;
+                            break;
+                        }
+                    }
+                }
+                boolean accepted = !RpcRequestGuard.isFailure(exchanged)
+                        && ("SUCCESS".equals(exchanged.optString("resultCode")) || "100".equals(exchanged.optString("resultCode")));
+                if (!progressed || !accepted) {
+                    Log.markUnresolved();
+                    Log.record("科学放生[回查]：exchangeProject"
+                            + (accepted ? "已受理" : "未确认成功")
+                            + "（resultCode=" + exchanged.optString("resultCode", "未提供") + "）"
+                            + (after == null || after.size() != phases.size() ? "，项目回查失败或结构无效"
+                            : progressed ? "，阶段已变化，领取结果仍未确认" : "，可兑换阶段未推进") + "，本轮停止");
+                    return;
+                }
+                String summary = "海洋摸鱼🐟科学放生成功，回查剩余可兑换阶段" + Collections.frequency(after, "canExchange");
+                Log.record(summary);
+                Log.other(summary);
+                phases = after;
+            }
+            if (phases.contains("canExchange")) Log.markUnresolved();
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
+            Log.markUnresolved();
+            Log.record("科学放生[" + stage + "]：异常中止，结果未确认");
+            Log.err(TAG, "antfishScientificRelease " + stage + " err:", t);
         }
     }
 

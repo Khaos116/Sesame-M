@@ -117,6 +117,7 @@ python checks/check_goldenbeans_game.py
 python checks/check_member_delivery.py
 python checks/check_step_sync_sources.py
 python checks/check_love_reward_probe.py
+python checks/check_seedum_features.py
 java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin --console=plain
 ```
 

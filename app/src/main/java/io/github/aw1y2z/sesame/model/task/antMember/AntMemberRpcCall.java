@@ -480,6 +480,21 @@ public class AntMemberRpcCall {
         return ApplicationHook.requestString("com.alipay.gamecenteruprod.biz.rpc.external.gamecenter.batchReceiveTaskPrize",
                 "[{\"__git\":\"9e159d58cce04c13a\",\"deviceLevel\":\"high\",\"sceneId\":\"xlyy_WJCNJT\",\"source\":\"zfbhy_mc_wkenoz66\",\"unityDeviceLevel\":\"high\"}]");
     }
+
+    public static String creditGameCenterHomePage() throws JSONException {
+        return creditGameCenterRequest("queryHomePage");
+    }
+
+    public static String creditBatchReceiveTaskPrize() throws JSONException {
+        return creditGameCenterRequest("batchReceiveTaskPrize");
+    }
+
+    private static String creditGameCenterRequest(String method) throws JSONException {
+        JSONObject body = MyUtils.newJSONObject().put("deviceLevel", "high").put("sceneId", "zmyxzx_XCJNCE")
+                .put("source", "zmxy_mc_xddpcz00").put("unityDeviceLevel", "high");
+        return ApplicationHook.requestString("com.alipay.gamecenteruprod.biz.rpc.external.gamecenter." + method,
+                new JSONArray().put(body).toString());
+    }
     
     /**
      * 查询可收取的芝麻粒

@@ -92,6 +92,7 @@ public class AntMember extends ModelTask {
     private BooleanModelField promise;
     private SelectModelField promiseList;
     private BooleanModelField enableGameCenter;
+    private BooleanModelField creditGameCenter;
     private BooleanModelField enableGoldTicket;
     private BooleanModelField enableGoldTicketConsume;
     private BooleanModelField KuaiDiFuLiJia;
@@ -146,6 +147,7 @@ public class AntMember extends ModelTask {
         modelFields.addField(MemberCreditSesameTaskList = new SelectModelField("MemberCreditSesameTaskList", "芝麻粒任务 | 黑名单列表", new LinkedHashSet<>(), AlipayMemberCreditSesameTaskList::getList).setDependsOn("AutoMemberCreditSesameTaskList"));
         modelFields.addField(SesameGrowthBehavior = new BooleanModelField("SesameGrowthBehavior", "攒芝麻分进度", false));
         modelFields.addField(enableGameCenter = new BooleanModelField("enableGameCenter", "游戏中心 | 得乐园豆", false));
+        modelFields.addField(creditGameCenter = new BooleanModelField("creditGameCenter", "芝麻信用 | 游戏中心宝箱", false).setDescription("只领取游戏侧已产生的芝麻粒宝箱，不自动玩游戏"));
         //modelFields.addField(promise = new BooleanModelField("promise", "生活记录 | 坚持做", false));
         //modelFields.addField(promiseList = new SelectModelField("promiseList", "生活记录 | 坚持做列表", new LinkedHashSet<>(), PromiseSimpleTemplate::getList));
         modelFields.addField(KuaiDiFuLiJia = new BooleanModelField("KuaiDiFuLiJia", "我的快递 | 福利加", false));
@@ -207,6 +209,10 @@ public class AntMember extends ModelTask {
     @Override
     public void run() {
         try {
+            if (creditGameCenter.getValue()) {
+                Log.i("信用宝箱[入口]：当前账号开关=true");
+                creditGameCenterTaskPrize();
+            }
             //初始任务列表
             if (!Status.hasFlagToday("BlackList::initMember")) {
                 initMemberTaskListMap(AutoAntMemberTaskList.getValue(), AutoMemberCreditSesameTaskList.getValue(), AntMemberTask.getValue(), collectSesame.getValue());
@@ -1967,6 +1973,64 @@ public class AntMember extends ModelTask {
         catch (TaskCancelledException e) { throw e; }
         catch (Throwable t) {
             Log.err(TAG, "gameCenterTaskPrize err:", t);
+        }
+    }
+
+    private static Boolean creditGameCenterPending(JSONObject root, boolean allowMissing) {
+        JSONObject data = memberFeaturePayload(root) == null ? null : root.optJSONObject("data");
+        if (data == null) return null;
+        Object taskModule = data.opt("taskModule");
+        JSONObject tasks = data.optJSONObject("taskModule");
+        Object pending = tasks == null ? null : tasks.opt("needReceive");
+        // 初查的缺省字段表示无奖励；领取后仍需明确状态才能确认成功。
+        if (allowMissing && ((taskModule == null || taskModule == JSONObject.NULL)
+                || (tasks != null && (pending == null || pending == JSONObject.NULL)))) return false;
+        return pending instanceof Boolean ? (Boolean) pending : null;
+    }
+
+    /** Seedum 5406 / Semper 20261012：信用场景独立于会员宝箱，领奖后仍可能产生新宝箱。 */
+    private void creditGameCenterTaskPrize() {
+        String stage = "查询";
+        try {
+            TimeUtil.sleep(0);
+            JSONObject home = MyUtils.newJSONObject(AntMemberRpcCall.creditGameCenterHomePage());
+            TimeUtil.sleep(0);
+            if (home.optBoolean("localRuleSkip") && "RPC_SKIPPED".equals(home.optString("error"))) return;
+            Boolean pending = creditGameCenterPending(home, true);
+            if (pending == null) {
+                Log.markUnresolved();
+                Log.record("信用宝箱[查询/queryHomePage]：接口失败或待领状态无效，resultCode="
+                        + home.optString("resultCode", "未提供") + "，success=" + home.optString("success", "未提供") + "，本轮未领取");
+                return;
+            }
+            if (!pending) {
+                Log.record("信用宝箱[查询]：暂无待领宝箱");
+                return;
+            }
+            stage = "领取";
+            TimeUtil.sleep(0);
+            JSONObject received = MyUtils.newJSONObject(AntMemberRpcCall.creditBatchReceiveTaskPrize());
+            stage = "回查";
+            TimeUtil.sleep(0);
+            JSONObject after = MyUtils.newJSONObject(AntMemberRpcCall.creditGameCenterHomePage());
+            TimeUtil.sleep(0);
+            Boolean remaining = creditGameCenterPending(after, false);
+            if (Boolean.FALSE.equals(remaining)) {
+                String summary = "信用宝箱🎁领取成功，回查已无待领宝箱";
+                Log.record(summary);
+                Log.other(summary);
+            } else {
+                Log.markUnresolved();
+                Log.record("信用宝箱[回查]：batchReceiveTaskPrize"
+                        + (memberFeaturePayload(received) == null ? "未确认成功" : "已受理")
+                        + "（resultCode=" + received.optString("resultCode", "未提供") + "，success=" + received.optString("success", "未提供") + "）"
+                        + (remaining == null ? "，回查失败或结构无效" : "，仍有待领宝箱") + "，本轮停止");
+            }
+        } catch (TaskCancelledException e) { throw e; }
+        catch (Throwable t) {
+            Log.markUnresolved();
+            Log.record("信用宝箱[" + stage + "]：异常中止，结果未确认");
+            Log.err(TAG, "creditGameCenterTaskPrize " + stage + " err:", t);
         }
     }
 

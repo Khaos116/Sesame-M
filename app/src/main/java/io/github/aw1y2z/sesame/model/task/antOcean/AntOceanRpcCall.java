@@ -23,6 +23,19 @@ public class AntOceanRpcCall {
     public static String getUniqueId() {
         return String.valueOf(System.currentTimeMillis()) + RandomUtil.nextLong();
     }
+
+    public static String antfishQueryProjectDetail() throws JSONException {
+        return antfishProjectRequest("queryProjectDetail");
+    }
+
+    public static String antfishExchangeProject() throws JSONException {
+        return antfishProjectRequest("exchangeProject");
+    }
+
+    private static String antfishProjectRequest(String method) throws JSONException {
+        JSONObject body = MyUtils.newJSONObject().put("source", "ANT_OCEAN").put("uniqueId", getAntfishUniqueId());
+        return ApplicationHook.requestString("alipay.antaifish.h5." + method, new JSONArray().put(body).toString());
+    }
     
     /**
      * 海洋摸鱼专用 uniqueId 生成

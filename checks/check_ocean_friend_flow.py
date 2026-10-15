@@ -30,7 +30,8 @@ public class OceanFriendCheck {
   static Outcome handle(String a,String b,Object award,Attempt attempt,java.util.function.Consumer<String> log,Site s){return attempt.run();}}
  static class TaskAlternative {static boolean hit(JSONObject j,String scene){return false;}}
  @@AWARD@@
- ListField AntOceanAntiepTaskList=new ListField(),AntOceanFishBlackList=new ListField();Field antfishAutoTask=new Field();
+ ListField AntOceanAntiepTaskList=new ListField(),AntOceanFishBlackList=new ListField();Field antfishAutoTask=new Field(),antfishScientificRelease=new Field();
+ int releaseCalls;void antfishScientificRelease(){releaseCalls++;}
  static boolean answerQuestion(){return false;}boolean helpCleanOneFriend(){return false;}
  boolean antfishQueryStatus(){return true;}void antfishQueryHomePage(){}boolean antfishReceiveTaskAward(String t){return false;}
  static class RpcRequestGuard {static boolean isFailure(JSONObject j){return Boolean.FALSE.equals(j.opt("success"));}}
@@ -104,6 +105,8 @@ public class OceanFriendCheck {
   resetPieces();AntOceanRpcCall.propFail=true;AntOceanRpcCall.fishPages.add(fishPage(true,fish(0),fish(0)));AntOceanRpcCall.fishPages.add(fishPage(false,fish(0)));useUniversalPiece();assert AntOceanRpcCall.fishReads==1&&AntOceanRpcCall.uses.size()==1:"Failed consumption stops remaining writes";
   resetPieces();TimeUtil.cancel=true;AntOceanRpcCall.fishPages.add(fishPage(false,fish(0)));try{useUniversalPiece();throw new AssertionError("piece cancellation swallowed");}catch(TaskCancelledException expected){}assert AntOceanRpcCall.uses.isEmpty();
   resetPieces();Statistics.collected=0;f.touchfish();assert Statistics.collected==30:"Multiple rewards must each be counted once";
+  resetPieces();f.antfishRun();assert f.releaseCalls==0:"Release defaults off";
+  f.antfishScientificRelease.on=true;f.antfishRun();assert f.releaseCalls==1:"Enabled release runs after fish flow";
   System.out.println("PASS ocean friends/default/list/budgets/cancel; missing-only universal pieces, later pages, failed write stop and exact multi-reward energy");
  }
 }
