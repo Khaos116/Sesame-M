@@ -50,7 +50,7 @@ public class AntForestRpcCall {private static final String VERSION="20250818";''
 import java.util.*;import org.json.*;import io.github.aw1y2z.sesame.entity.RpcEntity;import io.github.aw1y2z.sesame.util.*;import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 public class ApplicationHook {
  public static boolean offline,grant,delayed,failBefore,failAfter,failedHome,duplicate,fraction,switched,cancelled,throwHome,noSubscription,invalidType,invalidSubscription;
- public static boolean cacheCleared,stuck,failedConfirm,skippedConfirm,mixed,badTeam,badAnimal,moreAnimals,grantAnimal,renewAnimal,missingExpiry,crossDay,crossDayAfterConfirm,unknownWidget,failCompletionSave;
+ public static boolean cacheCleared,stuck,failedConfirm,skippedConfirm,mixed,badTeam,badAnimal,moreAnimals,grantAnimal,renewAnimal,missingExpiry,crossDay,crossDayAfterConfirm,unknownWidget,failCompletionSave,multiReward,missingCatalog,badCompanion;
  public static int bag=2,reads,homes,subscribes,confirms,animalReads,animalCount=1;public static long animalExpiry=1000;public static String widget="reward",homeCode="LoveEnergyShield";
  public static List<String> calls=new ArrayList<>();public static RpcEntity last;
  public static boolean isOffline(){return offline;}
@@ -87,8 +87,11 @@ public class ApplicationHook {
    if(failedHome)return "{\"error\":1009,\"success\":true}";
    JSONArray pending=new JSONArray();if(!cacheCleared)pending.put(new JSONObject().put("rewardCode",homeCode).put("provideType","daily").put("rewardType","daily").put("rewardRepeat",false));
    if(mixed)pending.put(new JSONObject().put("rewardCode","LovePendant3Day").put("rewardType","normal"));
+   if(multiReward&&!cacheCleared)pending.put(new JSONObject().put("rewardCode","LovePendant265Day").put("rewardType","normal").put("provideType","first").put("rewardRepeat",badCompanion?"false":false));
    JSONObject home=new JSONObject().put("resultCode","SUCCESS").put("useDailyReward",true).put("teamInfo",new JSONObject().put("teamId",badTeam?"other":"team").put("teamStatus","ACTIVATED").put("popupRewardList",pending));
-   home.put("pageProperties",noSubscription?new JSONObject():new JSONObject().put("subscribeId",invalidSubscription?new JSONObject():"entity"));
+   JSONObject properties=noSubscription?new JSONObject():new JSONObject().put("subscribeId",invalidSubscription?new JSONObject():"entity");
+   if(multiReward&&!missingCatalog)properties.put("awards",new JSONObject().put("LovePendant265Day",new JSONObject().put("name","265天挂件")));
+   home.put("pageProperties",properties);
    return new JSONObject().put("resData",home).toString();
   }
   if(m.endsWith("love.doAction")){
@@ -110,12 +113,18 @@ public class LoveRewardProbeCheck {
  static void reset(){RuntimeInfo.values.clear();UserIdMap.uid="A";DailyTask.manual=false;Log.lines.clear();ApplicationHook.calls.clear();ApplicationHook.bag=2;
  RuntimeInfo.writable=true;ApplicationHook.reads=ApplicationHook.homes=ApplicationHook.subscribes=ApplicationHook.confirms=ApplicationHook.animalReads=0;ApplicationHook.animalCount=1;ApplicationHook.animalExpiry=1000;ApplicationHook.widget="reward";ApplicationHook.homeCode="LoveEnergyShield";
  ApplicationHook.cacheCleared=ApplicationHook.stuck=ApplicationHook.failedConfirm=ApplicationHook.skippedConfirm=ApplicationHook.mixed=ApplicationHook.badTeam=ApplicationHook.badAnimal=ApplicationHook.moreAnimals=ApplicationHook.grantAnimal=ApplicationHook.renewAnimal=ApplicationHook.missingExpiry=ApplicationHook.crossDay=ApplicationHook.crossDayAfterConfirm=ApplicationHook.unknownWidget=ApplicationHook.failCompletionSave=false;
+ ApplicationHook.multiReward=ApplicationHook.missingCatalog=ApplicationHook.badCompanion=false;
  ApplicationHook.offline=ApplicationHook.grant=ApplicationHook.delayed=ApplicationHook.failBefore=ApplicationHook.failAfter=ApplicationHook.failedHome=ApplicationHook.duplicate=ApplicationHook.fraction=ApplicationHook.switched=ApplicationHook.cancelled=ApplicationHook.throwHome=ApplicationHook.noSubscription=ApplicationHook.invalidType=ApplicationHook.invalidSubscription=false;}
  static boolean has(String s){return Log.lines.stream().anyMatch(x->x.contains(s));}
  public static void main(String[] args) throws Exception {
   TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));
   reset();AntForestRpcCall.loveRewardHome();JSONObject p=new JSONArray(ApplicationHook.last.getRequestData()).optJSONObject(0);assert p.optString("calenderStart").equals("20260301")&&p.optString("calenderEnd").equals("20260331");
   MyUtils.clock=java.time.Instant.parse("2028-02-28T17:00:00Z").toEpochMilli();AntForestRpcCall.loveRewardHome();p=new JSONArray(ApplicationHook.last.getRequestData()).optJSONObject(0);assert p.optString("calenderStart").equals("20280201")&&p.optString("calenderEnd").equals("20280229");
+  // C199 runtime 49-53: daily rabbit + first 265-day pendant must follow the official combined popup callback.
+  reset();ApplicationHook.homeCode="LoveQiXiTu";ApplicationHook.multiReward=true;ForestLoveReward.run();
+  assert ApplicationHook.confirms==1&&ApplicationHook.cacheCleared&&has("流程完成"):"C199 two known rewards must not prevent confirmation";
+  reset();ApplicationHook.multiReward=true;ApplicationHook.missingCatalog=true;ForestLoveReward.run();assert ApplicationHook.confirms==0:"unknown companion must not be cleared";
+  reset();ApplicationHook.multiReward=true;ApplicationHook.badCompanion=true;ForestLoveReward.run();assert ApplicationHook.confirms==0:"malformed companion must not be cleared";
   reset();ForestLoveReward.run();assert ApplicationHook.homes==2&&ApplicationHook.subscribes==1&&ApplicationHook.reads==3&&ApplicationHook.confirms==1 : Log.lines;assert !has("不能确认本轮新发奖")&&!has("[结果]：观察")&&has("领奖提示已消除");
   assert Log.lines.size()==4&&!has("success=true")&&!has("页面参数") : Log.lines;
   assert !has("普通道具数量=")&&!has("七夕兔")&&!has("QIXITU_1.0_1DAYS")&&!has("LOVE2_PLANT_ENERGY_SHIELD") : "inventory contents leaked into runtime log";

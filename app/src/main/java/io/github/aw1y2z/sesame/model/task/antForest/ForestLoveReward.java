@@ -97,14 +97,11 @@ final class ForestLoveReward {
         JSONArray rewards = team == null ? null : team.optJSONArray("popupRewardList");
         Object teamValue = team == null ? null : team.opt("teamId");
         String teamId = teamValue instanceof String ? (String) teamValue : "";
-        JSONObject reward = rewards != null && rewards.length() == 1 ? rewards.optJSONObject(0) : null;
-        String code = reward == null ? "" : reward.optString("rewardCode", "");
+        String code = dailyRewardCode(home, rewards);
         if (!Boolean.TRUE.equals(home.opt("useDailyReward")) || teamId.isEmpty()
                 || !teamId.equals(state.opt("teamId")) || !"ACTIVATED".equals(team.opt("teamStatus"))
-                || reward == null || !"daily".equals(reward.opt("rewardType")) || !"daily".equals(reward.opt("provideType"))
-                || !(reward.opt("rewardRepeat") instanceof Boolean)
-                || !("LoveQiXiTu".equals(code) || "LoveDoubleClick".equals(code) || "LoveEnergyShield".equals(code))) {
-            Log.record("真爱奖励[确认未执行]：队伍/每日奖励结构无效，或存在其他待展示奖励；保留缓存");
+                || code.isEmpty()) {
+            Log.record("真爱奖励[确认未执行]：队伍/奖励结构无效，或阶段奖励未匹配页面目录；保留缓存");
             return;
         }
         checkAccount(uid);
@@ -168,6 +165,35 @@ final class ForestLoveReward {
             Log.record("真爱奖励[流程完成]：领奖提示已消除，widgetStatus=" + widget + "，"
                     + (saved ? "已记录今日完成" : "完成记录未保存，下一轮重新检查"));
         }
+    }
+
+    /** 官方弹窗允许一条每日奖励与一条阶段奖励共用关闭确认，不自动佩戴挂件/皮肤。 */
+    private static String dailyRewardCode(JSONObject home, JSONArray rewards) {
+        if (rewards == null || rewards.length() < 1 || rewards.length() > 2) return "";
+        JSONObject properties = home.optJSONObject("pageProperties");
+        JSONObject awards = properties == null ? null : properties.optJSONObject("awards");
+        String daily = "";
+        for (int i = 0; i < rewards.length(); i++) {
+            JSONObject reward = rewards.optJSONObject(i);
+            if (reward == null || !(reward.opt("rewardCode") instanceof String)
+                    || !(reward.opt("rewardRepeat") instanceof Boolean)) return "";
+            String code = reward.optString("rewardCode");
+            if (!code.equals(safeCode(code))) return "";
+            Object rawType = reward.opt("rewardType");
+            if (rawType != null && rawType != JSONObject.NULL && !(rawType instanceof String)) return "";
+            String type = reward.optString("rewardType", "normal");
+            if ("daily".equals(type)) {
+                if (!daily.isEmpty() || !"daily".equals(reward.opt("provideType"))
+                        || !("LoveQiXiTu".equals(code) || "LoveDoubleClick".equals(code) || "LoveEnergyShield".equals(code))) return "";
+                daily = code;
+            } else {
+                JSONObject info = awards == null ? null : awards.optJSONObject(code);
+                if (!"first".equals(reward.opt("provideType"))
+                        || !("normal".equals(type) || "emphasis".equals(type) || "surprise".equals(type))
+                        || info == null || info.length() == 0) return "";
+            }
+        }
+        return daily;
     }
 
     private static void checkAccount(String uid) {
