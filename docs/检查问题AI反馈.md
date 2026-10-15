@@ -1,34 +1,23 @@
 # 检查问题 AI 反馈
 
-检查对象：`my_dev` 分支，基于 `d04d4ce1` 的未提交修复（`AntForestV2.java`、`ForestChouChouLe.java`、`check_forest_task_policy.py`）。
+检查对象：`my_dev` 分支，基于 `e06e0101` 的未提交修复（`AntOrchard.java`、`check_merge_review.py`）。
 检查方式：只读审查，未改代码。
 
-验证结果：`check_forest_task_policy`、`check_task_attempt_policy`、`check_forest_farm_progress` 通过。
+验证结果：`check_merge_review` 通过。
 
-当前没有必须修改的代码问题。上一轮 3 项都已处理。
+当前没有必须修改的代码问题。上一轮问题 1 已处理。
 
 ## 上一轮问题的核对结果
 
-**问题 1 已处理。**`forestVitalityForge` 的判断顺序如下：
+问题 1 已处理。
 
-1. 原来的营销类判断仍然最先执行，即 `zhrw_` 前缀或标题含“免费拿/绿植”。判断时 `bizInfo` 传 null，只看类型和标题，所以 `zhrw_jiaoshui` 这类任务继续按“看一眼”上报。
-2. 只有不是浇水、也不是能量雨的任务，才会根据 `EFFECTIVE_TASK` 或 `taskJumpUrl` 判为“看一眼”任务。
-3. 浇水任务带跳转地址，但浇不了水（没开浇水或没选好友）时，返回 null，不会退回去上报“看一眼”。这和合并前一致。
+- 修改：未知动作兜底分支的 `pendingVerifyTasks.put` 已移到 `via != null` 里面，和 VISIT、TRIGGER 分支一致。
+- 失败不会被拉黑：102、限流、坏响应、RPC_SKIPPED、网络异常这几种失败，都不会进入列表核对，也不会写当日标记，同一天还能重试。
+- 400000040 仍然会核对：这种情况由 `finishTaskTwice` 自己放入核对，原有的列表核对保持不变。
+- 回归：已改为走真实的 `handleTaskList`，会执行 `verifyPendingTasksByList`；测试替身的 `checkResultCodeAndMarkTaskBlackList` 也会像生产代码一样，跳过临时错误。
 
-新增的回归覆盖了以下情况：
+## 仍需实机留意（低优先级，沿用上一轮问题 2）
 
-- 带跳转地址或 `EFFECTIVE_TASK` 的浇水、能量雨任务，都执行真实动作；
-- 浇水关闭时返回 null；
-- `zhrw_` 营销任务仍然优先按“看一眼”处理。
+VISIT、TRIGGER 和兜底分支接口返回成功后，只等 3 秒重新拉取列表。如果任务仍是 TODO，就会被自动拉黑 3 天，核对时也不比较 `rightsTimes`。
 
-**问题 2 已处理。**
-
-- 任务为 FINISHED 但进度无效时，用 `handledThisRun` 做本轮防重。这种情况下只领奖、不兑换，也不写档位标记，下一轮还能重试。
-- 场景码缺失时，仍然领奖和兑换都不做。
-- 进度有效时，判重键和兑换循环的逻辑都没有变。
-
-**问题 3 已处理。**仓库根目录的 `++polls[0]` 已删除。
-
-## 说明（不需要修改）
-
-如果服务端一直返回“FINISHED、但进度无效”，而且领取接口一直失败，那么之后每一轮森林任务都会再请求一次领取，这是有意保留的重试。回查结果只要是 RECEIVED 或 GONE，就能确认已经领到，不会被误拉黑。
+这是上游有意的设计。如果日志里出现“肥料任务⚠️未完成[…]，已交给自动拉黑机制”，而这个任务原来能正常完成，再按上一轮的建议调整。

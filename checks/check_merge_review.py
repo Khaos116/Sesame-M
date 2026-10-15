@@ -27,7 +27,8 @@ public class MergeReviewCheck {
  static class MessageUtil {static int marks;static boolean checkResultCode(String t,JSONObject j){return j!=null&&j.optBoolean("success");}
   static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}
   static boolean isRetryable(JSONObject j){return j.optBoolean("retryable");}static boolean isServerBusy(JSONObject j){return "102".equals(j.optString("code"));}
-  static void checkResultCodeAndMarkTaskBlackList(String l,String t,JSONObject j){marks++;}
+  static void checkResultCodeAndMarkTaskBlackList(String l,String t,JSONObject j){
+   if(isRetryable(j)||isServerBusy(j)||j.length()==0||"RPC_SKIPPED".equals(j.optString("error")))return;marks++;}
   static boolean isUnsupportedRpc(JSONObject j){return "400000040".equals(j.optString("code"));}
   static void MarkTaskBlackList(String a,String b,String c,String d){marks++;}
   @@PRESETS@@
@@ -73,19 +74,20 @@ public class MergeReviewCheck {
   @@MONOPOLY@@
  }
  static class AntOrchardVisitTask {static int floats;static void floatBall(JSONObject task,int budget){floats++;}}
+ static class NetworkFailure extends RuntimeException {}
  static class AntOrchardRpcCall {
-  static JSONArray snapshot;static boolean cancelFinish;static int writes;
+  static JSONArray snapshot;static boolean cancelFinish;static int writes,networkFailureAt;
   static String finishReply="{\"code\":\"400000040\"}",farmReply="{\"code\":\"102\"}";
   static String orchardListTask(){return new JSONObject().put("success",true).put("taskList",snapshot).toString();}
-  static String finishTask(String scene,String id){writes++;if(cancelFinish)throw new TaskCancelledException();return finishReply;}
-  static String doFarmTask(String id,String scene){writes++;return farmReply;}
+  static String finishTask(String scene,String id){writes++;if(cancelFinish)throw new TaskCancelledException();if(networkFailureAt==1)throw new NetworkFailure();return finishReply;}
+  static String doFarmTask(String id,String scene){writes++;if(networkFailureAt==2)throw new NetworkFailure();return farmReply;}
  }
  static class Orchard {
   enum TaskStatus {TODO,FINISHED,RECEIVED}
   static class Field<T> {T value;Field(T value){this.value=value;}T getValue(){return value;}}
   Field<Set<String>> AntOrchardTaskList=new Field<>(Set.of());Field<Boolean> orchardFloatBallTask=new Field<>(true);
   Field<Integer> orchardVisitDailyBudget=new Field<>(1);int finished,extras;boolean runReal;
-  static class Log {static void farm(String s){MergeReviewCheck.Log.lines.add(s);}static void i(String s){}static void i(String tag,String s){}static void err(String a,String b,Throwable t){throw new AssertionError(t);}}
+  static class Log {static void farm(String s){MergeReviewCheck.Log.lines.add(s);}static void i(String s){}static void i(String tag,String s){}static void err(String a,String b,Throwable t){if(!(t instanceof NetworkFailure))throw new AssertionError(t);}}
   Map<String,String> pendingVerifyTasks=new LinkedHashMap<>();
   @@ORCHARD_VERIFY_CFG@@
   @@ORCHARD_BLACK@@
@@ -207,12 +209,33 @@ public class MergeReviewCheck {
     orchard.verifyPendingTasksByList();assert Log.lines.stream().filter(s->s.contains("已按任务列表核对")).count()==1;
    }
   }
-  Status.flags.clear();AntOrchardRpcCall.writes=0;
-  AntOrchardRpcCall.finishReply="{\"code\":\"400000040\"}";AntOrchardRpcCall.farmReply="{\"code\":\"102\"}";
   JSONObject fallback=new JSONObject().put("taskId","retry").put("actionType","JUMP").put("sceneCode","scene")
-    .put("taskDisplayConfig",new JSONObject().put("title","retry"));
-  orchard.realFinishOrchardTask(fallback);orchard.realFinishOrchardTask(fallback);
-  assert AntOrchardRpcCall.writes==4&&!Status.hasFlagToday("orchard::fallback::retry"):"Transient fallback failure must remain retryable today";
+    .put("taskStatus","TODO").put("taskDisplayConfig",new JSONObject().put("title","retry"));
+  orchard.runReal=true;AntOrchardRpcCall.snapshot=new JSONArray().put(fallback);
+  for(String failure:List.of("{\"code\":\"102\"}","{\"code\":\"LIMIT\",\"retryable\":true}","malformed","{\"error\":\"RPC_SKIPPED\"}")) {
+   Status.flags.clear();Log.lines.clear();MessageUtil.marks=0;AntOrchardRpcCall.writes=0;
+   AntOrchardRpcCall.finishReply=failure;AntOrchardRpcCall.farmReply=failure;
+   orchard.handleTaskList(new JSONArray().put(fallback));orchard.handleTaskList(new JSONArray().put(fallback));
+   assert MessageUtil.marks==0:"Transient/invalid/skipped response must not become a blacklist entry after list verification";
+   assert AntOrchardRpcCall.writes==4&&!Status.hasFlagToday("orchard::fallback::retry"):"Transient fallback failure must remain retryable today";
+   assert Log.lines.stream().noneMatch(s->s.contains("🧾完成")):"Failed dispatch must never confirm completion";
+  }
+  for(int failureAt:List.of(1,2)) {
+   Status.flags.clear();Log.lines.clear();MessageUtil.marks=0;AntOrchardRpcCall.writes=0;
+   AntOrchardRpcCall.finishReply="{\"code\":\"102\"}";AntOrchardRpcCall.networkFailureAt=failureAt;
+   orchard.handleTaskList(new JSONArray().put(fallback));orchard.handleTaskList(new JSONArray().put(fallback));
+   assert MessageUtil.marks==0&&!Status.hasFlagToday("orchard::fallback::retry"):"Network failure must stay retryable after list verification";
+   assert AntOrchardRpcCall.writes==(failureAt==1?2:4);
+  }
+  AntOrchardRpcCall.networkFailureAt=0;
+  for(String state:List.of("TODO","FINISHED")) {
+   Status.flags.clear();Log.lines.clear();MessageUtil.marks=0;
+   AntOrchardRpcCall.finishReply="{\"code\":\"400000040\"}";AntOrchardRpcCall.farmReply="{\"code\":\"102\"}";
+   AntOrchardRpcCall.snapshot=new JSONArray().put(new JSONObject().put("taskId","retry").put("taskStatus",state));
+   orchard.handleTaskList(new JSONArray().put(fallback));
+   assert MessageUtil.marks==("TODO".equals(state)?1:0):"Existing unsupported-RPC response must still be verified";
+   assert Log.lines.stream().anyMatch(s->s.contains("已按任务列表核对"))=="FINISHED".equals(state);
+  }
   orchard.pendingVerifyTasks.clear();AntOrchardRpcCall.cancelFinish=true;AntOrchardRpcCall.writes=0;
   try{orchard.realFinishOrchardTask(fallback);throw new AssertionError("Fallback swallowed cancellation");}catch(TaskCancelledException expected){}
   assert AntOrchardRpcCall.writes==1&&!Status.hasFlagToday("orchard::fallback::retry"):"Cancellation must not consume daily fallback opportunity";

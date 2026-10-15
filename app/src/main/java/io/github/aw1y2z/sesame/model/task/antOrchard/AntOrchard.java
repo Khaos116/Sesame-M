@@ -1859,8 +1859,8 @@ public class AntOrchard extends ModelTask {
             if (via != null) {
                 Status.flagToday("orchard::fallback::" + taskId);
                 Log.farm("肥料任务🕓已触发[" + title + "]#" + via + "，结果以任务列表为准");
+                pendingVerifyTasks.put(taskId, title);
             }
-            pendingVerifyTasks.put(taskId, title);
             return true;
         } catch (Throwable t) {
             if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
