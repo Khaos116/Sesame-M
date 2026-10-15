@@ -113,6 +113,9 @@ public class ForestChouChouLe {
 
                         // 已完成任务领取奖励
                         if (taskStatus.equals("FINISHED")) {
+                            if (taskType.equals("NORMAL_DRAW_EXCHANGE_VITALITY")
+                                    && (handledThisRun.contains(taskType)
+                                    || !handledThisRun.add("award::" + taskType + "#" + rightsTimes))) continue;
                             TimeUtil.sleep(2000);
                             JSONObject sginRes = MyUtils.newJSONObject(AntForestRpcCall.receiveTaskAwardopengreen("task_entry", taskSceneCode, taskType));
                             if (MessageUtil.checkSuccess(TAG, sginRes)) {
@@ -176,14 +179,29 @@ public class ForestChouChouLe {
                             continue;
                         }
                         // ==================== 活力值兑换任务 =====================
-                        if (taskType.equals("NORMAL_DRAW_EXCHANGE_VITALITY") && taskStatus.equals("TODO")) {
+                        if (taskType.equals("NORMAL_DRAW_EXCHANGE_VITALITY")
+                                && (taskStatus.equals("TODO") || taskStatus.equals("RECEIVED"))) {
+                            if (taskSceneCode.isEmpty() || taskRights == null
+                                    || !(taskRights.opt("rightsTimes") instanceof Number)
+                                    || !(taskRights.opt("rightsTimesLimit") instanceof Number)
+                                    || rightsTimes < 0 || rightsTimesLimit <= 0 || rightsTimes > rightsTimesLimit) {
+                                Log.forest("森林寻宝🧾[" + taskName + "]兑换进度缺失或无效，本轮不兑换");
+                                continue;
+                            }
                             // 一次补齐：按剩余次数连做。额度以服务端 rightsTimes/rightsTimesLimit 为准
                             // （它才是权威，本任务每天固定 2 次），本地只记"本轮已做几次"用于换 key 去重。
                             // 每次兑换消耗 20 活力值，故每次前都重查活力值。
                             String exchangeKey = "forest::chouchoule::exchangeTotal::" + taskSceneCode + "/" + taskType;
                             int doneToday = Math.max(rightsTimes, Status.getIntFlagToday(exchangeKey));
-                            int remain = rightsTimesLimit > 0 ? Math.min(60, Math.max(0, rightsTimesLimit - doneToday)) : 1;
+                            int remain = Math.min(60, Math.max(0, rightsTimesLimit - doneToday));
                             for (int cnt = 0; cnt < remain; cnt++) {
+                                if (cnt > 0) {
+                                    TaskAttemptPolicy.ProbeResult state = probeChouChouLeStatus(sceneCode, taskSceneCode, taskType, -1);
+                                    if (state != TaskAttemptPolicy.ProbeResult.TODO && state != TaskAttemptPolicy.ProbeResult.RECEIVED) {
+                                        Log.forest("森林寻宝🧾[" + taskName + "]上一档状态=" + state + "，本轮暂停后续兑换");
+                                        break;
+                                    }
+                                }
                                 int totalVitalityAmount = 0;
                                 try {
                                     JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryVitalityStoreIndex());
@@ -209,6 +227,20 @@ public class ForestChouChouLe {
                                 doublecheck = true;
                                 doneToday++;
                                 Status.setIntFlagToday(exchangeKey, doneToday);
+                                // 每档先领奖再继续兑换；1/2已领取是中间态，不是整项完成。
+                                TimeUtil.sleep(1500);
+                                JSONObject award = MyUtils.newJSONObject(AntForestRpcCall.receiveTaskAwardopengreen(
+                                        "task_entry", taskSceneCode, taskType));
+                                if (MessageUtil.checkSuccess(TAG, award)) {
+                                    int count = award.optInt("incAwardCount", -1);
+                                    Log.forest("森林寻宝🎖️[" + taskName + "]"
+                                            + (count > 0 ? "获得抽奖*" + count : "领奖接口已受理"));
+                                } else if (!TaskAward.confirmReceivedOrBlackList("森林寻宝🎖️",
+                                        k -> probeChouChouLeStatus(sceneCode, taskSceneCode, taskType, -1),
+                                        taskName, taskName, null, Log::forest)) {
+                                    Log.forest("森林寻宝🧾[" + taskName + "]兑换后领奖未确认，本轮不继续兑换");
+                                    break;
+                                }
                                 TimeUtil.sleep(1000);
                             }
                             continue; // 防止进入下面的 FOREST_NORMAL_DRAW 分支

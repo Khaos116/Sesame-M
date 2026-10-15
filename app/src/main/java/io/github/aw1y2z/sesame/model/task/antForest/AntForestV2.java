@@ -4471,21 +4471,20 @@ public class AntForestV2 extends ModelTask {
                         }
                         String label = rightsTimesLimit > 1
                                 ? title + "(" + (rightsTimes + 1) + "/" + rightsTimesLimit + ")" : title;
-                        // 走统一策略：400000040 时由 TaskAttemptPolicy 代为 doFarmTask 伪申报，
-                        // 开箱类任务的尝试动作 = 真去开箱（申报完成对它是无效动作）；
-                        // 其余任务仍走 finishTask 上报
-                        final boolean unwrapTask = isUnwrapAction(actionType);
-                        final String taskTitleForLog = title;
+                        // 累计开箱受当天额度限制，不套用“一次做完”的完成/失败标记。
+                        if (isUnwrapAction(actionType)) {
+                            if (openForestLeyuanBoxes(title) == Outcome.DONE) progressed = true;
+                            continue;
+                        }
+                        // 其余任务仍走统一上报和列表回查。
                         Outcome outcome = TaskAttemptPolicy.handle(
                                 "forest::optionalplay::" + attemptKey, label, null,
-                                () -> unwrapTask
-                                        ? openForestLeyuanBoxes(taskTitleForLog)
-                                        : attemptFinishTask(sceneCode, taskType, label), Log::forest,
+                                () -> attemptFinishTask(sceneCode, taskType, label), Log::forest,
                                 new TaskAttemptPolicy.Site("AntForestVitalityTaskList", "森林乐园限定任务",
                                         taskType, sceneCode, TaskAlternative.DEFAULT_VERSION, null,
                                         (k) -> probeOptionalPlayStatus(sceneCode, taskType, rightsTimes),
                                         null,
-                                        unwrapTask));
+                                        false));
                         // 被当日标记挡下（已试过）不算推进，否则每轮都白转一遍
                         if (outcome != Outcome.TRIED_TODAY && outcome != Outcome.SKIPPED) {
                             progressed = true;
@@ -4514,7 +4513,7 @@ public class AntForestV2 extends ModelTask {
     /**
      * 开箱类乐园任务的尝试动作：把当前可开宝箱一次开完。
      * <p>只开**待开的**（{@code quotaCanUse}），没有可开的就直接返回 UNABLE——
-     * 此时任务没完成是因为宝箱不够，不是接口不行，故让策略按"未完成"处理而不是伪申报。
+     * 额度不足时保留任务，等待后续累计，不伪申报完成。
      */
     private Outcome openForestLeyuanBoxes(String taskTitle) {
         try {

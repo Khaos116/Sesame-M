@@ -58,9 +58,9 @@ public class TaskAttemptPolicy {
      */
     private static final int TRIGGER_MAX_PER_DAY = 1;
 
-    /** 列表复核的轮询间隔与轮数：服务端异步落定的任务（如森林「消耗活力值得机会」）要十几秒才变完成 */
+    /** 成功请求最多等待约30秒，覆盖服务端异步落定偏慢的任务。 */
     private static final long PROBE_INTERVAL_MS = 3000L;
-    private static final int PROBE_ROUNDS = 6;
+    private static final int PROBE_ROUNDS = 10;
 
     /** 处理结论 */
     public enum Outcome {
@@ -403,7 +403,9 @@ public class TaskAttemptPolicy {
             if (outcome == Outcome.SKIPPED) return outcome;
             // 列表复核：完成与否一律以任务列表为准——只有列表能宣布"完成"，响应不可信
             if (site != null && site.probe != null) {
-                ProbeResult pr = probeWithPolling(site.probe, key);
+                ProbeResult pr = outcome == Outcome.DONE
+                        ? probeWithPolling(site.probe, key) : site.probe.probe(key);
+                if (pr == null) pr = ProbeResult.UNKNOWN;
                 blacklistAllowed = pr != ProbeResult.UNKNOWN;
                 if (isDone(pr)) {
                     listDone = true;

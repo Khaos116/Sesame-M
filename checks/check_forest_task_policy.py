@@ -16,7 +16,8 @@ public class ForestTaskPolicyCheck {
  static class Field<T> {T value;Field(T v){value=v;}T getValue(){return value;}}
  Field<Set<String>> AntForestVitalityTaskList=new Field<>(new HashSet<>());
  boolean isUnwrapAction(String type){return "ACC_UNWRAP".equals(type)||"UNWRAP".equals(type);}
- TaskAttemptPolicy.Outcome openForestLeyuanBoxes(String title){return TaskAttemptPolicy.Outcome.UNABLE;}
+ int boxCalls;
+ TaskAttemptPolicy.Outcome openForestLeyuanBoxes(String title){boxCalls++;return TaskAttemptPolicy.Outcome.UNABLE;}
  TaskAttemptPolicy.Forge forestVitalityForge(String type,String scene,String title){return null;}
  static class MyUtils {static boolean closeUnRpc(){return false;}static JSONObject newJSONObject(){return new JSONObject();}
   static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
@@ -52,6 +53,8 @@ public class ForestTaskPolicyCheck {
   static Map<String,String> replies=new HashMap<>();static int reads,awards,writes,optionalReads;
   static boolean cancelProbe,cancelAttempt,cancelAward;static JSONArray snapshot=new JSONArray(),nativeSnapshot=new JSONArray();
   static int optionalStage=-1;static boolean drawStages,drawWait;
+  static boolean exchangeStages,failExchangeAward,staleExchangeAward;static int exchangeWrites,exchangeAwards;
+  static List<String> exchangeEvents=new ArrayList<>();
   static String youthOverride,optionalAfter;static int youthReads;static String awardReply,optionalOverride,home="{}",rain="{}";static int inits;
   static String finishTask(String scene,String type){writes++;if(cancelAttempt)throw new TaskCancelledException();if(drawStages){JSONObject t=snapshot.optJSONObject(0);t.optJSONObject("taskRights").put("rightsTimes",writes);t.optJSONObject("taskBaseInfo").put("taskStatus",drawWait?"FINISHED":"TODO");return "{success:true}";}if(optionalStage>=0){optionalStage++;return "{\"success\":true}";}return replies.getOrDefault(type,"{\"success\":false,\"code\":\"102\"}");}
   static String listTaskopengreen(){reads++;if(cancelProbe)throw new TaskCancelledException();return new JSONObject().put("resultCode","SUCCESS").put("taskInfoList",snapshot).toString();}
@@ -65,13 +68,24 @@ public class ForestTaskPolicyCheck {
   static String initTask(String type){check("GAME_DONE_SLJYD".equals(type),"Initialized unrelated game");inits++;return "{\"resultCode\":\"SUCCESS\"}";}
   static String batchQueryAndTouchopengreen(){return "{}";}
   static String queryOptionalPlay(){optionalReads++;if(cancelProbe)throw new TaskCancelledException();if(optionalStage>=0)return new JSONObject().put("success",true).put("taskTriggerPlayInfo",new JSONObject().put("taskList",new JSONArray().put(new JSONObject().put("taskStatus",optionalStage>=8?"RECEIVED":"TODO").put("sceneCode","scene").put("taskType","unsupported").put("rightsTimes",optionalStage).put("rightsTimesLimit",8).put("bizInfo",new JSONObject().put("title","browse"))))).toString();if(optionalAfter!=null&&writes>0)return optionalAfter;if(optionalOverride!=null)return optionalOverride;return new JSONObject().put("success",true).put("taskTriggerPlayInfo",new JSONObject().put("taskList",new JSONArray().put(new JSONObject().put("taskStatus","TODO").put("sceneCode","scene").put("taskType","unsupported").put("bizInfo",new JSONObject().put("title","browse"))))).toString();}
-  static String receiveTaskAwardopengreen(String source,String scene,String type){return "{}";}
+  static String receiveTaskAwardopengreen(String source,String scene,String type){
+   if(cancelAward)throw new TaskCancelledException();
+   if(exchangeStages){exchangeAwards++;exchangeEvents.add("award");if(failExchangeAward)return "{success:false}";
+    JSONObject base=snapshot.optJSONObject(0).optJSONObject("taskBaseInfo");
+    if(!"FINISHED".equals(base.optString("taskStatus")))return "{success:false}";
+    if(!staleExchangeAward)base.put("taskStatus","RECEIVED");return "{success:true,incAwardCount:1}";}
+   return "{}";}
   static String listTaskopengreen(String scene,String source){if(cancelProbe)throw new TaskCancelledException();return new JSONObject().put("success",true).put("taskInfoList",snapshot).toString();}
   static String enterDrawActivityopengreen(String id,String scene,String source){return new JSONObject().put("success",true).put("drawSceneGroups",new JSONArray().put(new JSONObject().put("drawActivity",new JSONObject().put("activityId","id").put("sceneCode","activity").put("name","draw")))).toString();}
   static String finishTask4Chouchoule(String type,String scene){return finishTask(scene,type);}
   static String finishTaskopengreen(String type,String scene){return finishTask(scene,type);}
-  static String queryVitalityStoreIndex(){return "{}";}
-  static String exchangeTimesFromTaskopengreen(String a,String b,String c,String d,String e){return replies.getOrDefault("exchange","{}");}
+  static String queryVitalityStoreIndex(){return exchangeStages?"{resultCode:'SUCCESS',userVitalityInfoVO:{totalVitalityAmount:100}}":"{}";}
+  static String exchangeTimesFromTaskopengreen(String a,String b,String c,String d,String e){
+   if(exchangeStages){exchangeWrites++;exchangeEvents.add("exchange");JSONObject t=snapshot.optJSONObject(0),base=t.optJSONObject("taskBaseInfo");
+    if("FINISHED".equals(base.optString("taskStatus")))return "{success:false}";
+    JSONObject rights=t.optJSONObject("taskRights");if(rights!=null)rights.put("rightsTimes",rights.optInt("rightsTimes")+1);
+    base.put("taskStatus","FINISHED");return "{success:true,times:1}";}
+   return replies.getOrDefault("exchange","{}");}
   static String drawopengreen(String a,String b,String c,String d){return "{}";}
   static String shareComponentRecall(String a,String b){return "{}";}
   static String confirmShareRecall(String a,String b,String c,String d){return "{}";}
@@ -98,12 +112,16 @@ public class ForestTaskPolicyCheck {
  }
  @@METHODS@@
  static JSONObject task(String type,String status){return new JSONObject().put("taskBaseInfo",new JSONObject().put("sceneCode","scene").put("taskType",type).put("taskStatus",status).put("bizInfo","{\"taskTitle\":\""+type+"\",\"autoCompleteTask\":true}"));}
- static void reset(){AntForestRpcCall.drawStages=false;AntForestRpcCall.optionalStage=-1;AntForestRpcCall.youthOverride=AntForestRpcCall.optionalAfter=null;AntForestRpcCall.youthReads=0;Status.flags.clear();Status.counts.clear();RuntimeInfo.value.data.clear();ApplicationHook.fallback=0;AntForestRpcCall.replies.clear();
+ static void reset(){AntForestRpcCall.exchangeStages=AntForestRpcCall.failExchangeAward=AntForestRpcCall.staleExchangeAward=false;AntForestRpcCall.exchangeWrites=AntForestRpcCall.exchangeAwards=0;AntForestRpcCall.exchangeEvents.clear();AntForestRpcCall.drawStages=false;AntForestRpcCall.optionalStage=-1;AntForestRpcCall.youthOverride=AntForestRpcCall.optionalAfter=null;AntForestRpcCall.youthReads=0;Status.flags.clear();Status.counts.clear();RuntimeInfo.value.data.clear();ApplicationHook.fallback=0;AntForestRpcCall.replies.clear();
   AntForestRpcCall.optionalOverride=null;AntForestRpcCall.snapshot=new JSONArray();AntForestRpcCall.nativeSnapshot=new JSONArray();AntForestRpcCall.awardReply="{\"success\":true,\"returnData\":\"{}\",\"incAwardCount\":1}";
   AntForestRpcCall.reads=AntForestRpcCall.awards=AntForestRpcCall.writes=AntForestRpcCall.optionalReads=0;AntForestRpcCall.cancelProbe=AntForestRpcCall.cancelAttempt=AntForestRpcCall.cancelAward=false;}
  static void expectCancel(Runnable work){try{work.run();check(false,"Task chain swallowed cancellation");}catch(TaskCancelledException expected){}}
  static int failures;static void check(boolean ok,String message){if(!ok){failures++;System.out.println("FAIL "+message);}}
  public static void main(String[] args){ForestTaskPolicyCheck f=new ForestTaskPolicyCheck();
+  reset();f.boxCalls=0;
+  AntForestRpcCall.optionalOverride="{success:true,taskTriggerPlayInfo:{taskList:[{taskStatus:TODO,sceneCode:scene,taskType:unwrap,rightsTimes:0,rightsTimesLimit:10,bizInfo:{title:boxes,actionType:UNWRAP}}]}}";
+  f.queryOptionalPlay();
+  check(f.boxCalls==1&&AntForestRpcCall.optionalReads==1&&AntForestRpcCall.writes==0&&ApplicationHook.fallback==0&&Status.flags.isEmpty(),"Cumulative boxes without quota must not use once-complete policy or poll");
   reset();JSONArray list=new JSONArray().put(task("reward","FINISHED")).put(task("busy","TODO"));AntForestRpcCall.snapshot=list;
   check(f.doForsetTaskList(list),"A later busy TODO must not erase successful reward's requery");
   reset();JSONObject parent=task("ENERGY_XUANJIAO","FINISHED");parent.optJSONObject("taskBaseInfo").put("taskNode","PARENT");
@@ -118,9 +136,9 @@ public class ForestTaskPolicyCheck {
   reset();AntForestRpcCall.replies.put("unsupported","{\"success\":false,\"code\":\"400000040\"}");AntForestRpcCall.snapshot=new JSONArray().put(task("unsupported","TODO"));
   f.queryOptionalPlay();check(ApplicationHook.fallback==1,"Optional play must retain unsupported-RPC fallback");
   reset();AntForestRpcCall.replies.put("unsupported","{\"success\":true}");
-  f.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==8,"Forest unchanged TODO must stop after six probes and one list refresh");
+  f.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==12,"Forest unchanged TODO must stop after ten probes and one list refresh");
   Farm farm=new Farm();reset();AntForestRpcCall.replies.put("unsupported","{\"success\":true}");
-  farm.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==8,"Farm unchanged TODO must stop after six probes and one list refresh");
+  farm.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==12,"Farm unchanged TODO must stop after ten probes and one list refresh");
   Orchard orchard=new Orchard();
   for(Runnable run:List.<Runnable>of(farm::queryOptionalPlay,f::queryOptionalPlay,orchard::queryOptionalPlay)) {
    reset();AntForestRpcCall.optionalStage=0;run.run();check(AntForestRpcCall.optionalStage==8&&AntForestRpcCall.writes==8,"Eight-stage optional task stopped early");
@@ -193,6 +211,35 @@ public class ForestTaskPolicyCheck {
   check(stages.attemptExchangeVitality("id","activity","scene","type","name")==TaskAttemptPolicy.Outcome.RETRY,"missing exchange count marked successful");
   AntForestRpcCall.replies.put("exchange","{success:true,times:1}");
   check(stages.attemptExchangeVitality("id","activity","scene","type","name")==TaskAttemptPolicy.Outcome.DONE,"valid exchange rejected");
+  for(String start:List.of("TODO","FINISHED","RECEIVED")){
+   reset();AntForestRpcCall.exchangeStages=true;int initial="TODO".equals(start)?0:1;
+   JSONObject exchange=task("NORMAL_DRAW_EXCHANGE_VITALITY",start).put("taskRights",new JSONObject().put("rightsTimes",initial).put("rightsTimesLimit",2));
+   exchange.optJSONObject("taskBaseInfo").put("bizInfo","{title:'exchange'}");AntForestRpcCall.snapshot=new JSONArray().put(exchange);
+   stages.chouChouLe(false,false,Set.of(),false,false,Set.of());
+   List<String> expected="TODO".equals(start)?List.of("exchange","award","exchange","award"):"FINISHED".equals(start)?List.of("award","exchange","award"):List.of("exchange","award");
+   check(AntForestRpcCall.exchangeEvents.equals(expected)&&exchange.optJSONObject("taskRights").optInt("rightsTimes")==2,"Exchange must claim every stage and resume intermediate "+start+": "+AntForestRpcCall.exchangeEvents);
+   int writes=AntForestRpcCall.exchangeWrites,awards=AntForestRpcCall.exchangeAwards;
+   stages.chouChouLe(false,false,Set.of(),false,false,Set.of());
+   check(AntForestRpcCall.exchangeWrites==writes&&AntForestRpcCall.exchangeAwards==awards,"Completed exchange must not exchange or claim again");
+  }
+  for(String start:List.of("TODO","FINISHED")){
+   reset();AntForestRpcCall.exchangeStages=AntForestRpcCall.staleExchangeAward=true;
+   JSONObject exchange=task("NORMAL_DRAW_EXCHANGE_VITALITY",start).put("taskRights",new JSONObject().put("rightsTimes","TODO".equals(start)?0:1).put("rightsTimesLimit",2));
+   exchange.optJSONObject("taskBaseInfo").put("bizInfo","{title:'exchange'}");AntForestRpcCall.snapshot=new JSONArray().put(exchange);
+   stages.chouChouLe(false,false,Set.of(),false,false,Set.of());
+   check(AntForestRpcCall.exchangeWrites==("TODO".equals(start)?1:0)&&AntForestRpcCall.exchangeAwards==1,"Stale FINISHED after claim must not repeat claim or send next exchange: "+AntForestRpcCall.exchangeEvents);
+  }
+  for(String stop:List.of("blacklist","missing-rights","invalid-rights","unknown-status","award-failure","cancel-award")){
+   reset();AntForestRpcCall.exchangeStages=true;
+   JSONObject exchange=task("NORMAL_DRAW_EXCHANGE_VITALITY","unknown-status".equals(stop)?"NEW_STATE":"TODO").put("taskRights",new JSONObject().put("rightsTimes",0).put("rightsTimesLimit",2));
+   exchange.optJSONObject("taskBaseInfo").put("bizInfo","{title:'exchange'}");AntForestRpcCall.snapshot=new JSONArray().put(exchange);
+   if("missing-rights".equals(stop))exchange.remove("taskRights");
+   if("invalid-rights".equals(stop))exchange.optJSONObject("taskRights").put("rightsTimes",-1);
+   AntForestRpcCall.failExchangeAward="award-failure".equals(stop);AntForestRpcCall.cancelAward="cancel-award".equals(stop);
+   Runnable run=()->stages.chouChouLe(false,false,Set.of(),false,false,"blacklist".equals(stop)?Set.of("exchange"):Set.of());
+   if(AntForestRpcCall.cancelAward)expectCancel(run);else run.run();
+   check(AntForestRpcCall.exchangeWrites==((AntForestRpcCall.failExchangeAward||AntForestRpcCall.cancelAward)?1:0),"Exchange must stop for "+stop);
+  }
   AntForestRpcCall.snapshot=new JSONArray().put(task("stage","TODO").put("taskRights",new JSONObject().put("rightsTimes",4)));
   check(stages.probeChouChouLeStatus("activity","scene","stage",3)==TaskAttemptPolicy.ProbeResult.FINISHED,"advanced draw stage treated as failure");
   check(stages.probeChouChouLeStatus("activity","scene","stage",4)==TaskAttemptPolicy.ProbeResult.TODO,"unchanged draw stage treated as complete");

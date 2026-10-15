@@ -84,11 +84,23 @@ public class MergePolicyCheck {
  public static void main(String[] args)throws Exception {
   int[] polls={0};assert TaskAttemptPolicy.probeWithPolling(k->++polls[0]<4?TaskAttemptPolicy.ProbeResult.TODO:TaskAttemptPolicy.ProbeResult.FINISHED,"async")==TaskAttemptPolicy.ProbeResult.FINISHED&&polls[0]==4;
   polls[0]=0;assert TaskAttemptPolicy.probeWithPolling(k->{polls[0]++;return TaskAttemptPolicy.ProbeResult.UNKNOWN;},"unknown")==TaskAttemptPolicy.ProbeResult.UNKNOWN&&polls[0]==1:"Invalid query must stop polling";
+  polls[0]=0;assert TaskAttemptPolicy.probeWithPolling(k->++polls[0]<10?TaskAttemptPolicy.ProbeResult.TODO:TaskAttemptPolicy.ProbeResult.FINISHED,"slow-async")==TaskAttemptPolicy.ProbeResult.FINISHED&&polls[0]==10:"Slow successful actions need the full 30-second window";
   Status.disk.put("A",new Status());Status.disk.put("B",new Status());
   Status.disk.get("A").intFlagLogList.put("count",7);Status.disk.get("B").intFlagLogList.put("count",2);
   assert Status.getIntFlagToday("count")==7;UserIdMap.uid="B";Status.setIntFlagToday("count",3);
   assert Status.getIntFlagToday("count")==3&&Status.disk.get("A").intFlagLogList.get("count")==7;
   UserIdMap.uid="A";assert Status.getIntFlagToday("count")==7;
+  for(var result:List.of(TaskAttemptPolicy.Outcome.RETRY,TaskAttemptPolicy.Outcome.UNSUPPORTED)) {
+   polls[0]=0;
+   TaskAttemptPolicy.handle("fast-"+result,"fast",null,()->result,logs::add,
+    new TaskAttemptPolicy.Site("field","task","browse","scene",k->{polls[0]++;return TaskAttemptPolicy.ProbeResult.TODO;}));
+   assert polls[0]==1:"Failed attempts must probe once without long polling";
+  }
+  polls[0]=0;
+  assert TaskAttemptPolicy.handle("null-probe","unknown",null,()->TaskAttemptPolicy.Outcome.UNSUPPORTED,logs::add,
+   new TaskAttemptPolicy.Site("field","task","browse","scene",k->{polls[0]++;return null;}))==TaskAttemptPolicy.Outcome.RETRY;
+  assert polls[0]==1&&!Status.hasFlagToday("attemptV2::null-probe"):"Null fast probe must preserve unknown-result protection";
+  ApplicationHook.writes=0;RuntimeInfo.instance.map.clear();Status.INSTANCE.flagLogList.clear();
   assert TaskAttemptPolicy.probeByList("check",()->"{success:true,tasks:[null]}","tasks",j->j.optBoolean("success"),j->null)==TaskAttemptPolicy.ProbeResult.UNKNOWN;
   assert TaskAttemptPolicy.probeByList("check",()->"{success:true,tasks:[{status:NEW_STATE}]}","tasks",j->j.optBoolean("success"),j->j.optString("status"))==TaskAttemptPolicy.ProbeResult.UNKNOWN;
   assert TaskAttemptPolicy.probeByList("check",()->"{success:true,tasks:[]}","tasks",j->j.optBoolean("success"),j->null)==TaskAttemptPolicy.ProbeResult.GONE;
@@ -180,7 +192,7 @@ public class MergePolicyCheck {
   assert !TaskAlternative.isTransactionTask("2060170000359285");
   for(String key:List.of("ALIPAY_BROWSE","ORCHARD_NORMAL_YUEBAO_VISIT","KUAIDI_VISIT","HUISHOU_BROWSE","rechargeable_view","x_czz_view"))
    assert !TaskAlternative.isTransactionTask(key):key;
-  for(String key:List.of("OFFLINE_PAY","MYZY_pay_1","ORCHARD_NCLY_CHARGE1_XDDQ","GOLDENBEAN_GAME_CZ_XDDQ_AI","2026cc_cz6ylyb_fz"))
+  for(String key:List.of("OFFLINE_PAY","MYZY_pay_1","ORCHARD_NCLY_CHARGE1_XDDQ","GOLDENBEAN_GAME_CZ_XDDQ_AI","2026cc_cz6ylyb_fz","IP_chouchoule_choukuan"))
    assert TaskAlternative.isTransactionTask(key):key;
   ApplicationHook.cancel=true;
   try {TaskAlternative.trigger(null,"id","title","browse","scene","prefix",logs::add);throw new AssertionError("trigger swallowed cancellation");}
