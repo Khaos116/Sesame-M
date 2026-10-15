@@ -7,6 +7,8 @@ import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 
+import java.util.concurrent.atomic.AtomicLong;
+
 import io.github.aw1y2z.sesame.util.RandomUtil;
 
 /**
@@ -16,6 +18,21 @@ import io.github.aw1y2z.sesame.util.RandomUtil;
 public class MotionEventSimulator {
     private static final String TAG = "MotionEventSimulator";
     private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
+
+    /** 手势代际：每次新滑动自增，排队中的步骤据此判断自己是否已被后续滑动取代 */
+    private static final AtomicLong GESTURE_GENERATION = new AtomicLong();
+
+    /** 在途手势；只在主线程读写 */
+    private static InFlight inFlight;
+
+    /** 在途手势的收尾信息：被新滑动取代时先把它抬起，否则宿主会一直以为手指按着 */
+    private static final class InFlight {
+        View view;
+        float endX;
+        float endY;
+        long downTime;
+        long eventTime;
+    }
     
     /**
      * 异步模拟一个从起点到终点的滑动操作.
@@ -33,12 +50,21 @@ public class MotionEventSimulator {
      * @param duration 滑动动画的总时长 (毫秒).
      */
     public static void simulateSwipe(View view, float startX, float startY, float endX, float endY, long duration) {
+        // 取一代新的：验证码失败会连续重试，上一段没发完就发下一段会让两段手势交错打进同一个
+        // 滑块，滑块很容易判失败；新一代一起，旧一代排队中的步骤自动失效
+        final long generation = GESTURE_GENERATION.incrementAndGet();
         // 确保所有UI操作都在主线程执行（替换协程，适配项目纯Java风格）
-        MAIN_HANDLER.post(() -> startSwipe(view, startX, startY, endX, endY, duration));
+        MAIN_HANDLER.post(() -> startSwipe(generation, view, startX, startY, endX, endY, duration));
     }
     
     /** 主线程：派发"按下"，并把后续移动/抬起用 postDelayed 排好（不阻塞主线程） */
-    private static void startSwipe(View view, float startX, float startY, float endX, float endY, long duration) {
+    private static void startSwipe(long generation, View view, float startX, float startY, float endX, float endY, long duration) {
+        // 先把在途手势抬起，再判断自己是否还最新：无论本次发不发得成，上一段都必须收尾
+        releaseInFlight();
+        if (generation != GESTURE_GENERATION.get()) {
+            Log.i(TAG, "已被后续滑动取代，放弃本次滑动");
+            return;
+        }
         Log.i(TAG, "准备在视图 " + view.getClass().getSimpleName() + " 上模拟滑动");
         Log.d(TAG, "从 (" + startX + ", " + startY + ") -> (" + endX + ", " + endY + ")，持续时间: " + duration + "ms");
         
@@ -50,6 +76,14 @@ public class MotionEventSimulator {
         // 1. 发送 ACTION_DOWN 事件，标志着手指按下
         final long downTime = SystemClock.uptimeMillis();
         dispatchTouchEvent(view, MotionEvent.ACTION_DOWN, startX, startY, downTime, downTime);
+
+        final InFlight gesture = new InFlight();
+        gesture.view = view;
+        gesture.endX = endX;
+        gesture.endY = endY;
+        gesture.downTime = downTime;
+        gesture.eventTime = downTime + duration;
+        inFlight = gesture;
         
         // 2. 模拟 ACTION_MOVE 事件序列，构造滑动轨迹
         final int steps = 15; // 将滑动轨迹分为 15 步
@@ -61,6 +95,9 @@ public class MotionEventSimulator {
         for (int i = 1; i <= steps; i++) {
             final int step = i;
             MAIN_HANDLER.postDelayed(() -> {
+                if (generation != GESTURE_GENERATION.get()) {
+                    return; // 已被后续滑动取代，轨迹不再发（它的收尾由新滑动负责）
+                }
                 float currentX = startX + xStep * step + RandomUtil.nextInt(-3, 4); // 增加微小随机抖动
                 float currentY = startY + yStep * step + RandomUtil.nextInt(-2, 3);
                 dispatchTouchEvent(view, MotionEvent.ACTION_MOVE, currentX, currentY, downTime,
@@ -71,9 +108,26 @@ public class MotionEventSimulator {
         // 3. 发送 ACTION_UP 事件，标志着手指抬起（无论中间步骤如何，抬起必须发出去，
         //    否则宿主会以为手指一直按着）
         MAIN_HANDLER.postDelayed(() -> {
+            if (generation != GESTURE_GENERATION.get()) {
+                return;
+            }
             dispatchTouchEvent(view, MotionEvent.ACTION_UP, endX, endY, downTime, downTime + duration);
+            if (inFlight == gesture) {
+                inFlight = null;
+            }
             Log.i(TAG, "模拟滑动事件序列发送完毕.");
         }, pressDelay + stepDuration * steps);
+    }
+
+    /** 抬起在途手势；新滑动开始时调用，避免上一段的「按下」一直挂在宿主上 */
+    private static void releaseInFlight() {
+        InFlight pending = inFlight;
+        if (pending == null) {
+            return;
+        }
+        inFlight = null;
+        dispatchTouchEvent(pending.view, MotionEvent.ACTION_UP, pending.endX, pending.endY,
+                pending.downTime, pending.eventTime);
     }
     
     /**

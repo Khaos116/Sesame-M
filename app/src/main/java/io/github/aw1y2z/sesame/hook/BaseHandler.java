@@ -58,25 +58,31 @@ public abstract class BaseHandler implements io.github.aw1y2z.sesame.hook.HttpHa
         }
     }
     
+    private boolean verifyToken(NanoHTTPD.IHTTPSession session) {
+        return verifyToken(secretToken, session);
+    }
+
     /**
-     * 验证鉴权Token
-     * 1. 未设置secretToken则直接通过
-     * 2. 支持Bearer Token格式（Bearer xxx）或直接传Token
-     * @param session HTTP会话
+     * 验证鉴权Token：静态可复用，供不继承本类的路由在入口自行校验。
+     * <p>令牌为 null/空白一律拒绝（不做「无令牌即放行」）；支持 Bearer 前缀、忽略大小写，
+     * 用常数时间比较避免逐位比较泄漏令牌。
+     *
+     * @param secretToken 期望的令牌
+     * @param session     HTTP 会话
      * @return 鉴权是否通过
      */
-    private boolean verifyToken(NanoHTTPD.IHTTPSession session) {
+    protected static boolean verifyToken(String secretToken, NanoHTTPD.IHTTPSession session) {
         // 未配置令牌时一律拒绝：不做「无令牌即放行」的默认开放
-        if (secretToken == null || secretToken.trim().isEmpty()) {
+        if (secretToken == null || secretToken.trim().isEmpty() || session == null) {
             return false;
         }
-        
+
         // 获取Authorization请求头
         String authHeader = session.getHeaders().get("authorization");
         if (authHeader == null) {
             return false;
         }
-        
+
         // 解析Token（支持Bearer前缀，忽略大小写）
         String token;
         String bearerPrefix = "Bearer ";
@@ -85,7 +91,7 @@ public abstract class BaseHandler implements io.github.aw1y2z.sesame.hook.HttpHa
         } else {
             token = authHeader.trim();
         }
-        
+
         // 常数时间比较，避免按字符逐位比较泄漏令牌
         return MessageDigest.isEqual(token.getBytes(StandardCharsets.UTF_8),
                 secretToken.getBytes(StandardCharsets.UTF_8));

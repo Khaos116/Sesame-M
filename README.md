@@ -30,7 +30,7 @@
 | 农场 | 农场 | 农场任务、农场施肥（含一键施肥 5 次）、农场抽抽乐、农场乐园、摇钱树、分享助力 |
 | 金豆 | 金豆夺宝 | 自动签到、自动挖矿、自动完成任务与领奖、金豆乐园抽奖与游戏奖励、领奖后数据同步 |
 | 运动 | 运动 | 行走路线（含全主题路线）、运动任务、收运动币、抢好友、文体中心、同步步数、行走捐、健康岛 |
-| 会员 | 会员 | 会员任务与签到、会员积分、芝麻粒与芝麻粒任务、攒芝麻分进度、游戏中心、我的快递、黄金票（签到与收取、提取兑换黄金） |
+| 会员 | 会员 | 会员任务与签到、会员积分、芝麻粒与芝麻粒任务、攒芝麻分进度、游戏中心、我的快递、黄金票、福利金 |
 | 经营 | 经营 | 打卡、收取、捐助 |
 | AI答 | AI答 | 自定义 AI 接口答题（自填接口地址、模型名、令牌、输出 Token 上限，可测试连通性） |
 
@@ -42,10 +42,10 @@
 3. **整体重写 UI**：全面迁移至 Jetpack Compose + [Miuix](https://github.com/compose-miuix-ui/miuix)（Xiaomi HyperOS 风格），界面由 Android Support/XML 旧实现重构；
 4. **修复若干历史问题**：native 库解压、日志分项开关失效、Android 15+ 目录写入兼容等；
 5. **升级构建与依赖链**：compileSdk 34→37、minSdk 21→26，AGP 9.2.1 / Gradle 9.4.1 / Kotlin 2.4.20，AndroidX 化；
-6. **重整日志体系**：结果类记录只写分类文件（森林 / 庄园 / 金豆 / 其他），运行日志只留流程并按模块打 tag（可按模块筛流程），失败应答按模块归入对应分类文件。
+6. **重整日志体系**：结果类记录只写分类文件（森林 / 庄园 / 金豆 / 其他；物种归森林、新村与农场归庄园），运行日志只留流程并按模块打 tag（可按模块筛流程），失败应答按模块归入对应分类文件。
 
 ## 技术栈 / 使用的框架
-- **模块运行框架**: [libxposed](https://github.com/libxposed/api) API 102,由 [LSPosed](https://github.com/LSPosed/LSPosed) 等兼容框架加载
+- **模块运行框架**: [libxposed](https://github.com/libxposed/api)（`io.github.libxposed:api`、`:service`，均 102.0.0）,由 [LSPosed](https://github.com/LSPosed/LSPosed) 等兼容框架加载
 - **UI**: Jetpack Compose + [Miuix](https://github.com/compose-miuix-ui/miuix) 0.9.4(Xiaomi HyperOS 设计风格组件库)；activity-compose 1.13.0、appcompat 1.8.0、material-icons-extended 1.7.8
 - **网络**: OkHttp 4.12.0、NanoHTTPD 2.3.1
 - **JSON / 日志 / 注解**: Jackson 2.22（databind 2.22.3、annotations 2.22）、XLog 1.11.1、Lombok 1.18.48

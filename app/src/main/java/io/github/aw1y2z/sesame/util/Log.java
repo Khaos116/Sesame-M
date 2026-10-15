@@ -9,7 +9,6 @@ import com.elvishew.xlog.printer.file.FilePrinter;
 import com.elvishew.xlog.printer.file.backup.NeverBackupStrategy;
 import com.elvishew.xlog.printer.file.clean.NeverCleanStrategy;
 import com.elvishew.xlog.printer.file.naming.FileNameGenerator;
-import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -437,7 +436,9 @@ public class Log {
             if (newD != null) {
                 d = newD;
             }
-        } catch (ParseException ignored) {
+        } catch (ParseException e) {
+            // 解析不了就退回「当前时间」：调用方仍拿到可用值，但要留痕
+            debug("时间解析失败，退回当前时间: " + timers);
         }
         timeStamp = d.getTime();
         return timeStamp;

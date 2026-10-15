@@ -78,6 +78,9 @@ function Get-ModelName([string]$text, [string]$fallback) {
 
 function Fmt-Default([string]$s) {
     $t = (Join-Str $s).Trim()
+    # 动作型第 3 参（lambda / 方法引用，如 EmptyModelField 的点击动作）没有"默认值"可言，
+    # 别把源码原样回填进「默认 / 范围」列（否则文档里会出现 `默认 () -> xxx.reset()`）
+    if (-not $t.StartsWith('"') -and ($t -match '->' -or $t -match '::')) { return '' }
     if ($t -match '^new\s+(Linked)?Hash(Set|Map)<') { return [char]0x7A7A }
     $m = [regex]::Match($t, '^ListUtil\.newArrayList\((.*)\)$')
     if ($m.Success) { return (Join-Str ($m.Groups[1].Value -replace '"', '')) }

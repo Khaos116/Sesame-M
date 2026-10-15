@@ -9,17 +9,13 @@ import org.json.JSONObject;
 import io.github.aw1y2z.sesame.entity.AlipayVersion;
 import io.github.aw1y2z.sesame.entity.RpcEntity;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
-import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.RandomUtil;
 import io.github.aw1y2z.sesame.util.StringUtil;
-import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.Random;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 public class AntForestRpcCall {
     
@@ -297,6 +293,15 @@ public class AntForestRpcCall {
         return ApplicationHook.requestString("com.alipay.antiep.finishTask", "[{\"outBizNo\":\"" + outBizNo + "\"," + "\"requestType\":\"H5\",\"sceneCode\":\"" + sceneCode + "\"," + "\"source\":\"ANTFOREST\",\"taskType\":\"" + taskType + "\"}]");
     }
     
+    /**
+     * 上报「已在森林页面看过一眼」。{@code EFFECTIVE_TASK} 类活力值任务（如「每日浇水免费拿绿植」）
+     * 的完成条件就是这个动作本身，不是标题里写的那件事；参数固定、可安全重放。
+     */
+    public static String takeLookEnd() {
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.takeLookEnd",
+                "[{\"contactsStatus\":\"N\",\"source\":\"chInfo_ch_appcenter__chsub_9patch\",\"version\":\"20250716\"}]");
+    }
+
     public static String popupTask() {
         return ApplicationHook.requestString("alipay.antforest.forest.h5.popupTask", "[{\"fromAct\":\"pop_task\"," + "\"needInitSign\":false,\"source\":\"chInfo_ch_appcenter__chsub_9patch\",\"statusList\":[\"TODO\"," + "\"FINISHED\"],\"version\":\"" + VERSION + "\"}]");
     }

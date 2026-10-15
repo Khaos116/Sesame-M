@@ -13,9 +13,13 @@ public class WelfareFundRpcCall {
     /** 签到玩法 ID */
     private static final String SIGN_PLAY_ID = "PLAY100177545";
 
-    /** 签到：官方 operation=signConsult，服务端同时完成当日签到 */
-    public static String signConsult() {
-        return sign("signConsult", null);
+    /**
+     * 签到（{@code operation=signApply}）。
+     * <p>页面打开时官方先发 {@code signConsult}（咨询，不改状态），点按钮才发 {@code signApply}；
+     * 只有后者会让 {@code todaySignInfo.signApplyDone} 变 true 并下发积分。
+     */
+    public static String signApply() {
+        return sign("signApply", null);
     }
 
     /** 签到日历（未来 N 天奖励） */

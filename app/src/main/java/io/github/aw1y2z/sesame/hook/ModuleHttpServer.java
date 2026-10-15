@@ -43,11 +43,12 @@ public class ModuleHttpServer extends NanoHTTPD {
         super("127.0.0.1", port);
         // 原Kotlin init块中的路由注册逻辑
         register("/debugHandler", new DebugHandler(secretToken), "调试接口");
-        register("/getAlipayMiniMark", new AlipayMiniMarkHandler(), "获取支付宝小程序标记");
+        // 这两条路由的 handler 不继承 BaseHandler，需把令牌传入、由其在入口自行校验
+        register("/getAlipayMiniMark", new AlipayMiniMarkHandler(secretToken), "获取支付宝小程序标记");
         // 该路由依赖 AuthCodeHelper：它自建 Oauth2AuthCodeServiceImpl 实例、没走宿主依赖注入，
         // 实例内的 Oauth2AuthCodeFacade 恒为 null，调用必然抛 NPE（当前支付宝版本下固定返回 500）。
         // 保留路由本身，待改为「捕获宿主已注入的真实实例」后即可恢复；调用只在有人请求时才发生，闲置无日志。
-        register("/getAuthCode", new AuthCodeHandler(), "获取OAuth2授权码（当前宿主版本下不可用）");
+        register("/getAuthCode", new AuthCodeHandler(secretToken), "获取OAuth2授权码（当前宿主版本下不可用）");
     }
     
     /**

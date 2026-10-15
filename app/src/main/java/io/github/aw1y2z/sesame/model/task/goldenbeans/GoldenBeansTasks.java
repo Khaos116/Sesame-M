@@ -19,7 +19,6 @@ import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.idMap.GoldenBeansTaskListMap;
-import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
 /**
  * 金豆夺宝的入口日常与任务列表处理。

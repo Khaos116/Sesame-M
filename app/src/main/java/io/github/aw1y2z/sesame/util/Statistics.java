@@ -6,8 +6,10 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 
 import java.io.File;
 import java.util.Calendar;
+import java.util.List;
 
 import io.github.aw1y2z.sesame.R;
+import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 import androidx.annotation.Keep;
 import lombok.Data;
 
@@ -21,6 +23,13 @@ public class Statistics {
     private TimeStatistics year = new TimeStatistics();
     private TimeStatistics month = new TimeStatistics();
     private TimeStatistics day = new TimeStatistics();
+
+    /**
+     * 内存里这份统计属于哪个账号：与 {@code Status} 同构。
+     * <p>统计文件按账号分目录，落盘若用「当前 uid」而不是「内存状态的归属」，
+     * 切号落在两步之间就会把 A 账号的账写进 B 账号的文件。
+     */
+    private static volatile String loadedUid;
 
     /** 本轮（一次执行周期）收取的能量。仅内存计数、不落盘（静态字段不进 Jackson） */
     private static volatile int roundCollected = 0;
@@ -67,6 +76,8 @@ public class Statistics {
      * 也可能正好撞上 save() 的序列化过程。
      */
     public static synchronized void addData(DataType dt, int i) {
+        // 累加前先对齐归属：否则这一笔会记到别的账号头上
+        ensureLoadedForCurrentUid();
         Statistics stat = INSTANCE;
         switch (dt) {
             case COLLECTED:
@@ -99,43 +110,66 @@ public class Statistics {
     }
     
     public static synchronized int getData(TimeType tt, DataType dt) {
-        Statistics stat = INSTANCE;
-        int data = 0;
-        TimeStatistics ts = null;
+        ensureLoadedForCurrentUid();
+        return INSTANCE.dataOf(tt, dt);
+    }
+
+    /** 读**本实例**的数据：界面要按账号分页并排显示，不能都去读单例 */
+    public int dataOf(TimeType tt, DataType dt) {
+        TimeStatistics ts;
         switch (tt) {
             case YEAR:
-                ts = stat.year;
+                ts = year;
                 break;
             case MONTH:
-                ts = stat.month;
+                ts = month;
                 break;
-            case DAY:
-                ts = stat.day;
+            default:
+                ts = day;
                 break;
         }
-        if (ts != null) {
-            switch (dt) {
-                case TIME:
-                    data = ts.time;
-                    break;
-                case COLLECTED:
-                    data = ts.collected;
-                    break;
-                case HELPED:
-                    data = ts.helped;
-                    break;
-                case WATERED:
-                    data = ts.watered;
-                    break;
-                case WATEREDCOUNT:
-                    data = ts.wateredcount;
-                    break;
-                case WATERINGCOUNT:
-                    data = ts.wateringcount;
-                    break;
+        switch (dt) {
+            case TIME:
+                return ts.time;
+            case COLLECTED:
+                return ts.collected;
+            case HELPED:
+                return ts.helped;
+            case WATERED:
+                return ts.watered;
+            case WATEREDCOUNT:
+                return ts.wateredcount;
+            case WATERINGCOUNT:
+                return ts.wateringcount;
+            default:
+                return 0;
+        }
+    }
+
+    /**
+     * 把若干账号的统计相加成「合计」：界面默认显示全部账号的合计。
+     * <p>只用于展示；三档的 time 取各账号最大值，免得被 {@link #updateDay} 当成「从未跨天」而重置。
+     */
+    public static Statistics aggregate(List<Statistics> list) {
+        Statistics total = new Statistics();
+        int yearTime = 0;
+        int monthTime = 0;
+        int dayTime = 0;
+        for (Statistics s : list) {
+            if (s == null) {
+                continue;
             }
+            total.year.add(s.year);
+            total.month.add(s.month);
+            total.day.add(s.day);
+            yearTime = Math.max(yearTime, s.year.time);
+            monthTime = Math.max(monthTime, s.month.time);
+            dayTime = Math.max(dayTime, s.day.time);
         }
-        return data;
+        total.year.time = yearTime;
+        total.month.time = monthTime;
+        total.day.time = dayTime;
+        return total;
     }
     
     public static String getText() {
@@ -164,8 +198,16 @@ public class Statistics {
     }
     
     public static synchronized Statistics load() {
+        String currentUid = UserIdMap.getCurrentUid();
         try {
-            File statisticsFile = FileUtil.getStatisticsFile();
+            // 先声明归属再动文件：本方法内部会写文件，若该链路回调到 getData()，
+            // loadedUid 未更新就会再进 load() 形成递归
+            loadedUid = currentUid;
+            // uid 未就绪时 getStatisticsFile 回退主目录，与「单账号时期」同路径
+            File statisticsFile = FileUtil.getStatisticsFile(currentUid);
+            if (!statisticsFile.exists()) {
+                migrateLegacyStatistics(statisticsFile);
+            }
             if (statisticsFile.exists()) {
                 String json = FileUtil.readFromFile(statisticsFile);
                 JsonUtil.copyMapper().readerForUpdating(INSTANCE).readValue(json);
@@ -191,13 +233,71 @@ public class Statistics {
             Log.i(TAG, "统计文件格式有误，已重置统计文件");
             try {
                 JsonUtil.copyMapper().updateValue(INSTANCE, new Statistics());
-                FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatisticsFile());
+                FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatisticsFile(currentUid));
             }
             catch (JsonMappingException e) {
                 Log.printStackTrace(TAG, e);
             }
         }
         return INSTANCE;
+    }
+
+    /**
+     * 读指定账号的统计，**不改动**单例：界面要按账号分页显示，一个账号读一份。
+     * <p>与 {@link #load()} 不同，这里**不建文件、也不做迁移**：只读已存在的；没有就返回全零。
+     * 否则界面一浏览就会给所有账号铺出空统计文件，令下文的一次性迁移判据失效。
+     */
+    public static Statistics readFrom(String userId) {
+        Statistics statistics = new Statistics();
+        try {
+            File file = FileUtil.getStatisticsFile(userId);
+            if (!file.exists()) {
+                return statistics;
+            }
+            String json = FileUtil.readFromFile(file);
+            JsonUtil.copyMapper().readerForUpdating(statistics).readValue(json);
+            // 只动内存地按当前时间归零：模块当天还没跑时，首页不该还显示昨天的「今日」
+            statistics.updateDayOf(Calendar.getInstance());
+        }
+        catch (Throwable t) {
+            Log.printStackTrace(TAG, t);
+        }
+        return statistics;
+    }
+
+    /**
+     * uid 与内存统计归属不一致（启动早期 uid 未就绪、切号）时，按当前 uid 重新加载。
+     *
+     * @return 对齐后**内存统计的归属 uid**；落盘目标必须以它为准
+     */
+    private static synchronized String ensureLoadedForCurrentUid() {
+        String currentUid = UserIdMap.getCurrentUid();
+        if (StringUtil.isEmpty(currentUid) || currentUid.equals(loadedUid)) {
+            return loadedUid;
+        }
+        Log.i(TAG, "统计归属由[" + loadedUid + "]变为[" + currentUid + "]，按当前账号重新加载");
+        load();
+        return loadedUid;
+    }
+
+    /**
+     * 一次性迁移：账号维度的统计文件不存在、且还**没有任何账号**落过统计时，
+     * 把单账号时期的全局文件复制过来，免得历史月/年累计归零。
+     * <p>已有账号落过盘就不再迁：那份全局数据是多账号混在一起的，不该再让别的账号继承。
+     */
+    private static void migrateLegacyStatistics(File target) {
+        try {
+            File legacy = FileUtil.getLegacyStatisticsFile();
+            if (legacy.equals(target) || !legacy.exists() || !FileUtil.listAccountStatisticsUids().isEmpty()) {
+                return;
+            }
+            if (FileUtil.copyTo(legacy, target)) {
+                Log.i(TAG, "已把单账号时期的 statistics.json 迁移到当前账号");
+            }
+        }
+        catch (Throwable t) {
+            Log.printStackTrace(TAG, t);
+        }
     }
     
     public static synchronized void unload() {
@@ -214,6 +314,12 @@ public class Statistics {
     }
     
     public static synchronized void save(Calendar nowCalendar) {
+        // 落盘目标按「内存统计的归属」取：切号可能正好落在「读到当前 uid」与「按该 uid 写盘」之间
+        String uid = ensureLoadedForCurrentUid();
+        if (StringUtil.isEmpty(uid)) {
+            Log.i(TAG, "用户为空，统计保存跳过");
+            return;
+        }
         if (updateDay(nowCalendar)) {
             Log.system(TAG, "重置 statistics.json");
         }
@@ -221,24 +327,32 @@ public class Statistics {
             // 每次落盘都记一行会淹没有效日志（实测约 75 行/天），降为由「抓包记录」开关控制的调试日志
             Log.debug(TAG + ", 保存 statistics.json");
         }
-        FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatisticsFile());
+        FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatisticsFile(uid));
     }
     
     public static Boolean updateDay(Calendar nowCalendar) {
+        return INSTANCE.updateDayOf(nowCalendar);
+    }
+
+    /**
+     * 按给定时刻把**本实例**的日/月/年计数归零（若已跨天）；只动内存、不落盘。
+     * <p>界面按账号读文件时同样要就地归零：模块当天还没跑时，首页不该还显示昨天的「今日」。
+     */
+    public boolean updateDayOf(Calendar nowCalendar) {
         int ye = nowCalendar.get(Calendar.YEAR);
         int mo = nowCalendar.get(Calendar.MONTH) + 1;
         int da = nowCalendar.get(Calendar.DAY_OF_MONTH);
-        if (ye != INSTANCE.year.time) {
-            INSTANCE.year.reset(ye);
-            INSTANCE.month.reset(mo);
-            INSTANCE.day.reset(da);
+        if (ye != year.time) {
+            year.reset(ye);
+            month.reset(mo);
+            day.reset(da);
         }
-        else if (mo != INSTANCE.month.time) {
-            INSTANCE.month.reset(mo);
-            INSTANCE.day.reset(da);
+        else if (mo != month.time) {
+            month.reset(mo);
+            day.reset(da);
         }
-        else if (da != INSTANCE.day.time) {
-            INSTANCE.day.reset(da);
+        else if (da != day.time) {
+            day.reset(da);
         }
         else {
             return false;
@@ -274,6 +388,15 @@ public class Statistics {
             watered = 0;
             wateredcount = 0;
             wateringcount = 0;
+        }
+
+        /** 供「全部账号合计」相加；time 不是计数，由调用方单独取最大值 */
+        void add(TimeStatistics other) {
+            collected += other.collected;
+            helped += other.helped;
+            watered += other.watered;
+            wateredcount += other.wateredcount;
+            wateringcount += other.wateringcount;
         }
     }
     

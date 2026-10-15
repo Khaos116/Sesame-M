@@ -12,7 +12,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import lombok.Getter;
 import io.github.aw1y2z.sesame.data.RuntimeInfo;
-import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 
 public class NotificationUtil {
     private static Context context;

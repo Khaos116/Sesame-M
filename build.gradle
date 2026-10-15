@@ -32,5 +32,6 @@ allprojects {
 }
 
 tasks.register('clean', Delete) {
-    delete rootProject.buildDir
+    // Gradle 9 移除了 Project.buildDir：改用布局 API 的 buildDirectory
+    delete rootProject.layout.buildDirectory
 }

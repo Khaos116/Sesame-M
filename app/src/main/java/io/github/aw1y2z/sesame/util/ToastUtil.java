@@ -3,7 +3,6 @@ package io.github.aw1y2z.sesame.util;
 import android.content.Context;
 import android.widget.Toast;
 
-import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 
 public class ToastUtil {
 

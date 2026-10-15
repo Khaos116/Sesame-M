@@ -1,6 +1,5 @@
 package io.github.aw1y2z.sesame.util;
 
-import static io.github.aw1y2z.sesame.util.idMap.UserIdMap.getShowName;
 import android.os.Build;
 import android.os.Environment;
 import io.github.aw1y2z.sesame.hook.Toast;
@@ -10,11 +9,18 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 public class FileUtil {
     private static final String TAG = FileUtil.class.getSimpleName();
+    /** 账号目录名白名单：uid 由宿主给出，拼进路径前必须挡住「..」与路径分隔符 */
+    private static final Pattern USER_ID_PATTERN = Pattern.compile("[0-9A-Za-z_-]+");
     //路径
     public static final String CONFIG_DIRECTORY_NAME = "sesame-M";
     public static final File MAIN_DIRECTORY_FILE = getMainDirectoryFile();
@@ -323,8 +329,8 @@ public class FileUtil {
     }
     
     public static File getConfigV2File(String userId) {
-        File file = new File(CONFIG_DIRECTORY_FILE + "/" + userId, "config_v2.json");
-        if (!file.exists()) {
+        File file = getFile(getUserDataDirectoryFile(userId), "config_v2.json");
+        if (!file.exists() && isSafeUserId(userId)) {
             File oldFile = new File(CONFIG_DIRECTORY_FILE, "config_v2-" + userId + ".json");
             if (oldFile.exists()) {
                 if (write2File(readFromFile(oldFile), file)) {
@@ -339,11 +345,19 @@ public class FileUtil {
     }
     
     public static boolean setConfigV2File(String userId, String json) {
-        return write2File(json, new File(CONFIG_DIRECTORY_FILE + "/" + userId, "config_v2.json"));
+        return write2File(json, getFile(getUserDataDirectoryFile(userId), "config_v2.json"));
     }
     
     public static File getTokenConfigFile() {
         return new File(MAIN_DIRECTORY_FILE, "token_config.json");
+    }
+
+    /**
+     * 本地 HTTP 服务的鉴权令牌文件：首次启动随机生成，之后各次启动复用同一份
+     * （硬编码在源码里会随公开分发的 APK 一起泄漏）。
+     */
+    public static File getHttpTokenFile() {
+        return new File(MAIN_DIRECTORY_FILE, "http_token.txt");
     }
     
     public static boolean setTokenConfigFile(String json) {
@@ -367,8 +381,7 @@ public class FileUtil {
     }
     
     public static File runtimeInfoFile(String userId) {
-        File runtimeInfoFile = new File(CONFIG_DIRECTORY_FILE + "/" + userId, "runtimeInfo.json");
-        return ensureFileExists(runtimeInfoFile);
+        return ensureFileExists(getFile(getUserDataDirectoryFile(userId), "runtimeInfo.json"));
     }
     
     public static File getCooperationIdMapFile(String userId) {
@@ -397,9 +410,18 @@ public class FileUtil {
     
     /**
      * 账号数据目录：userId 为空（「默认」配置）时回退到主目录，避免 {@code new File(dir, null)} 抛 NPE。
+     * <p>uid 不合法时同样回退主目录：宁可落到共享目录，也不能让 {@code ..} 拼出目录之外的路径。
      */
     private static File getUserDataDirectoryFile(String userId) {
-        return StringUtil.isEmpty(userId) ? MAIN_DIRECTORY_FILE : new File(CONFIG_DIRECTORY_FILE, userId);
+        if (!isSafeUserId(userId)) {
+            return MAIN_DIRECTORY_FILE;
+        }
+        return new File(CONFIG_DIRECTORY_FILE, userId);
+    }
+
+    /** uid 能否安全用作目录名（空 uid 表示「默认」配置，走主目录回退） */
+    private static boolean isSafeUserId(String userId) {
+        return userId != null && USER_ID_PATTERN.matcher(userId).matches();
     }
 
     /**
@@ -427,7 +449,9 @@ public class FileUtil {
         if (!file.exists()) {
             try {
                 file.createNewFile();
-            } catch (Throwable ignored) {
+            } catch (Throwable t) {
+                // 建不出空文件不致命（后续写入会各自报错），但要留痕，否则只看到「写不进去」
+                Log.debug(TAG + " 建文件失败: " + file.getName() + " " + t);
             }
         }
         return file;
@@ -437,16 +461,36 @@ public class FileUtil {
         return getFile(getUserDataDirectoryFile(userId), "status.json");
     }
     
-    public static File getStatisticsFile() {
-        File statisticsFile = getFile(MAIN_DIRECTORY_FILE, "statistics.json");
-        if (statisticsFile.exists()) {
-            // 遗留自检：真正写失败时 write2File 已会 Toast + 打异常日志，这里降为调试日志，避免每次读写都刷一行
-            Log.debug(TAG + ", [statistics]读:" + statisticsFile.canRead() + ";写:" + statisticsFile.canWrite());
+    /**
+     * 账号维度的统计文件；userId 为空时回退主目录（与 {@link #getStatusFile} 同构）。
+     * <p>统计必须按账号分文件：全局单文件时切号会把上一个账号的日/月值带到新账号。
+     */
+    public static File getStatisticsFile(String userId) {
+        return getFile(getUserDataDirectoryFile(userId), "statistics.json");
+    }
+
+    /** 未按账号分目录的旧统计文件：只作一次性迁移的来源，迁完不再使用 */
+    public static File getLegacyStatisticsFile() {
+        return getFile(MAIN_DIRECTORY_FILE, "statistics.json");
+    }
+
+    /**
+     * 已有统计文件的账号 uid（界面按账号分页展示用），按目录名排序保证顺序稳定。
+     * <p>同时用于判断旧的全局文件还能不能当迁移来源：已有账号落过盘就不该再让别的账号继承它。
+     */
+    public static List<String> listAccountStatisticsUids() {
+        List<String> uids = new ArrayList<>();
+        File[] dirs = CONFIG_DIRECTORY_FILE.listFiles();
+        if (dirs == null) {
+            return uids;
         }
-        else {
-            Log.debug(TAG + ", statisticsFile.json文件不存在");
+        Arrays.sort(dirs, Comparator.comparing(File::getName));
+        for (File dir : dirs) {
+            if (dir.isDirectory() && new File(dir, "statistics.json").exists()) {
+                uids.add(dir.getName());
+            }
         }
-        return statisticsFile;
+        return uids;
     }
     
     public static File getTreeIdMapFile() {
@@ -531,6 +575,10 @@ public class FileUtil {
 
     public static File getWelfareFundTaskListMapFile() {
         return getFile(MAIN_DIRECTORY_FILE, "WelfareFundTask.json");
+    }
+
+    public static File getGoldTicketTaskListMapFile() {
+        return getFile(MAIN_DIRECTORY_FILE, "GoldTicketTask.json");
     }
 
     public static File getGoldenBeansTaskListMapFile() {
@@ -924,7 +972,8 @@ public class FileUtil {
                     clearFile(f);
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            Log.debug(TAG + " 清空日志失败: " + logName + " " + t);
         }
     }
 

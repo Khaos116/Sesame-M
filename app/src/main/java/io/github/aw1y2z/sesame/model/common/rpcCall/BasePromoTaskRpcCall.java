@@ -7,10 +7,15 @@ import io.github.aw1y2z.sesame.util.JsonUtil;
 import io.github.aw1y2z.sesame.util.Log;
 
 /**
- * 公共任务处理
+ * **推广类**任务的公共基类：以 {@code appletId} 定位任务，查询任务、触发动作（报名/完成/领奖）、签到。
+ * <p>接口域为 {@code com.alipay.loanpromoweb.promo.*}，即支付宝推广平台的那套任务协议
+ * （{@code appletId + stageCode + taskCenId}，状态 {@code NONE_SIGNUP / SIGNUP_COMPLETE / TO_RECEIVE}）。
+ * 接入同一套协议的模块直接继承即可，不必各写一份；当前由绿色经营任务使用。
+ * <p>注意：这里只是**推广类**任务的基类，不是所有任务 RPC 的基类（森林/庄园/海洋等各有自己的接口域）。
+ *
  * @author xiong
  */
-public class BaseTaskRpcCall {
+public class BasePromoTaskRpcCall {
 
     /**
      * 查询任务

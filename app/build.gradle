@@ -8,14 +8,34 @@ android {
         version = "1.0.0"
     }
     project.ext.appVersion = version
-    def gitCommitHash = "unknown"
-    def gitBranchName = "unknown"
-    def gitCommitCount = 1
-    try {
-        gitCommitHash = 'git rev-parse --short HEAD'.execute().text.trim()
-        gitBranchName = 'git rev-parse --abbrev-ref HEAD'.execute().text.trim()
-        gitCommitCount = "git rev-list --count HEAD".execute().text.trim().toInteger()
-    } catch (Exception ignored) { }
+    // 取 git 信息：用 providers.exec 而不是 '.execute()'——
+    // 前者把输出登记为配置输入（commit 变了配置缓存才会失效），且退出码可判；
+    // '.execute()' 既不进配置缓存，失败时还只会静默拿到空串。
+    def gitOutput = { List<String> args ->
+        try {
+            def exec = providers.exec {
+                commandLine((['git'] + args) as String[])
+                ignoreExitValue = true
+            }
+            if (exec.result.get().exitValue != 0) {
+                return null
+            }
+            def out = exec.standardOutput.asText.get().trim()
+            return out.isEmpty() ? null : out
+        } catch (Exception ignored) {
+            return null
+        }
+    }
+    def gitCommitHash = gitOutput(['rev-parse', '--short', 'HEAD']) ?: "unknown"
+    def gitBranchName = gitOutput(['rev-parse', '--abbrev-ref', 'HEAD']) ?: "unknown"
+    def gitCommitCountText = gitOutput(['rev-list', '--count', 'HEAD'])
+    def gitCommitCount = (gitCommitCountText != null && gitCommitCountText.isInteger())
+            ? gitCommitCountText.toInteger() : 1
+    // 浅克隆里 rev-list --count 只数到浅层边界（通常就是 1），versionCode 会退化成 1。
+    // 明确告警：两个 versionCode 相同的包无法覆盖安装，比静默降级更难排查。
+    if (gitCommitCount <= 1 && "true".equalsIgnoreCase(gitOutput(['rev-parse', '--is-shallow-repository']))) {
+        logger.warn("Sesame-M: 仓库是浅克隆，versionCode 只能取到 ${gitCommitCount}；发版请用完整克隆")
+    }
     def buildTime = new Date().format("yyyy-MM-dd HH:mm:ss", TimeZone.getTimeZone("Asia/Shanghai"))
 
     compileSdk 37

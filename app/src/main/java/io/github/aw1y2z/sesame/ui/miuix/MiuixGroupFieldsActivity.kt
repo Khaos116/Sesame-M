@@ -120,13 +120,22 @@ class MiuixGroupFieldsActivity : MiuixBaseActivity() {
      * 统一落盘入口：本页字段变更只写内存，只有真正退出时才调用这里写一次磁盘。
      * 先用 hasFieldChanges() 判断是否有字段级改动（无改动直接短路，不写盘、不提示），
      * 确认有改动后走 force=true，避免 ConfigV2.save() 内部再做一次全量序列化比较。
+     * <p>没有账号或写盘失败时都要出声：否则用户以为存上了，实际改动无声消失。
      */
     fun save() {
-        if (userId == null) return
-        if (!ConfigV2.hasFieldChanges()) return
+        val changed = ConfigV2.hasFieldChanges()
+        if (userId == null) {
+            if (changed) {
+                ToastUtil.show(this, "未获取到账号，改动未保存")
+            }
+            return
+        }
+        if (!changed) return
         if (ConfigV2.save(userId, true)) {
             ToastUtil.show(this, "保存成功！")
             sendRestartIfNeeded()
+        } else {
+            ToastUtil.show(this, "保存失败，改动未落盘")
         }
     }
 
@@ -170,6 +179,16 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
     // 父字段开关/选项变化后，依赖其显示的子字段需重新计算可见性，
     // 用 depVersion 作为 remember 键触发扁平行列表重建。
     var depVersion by remember { mutableStateOf(0) }
+    // 固定一份实例：每次重组都换新 lambda 会让子项无法跳过重组
+    val bumpDependency: () -> Unit = remember { { depVersion++ } }
+    // 只有「被其他字段依赖」的父字段变动才可能改变可见性。其余字段（如普通文本框）
+    // 每次输入都重建整份扁平行，77 字段的组里就表现为「输入框打一个字就消失」。
+    val dependencyCodes = remember(group) {
+        Model.getGroupModelConfig(group).values
+            .flatMap { it.fields.values }
+            .mapNotNull { it.dependsOn?.takeIf { code -> code.isNotEmpty() } }
+            .toSet()
+    }
     // 字段对象由 ConfigV2 单例持有，引用稳定；仅当分组或依赖版本变化时才重建。
     val rows = remember(group, depVersion) {
         val list = ArrayList<GroupFieldsRow>()
@@ -317,7 +336,8 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                                 userId = userId,
                                 groupCode = groupCode,
                                 row = fieldRow,
-                                onDependencyChanged = { depVersion++ }
+                                onDependencyChanged =
+                                    if (dependencyCodes.contains(fieldRow.field.code)) bumpDependency else null
                             )
                         }
                     }
@@ -347,7 +367,7 @@ private fun GroupFieldRow(
     userId: String?,
     groupCode: String,
     row: GroupFieldsRow.Field,
-    onDependencyChanged: () -> Unit
+    onDependencyChanged: (() -> Unit)?
 ) {
     // 不再自己画背景：行的容器由外层 CardColumn（= 库的 Card）统一负责，
     // 与一级页一样是「一张卡里排多行」，行的左右缩进交给行自身的 insideMargin
