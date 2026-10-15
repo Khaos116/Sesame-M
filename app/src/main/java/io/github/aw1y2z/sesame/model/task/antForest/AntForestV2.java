@@ -3657,7 +3657,7 @@ public class AntForestV2 extends ModelTask {
 
                     // 站内行为类任务（浇水/收能量/能量雨）：完成条件是**服务端的行为计数**，
                     // 只能真做那个行为；上报与伪申报都推不动它，会白试一次后按"兜底未生效"拉黑
-                    TaskAttemptPolicy.Forge forge = forestVitalityForge(taskType, sceneCode, taskTitle);
+                    TaskAttemptPolicy.Forge forge = forestVitalityForge(taskType, sceneCode, taskTitle, bizInfo);
                     // 做不了的当天只试一次、临时故障留待下一轮（见 TaskAttemptPolicy）
                     Outcome outcome = TaskAttemptPolicy.handle("forest::" + sceneCode + "/" + taskType, taskTitle, null,
                             () -> attemptFinishTask(sceneCode, taskType, taskTitle), Log::forest,
@@ -3684,12 +3684,17 @@ public class AntForestV2 extends ModelTask {
      * <p>真交易/履约类（缴费/出行/回收）由 {@code TaskAlternative.isTransactionTask} 在策略里先行拦下，
      * 到不了这里，故此处只需认得出"能做的事"。
      */
-    private TaskAttemptPolicy.Forge forestVitalityForge(String taskType, String sceneCode, String taskTitle) {
+    private TaskAttemptPolicy.Forge forestVitalityForge(String taskType, String sceneCode, String taskTitle,
+                                                        JSONObject bizInfo) {
         // 「进页面看一眼」类（EFFECTIVE_TASK）：完成条件就是这个上报动作本身，
         // 不消耗能量也不依赖好友列表，故优先且无条件尝试
-        if (isTakeLookVitalityTask(taskType, taskTitle)) {
+        if (isTakeLookVitalityTask(taskType, taskTitle, bizInfo)) {
             return () -> {
                 try {
+                    if (bizInfo != null && bizInfo.opt("taskJumpUrl") instanceof String
+                            && !bizInfo.optString("taskJumpUrl").trim().isEmpty()) {
+                        Log.forest("森林任务🧭[" + taskTitle + "]#外跳类，按'看一眼'上报");
+                    }
                     AntForestRpcCall.takeLookEnd("chInfo_ch_appcenter__chsub_9patch");
                     return probeVitalityDone(sceneCode, taskType);
                 } catch (org.json.JSONException e) {
@@ -3729,11 +3734,25 @@ public class AntForestV2 extends ModelTask {
     /**
      * 「看一眼」类任务：标题里的动作（浇水/签到等）只是营销文案，真正的完成条件是
      * 上报一次"进过森林页面"。靠标题判会去做那件文案里的事——既白做，也不满足条件。
+     * <p>除标题/类型外，还认服务端下发的两个明确信号：
+     * <ul>
+     *   <li>{@code taskAccEffectiveType=EFFECTIVE_TASK}：完成条件就是"进过页面"这个动作本身；</li>
+     *   <li>{@code bizInfo} 带非空 {@code taskJumpUrl}：逛一逛/外跳类（如 {@code GYG_diantao} 淘宝）
+     *       同为 EFFECTIVE_TASK，先按同一动作上报（模块打不开外部 H5，只能报"看过"）。</li>
+     * </ul>
      */
-    private static boolean isTakeLookVitalityTask(String taskType, String taskTitle) {
+    private static boolean isTakeLookVitalityTask(String taskType, String taskTitle, JSONObject bizInfo) {
         String type = taskType == null ? "" : taskType.toLowerCase();
-        return type.startsWith("zhrw_")
-                || (taskTitle != null && (taskTitle.contains("免费拿") || taskTitle.contains("绿植")));
+        if (type.startsWith("zhrw_")
+                || (taskTitle != null && (taskTitle.contains("免费拿") || taskTitle.contains("绿植")))) {
+            return true;
+        }
+        if (bizInfo == null) {
+            return false;
+        }
+        return "EFFECTIVE_TASK".equals(bizInfo.optString("taskAccEffectiveType"))
+                || (bizInfo.opt("taskJumpUrl") instanceof String
+                    && !bizInfo.optString("taskJumpUrl").trim().isEmpty());
     }
 
     /**

@@ -18,7 +18,8 @@ public class ForestTaskPolicyCheck {
  boolean isUnwrapAction(String type){return "ACC_UNWRAP".equals(type)||"UNWRAP".equals(type);}
  int boxCalls;
  TaskAttemptPolicy.Outcome openForestLeyuanBoxes(String title){boxCalls++;return TaskAttemptPolicy.Outcome.UNABLE;}
- TaskAttemptPolicy.Forge forestVitalityForge(String type,String scene,String title){return null;}
+ boolean canWaterFriend(){return false;}void waterFriendEnergy(){}void startEnergyRain(){}
+ boolean probeVitalityDone(String scene,String type){return TaskAttemptPolicy.isDone(probeForestVitalityStatus(scene,type));}
  static class MyUtils {static boolean closeUnRpc(){return false;}static JSONObject newJSONObject(){return new JSONObject();}
   static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
  static class TimeUtil {static void sleep(long n){}static boolean isLessThanSecondOfDays(long a,long b){return a/86400000L<b/86400000L;}}
@@ -54,6 +55,11 @@ public class ForestTaskPolicyCheck {
   static boolean cancelProbe,cancelAttempt,cancelAward;static JSONArray snapshot=new JSONArray(),nativeSnapshot=new JSONArray();
   static int optionalStage=-1;static boolean drawStages,drawWait;
   static boolean exchangeStages,failExchangeAward,staleExchangeAward;static int exchangeWrites,exchangeAwards;
+  static int takeLookWrites;static String takeLookSource;static boolean completeTakeLook,failTakeLook;
+  static String takeLookEnd(String source)throws JSONException{takeLookWrites++;takeLookSource=source;
+   if(cancelAttempt)throw new TaskCancelledException();if(failTakeLook)throw new JSONException("invalid request");
+   if(completeTakeLook)snapshot.optJSONObject(0).optJSONObject("taskBaseInfo").put("taskStatus","FINISHED");
+   return "{success:true}";}
   static List<String> exchangeEvents=new ArrayList<>();
   static String youthOverride,optionalAfter;static int youthReads;static String awardReply,optionalOverride,home="{}",rain="{}";static int inits;
   static String finishTask(String scene,String type){writes++;if(cancelAttempt)throw new TaskCancelledException();if(drawStages){JSONObject t=snapshot.optJSONObject(0);t.optJSONObject("taskRights").put("rightsTimes",writes);t.optJSONObject("taskBaseInfo").put("taskStatus",drawWait?"FINISHED":"TODO");return "{success:true}";}if(optionalStage>=0){optionalStage++;return "{\"success\":true}";}return replies.getOrDefault(type,"{\"success\":false,\"code\":\"102\"}");}
@@ -115,9 +121,21 @@ public class ForestTaskPolicyCheck {
  static void reset(){AntForestRpcCall.exchangeStages=AntForestRpcCall.failExchangeAward=AntForestRpcCall.staleExchangeAward=false;AntForestRpcCall.exchangeWrites=AntForestRpcCall.exchangeAwards=0;AntForestRpcCall.exchangeEvents.clear();AntForestRpcCall.drawStages=false;AntForestRpcCall.optionalStage=-1;AntForestRpcCall.youthOverride=AntForestRpcCall.optionalAfter=null;AntForestRpcCall.youthReads=0;Status.flags.clear();Status.counts.clear();RuntimeInfo.value.data.clear();ApplicationHook.fallback=0;AntForestRpcCall.replies.clear();
   AntForestRpcCall.optionalOverride=null;AntForestRpcCall.snapshot=new JSONArray();AntForestRpcCall.nativeSnapshot=new JSONArray();AntForestRpcCall.awardReply="{\"success\":true,\"returnData\":\"{}\",\"incAwardCount\":1}";
   AntForestRpcCall.reads=AntForestRpcCall.awards=AntForestRpcCall.writes=AntForestRpcCall.optionalReads=0;AntForestRpcCall.cancelProbe=AntForestRpcCall.cancelAttempt=AntForestRpcCall.cancelAward=false;}
+ static void resetTakeLook(){reset();AntForestRpcCall.takeLookWrites=0;AntForestRpcCall.takeLookSource=null;AntForestRpcCall.completeTakeLook=AntForestRpcCall.failTakeLook=false;}
  static void expectCancel(Runnable work){try{work.run();check(false,"Task chain swallowed cancellation");}catch(TaskCancelledException expected){}}
  static int failures;static void check(boolean ok,String message){if(!ok){failures++;System.out.println("FAIL "+message);}}
  public static void main(String[] args){ForestTaskPolicyCheck f=new ForestTaskPolicyCheck();
+  for(JSONObject meta:List.of(new JSONObject().put("taskAccEffectiveType","EFFECTIVE_TASK"),new JSONObject().put("taskJumpUrl","https://example.test/browse"))){
+   resetTakeLook();JSONObject visit=task("GYG_diantao","TODO");meta.put("taskTitle","browse").put("autoCompleteTask",true);visit.optJSONObject("taskBaseInfo").put("bizInfo",meta.toString());AntForestRpcCall.snapshot=new JSONArray().put(visit);
+   AntForestRpcCall.replies.put("GYG_diantao","{success:false,code:'400000040'}");AntForestRpcCall.completeTakeLook=true;
+   check(f.doForsetTaskList(AntForestRpcCall.snapshot)&&AntForestRpcCall.takeLookWrites==1&&ApplicationHook.fallback==0&&"chInfo_ch_appcenter__chsub_9patch".equals(AntForestRpcCall.takeLookSource),"External/effective task must use native look action and preserve M source");
+  }
+  check(isTakeLookVitalityTask("zhrw_test",null,null)&&!isTakeLookVitalityTask("browse","browse",null),"Legacy look classification changed");
+  for(Object invalid:List.of(123,true,new JSONObject(),new JSONArray(),"   "))check(!isTakeLookVitalityTask("browse","browse",new JSONObject().put("taskJumpUrl",invalid)),"Invalid jump URL must not activate look action");
+  resetTakeLook();AntForestRpcCall.snapshot=new JSONArray().put(task("browse","TODO"));JSONObject effective=new JSONObject().put("taskAccEffectiveType","EFFECTIVE_TASK");
+  check(!f.forestVitalityForge("browse","scene","browse",effective).run(),"Successful look response alone must not confirm task");
+  AntForestRpcCall.failTakeLook=true;check(!f.forestVitalityForge("browse","scene","browse",effective).run(),"Invalid look request must preserve failure semantics");
+  AntForestRpcCall.failTakeLook=false;AntForestRpcCall.cancelAttempt=true;expectCancel(()->f.forestVitalityForge("browse","scene","browse",effective).run());
   reset();f.boxCalls=0;
   AntForestRpcCall.optionalOverride="{success:true,taskTriggerPlayInfo:{taskList:[{taskStatus:TODO,sceneCode:scene,taskType:unwrap,rightsTimes:0,rightsTimesLimit:10,bizInfo:{title:boxes,actionType:UNWRAP}}]}}";
   f.queryOptionalPlay();
@@ -228,6 +246,12 @@ public class ForestTaskPolicyCheck {
    exchange.optJSONObject("taskBaseInfo").put("bizInfo","{title:'exchange'}");AntForestRpcCall.snapshot=new JSONArray().put(exchange);
    stages.chouChouLe(false,false,Set.of(),false,false,Set.of());
    check(AntForestRpcCall.exchangeWrites==("TODO".equals(start)?1:0)&&AntForestRpcCall.exchangeAwards==1,"Stale FINISHED after claim must not repeat claim or send next exchange: "+AntForestRpcCall.exchangeEvents);
+   int writes=AntForestRpcCall.exchangeWrites;
+   stages.chouChouLe(false,false,Set.of(),false,false,Set.of());
+   check(AntForestRpcCall.exchangeAwards==1&&AntForestRpcCall.exchangeWrites==writes,"Claimed stage must remain protected across scheduled runs");
+   Status.flags.clear();Status.counts.clear();
+   stages.chouChouLe(false,false,Set.of(),false,false,Set.of());
+   check(AntForestRpcCall.exchangeAwards==2,"Claim guard must reset for a new business day");
   }
   for(String stop:List.of("blacklist","missing-rights","invalid-rights","unknown-status","award-failure","cancel-award")){
    reset();AntForestRpcCall.exchangeStages=true;
@@ -239,7 +263,14 @@ public class ForestTaskPolicyCheck {
    Runnable run=()->stages.chouChouLe(false,false,Set.of(),false,false,"blacklist".equals(stop)?Set.of("exchange"):Set.of());
    if(AntForestRpcCall.cancelAward)expectCancel(run);else run.run();
    check(AntForestRpcCall.exchangeWrites==((AntForestRpcCall.failExchangeAward||AntForestRpcCall.cancelAward)?1:0),"Exchange must stop for "+stop);
+   if(AntForestRpcCall.failExchangeAward){
+    check(!Status.hasFlagToday("forest::chouchoule::exchange::award::scene/NORMAL_DRAW_EXCHANGE_VITALITY#1"),"Failed claim must not persist success flag");
+    AntForestRpcCall.failExchangeAward=false;stages.chouChouLe(false,false,Set.of(),false,false,Set.of());
+    check(AntForestRpcCall.exchangeWrites==2&&AntForestRpcCall.snapshot.optJSONObject(0).optJSONObject("taskRights").optInt("rightsTimes")==2,"Unconfirmed claim must resume next run without repeating exchange");
+   }
   }
+  reset();AntForestRpcCall.exchangeStages=true;AntForestRpcCall.snapshot=new JSONArray().put(task("NORMAL_DRAW_EXCHANGE_VITALITY","FINISHED"));
+  stages.chouChouLe(false,false,Set.of(),false,false,Set.of());check(AntForestRpcCall.exchangeAwards==0&&Status.flags.isEmpty(),"Missing award stage must not claim or persist default stage zero");
   AntForestRpcCall.snapshot=new JSONArray().put(task("stage","TODO").put("taskRights",new JSONObject().put("rightsTimes",4)));
   check(stages.probeChouChouLeStatus("activity","scene","stage",3)==TaskAttemptPolicy.ProbeResult.FINISHED,"advanced draw stage treated as failure");
   check(stages.probeChouChouLeStatus("activity","scene","stage",4)==TaskAttemptPolicy.ProbeResult.TODO,"unchanged draw stage treated as complete");
@@ -295,6 +326,7 @@ for marker, path, name in [('@@ALTERNATIVE@@','model/base/TaskAlternative.java',
 code=code.replace('@@FARM_OPTIONAL@@','\n'.join(method('model/task/antFarm/AntFarm.java',sig) for sig in ('private TaskAttemptPolicy.ProbeResult probeOptionalPlayStatus(', 'private void queryOptionalPlay()', 'private Outcome finishOptionalPlayTask(')))
 code=code.replace('@@ORCHARD_OPTIONAL@@','\n'.join(method('model/task/antOrchard/AntOrchard.java',sig) for sig in ('private TaskAttemptPolicy.ProbeResult probeOrchardOptionalPlayStatus(', 'private void queryOptionalPlay()', 'private Outcome attemptFinishOptionalPlayTask(')))
 methods=('private void recordMonopolyAward(', 'private int queryCurrentEnergy(', 'private static String energyRainSljydStatus(', 'public static void checkAndDoEndGameTask(', 'private Boolean doForsetTaskList(','private static final class YouthForestRoute', 'private void queryYouthForestTask(', 'private String queryYouthForestTaskStatus(', 'private static boolean collectOpenGreenTaskInfos(', 'private static boolean appendTaskInfoList(', 'private static boolean appendTaskGroups(','private Boolean receiveTaskAward(','private static String blackTaskKey(','private Outcome attemptFinishTask(','private TaskAttemptPolicy.ProbeResult probeForestVitalityStatus(','private static TaskAttemptPolicy.ProbeResult forestVitalityStatus(','private boolean awardFinishedChildren(','private boolean doChildTask(','private TaskAttemptPolicy.ProbeResult probeOptionalPlayStatus(', 'private void queryOptionalPlay()', 'private int optionalPlayRoundLimit(')
+methods+=('private TaskAttemptPolicy.Forge forestVitalityForge(', 'private static boolean isTakeLookVitalityTask(', 'private static boolean isWaterVitalityTask(', 'private static boolean isEnergyRainVitalityTask(')
 code=code.replace('@@METHODS@@','\n'.join(method(forest,s) for s in methods))
 # The shared class declares the enum itself, so restore that declaration and its inner references.
 code=re.sub(r'(?<![.\w])Outcome\b', 'TaskAttemptPolicy.Outcome', code)

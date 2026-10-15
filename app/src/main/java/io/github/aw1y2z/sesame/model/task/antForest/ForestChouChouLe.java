@@ -110,15 +110,26 @@ public class ForestChouChouLe {
                         JSONObject taskRights = taskInfo.optJSONObject("taskRights");
                         int rightsTimes = taskRights != null ? taskRights.optInt("rightsTimes") : 0;
                         int rightsTimesLimit = taskRights != null ? taskRights.optInt("rightsTimesLimit") : 0;
+                        boolean vitalityExchange = taskType.equals("NORMAL_DRAW_EXCHANGE_VITALITY");
+                        if (vitalityExchange && (taskSceneCode.isEmpty() || taskRights == null
+                                || !(taskRights.opt("rightsTimes") instanceof Number)
+                                || !(taskRights.opt("rightsTimesLimit") instanceof Number)
+                                || rightsTimes < 0 || rightsTimesLimit <= 0 || rightsTimes > rightsTimesLimit)) {
+                            Log.forest("森林寻宝🧾[" + taskName + "]兑换进度缺失或无效，本轮不兑换/领奖");
+                            continue;
+                        }
+                        String claimKey = "forest::chouchoule::exchange::award::" + taskSceneCode
+                                + "/" + taskType + "#" + rightsTimes;
 
                         // 已完成任务领取奖励
                         if (taskStatus.equals("FINISHED")) {
-                            if (taskType.equals("NORMAL_DRAW_EXCHANGE_VITALITY")
-                                    && (handledThisRun.contains(taskType)
+                            if (vitalityExchange && (Status.hasFlagToday(claimKey) || handledThisRun.contains(taskType)
                                     || !handledThisRun.add("award::" + taskType + "#" + rightsTimes))) continue;
                             TimeUtil.sleep(2000);
                             JSONObject sginRes = MyUtils.newJSONObject(AntForestRpcCall.receiveTaskAwardopengreen("task_entry", taskSceneCode, taskType));
+                            boolean claimed;
                             if (MessageUtil.checkSuccess(TAG, sginRes)) {
+                                claimed = true;
                                 int incAwardCount = sginRes.optInt("incAwardCount");
                                 Log.forest("森林寻宝🎖️[" + taskName + "]获得抽奖*" + incAwardCount);
                                 if (rightsTimesLimit - rightsTimes > 0) {
@@ -126,12 +137,13 @@ public class ForestChouChouLe {
                                 }
                             } else {
                                 // 领奖收口：先按任务列表复核"已领到"，未确认才交自动拉黑（顺序由 TaskAward 固定）
-                                TaskAward.confirmReceivedOrBlackList("森林寻宝🎖️",
+                                claimed = TaskAward.confirmReceivedOrBlackList("森林寻宝🎖️",
                                         k -> probeChouChouLeStatus(sceneCode, taskSceneCode, taskType, -1), taskName,
                                         taskName,
                                         () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("AntForestHuntTaskList", taskName, sginRes),
                                         msg -> Log.forest(msg));
                             }
+                            if (vitalityExchange && claimed) Status.flagToday(claimKey, taskUid);
                             continue;
                         }
 
@@ -179,15 +191,7 @@ public class ForestChouChouLe {
                             continue;
                         }
                         // ==================== 活力值兑换任务 =====================
-                        if (taskType.equals("NORMAL_DRAW_EXCHANGE_VITALITY")
-                                && (taskStatus.equals("TODO") || taskStatus.equals("RECEIVED"))) {
-                            if (taskSceneCode.isEmpty() || taskRights == null
-                                    || !(taskRights.opt("rightsTimes") instanceof Number)
-                                    || !(taskRights.opt("rightsTimesLimit") instanceof Number)
-                                    || rightsTimes < 0 || rightsTimesLimit <= 0 || rightsTimes > rightsTimesLimit) {
-                                Log.forest("森林寻宝🧾[" + taskName + "]兑换进度缺失或无效，本轮不兑换");
-                                continue;
-                            }
+                        if (vitalityExchange && (taskStatus.equals("TODO") || taskStatus.equals("RECEIVED"))) {
                             // 一次补齐：按剩余次数连做。额度以服务端 rightsTimes/rightsTimesLimit 为准
                             // （它才是权威，本任务每天固定 2 次），本地只记"本轮已做几次"用于换 key 去重。
                             // 每次兑换消耗 20 活力值，故每次前都重查活力值。
@@ -228,6 +232,9 @@ public class ForestChouChouLe {
                                 doneToday++;
                                 Status.setIntFlagToday(exchangeKey, doneToday);
                                 // 每档先领奖再继续兑换；1/2已领取是中间态，不是整项完成。
+                                String loopClaimKey = "forest::chouchoule::exchange::award::" + taskSceneCode
+                                        + "/" + taskType + "#" + doneToday;
+                                if (Status.hasFlagToday(loopClaimKey)) continue;
                                 TimeUtil.sleep(1500);
                                 JSONObject award = MyUtils.newJSONObject(AntForestRpcCall.receiveTaskAwardopengreen(
                                         "task_entry", taskSceneCode, taskType));
@@ -241,6 +248,7 @@ public class ForestChouChouLe {
                                     Log.forest("森林寻宝🧾[" + taskName + "]兑换后领奖未确认，本轮不继续兑换");
                                     break;
                                 }
+                                Status.flagToday(loopClaimKey, taskUid);
                                 TimeUtil.sleep(1000);
                             }
                             continue; // 防止进入下面的 FOREST_NORMAL_DRAW 分支
