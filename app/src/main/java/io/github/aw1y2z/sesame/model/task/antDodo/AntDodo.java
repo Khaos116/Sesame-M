@@ -326,7 +326,9 @@ public class AntDodo extends ModelTask {
         Outcome outcome = TaskAttemptPolicy.handle("dodo::" + sceneCode + "/" + taskType, taskTitle, null,
                 () -> attemptFinishTask(sceneCode, taskType, taskTitle), Log::forest,
                 new TaskAttemptPolicy.Site("AntDodoTaskList", "神奇物种", taskType, sceneCode,
-                        (k) -> probeDodoStatus(sceneCode, taskType)));
+                        (k) -> probeDodoStatus(sceneCode, taskType))
+                        // 本家值：任务场景 + af-biodiversity
+                        .withScene(sceneCode).withSource("af-biodiversity"));
         return outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
     }
 

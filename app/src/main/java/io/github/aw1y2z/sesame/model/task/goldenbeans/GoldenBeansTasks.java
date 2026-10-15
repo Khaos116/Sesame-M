@@ -445,10 +445,12 @@ public final class GoldenBeansTasks {
                 return Outcome.RETRY;
             }
             // 另一种实现方案（见 TaskAlternative）；乐园游戏类任务会被 finishTaskantorchard 以 400000040 拒绝。
-            // 本模块自行伪申报并登记同轮核对（verifyPendingTasks），故返回 FORGED 而不是交给通用类
+            // 本模块自行伪申报并登记同轮核对（verifyPendingTasks），故返回 FORGED 而不是交给通用类。
+            // 场景码/来源用本入口自己的（各入口不同），不能用兜底默认的庄园
             if (TaskAlternative.hit(jo, entry.taskSceneCode)) {
                 TaskAlternative.trigger(pendingVerifyTasks, taskId, taskName, taskId, entry.taskSceneCode,
-                        goldenbeansRpcCall.VERSION, "金豆[" + entry.alias + "]任务", msg -> Log.goldenBeans(msg));
+                        goldenbeansRpcCall.VERSION, entry.taskSceneCode, entry.source,
+                        "金豆[" + entry.alias + "]任务", msg -> Log.goldenBeans(msg));
                 return Outcome.FORGED;
             }
             // 其它错误码（支付/配置类）= 真做不了，仍计入自动拉黑

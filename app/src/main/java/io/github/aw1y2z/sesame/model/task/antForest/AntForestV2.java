@@ -2103,7 +2103,8 @@ public class AntForestV2 extends ModelTask {
             TaskAttemptPolicy.handle("forest::greenlife::" + taskTemplateId, "森林集市打卡", null,
                     () -> attemptGreenLifeCheckIn(taskTemplateId, numberOfDaysCompleted), Log::forest,
                     new TaskAttemptPolicy.Site("AntForestVitalityTaskList", "森林集市打卡",
-                            taskTemplateId, null, (k) -> probeGreenLifeCheckIn(taskTemplateId)));
+                            taskTemplateId, null, (k) -> probeGreenLifeCheckIn(taskTemplateId))
+                            .withScene("ANTFOREST"));
         } catch (Throwable t) {
             Log.err(TAG, "retrieveCurrentActivity err:", t);
         }
@@ -2725,7 +2726,9 @@ public class AntForestV2 extends ModelTask {
                             () -> attemptFinishTask(sceneCode, taskType, taskTitle), Log::forest,
                             new TaskAttemptPolicy.Site("AntForestVitalityTaskList", "森林任务", taskType, sceneCode,
                                     TaskAlternative.DEFAULT_VERSION, forge,
-                                    (k) -> probeForestVitalityStatus(sceneCode, taskType)));
+                                    (k) -> probeForestVitalityStatus(sceneCode, taskType))
+                                    // 本家值：任务场景 + ANTFOREST
+                                    .withScene(sceneCode).withSource("ANTFOREST"));
                     doubleCheck = outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
                 }
             }
@@ -3065,7 +3068,8 @@ public class AntForestV2 extends ModelTask {
                         TaskAttemptPolicy.handle("forest::child::" + sceneCode + "/" + taskType, taskTitle, null,
                                 () -> attemptFinishTask(sceneCode, taskType, taskTitle), Log::forest,
                                 new TaskAttemptPolicy.Site("AntForestVitalityTaskList", "森林任务",
-                                        taskType, sceneCode, (k) -> probeForestVitalityStatus(sceneCode, taskType)));
+                                        taskType, sceneCode, (k) -> probeForestVitalityStatus(sceneCode, taskType))
+                                        .withScene("ANTFOREST"));
                         changed = true;
                     }
                 }
@@ -3503,7 +3507,7 @@ public class AntForestV2 extends ModelTask {
                                         taskType, sceneCode, TaskAlternative.DEFAULT_VERSION, null,
                                         (k) -> probeOptionalPlayStatus(sceneCode, taskType),
                                         (k) -> probeOptionalPlayExhausted(sceneCode, taskType),
-                                        false));
+                                        false).withScene("ANTFOREST"));
                         // 被当日标记挡下（已试过）不算推进，否则每轮都白转一遍
                         if (outcome != Outcome.TRIED_TODAY && outcome != Outcome.SKIPPED) {
                             progressed = true;
@@ -4566,8 +4570,10 @@ public class AntForestV2 extends ModelTask {
             // 不支持rpc调用（400000040）→ 换另一种实现方案（doFarmTask 伪申报）；
             // 响应不可信，成败仍以任务列表为准（下一轮列表 FINISHED 即去领奖）
             if (TaskAlternative.hit(jo, sceneCode)) {
+                // 本家值：保护地任务场景 + ANTFOREST
                 TaskAlternative.trigger(null, null, title, taskType, sceneCode,
-                        TaskAlternative.DEFAULT_VERSION, "新版保护地🌲", Log::forest);
+                        TaskAlternative.DEFAULT_VERSION, sceneCode, "ANTFOREST",
+                        "新版保护地🌲", Log::forest);
                 return true;
             }
             if (MessageUtil.checkSuccess(TAG, jo)) {

@@ -1649,7 +1649,9 @@ public class AntMember extends ModelTask {
             TaskAttemptPolicy.handle("member::game::" + taskId, subTitle, null,
                     () -> attemptDoTask(taskObj, taskId, subTitle, actionType, prizeAmount), Log::other,
                     new TaskAttemptPolicy.Site(null, "游戏中心", null, taskObj.optString("sceneCode", "").trim(),
-                            (k) -> probeMemberStatus(taskId)));
+                            (k) -> probeMemberStatus(taskId))
+                            // 场景码取任务自带（会员各入口不同），不能用庄园的
+                            .withScene(taskObj.optString("sceneCode", "").trim()));
         }
         catch (Throwable t) {
             Log.err(TAG, "doTask err:", t);
@@ -1676,8 +1678,9 @@ public class AntMember extends ModelTask {
                 if (bizKey.isEmpty()) {
                     bizKey = taskId;
                 }
+                // 场景码也用任务自带的（原先走兜底默认的庄园，属跨模组冒用）
                 TaskAlternative.trigger(pendingVerifyTasks, taskId, subTitle, bizKey, sceneCode,
-                        AntMemberRpcCall.DO_FARM_TASK_VERSION, "游戏中心", msg -> Log.other(msg));
+                        AntMemberRpcCall.DO_FARM_TASK_VERSION, sceneCode, "游戏中心", msg -> Log.other(msg));
                 return Outcome.FORGED;
             }
             Log.other("游戏中心⚠️未完成[" + subTitle + "]");

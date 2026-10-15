@@ -312,7 +312,9 @@ public class AntOrchard extends ModelTask {
                                     () -> attemptChouChouLeFinish(taskSceneCode, taskType, taskName), Log::farm,
                                     new TaskAttemptPolicy.Site("OrchardChouChouLeTaskList", "农场抽抽乐",
                                             taskType, taskSceneCode,
-                                            (k) -> probeOrchardChouChouLeStatus(sceneCode, taskSceneCode, taskType)));
+                                            (k) -> probeOrchardChouChouLeStatus(sceneCode, taskSceneCode, taskType))
+                                            // 本家值：ORCHARD + ANTFARM_ORCHARD
+                                            .withScene("ORCHARD").withSource("ANTFARM_ORCHARD"));
                             if (outcome == Outcome.DONE || outcome == Outcome.TRIGGERED
                                     || outcome == Outcome.AWARDED) {
                                 doublecheck = true;
@@ -525,7 +527,8 @@ public class AntOrchard extends ModelTask {
                                 new TaskAttemptPolicy.Site("AntOrchardTaskList", "农场乐园限定任务",
                                         taskType, sceneCode, TaskAlternative.DEFAULT_VERSION, null,
                                         (k) -> probeOrchardOptionalPlayStatus(sceneCode, taskType),
-                                        (k) -> probeOrchardOptionalPlayExhausted(sceneCode, taskType)));
+                                        (k) -> probeOrchardOptionalPlayExhausted(sceneCode, taskType))
+                                        .withScene("ORCHARD").withSource("ANTFARM_ORCHARD"));
                         // 被当日标记挡下（已试过）不算推进，否则每轮都白转一遍
                         if (outcome != Outcome.TRIED_TODAY && outcome != Outcome.SKIPPED) {
                             progressed = true;
@@ -2114,7 +2117,8 @@ public class AntOrchard extends ModelTask {
                                 () -> attemptLimitedTimeVisit(sceneCode, childTaskId), Log::farm,
                                 new TaskAttemptPolicy.Site("AntOrchardTaskList", "农场限时挑战",
                                         childTaskId, sceneCode,
-                                        (k) -> probeLimitedTimeChildStatus(childTaskId)));
+                                        (k) -> probeLimitedTimeChildStatus(childTaskId))
+                                        .withScene("ORCHARD").withSource("ANTFARM_ORCHARD"));
                         break;
 
                     default:
