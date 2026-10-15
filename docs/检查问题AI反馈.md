@@ -1,25 +1,44 @@
 # 检查问题 AI 反馈
 
-检查对象：`my_dev` 分支，HEAD `e14055ff`（信用宝箱与科学放生）、`954b2d0e`（真爱双奖励确认）。
-检查方式：只读审查，未改代码。对照 Seedum FluxV15 5406 动态模块（semper.js 20261012）字节码函数 2698、3430、3268。
+检查对象：`my_dev` 分支，合并提交 `4a36095c`（合入上游 `fe02d4d4`，包含 `69489b1e` 和 `a8b9922c`）。
+检查方式：只读审查，未改代码。对照上游原始提交，并检查了改动所在功能的完整流程，不只看 diff。
 
-验证结果：`check_seedum_features`、`check_ocean_friend_flow` 通过。
+覆盖的功能：
 
-当前无必须修改的代码问题。上一轮两项都已处理。
+- 森林寻宝活力值兑换：`ForestChouChouLe.chouChouLescene` 整个循环，包括 FINISHED 领奖分支、兑换分支、`probeChouChouLeStatus` 和 `TaskAward.confirmReceivedOrBlackList`。
+- 森林乐园限定任务：`AntForestV2.queryOptionalPlay` 整个循环，包括开箱分支和 `openForestLeyuanBoxes`。
+- `TaskAttemptPolicy.handle` 的回查、延迟拉黑和兜底流程，以及 `probeWithPolling`。
+- 交易/履约拦截：`TaskAlternative.isTransactionTask` 的所有调用点。重点核对了庄园抽抽乐的三条路径：`doFarmTask` 两种重载和 `TaskAlternative.request`。
 
-## 上一轮问题的核对结果
+验证结果：`check_task_attempt_policy`、`check_forest_task_policy`、`check_upstream_oct15`、`check_farm_task_flow`、`check_forest_farm_progress`、`check_upstream_merge`、`check_merge_review` 全部通过。
 
-问题 1 已处理。科学放生的入口日志已删除；信用宝箱的入口日志移到开关开启的分支内，关闭时不写。
+当前没有必须修改的代码问题。
 
-问题 2 已处理。`creditGameCenterPending(root, allowMissing)` 在首次查询时，`taskModule` 或 `needReceive` 缺失、为 null，都按“暂无待领宝箱”处理，与 Seedum 2698 一致；查询失败或字段类型错误仍报未确认。
+## 核对结论
+
+1. 兑换流程没有照搬上游，保留了 M 的写法，结果正确。
+   - 上游把兑换包进 `TaskAttemptPolicy.handle`，靠 30 秒轮询等待列表落定。M 直接调用 `attemptExchangeVitality`，并在每次兑换后立即领奖。
+   - 下面几种状态的流程都已核对，没有重复兑换，也没有重复领奖：
+     - 从 TODO 开始；
+     - FINISHED 中间态（1/2）；
+     - RECEIVED 中间态（1/2）；
+     - 领奖后列表仍是旧的 FINISHED。
+   - 进度缺失或无效时不兑换。原来 `rightsTimesLimit<=0` 会兜底兑换 1 次，这个兜底已取消。上游在这种情况下用 `getInt` 抛异常，也同样不会兑换，所以两边结果一致。
+2. 开箱类乐园任务改为直接开箱。
+   - 额度不足时返回 UNABLE，但不写当日标记，也不走伪申报。
+   - 本轮用 `attempted` 去重，不会死循环。
+   - 开箱后回查额度没有减少时，标记为未完成，并在本轮停止。
+3. `TaskAttemptPolicy` 只在 DONE 时轮询，其他结果只单次回查。
+   - `pr == null` 按 UNKNOWN 处理，所以不会拉黑，也不会写失败标记，这和 M 原有的保护一致。
+   - `PROBE_ROUNDS` 已改为 10，与上游一致。
+4. `choukuan` 拦截已生效。
+   - 庄园抽抽乐的兜底分支会先用 `isTransactionTask(bizKey)` 跳过这类任务。
+   - `TaskAlternative.request` 和 `doFarmTask(bizKey)` 内部也会拦截，返回 `{}`。
+   - 返回的 `{}` 里没有“不支持rpc调用”文案，所以不会被误拉黑。
 
 ## 实机时留意（低优先级，不阻塞）
 
-1. **领取后回查仍要求 `needReceive` 明确为 false。** 回查时调用 `creditGameCenterPending(after, false)`，字段缺失返回 null，会记“回查失败或结构无效”并标记未完成。如果服务端在没有宝箱时不返回 `needReceive`，那么每次领取成功都会被记成未确认。Seedum 判断领取结果看的是领取回执（3430 读 `data.prizePopup.prizeItems`），不靠回查。有宝箱实测时看日志：如果领取确实到账却出现“回查失败或结构无效”，把回查改成与首次查询相同的缺省处理即可。
-2. **查询成功但没有 `data` 字段时仍按失败处理**（`data == null` 直接返回 null）。Seedum 在这种情况下按没有宝箱处理。实际回执应当都有 `data`，只是边界差异。
-
-## 与 Seedum 的行为差异（M 的取舍，不算缺陷）
-
-- 信用宝箱只领取已有的宝箱，不替用户玩游戏任务；Seedum 在 `dailyTaskCertCnt < dailyTaskCertCntUpperLimit` 时会先完成游戏任务来产生宝箱。所以不手动玩游戏就不会有宝箱可领。
-- 信用宝箱每轮只领一次；Seedum 领取成功后会重查并继续领取，直到没有。
-- 科学放生每轮最多 10 次并核对阶段推进；Seedum 没有上限，也不核对推进。
+1. 兑换后 1.5 秒就领奖。如果服务端异步落定较慢，领奖会失败，回查结果仍是 TODO，本轮会停止后续兑换（日志：“兑换后领奖未确认，本轮不继续兑换”）。
+   - 外层重拉列表时，就算状态已经变成 FINISHED，也会因为 `handledThisRun` 里已有 `taskType` 而跳过领奖。
+   - 这一档奖励要等下一轮森林任务才领取，不会丢失。
+   - 如果日志里经常出现这条提示，可以在领奖前加一次短轮询回查。
