@@ -111,20 +111,27 @@ public class ForestChouChouLe {
                         int rightsTimes = taskRights != null ? taskRights.optInt("rightsTimes") : 0;
                         int rightsTimesLimit = taskRights != null ? taskRights.optInt("rightsTimesLimit") : 0;
                         boolean vitalityExchange = taskType.equals("NORMAL_DRAW_EXCHANGE_VITALITY");
-                        if (vitalityExchange && (taskSceneCode.isEmpty() || taskRights == null
-                                || !(taskRights.opt("rightsTimes") instanceof Number)
-                                || !(taskRights.opt("rightsTimesLimit") instanceof Number)
-                                || rightsTimes < 0 || rightsTimesLimit <= 0 || rightsTimes > rightsTimesLimit)) {
-                            Log.forest("森林寻宝🧾[" + taskName + "]兑换进度缺失或无效，本轮不兑换/领奖");
+                        boolean validProgress = taskRights != null
+                                && taskRights.opt("rightsTimes") instanceof Number
+                                && taskRights.opt("rightsTimesLimit") instanceof Number
+                                && rightsTimes >= 0 && rightsTimesLimit > 0 && rightsTimes <= rightsTimesLimit;
+                        if (vitalityExchange && (taskSceneCode.isEmpty()
+                                || (!validProgress && !taskStatus.equals("FINISHED")))) {
+                            Log.forest("森林寻宝🧾[" + taskName + "]兑换进度或场景无效，本轮不提交请求");
                             continue;
                         }
-                        String claimKey = "forest::chouchoule::exchange::award::" + taskSceneCode
-                                + "/" + taskType + "#" + rightsTimes;
+                        String claimKey = validProgress ? "forest::chouchoule::exchange::award::" + taskSceneCode
+                                + "/" + taskType + "#" + rightsTimes : null;
 
                         // 已完成任务领取奖励
                         if (taskStatus.equals("FINISHED")) {
-                            if (vitalityExchange && (Status.hasFlagToday(claimKey) || handledThisRun.contains(taskType)
-                                    || !handledThisRun.add("award::" + taskType + "#" + rightsTimes))) continue;
+                            if (vitalityExchange) {
+                                if (!validProgress) {
+                                    if (!handledThisRun.add(taskType)) continue;
+                                    Log.forest("森林寻宝🧾[" + taskName + "]档位无效，仅尝试领取已完成奖励，本轮不兑换");
+                                } else if (Status.hasFlagToday(claimKey) || handledThisRun.contains(taskType)
+                                        || !handledThisRun.add("award::" + taskType + "#" + rightsTimes)) continue;
+                            }
                             TimeUtil.sleep(2000);
                             JSONObject sginRes = MyUtils.newJSONObject(AntForestRpcCall.receiveTaskAwardopengreen("task_entry", taskSceneCode, taskType));
                             boolean claimed;
@@ -143,7 +150,7 @@ public class ForestChouChouLe {
                                         () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("AntForestHuntTaskList", taskName, sginRes),
                                         msg -> Log.forest(msg));
                             }
-                            if (vitalityExchange && claimed) Status.flagToday(claimKey, taskUid);
+                            if (vitalityExchange && validProgress && claimed) Status.flagToday(claimKey, taskUid);
                             continue;
                         }
 

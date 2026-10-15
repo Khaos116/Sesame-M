@@ -3686,9 +3686,10 @@ public class AntForestV2 extends ModelTask {
      */
     private TaskAttemptPolicy.Forge forestVitalityForge(String taskType, String sceneCode, String taskTitle,
                                                         JSONObject bizInfo) {
-        // 「进页面看一眼」类（EFFECTIVE_TASK）：完成条件就是这个上报动作本身，
-        // 不消耗能量也不依赖好友列表，故优先且无条件尝试
-        if (isTakeLookVitalityTask(taskType, taskTitle, bizInfo)) {
+        // 原营销任务保持优先级；跳转元数据不能抢占真实浇水或能量雨。
+        if (isTakeLookVitalityTask(taskType, taskTitle, null)
+                || (!isWaterVitalityTask(taskType, taskTitle) && !isEnergyRainVitalityTask(taskType, taskTitle)
+                    && isTakeLookVitalityTask(taskType, taskTitle, bizInfo))) {
             return () -> {
                 try {
                     if (bizInfo != null && bizInfo.opt("taskJumpUrl") instanceof String

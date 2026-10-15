@@ -18,7 +18,10 @@ public class ForestTaskPolicyCheck {
  boolean isUnwrapAction(String type){return "ACC_UNWRAP".equals(type)||"UNWRAP".equals(type);}
  int boxCalls;
  TaskAttemptPolicy.Outcome openForestLeyuanBoxes(String title){boxCalls++;return TaskAttemptPolicy.Outcome.UNABLE;}
- boolean canWaterFriend(){return false;}void waterFriendEnergy(){}void startEnergyRain(){}
+ boolean waterEnabled;int waterCalls,rainCalls;
+ boolean canWaterFriend(){return waterEnabled;}
+ void waterFriendEnergy(){waterCalls++;AntForestRpcCall.snapshot.optJSONObject(0).optJSONObject("taskBaseInfo").put("taskStatus","FINISHED");}
+ void startEnergyRain(){rainCalls++;AntForestRpcCall.snapshot.optJSONObject(0).optJSONObject("taskBaseInfo").put("taskStatus","FINISHED");}
  boolean probeVitalityDone(String scene,String type){return TaskAttemptPolicy.isDone(probeForestVitalityStatus(scene,type));}
  static class MyUtils {static boolean closeUnRpc(){return false;}static JSONObject newJSONObject(){return new JSONObject();}
   static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
@@ -136,6 +139,16 @@ public class ForestTaskPolicyCheck {
   check(!f.forestVitalityForge("browse","scene","browse",effective).run(),"Successful look response alone must not confirm task");
   AntForestRpcCall.failTakeLook=true;check(!f.forestVitalityForge("browse","scene","browse",effective).run(),"Invalid look request must preserve failure semantics");
   AntForestRpcCall.failTakeLook=false;AntForestRpcCall.cancelAttempt=true;expectCancel(()->f.forestVitalityForge("browse","scene","browse",effective).run());
+  for(JSONObject meta:List.of(new JSONObject().put("taskJumpUrl","https://example.test/native-task"),new JSONObject().put("taskAccEffectiveType","EFFECTIVE_TASK")))for(String type:List.of("watering_daily","energyRain_daily")){
+   resetTakeLook();f.waterEnabled=true;f.waterCalls=f.rainCalls=0;
+   AntForestRpcCall.snapshot=new JSONArray().put(task(type,"TODO"));
+   TaskAttemptPolicy.Forge action=f.forestVitalityForge(type,"scene","native action",meta);
+   check(action!=null&&action.run()&&AntForestRpcCall.takeLookWrites==0&&f.waterCalls==("watering_daily".equals(type)?1:0)&&f.rainCalls==("energyRain_daily".equals(type)?1:0),"Jump metadata must not override real action: "+type);
+  }
+  resetTakeLook();f.waterEnabled=false;
+  check(f.forestVitalityForge("watering_daily","scene","water",new JSONObject().put("taskJumpUrl","https://example.test/water"))==null,"Disabled watering must not fall back to a look action");
+  resetTakeLook();f.waterEnabled=true;f.waterCalls=0;AntForestRpcCall.completeTakeLook=true;AntForestRpcCall.snapshot=new JSONArray().put(task("zhrw_jiaoshui","TODO"));
+  check(f.forestVitalityForge("zhrw_jiaoshui","scene","water",new JSONObject().put("taskJumpUrl","https://example.test/water")).run()&&AntForestRpcCall.takeLookWrites==1&&f.waterCalls==0,"Legacy marketing look task must retain priority");f.waterEnabled=false;
   reset();f.boxCalls=0;
   AntForestRpcCall.optionalOverride="{success:true,taskTriggerPlayInfo:{taskList:[{taskStatus:TODO,sceneCode:scene,taskType:unwrap,rightsTimes:0,rightsTimesLimit:10,bizInfo:{title:boxes,actionType:UNWRAP}}]}}";
   f.queryOptionalPlay();
@@ -269,8 +282,16 @@ public class ForestTaskPolicyCheck {
     check(AntForestRpcCall.exchangeWrites==2&&AntForestRpcCall.snapshot.optJSONObject(0).optJSONObject("taskRights").optInt("rightsTimes")==2,"Unconfirmed claim must resume next run without repeating exchange");
    }
   }
-  reset();AntForestRpcCall.exchangeStages=true;AntForestRpcCall.snapshot=new JSONArray().put(task("NORMAL_DRAW_EXCHANGE_VITALITY","FINISHED"));
-  stages.chouChouLe(false,false,Set.of(),false,false,Set.of());check(AntForestRpcCall.exchangeAwards==0&&Status.flags.isEmpty(),"Missing award stage must not claim or persist default stage zero");
+  for(Object progress:new Object[]{JSONObject.NULL,new JSONObject().put("rightsTimes",-1).put("rightsTimesLimit",2),new JSONObject().put("rightsTimes",0).put("rightsTimesLimit","bad")}){
+   reset();AntForestRpcCall.exchangeStages=AntForestRpcCall.staleExchangeAward=true;
+   AntForestRpcCall.snapshot=new JSONArray().put(task("NORMAL_DRAW_EXCHANGE_VITALITY","FINISHED").put("taskRights",progress));
+   stages.chouChouLe(false,false,Set.of(),false,false,Set.of());
+   check(AntForestRpcCall.exchangeAwards==1&&AntForestRpcCall.exchangeWrites==0&&Status.flags.isEmpty(),"FINISHED without valid progress must claim once without exchanging or persisting fake stage");
+   stages.chouChouLe(false,false,Set.of(),false,false,Set.of());
+   check(AntForestRpcCall.exchangeAwards==2&&AntForestRpcCall.exchangeWrites==0&&Status.flags.isEmpty(),"Unknown award stage must remain retryable on a later run");
+  }
+  reset();AntForestRpcCall.exchangeStages=true;JSONObject missingScene=task("NORMAL_DRAW_EXCHANGE_VITALITY","FINISHED");missingScene.optJSONObject("taskBaseInfo").remove("sceneCode");AntForestRpcCall.snapshot=new JSONArray().put(missingScene);
+  stages.chouChouLe(false,false,Set.of(),false,false,Set.of());check(AntForestRpcCall.exchangeAwards==0,"Missing award RPC context must still stop claiming");
   AntForestRpcCall.snapshot=new JSONArray().put(task("stage","TODO").put("taskRights",new JSONObject().put("rightsTimes",4)));
   check(stages.probeChouChouLeStatus("activity","scene","stage",3)==TaskAttemptPolicy.ProbeResult.FINISHED,"advanced draw stage treated as failure");
   check(stages.probeChouChouLeStatus("activity","scene","stage",4)==TaskAttemptPolicy.ProbeResult.TODO,"unchanged draw stage treated as complete");
