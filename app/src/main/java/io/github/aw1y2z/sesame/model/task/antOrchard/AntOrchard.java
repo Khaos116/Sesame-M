@@ -305,16 +305,22 @@ public class AntOrchard extends ModelTask {
                             continue;
                         }
                         for (int cnt = 0; cnt < remain; cnt++) {
+                            TaskAttemptPolicy.Site chouChouLeSite = new TaskAttemptPolicy.Site(
+                                    "OrchardChouChouLeTaskList", "农场抽抽乐",
+                                    taskType, taskSceneCode,
+                                    (k) -> probeOrchardChouChouLeStatus(sceneCode, taskSceneCode, taskType))
+                                    // 本家值：ORCHARD + ANTFARM_ORCHARD
+                                    .withScene("ORCHARD").withSource("ANTFARM_ORCHARD");
+                            if (cnt < remain - 1) {
+                                // 多档里程碑的中间档：列表要打满才变完成，列表复核会误判"未完成"、挡住下一档
+                                chouChouLeSite = chouChouLeSite.withTrustResponse();
+                            }
                             Outcome outcome = TaskAttemptPolicy.handle(
                                     "orchard::chouchoule::" + taskSceneCode + "/" + taskType
                                             + "#" + (rightsTimes + cnt) + "@" + loopCount,
                                     taskName, null,
                                     () -> attemptChouChouLeFinish(taskSceneCode, taskType, taskName), Log::farm,
-                                    new TaskAttemptPolicy.Site("OrchardChouChouLeTaskList", "农场抽抽乐",
-                                            taskType, taskSceneCode,
-                                            (k) -> probeOrchardChouChouLeStatus(sceneCode, taskSceneCode, taskType))
-                                            // 本家值：ORCHARD + ANTFARM_ORCHARD
-                                            .withScene("ORCHARD").withSource("ANTFARM_ORCHARD"));
+                                    chouChouLeSite);
                             if (outcome == Outcome.DONE || outcome == Outcome.TRIGGERED
                                     || outcome == Outcome.AWARDED) {
                                 doublecheck = true;
@@ -521,14 +527,21 @@ public class AntOrchard extends ModelTask {
                                 + (rightsTimesLimit > 1 ? "#" + rightsTimes : "");
                         // 走统一策略：400000040 时由 TaskAttemptPolicy 代为 doFarmTask 伪申报，
                         // 裸调 finishTask 会把 UNSUPPORTED 吞成 false，兜底永不触发
+                        TaskAttemptPolicy.Site playSite = new TaskAttemptPolicy.Site(
+                                "AntOrchardTaskList", "农场乐园限定任务",
+                                taskType, sceneCode, TaskAlternative.DEFAULT_VERSION, null,
+                                (k) -> probeOrchardOptionalPlayStatus(sceneCode, taskType),
+                                (k) -> probeOrchardOptionalPlayExhausted(sceneCode, taskType))
+                                .withScene("ORCHARD").withSource("ANTFARM_ORCHARD");
+                        if (rightsTimesLimit > 1 && rightsTimes + 1 < rightsTimesLimit) {
+                            // 多档里程碑的中间档（这次做完还有余量）：列表要打满才变完成，
+                            // 列表复核会把它误判"未完成"，进而挡住后续档位
+                            playSite = playSite.withTrustResponse();
+                        }
                         Outcome outcome = TaskAttemptPolicy.handle(
                                 policyKey, label, null,
                                 () -> attemptFinishOptionalPlayTask(sceneCode, taskType, label), Log::farm,
-                                new TaskAttemptPolicy.Site("AntOrchardTaskList", "农场乐园限定任务",
-                                        taskType, sceneCode, TaskAlternative.DEFAULT_VERSION, null,
-                                        (k) -> probeOrchardOptionalPlayStatus(sceneCode, taskType),
-                                        (k) -> probeOrchardOptionalPlayExhausted(sceneCode, taskType))
-                                        .withScene("ORCHARD").withSource("ANTFARM_ORCHARD"));
+                                playSite);
                         // 被当日标记挡下（已试过）不算推进，否则每轮都白转一遍
                         if (outcome != Outcome.TRIED_TODAY && outcome != Outcome.SKIPPED) {
                             progressed = true;

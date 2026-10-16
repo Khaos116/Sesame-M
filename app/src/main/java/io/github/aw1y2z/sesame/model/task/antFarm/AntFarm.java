@@ -2870,18 +2870,27 @@ public class AntFarm extends ModelTask {
                         // 开箱类任务的尝试动作 = 真去开箱（申报完成对它是无效动作）
                         final boolean unwrapTask = isUnwrapAction(actionType);
                         final String taskTitleForLog = title;
+                        TaskAttemptPolicy.Site playSite = new TaskAttemptPolicy.Site(
+                                "AntFarmDrawMachineTaskList", "庄园乐园限定任务",
+                                taskType, sceneCode, TaskAlternative.DEFAULT_VERSION, null,
+                                (k) -> probeOptionalPlayStatus(sceneCode, taskType),
+                                (k) -> probeOptionalPlayExhausted(sceneCode, taskType),
+                                unwrapTask);
+                        if (rightsTimesLimit > 1 && rightsTimes + 1 < rightsTimesLimit) {
+                            // 多档里程碑的中间档（这次做完还有余量）：列表要打满才变完成，
+                            // 列表复核会把它误判"未完成"，进而挡住后续档位
+                            playSite = playSite.withTrustResponse();
+                        }
                         Outcome outcome = TaskAttemptPolicy.handle(
                                 policyKey, label, null,
                                 () -> unwrapTask
                                         ? openFarmLeyuanBoxes(taskTitleForLog)
                                         : attemptOptionalPlayTask(sceneCode, taskType, label), Log::farm,
-                                new TaskAttemptPolicy.Site("AntFarmDrawMachineTaskList", "庄园乐园限定任务",
-                                        taskType, sceneCode, TaskAlternative.DEFAULT_VERSION, null,
-                                        (k) -> probeOptionalPlayStatus(sceneCode, taskType),
-                                        (k) -> probeOptionalPlayExhausted(sceneCode, taskType),
-                                        unwrapTask));
-                        // 被当日标记挡下（已试过）不算推进，否则每轮都白转一遍
-                        if (outcome != Outcome.TRIED_TODAY && outcome != Outcome.SKIPPED) {
+                                playSite);
+                        // 只有真正推进了才算"本轮有新动作"：做不了（UNABLE）与临时故障（RETRY）
+                        // 不该让外层重拉列表空转，被当日标记挡下（TRIED_TODAY）同样不算
+                        if (outcome == Outcome.DONE || outcome == Outcome.TRIGGERED
+                                || outcome == Outcome.AWARDED) {
                             progressed = true;
                         }
                     }

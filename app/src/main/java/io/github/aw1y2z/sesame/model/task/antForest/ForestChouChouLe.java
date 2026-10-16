@@ -166,17 +166,24 @@ public class ForestChouChouLe {
                                 }
                                 // 用"本轮已做几次"作 key：同一次兑换重拉列表时会命中同一条当日标记、
                                 // 不会重复请求；不同次数各自成键，不至于第一次就把后面几次一起挡死。
+                                TaskAttemptPolicy.Site exchangeSite = new TaskAttemptPolicy.Site(
+                                        "AntForestHuntTaskList", "森林寻宝",
+                                        taskType, taskSceneCode,
+                                        (k) -> probeChouChouLeStatus(sceneCode, taskSceneCode, taskType),
+                                        (k) -> rightsTimes >= rightsTimesLimit)
+                                        .withScene(taskSceneCode).withSource("ADBASICLIB");
+                                if (cnt < remain - 1) {
+                                    // 多档里程碑的**中间档**：一次兑换不会让列表变完成（兑换满才 FINISHED），
+                                    // 列表复核在这里永远判"未完成"，会把成功的兑换改判成做不了、挡住下一档。
+                                    // 最后一档仍走列表复核，保留"响应撒谎"的兜底。
+                                    exchangeSite = exchangeSite.withTrustResponse();
+                                }
                                 Outcome exchangeOutcome = TaskAttemptPolicy.handle(
                                         "forest::chouchoule::exchange::" + taskSceneCode + "/" + taskType
                                                 + "#" + doneToday,
                                         taskName, null,
                                         () -> attemptExchangeVitality(activityId, sceneCode, taskSceneCode, taskType, taskName),
-                                        Log::forest,
-                                        new TaskAttemptPolicy.Site("AntForestHuntTaskList", "森林寻宝",
-                                                taskType, taskSceneCode,
-                                                (k) -> probeChouChouLeStatus(sceneCode, taskSceneCode, taskType),
-                                                (k) -> rightsTimes >= rightsTimesLimit)
-                                                .withScene(taskSceneCode).withSource("ADBASICLIB"));
+                                        Log::forest, exchangeSite);
                                 if (exchangeOutcome != Outcome.DONE && exchangeOutcome != Outcome.TRIGGERED
                                         && exchangeOutcome != Outcome.AWARDED) {
                                     break; // 做不了就收手，不再空转剩余次数
