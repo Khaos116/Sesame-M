@@ -5207,9 +5207,15 @@ public class AntForestV2 extends ModelTask {
             // 必须先把模式切到组队，个人模式的返回体里没有 teamHomeResult，取不到 teamId
             int state = teamState(homeJo);
             if (state < 0) {
-                // 无法判定组队状态（字段缺失/异常）：不主动改账户设置，直接跳过
-                Log.record("无法判定组队状态，跳过组队合种浇水");
-                return;
+                // nextAction 取值不稳定（线上部分账号缺失/异常）：用 teamHomeResult.mainMember 兜底，
+                // 该字段只有组队主页才下发，比 nextAction 字面量更可靠（与 isTeam 一致）。
+                // 命中则视为已在组队（不切换、直接取 teamId 浇水），否则保守跳过、不主动改账户设置。
+                if (isTeam(homeJo)) {
+                    state = 1;
+                } else {
+                    Log.record("无法判定组队状态，跳过组队合种浇水");
+                    return;
+                }
             }
             if (state == 0) {
                 Log.record("不在队伍模式,已为您切换至组队浇水");
