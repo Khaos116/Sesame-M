@@ -294,7 +294,7 @@ public class AntForestV2 extends ModelTask {
     private BooleanModelField ForestHuntHelp;
     private SelectModelField ForestHuntHelpList;
 
-    private SelectModelField continuousUseCardOptions;
+    private SelectAndCountModelField continuousUseCardOptions;
 
     private BooleanModelField autoUseShieldCard;
     private IntegerModelField continuousUseShieldHour;
@@ -327,7 +327,7 @@ public class AntForestV2 extends ModelTask {
         modelFields.addField(retryInterval = new IntegerModelField("retryInterval", "重试间隔(毫秒)", 1000, 0, 10000));
         modelFields.addField(drawGameCenterAward = new BooleanModelField("drawGameCenterAward", "森林乐园 | 游戏宝箱", true));
         modelFields.addField(CollectBombEnergyLimit = new IntegerModelField("CollectBombEnergyLimit", "单个炸弹能量大于该值收取", 0, 0, 100000));
-        modelFields.addField(continuousUseCardOptions = new SelectModelField("continuousUseCardOptions", "连续兑换使用道具卡片 | 选项", new LinkedHashSet<>(), CustomOption::getContinuousUseCardOptions));
+        modelFields.addField(continuousUseCardOptions = new SelectAndCountModelField("continuousUseCardOptions", "连续兑换使用道具卡片", new LinkedHashMap<>(), CustomOption::getContinuousUseCardOptions, "请填写使用次数(每日,0不限)"));
         modelFields.addField(autoUseShieldCard = new BooleanModelField("autoUseShieldCard", "自动续用保护罩", false));
         modelFields.addField(continuousUseShieldHour = new IntegerModelField("continuousUseShieldHour", "自动续用保护罩(小时)", 24, 1, 168).setDependsOn("autoUseShieldCard"));
         //modelFields.addField(doubleClickType = new ChoiceModelField("doubleClickType", "双击卡 | " + "自动使用", UsePropType.CLOSE, UsePropType.nickNames));
@@ -3576,9 +3576,20 @@ public class AntForestV2 extends ModelTask {
 
     private void continuousUseAndExchangeCard(String propGroupType, String exchangeProp) {
         try {
-            if (propGroupType.equals("shield") || continuousUseCardOptions.getValue().contains(propGroupType)) {
+            if (propGroupType.equals("shield") || continuousUseCardOptions.contains(propGroupType)) {
                 long continuousUseCardSecond = continuousUseCardCheak(propGroupType);
-                if (continuousUseCardSecond >= 0) {
+                // 仅当"未使用且可用"（==0）才处理：使用中（>0）或不可用（-1）都不消耗
+                if (continuousUseCardSecond == 0) {
+                    // 每日使用次数上限（0 = 不限制）：达到后当天不再消耗该卡片，也不再兑换补充
+                    Integer optLimit = continuousUseCardOptions.get(propGroupType);
+                    int cardLimit = optLimit == null ? 0 : optLimit;
+                    if (cardLimit > 0) {
+                        int used = Status.getIntFlagToday("continuousUseCard::count::" + propGroupType);
+                        if (used >= cardLimit) {
+                            Log.forest("连续兑换使用道具卡片🌟[" + propGroupType + "]今日已用满[" + used + "/" + cardLimit + "]#停止");
+                            return;
+                        }
+                    }
                     TimeUtil.sleep(500);
                     JSONObject rightCard = chooseContinuousLIMITTIMECard(propGroupType);
                     if (rightCard == null) {
@@ -3613,10 +3624,19 @@ public class AntForestV2 extends ModelTask {
                         if (propIdList.length() == 0) {
                             return;
                         }
+                        // 当日使用次数上限（0 = 不限制）：达到后不再消耗该道具卡片（在真正消耗前拦截）
+                        // cardLimit 取自外层 if(==0) 块（每选项独立设置），此处直接复用
+                        if (cardLimit > 0) {
+                            int used = Status.getIntFlagToday("continuousUseCard::count::" + propGroupType);
+                            if (used >= cardLimit) {
+                                Log.forest("连续兑换使用道具卡片🌟[" + propGroupType + "]今日已用满[" + used + "/" + cardLimit + "]#停止");
+                                return;
+                            }
+                        }
                         String propId = propIdList.optString(0);
                         String propType = rightCard.optString("propType");
                         String propName = rightCard.getJSONObject("propConfigVO").getString("propName");
-                        JSONObject joResult;
+                        JSONObject joResult = null;
                         switch (propGroupType) {
                             case "doubleClick":
                             case "shield":
@@ -3649,6 +3669,11 @@ public class AntForestV2 extends ModelTask {
                                     Log.forest("使用道具🎭[" + propName + "]");
                                 }
                                 break;*/
+                        }
+                        // 使用成功才计入当日次数（上限已在循环开头拦截，此处不会多发请求）
+                        if (cardLimit > 0 && MessageUtil.checkResultCode(TAG, joResult)) {
+                            Status.setIntFlagToday("continuousUseCard::count::" + propGroupType,
+                                    Status.getIntFlagToday("continuousUseCard::count::" + propGroupType) + 1);
                         }
                         continuousUseCardSecond = continuousUseCardCheak(propGroupType);
                         if (continuousUseCardSecond < 0) {
