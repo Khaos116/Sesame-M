@@ -3499,16 +3499,10 @@ public class AntForestV2 extends ModelTask {
                         // 开箱类任务的尝试动作 = 真去开箱（申报完成对它是无效动作）；
                         // 其余任务仍走 finishTask 上报
                         final boolean unwrapTask = isUnwrapAction(actionType);
-                        final String taskTitleForLog = title;
                         if (unwrapTask) {
-                            // 开箱类任务（如"开10个乐园宝箱"）的完成条件是服务端累计开箱计数，需多日累计，
-                            // 单次只能开掉当天额度；且 doforestgame 已用同一 quotaCanUse 池开过当日宝箱，
-                            // 这里再开必然读到 0。故不走 TaskAttemptPolicy 的"一次做完"语义（会把累计任务误判成失败/打今日标记），
-                            // 直接开箱、开不到就交给每日累计与 Finished 分支领奖。
-                            Outcome uo = openForestLeyuanBoxes(taskTitleForLog);
-                            if (uo == Outcome.DONE) {
-                                progressed = true;
-                            }
+                            // 开箱类任务（如"开10个乐园宝箱"）的完成条件是服务端累计开箱计数，由 doforestgame()
+                            // 统一开箱（本方法之前已跑、用尽当天额度）；这里若再开必然读到 0 箱子、每轮重拉都刷
+                            // "暂无可开宝箱"。未达满额时直接交给次日累计与上方 Finished 分支领奖即可。
                             continue;
                         }
                         Outcome outcome = TaskAttemptPolicy.handle(
@@ -3519,8 +3513,10 @@ public class AntForestV2 extends ModelTask {
                                         (k) -> probeOptionalPlayStatus(sceneCode, taskType),
                                         (k) -> probeOptionalPlayExhausted(sceneCode, taskType),
                                         false).withScene("ANTFOREST"));
-                        // 被当日标记挡下（已试过）不算推进，否则每轮都白转一遍
-                        if (outcome != Outcome.TRIED_TODAY && outcome != Outcome.SKIPPED) {
+                        // 只有真正推进了才算"本轮有新动作"：被当日标记挡下（已试过）、临时故障（RETRY）
+                        // 与做不了（UNABLE）都不该让外层重拉列表空转（与庄园一致）
+                        if (outcome == Outcome.DONE || outcome == Outcome.TRIGGERED
+                                || outcome == Outcome.AWARDED) {
                             progressed = true;
                         }
                     }
@@ -3541,41 +3537,6 @@ public class AntForestV2 extends ModelTask {
     /** 开箱类动作（累计开箱 N 个）：完成条件在服务端的开箱计数上，只能真开箱，申报无效 */
     private static boolean isUnwrapAction(String actionType) {
         return "ACC_UNWRAP".equals(actionType) || "UNWRAP".equals(actionType);
-    }
-
-    /**
-     * 开箱类乐园任务的尝试动作：把当前可开宝箱一次开完。
-     * <p>只开**待开的**（{@code quotaCanUse}），没有可开的就直接返回 UNABLE——
-     * 此时任务没完成是因为宝箱不够，不是接口不行，故让策略按"未完成"处理而不是伪申报。
-     */
-    private Outcome openForestLeyuanBoxes(String taskTitle) {
-        try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryGameList());
-            if (!MessageUtil.checkResultCode(TAG, jo)) {
-                return Outcome.RETRY;
-            }
-            JSONObject drawRights = jo.optJSONObject("gameCenterDrawRights");
-            if (drawRights == null) {
-                return Outcome.RETRY;
-            }
-            int perTime = drawRights.optInt("quotaPerTime", 100);
-            int canUseCount = perTime <= 0 ? 0 : drawRights.optInt("quotaCanUse") / perTime;
-            if (canUseCount <= 0) {
-                // 没有可开的箱子：完成不了是"箱子不够"，不是接口不支持，不能退到伪申报
-                Log.forest("森林乐园🎁[开10个乐园宝箱]暂无可开宝箱#待攒够箱子");
-                return Outcome.UNABLE;
-            }
-            JSONObject drawJo = new JSONObject(AntForestRpcCall.drawGameCenterAward(canUseCount));
-            if (!MessageUtil.checkResultCode(TAG, drawJo)) {
-                return MessageUtil.isRetryable(drawJo) || MessageUtil.isServerBusy(drawJo)
-                        ? Outcome.RETRY : Outcome.UNABLE;
-            }
-            Log.forest("森林乐园🎁开宝箱×" + canUseCount + "#用于[" + taskTitle + "]");
-            return Outcome.DONE;
-        } catch (Throwable t) {
-            Log.err(TAG, "openForestLeyuanBoxes err:", t);
-        }
-        return Outcome.RETRY;
     }
 
     /**
