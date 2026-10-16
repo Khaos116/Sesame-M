@@ -40,8 +40,8 @@ public class RemainingCheck {
         static void flagToday(String key) { flags.add(key); } static void ancientTreeToday(String city) { flags.add("ancient:"+city); } }
     static class RuntimeInfo { static RuntimeInfo value=new RuntimeInfo(); Map<String,String> map=new HashMap<>();
         static RuntimeInfo getInstance() { return value; } String getString(String key) { return map.getOrDefault(key,""); } void put(String key,String item) { map.put(key,item); } }
-    static class TaskAlternative { static String DEFAULT_VERSION="v"; static boolean isTransactionTask(String key) { return false; }
-        static JSONObject trigger(Map<String,String> p,String id,String title,String key,String scene,String version,String prefix,Consumer<String> log) { return null; } }
+    static class TaskAlternative { static String DEFAULT_VERSION="v",DEFAULT_SCENE_CODE="ANTFARM",DEFAULT_SOURCE="H5"; static boolean isTransactionTask(String key) { return false; }
+        static JSONObject trigger(Map<String,String> p,String id,String title,String key,String scene,String version,String module,String source,String prefix,Consumer<String> log) { return null; } }
     @@POLICY@@
     static class GreenFinanceRpcCall { static String response; static String greenFinanceIndex() { return response; }
         static void doTask(String id,String tag,String text) { } }

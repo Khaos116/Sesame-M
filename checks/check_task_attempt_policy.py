@@ -187,6 +187,34 @@ public class MergePolicyCheck {
   assert "quote\"\\".equals(new JSONArray(ApplicationHook.args).optJSONObject(0).optString("bizKey"));
   int writes=ApplicationHook.writes;try{TaskAlternative.request("","scene","source");throw new AssertionError();}
   catch(IllegalArgumentException expected){}assert ApplicationHook.writes==writes;
+  String quoted="quoted\"\\\n";
+  TaskAlternative.request(quoted,quoted,quoted,quoted,quoted);
+  JSONObject payload=new JSONArray(ApplicationHook.args).optJSONObject(0);
+  for(String field:List.of("bizKey","taskSceneCode","version","sceneCode","source"))assert quoted.equals(payload.optString(field)):field;
+  TaskAlternative.request("browse","task","version","ORCHARD");
+  payload=new JSONArray(ApplicationHook.args).optJSONObject(0);assert "ORCHARD".equals(payload.optString("sceneCode"))&&"H5".equals(payload.optString("source"));
+  for(String empty:Arrays.asList(null,""," ")) {
+   writes=ApplicationHook.writes;
+   try{TaskAlternative.request("browse","task","version",empty,"source");throw new AssertionError("Missing scene dispatched");}catch(IllegalArgumentException expected){}
+   try{TaskAlternative.request("browse","task","version","scene",empty);throw new AssertionError("Missing source dispatched");}catch(IllegalArgumentException expected){}
+   assert ApplicationHook.writes==writes;
+  }
+  ApplicationHook.reply="malformed";Map<String,String> notTriggered=new HashMap<>();
+  assert TaskAlternative.trigger(notTriggered,"id","title","browse","task","version","ORCHARD","ANTFARM_ORCHARD","prefix",logs::add)==null&&notTriggered.isEmpty();
+  assert TaskAttemptPolicy.handle("badFallback","title",null,()->TaskAttemptPolicy.Outcome.UNSUPPORTED,logs::add,
+   site(TaskAttemptPolicy.ProbeResult.TODO).withScene("ORCHARD").withSource("ANTFARM_ORCHARD"))==TaskAttemptPolicy.Outcome.RETRY;
+  assert !Status.hasFlagToday("attemptV2::badFallback")&&Status.getIntFlagToday("attemptTrigger::badFallback")==0;
+  ApplicationHook.reply="{\"resultCode\":\"102\"}";
+  assert TaskAttemptPolicy.handle("customScene","title",null,()->TaskAttemptPolicy.Outcome.UNSUPPORTED,logs::add,
+   site(TaskAttemptPolicy.ProbeResult.TODO).withScene("ORCHARD").withSource("ANTFARM_ORCHARD"))==TaskAttemptPolicy.Outcome.TRIGGERED;
+  payload=new JSONArray(ApplicationHook.args).optJSONObject(0);assert "ORCHARD".equals(payload.optString("sceneCode"))&&"ANTFARM_ORCHARD".equals(payload.optString("source"));
+  for(int stage=0;stage<3;stage++) {
+   String key="stage_"+"long_task_".repeat(20)+"#"+stage;
+   int[] calls={0};
+   assert TaskAttemptPolicy.handle(key,"stage",null,()->{calls[0]++;return TaskAttemptPolicy.Outcome.UNABLE;},logs::add,null)==TaskAttemptPolicy.Outcome.UNABLE;
+   assert TaskAttemptPolicy.handle(key,"stage",null,()->{calls[0]++;return TaskAttemptPolicy.Outcome.UNABLE;},logs::add,null)==TaskAttemptPolicy.Outcome.TRIED_TODAY;
+   assert calls[0]==1:"Long stage keys collided or lost same-stage dedup";
+  }
   Locale.setDefault(Locale.forLanguageTag("tr-TR"));
   assert TaskAlternative.isTransactionTask("OFFLINE_PAY")&&!TaskAlternative.isTransactionTask("ORCHARD_NORMAL_TAOBAOTAOLIPAI_VISIT");
   assert !TaskAlternative.isTransactionTask("2060170000359285");

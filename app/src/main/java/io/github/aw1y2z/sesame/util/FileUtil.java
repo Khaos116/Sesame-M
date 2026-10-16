@@ -8,6 +8,7 @@ import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 import java.io.*;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
@@ -1007,10 +1008,10 @@ public class FileUtil {
             return "";
         }
         StringBuilder result = new StringBuilder();
-        try (FileReader fr = new FileReader(f)) {
+        try (InputStreamReader isr = new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8)) {
             char[] chs = new char[1024];
             int len;
-            while ((len = fr.read(chs)) >= 0) {
+            while ((len = isr.read(chs)) >= 0) {
                 result.append(chs, 0, len);
             }
         }
@@ -1043,14 +1044,14 @@ public class FileUtil {
         boolean written = false;
         boolean success = false;
         try {
-            FileWriter fw = new FileWriter(tmpFile);
+            OutputStreamWriter osw = new OutputStreamWriter(new FileOutputStream(tmpFile), StandardCharsets.UTF_8);
             try {
-                fw.write(s);
-                fw.flush();
+                osw.write(s);
+                osw.flush();
                 written = true;
             } finally {
                 try {
-                    fw.close();
+                    osw.close();
                 } catch (Throwable t) {
                     // 关闭失败说明数据可能没落全，按失败处理（原文件不动）
                     written = false;
@@ -1094,17 +1095,17 @@ public class FileUtil {
             return false;
         }
         boolean success = false;
-        FileWriter fw = null;
+        OutputStreamWriter osw = null;
         try {
-            fw = new FileWriter(f, true);
-            fw.append(s);
-            fw.flush();
+            osw = new OutputStreamWriter(new FileOutputStream(f, true), StandardCharsets.UTF_8);
+            osw.append(s);
+            osw.flush();
             success = true;
         }
         catch (Throwable t) {
             Log.printStackTrace(TAG, t);
         }
-        close(fw);
+        close(osw);
         return success;
     }
     
@@ -1213,9 +1214,9 @@ public class FileUtil {
     
     public static Boolean clearFile(File file) {
         if (file.exists()) {
-            FileWriter fileWriter = null;
+            OutputStreamWriter fileWriter = null;
             try {
-                fileWriter = new FileWriter(file);
+                fileWriter = new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8);
                 fileWriter.write("");
                 fileWriter.flush();
                 return true;

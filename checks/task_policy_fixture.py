@@ -6,7 +6,7 @@ static class TaskAttemptPolicy {
     interface StatusProbe { ProbeResult probe(String key); }
     static boolean isReceived(ProbeResult p) { return p==ProbeResult.RECEIVED || p==ProbeResult.GONE; }
     static class Site {
-        String bizKey,scene,prefix; java.util.function.BooleanSupplier forge;
+        String bizKey,scene,prefix,moduleScene,source; java.util.function.BooleanSupplier forge;
         Site(String list,String prefix,String key,String scene,StatusProbe probe) {
             this.bizKey=key;this.scene=scene;this.prefix=prefix;
         }
@@ -14,6 +14,8 @@ static class TaskAttemptPolicy {
                 java.util.function.BooleanSupplier forge,StatusProbe probe) {
             this(list,prefix,key,scene,probe);this.forge=forge;
         }
+        Site withScene(String value) { moduleScene=value;return this; }
+        Site withSource(String value) { source=value;return this; }
     }
     static Outcome handle(String key,String title,java.util.function.BooleanSupplier award,
             java.util.function.Supplier<Outcome> attempt,java.util.function.Consumer<String> log,Site site) {

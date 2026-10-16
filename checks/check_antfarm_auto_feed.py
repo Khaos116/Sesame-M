@@ -144,3 +144,74 @@ with tempfile.TemporaryDirectory(prefix="sesame-auto-feed-") as tmp:
     subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(jar), "-d", tmp, str(java),
                     str(SOURCE / "data/task/TaskLifecycle.java")], check=True)
     subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + str(jar), "AutoFeedCheck"], check=True)
+
+# Replay the real recall step and delayed retry through the production lifecycle boundary.
+from run import method
+recall_step = source[source.index('            step("小鸡不在家处理"'):source.index('            step("道具奖励"')]
+recall = r'''
+import java.util.*;import java.util.concurrent.TimeUnit;import org.json.*;
+import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
+public class RecallCheck {
+ static final String TAG="recall";
+ static class TaskCancelledException extends RuntimeException {}
+ static class Field {boolean value=true;boolean getValue(){return value;}}
+ static class Choice {int value;int getValue(){return value;}}
+ static class RecallAnimalType {static final int ALWAYS=0,WHEN_THIEF=1,WHEN_HUNGRY=2;}
+ enum SubAnimalType {GUEST,NORMAL,PIRATE,WORK}
+ enum AnimalFeedStatus {HUNGRY,EATING}
+ enum AnimalInteractStatus {HOME,STEALING}
+ static class Animal {String animalId="chicken",currentFarmId="other",locationType="FARM",currentFarmMasterUserId="friend";
+  String animalInteractStatus="STEALING",animalFeedStatus="HUNGRY",subAnimalType="NORMAL";}
+ static class UserIdMap {static String uid="self";static String getCurrentUid(){return uid;}static String getMaskName(String uid){return uid;}}
+ static class MyUtils {static JSONObject newJSONObject(String raw){try{return new JSONObject(raw);}catch(Exception e){return new JSONObject();}}}
+ static class TimeUtil {static long slept;static void sleep(long n){slept+=n;}}
+ static class Log {static void record(String s){}static void farm(String s){}static void err(String a,String b,Throwable t){throw new AssertionError(t);}}
+ static class MessageUtil {static boolean checkMemo(String tag,JSONObject j){return "SUCCESS".equals(j.optString("memo"));}}
+ static class AntFarmRpcCall {static boolean ok,cancel;static int calls;
+  static String recallAnimal(String id,String from,String to){calls++;if(cancel)throw new TaskCancelledException();return new JSONObject().put("memo",ok?"SUCCESS":"FAIL").put("foodHaveStolen",0).toString();}
+  static String farmId2UserId(String id){return id;}static String orchardRecallAnimal(String id,String user){return "{}";}}
+ static class ChildModelTask {String id;Runnable runnable;long at,generation=TaskLifecycle.generation();
+  ChildModelTask(String id,String group,Runnable r,Long at){this.id=id;this.runnable=r;this.at=at;}
+  void run(){try(TaskLifecycle.Work work=TaskLifecycle.enter(generation)){if(work!=null)runnable.run();}}}
+ static class Farm {String ownerFarmId="farm";Animal ownerAnimal=new Animal();Field feedAnimal=new Field();Choice recallAnimalType=new Choice();
+  int syncs,feeds;boolean homeNext,enabled=true;Map<String,ChildModelTask> tasks=new LinkedHashMap<>();
+  boolean isEnable(){return enabled;}boolean hasChildTask(String id){return tasks.containsKey(id);}void removeChildTask(String id){tasks.remove(id);}
+  boolean addChildTask(ChildModelTask task){tasks.put(task.id,task);return true;}
+  void step(String label,Runnable action){action.run();}void syncAnimalStatusAtOtherFarm(String id){}
+  void syncAnimalStatus(String farm){syncs++;if(homeNext)ownerAnimal.animalInteractStatus="HOME";}
+  void feedAnimal(String farm){assert farm.equals(ownerFarmId);assert UserIdMap.uid.equals("self");assert ownerAnimal.animalInteractStatus.equals("HOME");feeds++;}
+  void runRecallStep(){@@STEP@@}
+  @@RECALL@@
+  @@RETRY@@
+ }
+ static Farm reset(){AntFarmRpcCall.ok=false;AntFarmRpcCall.cancel=false;AntFarmRpcCall.calls=0;UserIdMap.uid="self";TimeUtil.slept=0;return new Farm();}
+ public static void main(String[] args){
+  Farm f=reset();f.ownerAnimal.subAnimalType="NEW_STATE";f.ownerAnimal.animalFeedStatus="NEW_FEED_STATE";
+  f.runRecallStep();assert AntFarmRpcCall.calls==1:"Unknown enums must not prevent configured recall";
+  f=reset();f.recallAnimal("chicken","other","farm","friend");assert f.tasks.size()==1;
+  ChildModelTask retry=f.tasks.values().iterator().next();assert retry.at>=System.currentTimeMillis()+9000;
+  f.homeNext=true;AntFarmRpcCall.ok=true;retry.run();assert AntFarmRpcCall.calls==2&&f.syncs>0&&f.feeds==1:"Delayed successful recall must refresh home state and feed";
+  f=reset();AntFarmRpcCall.cancel=true;try{f.recallAnimal("chicken","other","farm","friend");throw new AssertionError("Recall swallowed cancellation");}catch(TaskCancelledException expected){}
+  assert f.tasks.isEmpty():"Cancellation must not queue a retry";
+  for(int mode=0;mode<5;mode++){
+   f=reset();f.recallAnimal("chicken","other","farm","friend");retry=f.tasks.values().iterator().next();AntFarmRpcCall.calls=0;
+   if(mode==0)UserIdMap.uid="other";if(mode==1)f.ownerFarmId="other";if(mode==2)f.ownerAnimal.animalId="other";if(mode==3)f.enabled=false;
+   if(mode==4)f.ownerAnimal.animalInteractStatus="HOME";
+   retry.run();assert AntFarmRpcCall.calls==0&&f.feeds==0:"Stale/disabled recall callback issued RPC";
+  }
+  f=reset();f.recallAnimal("chicken","other","farm","friend");retry=f.tasks.values().iterator().next();f.homeNext=true;f.feedAnimal.value=false;AntFarmRpcCall.ok=true;retry.run();assert f.syncs>0&&f.feeds==0;
+  f=reset();f.recallAnimal("chicken","other","farm","friend");retry=f.tasks.values().iterator().next();AntFarmRpcCall.ok=true;retry.run();assert f.feeds==0:"Away state must never be fed";
+  f=reset();f.recallAnimal("chicken","other","farm","friend");retry=f.tasks.values().iterator().next();AntFarmRpcCall.calls=0;
+  TaskLifecycle.Freeze freeze=TaskLifecycle.freezeIfIdle();assert freeze!=null;TaskLifecycle.thaw(freeze);retry.run();assert AntFarmRpcCall.calls==0:"Recall crossed lifecycle generation";
+  System.out.println("PASS recall unknown enums, delayed home/feed, cancellation and account/generation/config isolation");
+ }
+}
+'''
+recall = recall.replace("@@STEP@@", recall_step).replace("@@RECALL@@", method("model/task/antFarm/AntFarm.java", "private void recallAnimal("))
+recall = recall.replace("@@RETRY@@", method("model/task/antFarm/AntFarm.java", "private void retryRecallAnimal("))
+with tempfile.TemporaryDirectory(prefix="sesame-recall-") as tmp:
+    java = Path(tmp) / "RecallCheck.java"
+    java.write_text(recall, encoding="utf-8")
+    subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(jar), "-d", tmp, str(java),
+                    str(SOURCE / "data/task/TaskLifecycle.java")], check=True)
+    subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + str(jar), "RecallCheck"], check=True)

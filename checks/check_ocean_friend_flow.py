@@ -25,7 +25,8 @@ public class OceanFriendCheck {
   static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}static boolean isRetryable(JSONObject j){return false;}static boolean isServerBusy(JSONObject j){return false;}
   static void checkResultCodeAndMarkTaskBlackList(String field,String title,JSONObject j){}}
  static class TaskAttemptPolicy {enum ProbeResult {TODO,FINISHED,RECEIVED,GONE,UNKNOWN}enum Outcome {DONE,RETRY,UNABLE,UNSUPPORTED,TRIED_TODAY,SKIPPED,TRIGGERED}
-  interface StatusProbe {ProbeResult probe(String k);}interface Attempt {Outcome run();}static class Site {Site(String a,String b,String c,String d,StatusProbe p){}}
+  interface StatusProbe {ProbeResult probe(String k);}interface Attempt {Outcome run();}static class Site {String scene;Site(String a,String b,String c,String d,StatusProbe p){scene=d;}
+   Site withScene(String s){assert s.equals(scene);return this;}Site withSource(String s){assert s.equals("ANTAIFISH".equals(scene)?"ANTAIFISH":"ANTFOCEAN");return this;}}
   static boolean isCyclicTask(JSONObject j){return false;}static boolean isReceived(ProbeResult r){return r==ProbeResult.RECEIVED||r==ProbeResult.GONE;}
   static Outcome handle(String a,String b,Object award,Attempt attempt,java.util.function.Consumer<String> log,Site s){return attempt.run();}}
  static class TaskAlternative {static boolean hit(JSONObject j,String scene){return false;}}

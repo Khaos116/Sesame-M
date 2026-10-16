@@ -130,3 +130,37 @@ with tempfile.TemporaryDirectory(prefix="sesame-upstream-host-") as tmp:
     java.write_text(host, encoding="utf-8")
     subprocess.run(["javac", "-encoding", "UTF-8", "-d", tmp, str(java)], check=True)
     subprocess.run(["java", "-ea", "-cp", tmp, "UpstreamHostCheck"], check=True, timeout=30)
+
+# Compile the real file helpers under a non-UTF-8 JVM default to catch asymmetric I/O.
+codec = r'''
+import java.io.*;import java.nio.charset.StandardCharsets;import java.nio.file.*;import java.util.*;
+public class FileCodecCheck {
+ static final String TAG="codec";
+ static class android {static class os {static class Process {static int myPid(){return 1;}}}}
+ static class Toast {static void show(String s,boolean b){}}
+ static class Log {static void debug(String s){}static void printStackTrace(String tag,Throwable t){throw new AssertionError(t);}static void printStackTrace(Throwable t){throw new AssertionError(t);}}
+ @@FILES@@
+ public static void main(String[] args)throws Exception {
+  Path dir=Files.createTempDirectory("sesame-codec-");File file=dir.resolve("日志.txt").toFile();
+  String first="{\"name\":\"中文🌱\"}\n",extra="追加€\r\n";
+  try{
+   assert write2File(first,file);assert Arrays.equals(Files.readAllBytes(file.toPath()),first.getBytes(StandardCharsets.UTF_8));
+   assert readFromFile(file).equals(first);
+   assert append2File(extra,file);assert Arrays.equals(Files.readAllBytes(file.toPath()),(first+extra).getBytes(StandardCharsets.UTF_8));
+   assert readFromFile(file).equals(first+extra);
+   assert write2File(extra,file)&&readFromFile(file).equals(extra):"Atomic replacement did not preserve UTF-8";
+   assert clearFile(file)&&file.length()==0&&readFromFile(file).isEmpty();
+   assert Objects.requireNonNull(dir.toFile().list()).length==1:"Atomic write left temporary artifacts";
+  }finally{Files.deleteIfExists(file.toPath());Files.delete(dir);}
+  System.out.println("PASS UTF-8 atomic write/read/append/clear under non-UTF-8 default charset");
+ }
+}
+'''
+codec = codec.replace("@@FILES@@", "\n".join(method("util/FileUtil.java", signature) for signature in (
+    "public static String readFromFile(", "public static boolean write2File(", "public static boolean append2File(",
+    "public static Boolean clearFile(", "public static void close(Closeable")))
+with tempfile.TemporaryDirectory(prefix="sesame-codec-check-") as tmp:
+    java = Path(tmp) / "FileCodecCheck.java"
+    java.write_text(codec, encoding="utf-8")
+    subprocess.run(["javac", "-encoding", "UTF-8", "-d", tmp, str(java)], check=True)
+    subprocess.run(["java", "-ea", "-Dfile.encoding=ISO-8859-1", "-cp", tmp, "FileCodecCheck"], check=True, timeout=30)

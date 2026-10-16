@@ -15,6 +15,7 @@ code = r'''
 import org.json.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class RobCardCheck {
     static final String TAG = "check", VERSION = "20250813";
     static class Field { int n; Field(int n) { this.n=n; } int getValue() { return n; } }
@@ -49,6 +50,10 @@ public class RobCardCheck {
         @@RPC@@
     }
     JSONArray bag;
+    enum PropGroup { robExpandCard }
+    Map<String,Integer> collected = new HashMap<>();
+    void collectRobExpandEnergy(String ext, String id, String type) { collected.merge(id,1,Integer::sum); }
+    @@COLLECT_ROB@@
     JSONArray getForestPropVOList() { return bag; }
     @@METHODS@@
     static JSONObject active(double factor, long end) {
@@ -70,6 +75,15 @@ public class RobCardCheck {
     }
     public static void main(String[] args) throws Exception {
         RobCardCheck check=new RobCardCheck(); long now=System.currentTimeMillis(), day=TimeUnit.DAYS.toMillis(1);
+        JSONObject teamProp=new JSONObject().put("propGroup","robExpandCard").put("propId","team").put("propType","card").put("extInfo","{}");
+        for(String field:List.of("loginUserUsingPropNew","usingUserPropsNew","usingUserProps")) {
+            check.collected.clear();check.collectRobExpandEnergy(new JSONObject().put(field,new JSONArray().put(teamProp)));
+            assert check.collected.getOrDefault("team",0)==1:"Every home schema must expose active bonus cards";
+        }
+        check.collected.clear();check.collectRobExpandEnergy(new JSONObject()
+            .put("loginUserUsingPropNew",new JSONArray().put(new JSONObject().put("propGroup","shield")))
+            .put("usingUserPropsNew",new JSONArray().put(teamProp)).put("usingUserProps",new JSONArray().put(teamProp)));
+        assert check.collected.getOrDefault("team",0)==1:"Team cards must survive other nonempty arrays and be deduplicated";
         JSONObject old=active(2,now+5*day), normal=card("normal",4,now+20*day,6*86400);
         JSONObject urgent=card("urgent",3,now+day,86400), same=card("same",2,now+day,86400);
         assert choosePreferredRobExpandCard(new JSONArray().put(normal),old,now,7,0)==normal;
@@ -146,6 +160,7 @@ code = code.replace("@@METHODS@@", "\n".join(method(forest, name) for name in (
     "private static double robExpandCardFactor(", "private static JSONObject choosePreferredRobExpandCard(",
     "private void usePreferredRobExpandCard(")))
 code = code.replace("@@RPC@@", method(rpc, "public static String consumeProp(String propGroup, String propId, String propType, Boolean secondConfirm)"))
+code = code.replace("@@COLLECT_ROB@@", method(forest, "private void collectRobExpandEnergy(JSONObject joHomePage)"))
 source = (SOURCE / forest).read_text(encoding="utf-8")
 for field in ("robExpandCardReplaceRemainDays", "robExpandCardForceReplaceExpireDays"):
     assert f'new IntegerModelField("{field}"' in source

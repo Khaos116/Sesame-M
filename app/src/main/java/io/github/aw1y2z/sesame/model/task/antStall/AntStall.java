@@ -784,7 +784,7 @@ public class AntStall extends ModelTask {
                     Outcome outcome = TaskAttemptPolicy.handle("stall::xlight::" + title, title, null,
                             () -> attemptXlightTask(title), Log::farm,
                             new TaskAttemptPolicy.Site("AntStallTaskList", "新村任务", taskType, "ANTSTALL_TASK",
-                                    (k) -> probeStallStatus(taskType)));
+                                    (k) -> probeStallStatus(taskType)).withScene("ANTSTALL_TASK").withSource("AST"));
                     return outcome == Outcome.DONE;
                 }
                 default:
@@ -918,7 +918,7 @@ public class AntStall extends ModelTask {
         Outcome outcome = TaskAttemptPolicy.handle("stall::" + taskType, title, null,
                 () -> attemptFinishTask(taskType, title), Log::farm,
                 new TaskAttemptPolicy.Site("AntStallTaskList", "新村任务", taskType, "ANTSTALL_TASK",
-                        (k) -> probeStallStatus(taskType)));
+                        (k) -> probeStallStatus(taskType)).withScene("ANTSTALL_TASK").withSource("AST"));
         return outcome == Outcome.DONE;
     }
 

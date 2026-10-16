@@ -1109,7 +1109,7 @@ public class AntOcean extends ModelTask {
                         "ocean::" + sceneCode + "/" + taskType + "#" + (rightsTimes + cnt), taskTitle, null,
                         () -> attemptFinishOceanTask(sceneCode, taskType, taskTitle), Log::other,
                         new TaskAttemptPolicy.Site("AntOceanAntiepTaskList", "海洋任务", taskType, sceneCode,
-                                (k) -> probeOceanStatus(sceneCode, taskType, stage)));
+                                (k) -> probeOceanStatus(sceneCode, taskType, stage)).withScene(sceneCode).withSource("ANTFOCEAN"));
                 if (outcome == Outcome.TRIED_TODAY || outcome == Outcome.SKIPPED) {
                     break;
                 }
@@ -1752,7 +1752,7 @@ public class AntOcean extends ModelTask {
         Outcome outcome = TaskAttemptPolicy.handle("ocean::fish::" + taskType, taskTitle, null,
                 () -> attemptAntfishFinishTask(taskTitle, taskType), Log::other,
                 new TaskAttemptPolicy.Site("AntOceanFishBlackList", "摸鱼任务", taskType, "ANTAIFISH",
-                        (k) -> probeAntfishStatus(taskType)));
+                        (k) -> probeAntfishStatus(taskType)).withScene("ANTAIFISH").withSource("ANTAIFISH"));
         return outcome == Outcome.DONE;
     }
 

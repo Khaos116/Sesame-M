@@ -407,7 +407,7 @@ public class ForestChouChouLe {
         Outcome outcome = TaskAttemptPolicy.handle(policyKey, taskName, null,
                 () -> attemptChouChouLeTask(taskType, taskSceneCode, taskName, xlight), Log::forest,
                 new TaskAttemptPolicy.Site("AntForestHuntTaskList", "森林寻宝", taskType, taskSceneCode,
-                        (k) -> probeChouChouLeStatus(activitySceneCode, taskSceneCode, taskType, stage)));
+                        (k) -> probeChouChouLeStatus(activitySceneCode, taskSceneCode, taskType, stage)).withScene(taskSceneCode).withSource("ADBASICLIB"));
         return outcome == Outcome.DONE || outcome == Outcome.TRIGGERED;
     }
 

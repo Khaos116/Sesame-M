@@ -235,7 +235,9 @@ public class goldenbeansRpcCall {
      * 它的响应不可信（常回 102 而任务已生效），调用方必须回查任务列表核对。
      */
     public static String doFarmTask(String bizKey, String taskSceneCode) throws Exception {
-        return TaskAlternative.request(bizKey, taskSceneCode, VERSION);
+        // 金豆各入口的 sceneCode 与 taskSceneCode 同值（见 submitTaskOf/claimAwardOf），故直接透传；
+        // 兜底默认的庄园场景会被判"场景不合法"
+        return TaskAlternative.request(bizKey, taskSceneCode, VERSION, taskSceneCode);
     }
 
     /** 领取任务奖励（默认农场入口） */

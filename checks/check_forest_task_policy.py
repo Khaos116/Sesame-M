@@ -153,6 +153,9 @@ public class ForestTaskPolicyCheck {
   AntForestRpcCall.optionalOverride="{success:true,taskTriggerPlayInfo:{taskList:[{taskStatus:TODO,sceneCode:scene,taskType:unwrap,rightsTimes:0,rightsTimesLimit:10,bizInfo:{title:boxes,actionType:UNWRAP}}]}}";
   f.queryOptionalPlay();
   check(f.boxCalls==1&&AntForestRpcCall.optionalReads==1&&AntForestRpcCall.writes==0&&ApplicationHook.fallback==0&&Status.flags.isEmpty(),"Cumulative boxes without quota must not use once-complete policy or poll");
+  reset();f.boxCalls=0;
+  AntForestRpcCall.optionalOverride="{success:true,taskTriggerPlayInfo:{taskList:[{taskStatus:TODO,sceneCode:scene,taskType:unwrap1,rightsTimes:0,rightsTimesLimit:10,bizInfo:{title:boxes1,actionType:UNWRAP}},{taskStatus:TODO,sceneCode:scene,taskType:unwrap2,rightsTimes:0,rightsTimesLimit:10,bizInfo:{title:boxes2,actionType:UNWRAP}}]}}";
+  f.queryOptionalPlay();check(f.boxCalls==1&&AntForestRpcCall.optionalReads==1,"Multiple cumulative tasks must share one native-box check per pass");
   reset();JSONArray list=new JSONArray().put(task("reward","FINISHED")).put(task("busy","TODO"));AntForestRpcCall.snapshot=list;
   check(f.doForsetTaskList(list),"A later busy TODO must not erase successful reward's requery");
   reset();JSONObject parent=task("ENERGY_XUANJIAO","FINISHED");parent.optJSONObject("taskBaseInfo").put("taskNode","PARENT");
@@ -167,9 +170,9 @@ public class ForestTaskPolicyCheck {
   reset();AntForestRpcCall.replies.put("unsupported","{\"success\":false,\"code\":\"400000040\"}");AntForestRpcCall.snapshot=new JSONArray().put(task("unsupported","TODO"));
   f.queryOptionalPlay();check(ApplicationHook.fallback==1,"Optional play must retain unsupported-RPC fallback");
   reset();AntForestRpcCall.replies.put("unsupported","{\"success\":true}");
-  f.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==12,"Forest unchanged TODO must stop after ten probes and one list refresh");
+  f.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==11,"Forest unchanged TODO must stop after ten probes without an idle refresh");
   Farm farm=new Farm();reset();AntForestRpcCall.replies.put("unsupported","{\"success\":true}");
-  farm.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==12,"Farm unchanged TODO must stop after ten probes and one list refresh");
+  farm.queryOptionalPlay();check(AntForestRpcCall.writes==1&&AntForestRpcCall.optionalReads==11,"Farm unchanged TODO must stop after ten probes without an idle refresh");
   Orchard orchard=new Orchard();
   for(Runnable run:List.<Runnable>of(farm::queryOptionalPlay,f::queryOptionalPlay,orchard::queryOptionalPlay)) {
    reset();AntForestRpcCall.optionalStage=0;run.run();check(AntForestRpcCall.optionalStage==8&&AntForestRpcCall.writes==8,"Eight-stage optional task stopped early");

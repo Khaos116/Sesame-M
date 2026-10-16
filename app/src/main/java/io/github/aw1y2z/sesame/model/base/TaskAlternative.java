@@ -83,9 +83,21 @@ public final class TaskAlternative {
     private TaskAlternative() {
     }
 
-    /** 唯一的 doFarmTask payload，返回原始响应。 */
+    public static final String DEFAULT_SCENE_CODE = "ANTFARM";
+    public static final String DEFAULT_SOURCE = "H5";
+
     public static String request(String bizKey, String taskSceneCode, String version) {
-        if (bizKey == null || bizKey.isEmpty() || taskSceneCode == null || version == null || version.isEmpty()) {
+        return request(bizKey, taskSceneCode, version, DEFAULT_SCENE_CODE, DEFAULT_SOURCE);
+    }
+
+    public static String request(String bizKey, String taskSceneCode, String version, String sceneCode) {
+        return request(bizKey, taskSceneCode, version, sceneCode, DEFAULT_SOURCE);
+    }
+
+    /** 显式传入的场景/来源缺失时停止，不能借用庄园默认值冒充其它模块。 */
+    public static String request(String bizKey, String taskSceneCode, String version, String sceneCode, String source) {
+        if (bizKey == null || bizKey.isEmpty() || taskSceneCode == null || version == null || version.isEmpty()
+                || sceneCode == null || sceneCode.trim().isEmpty() || source == null || source.trim().isEmpty()) {
             throw new IllegalArgumentException("doFarmTask missing request fields");
         }
         if (isTransactionTask(bizKey)) {
@@ -95,7 +107,7 @@ public final class TaskAlternative {
         String args;
         try {
             args = new org.json.JSONArray().put(MyUtils.newJSONObject().put("bizKey", bizKey)
-                    .put("requestType", "RPC").put("sceneCode", "ANTFARM").put("source", "H5")
+                    .put("requestType", "RPC").put("sceneCode", sceneCode).put("source", source)
                     .put("taskSceneCode", taskSceneCode).put("version", version)).toString();
         } catch (JSONException e) {
             throw new IllegalArgumentException("doFarmTask invalid request");
@@ -104,7 +116,17 @@ public final class TaskAlternative {
     }
 
     public static JSONObject doFarmTask(String bizKey, String taskSceneCode, String version) throws JSONException {
-        String raw = request(bizKey, taskSceneCode, version);
+        return doFarmTask(bizKey, taskSceneCode, version, DEFAULT_SCENE_CODE, DEFAULT_SOURCE);
+    }
+
+    public static JSONObject doFarmTask(String bizKey, String taskSceneCode, String version, String sceneCode)
+            throws JSONException {
+        return doFarmTask(bizKey, taskSceneCode, version, sceneCode, DEFAULT_SOURCE);
+    }
+
+    public static JSONObject doFarmTask(String bizKey, String taskSceneCode, String version, String sceneCode,
+                                        String source) throws JSONException {
+        String raw = request(bizKey, taskSceneCode, version, sceneCode, source);
         if (raw == null) {
             throw new JSONException("doFarmTask empty response");
         }
@@ -148,12 +170,28 @@ public final class TaskAlternative {
     public static JSONObject trigger(Map<String, String> pending, String taskId, String taskTitle,
                                      String bizKey, String taskSceneCode, String version,
                                      String logPrefix, LogSink sink) {
+        return trigger(pending, taskId, taskTitle, bizKey, taskSceneCode, version, DEFAULT_SCENE_CODE,
+                logPrefix, sink);
+    }
+
+    /** 指定伪申报场景码（各模组不同，见 {@link #DEFAULT_SCENE_CODE}）。 */
+    public static JSONObject trigger(Map<String, String> pending, String taskId, String taskTitle,
+                                     String bizKey, String taskSceneCode, String version, String sceneCode,
+                                     String logPrefix, LogSink sink) {
+        return trigger(pending, taskId, taskTitle, bizKey, taskSceneCode, version, sceneCode, DEFAULT_SOURCE,
+                logPrefix, sink);
+    }
+
+    /** 指定伪申报场景码 + 来源。 */
+    public static JSONObject trigger(Map<String, String> pending, String taskId, String taskTitle,
+                                     String bizKey, String taskSceneCode, String version, String sceneCode,
+                                     String source, String logPrefix, LogSink sink) {
         try {
             if (isTransactionTask(bizKey)) {
                 Log.i(logPrefix + "⏭️跳过[" + taskTitle + "]#bizKey=" + bizKey + "，交易/履约类不自动申报");
                 return null;
             }
-            JSONObject doFarmJo = doFarmTask(bizKey, taskSceneCode, version);
+            JSONObject doFarmJo = doFarmTask(bizKey, taskSceneCode, version, sceneCode, source);
             if (pending != null && taskId != null && !taskId.isEmpty()) {
                 pending.put(taskId, taskTitle);
             }

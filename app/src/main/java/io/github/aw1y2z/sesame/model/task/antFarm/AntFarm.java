@@ -471,36 +471,28 @@ public class AntFarm extends ModelTask {
                         Log.farm("召回小鸡📣收获[" + manureCount + "g肥料]");
                     } else {
                         syncAnimalStatusAtOtherFarm(ownerAnimal.currentFarmId);
-                        boolean guest = false;
-                        switch (SubAnimalType.valueOf(ownerAnimal.subAnimalType)) {
-                            case GUEST:
-                                guest = true;
-                                Log.record("小鸡到好友家去做客了");
-                                break;
-                            case NORMAL:
-                                Log.record("小鸡太饿，离家出走了");
-                                break;
-                            case PIRATE:
-                                Log.record("小鸡外出探险了");
-                                break;
-                            case WORK:
-                                Log.record("小鸡出去工作啦");
-                                break;
-                            default:
-                                Log.record("小鸡不在庄园" + " " + ownerAnimal.subAnimalType);
+                        // 新状态不能通过 valueOf 异常中断召回和后续喂食。
+                        boolean guest = SubAnimalType.GUEST.name().equals(ownerAnimal.subAnimalType);
+                        if (guest) {
+                            Log.record("小鸡到好友家去做客了");
+                        } else if (SubAnimalType.NORMAL.name().equals(ownerAnimal.subAnimalType)) {
+                            Log.record("小鸡太饿，离家出走了");
+                        } else if (SubAnimalType.PIRATE.name().equals(ownerAnimal.subAnimalType)) {
+                            Log.record("小鸡外出探险了");
+                        } else if (SubAnimalType.WORK.name().equals(ownerAnimal.subAnimalType)) {
+                            Log.record("小鸡出去工作啦");
+                        } else {
+                            Log.record("小鸡不在庄园 " + ownerAnimal.subAnimalType);
                         }
 
-                        boolean hungry = false;
+                        boolean hungry = AnimalFeedStatus.HUNGRY.name().equals(ownerAnimal.animalFeedStatus);
                         String userName = UserIdMap.getMaskName(AntFarmRpcCall.farmId2UserId(ownerAnimal.currentFarmId));
-                        switch (AnimalFeedStatus.valueOf(ownerAnimal.animalFeedStatus)) {
-                            case HUNGRY:
-                                hungry = true;
-                                Log.record("小鸡在[" + userName + "]的庄园里挨饿");
-                                break;
-
-                            case EATING:
-                                Log.record("小鸡在[" + userName + "]的庄园里吃得津津有味");
-                                break;
+                        if (hungry) {
+                            Log.record("小鸡在[" + userName + "]的庄园里挨饿");
+                        } else if (AnimalFeedStatus.EATING.name().equals(ownerAnimal.animalFeedStatus)) {
+                            Log.record("小鸡在[" + userName + "]的庄园里吃得津津有味");
+                        } else {
+                            Log.record("小鸡状态未知 " + ownerAnimal.animalFeedStatus);
                         }
 
                         boolean recall = false;
@@ -518,6 +510,10 @@ public class AntFarm extends ModelTask {
                         if (recall) {
                             recallAnimal(ownerAnimal.animalId, ownerAnimal.currentFarmId, ownerFarmId, userName);
                             syncAnimalStatus(ownerFarmId);
+                            if (!AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)) {
+                                TimeUtil.sleep(3000);
+                                syncAnimalStatus(ownerFarmId);
+                            }
                         }
                     }
                 }
@@ -1195,14 +1191,48 @@ public class AntFarm extends ModelTask {
         try {
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.recallAnimal(animalId, currentFarmId, masterFarmId));
             if (!MessageUtil.checkMemo(TAG, jo)) {
+                retryRecallAnimal(animalId, currentFarmId, masterFarmId, user);
                 return;
             }
             double foodHaveStolen = jo.optDouble("foodHaveStolen", 0d);
             Log.farm("召回小鸡📣偷吃[" + user + "]饲料" + foodHaveStolen + "g");
             // 这里不需要加
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "recallAnimal err:", t);
+            retryRecallAnimal(animalId, currentFarmId, masterFarmId, user);
         }
+    }
+
+    /** 失败后重试一次，回查到家后按配置补喂；ChildModelTask 自带账号切换代际准入。 */
+    private void retryRecallAnimal(String animalId, String currentFarmId, String masterFarmId, String user) {
+        String taskUid = UserIdMap.getCurrentUid();
+        if (taskUid == null || taskUid.isEmpty()) return;
+        String taskId = "RA|" + animalId;
+        if (hasChildTask(taskId)) {
+            removeChildTask(taskId);
+        }
+        addChildTask(new ChildModelTask(taskId, "RA", () -> {
+            if (!taskUid.equals(UserIdMap.getCurrentUid()) || !masterFarmId.equals(ownerFarmId)
+                    || ownerAnimal == null || !animalId.equals(ownerAnimal.animalId) || !isEnable()
+                    || AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)) return;
+            try {
+                JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.recallAnimal(animalId, currentFarmId, masterFarmId));
+                if (!MessageUtil.checkMemo(TAG, jo)) return;
+                Log.farm("召回小鸡📣偷吃[" + user + "]饲料" + jo.optDouble("foodHaveStolen") + "g");
+                TimeUtil.sleep(3000);
+                syncAnimalStatus(masterFarmId);
+                if (taskUid.equals(UserIdMap.getCurrentUid()) && masterFarmId.equals(ownerFarmId)
+                        && ownerAnimal != null && animalId.equals(ownerAnimal.animalId) && isEnable()
+                        && feedAnimal.getValue() && AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)
+                        && AnimalFeedStatus.HUNGRY.name().equals(ownerAnimal.animalFeedStatus)) {
+                    feedAnimal(masterFarmId);
+                }
+            } catch (Throwable t) {
+                if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
+                Log.err(TAG, "retryRecallAnimal err:", t);
+            }
+        }, System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(10)));
     }
 
     private void sendBackAnimal() {
@@ -4639,7 +4669,7 @@ public class AntFarm extends ModelTask {
                                         null,
                                         unwrapTask));
                         // 被当日标记挡下（已试过）不算推进，否则每轮都白转一遍
-                        if (outcome != Outcome.TRIED_TODAY && outcome != Outcome.SKIPPED) {
+                        if (outcome == Outcome.DONE || outcome == Outcome.TRIGGERED || outcome == Outcome.AWARDED) {
                             progressed = true;
                         }
                     }

@@ -40,7 +40,7 @@ public class MallCheck {
    if("com.alipay.antcommonweal.exchange.h5.exchangeBenefit".equals(rpc)){
     assert tries==1&&pause==0:"mall exchange used default write retries";writes++;
    }else{assert tries==3&&pause==-1:"mall query retry policy changed";reads++;}return "{}";}}
- static class TaskAlternative {static String request(String a,String b,String c){throw new AssertionError("unexpected fallback");}}
+ static class TaskAlternative {static String request(String a,String b,String c,String scene){throw new AssertionError("unexpected fallback");}}
  @@ACTUAL_RPC@@
  static class goldenbeansRpcCall {
   static String items,reply;static int writes,queries,catalogues,jars=5,history=0,failedPage=0;

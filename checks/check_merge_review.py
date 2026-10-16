@@ -63,6 +63,7 @@ public class MergeReviewCheck {
   interface LogSink {void log(String message);}
   static final String DEFAULT_VERSION="v";static boolean hit(JSONObject j,String s){return false;}
   static void trigger(Object a,Object b,String c,String d,String e,String f,String g,java.util.function.Consumer<String> log){}
+  static void trigger(Object a,Object b,String c,String d,String e,String f,String scene,String source,String g,java.util.function.Consumer<String> log){}
   @@VERIFY_CONFIG@@
   @@VERIFY_SNAPSHOT@@
   @@VERIFY_METHOD@@

@@ -34,7 +34,7 @@ sources = {
             sleeps.add(ms); if(cancel && ms>=30000)throw new TaskCancelledException();}
     }''',
     "util/idMap/UserIdMap": '''public class UserIdMap { public static String uid="A"; public static String getCurrentUid(){return uid;} }''',
-    "model/base/TaskAlternative": '''public class TaskAlternative { public static String request(String a,String b,String c){return "{}";} }''',
+    "model/base/TaskAlternative": '''public class TaskAlternative { public static String request(String a,String b,String c,String scene,String source){assert scene.equals("ORCHARD")&&source.equals("ANTFARM_ORCHARD");return "{}";} }''',
     "rpc/intervallimit/RpcRequestGuard": "import org.json.*; public class RpcRequestGuard {" + method(
         "rpc/intervallimit/RpcRequestGuard.java", "    public static boolean isFailure(JSONObject result)") + method(
         "rpc/intervallimit/RpcRequestGuard.java", "    public static String errorMessage(JSONObject result)") + "}",
