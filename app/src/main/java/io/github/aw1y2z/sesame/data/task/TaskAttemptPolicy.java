@@ -285,6 +285,14 @@ public class TaskAttemptPolicy {
          * 新村 {@code AST}…）。默认 {@link TaskAlternative#DEFAULT_SOURCE}。
          */
         final String source;
+        /**
+         * 信任响应：该任务是**多档里程碑**型（如森林「消耗活力值得机会」2/2——一次兑换只推进进度、
+         * 列表状态不变，兑换满才 FINISHED）。
+         * <p>为 true 时**跳过列表复核**、直接以响应为准：探针在这种中间态上永远判"未完成"，
+         * 会把一次成功的兑换改判成做不了，进而挡住后续档位（实测卡在 1/2）。
+         * <p>最终状态仍由调用方重拉列表核对（如抽抽乐每档后的 doublecheck）。
+         */
+        final boolean trustResponse;
 
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode) {
             this(listField, logPrefix, bizKey, taskSceneCode, TaskAlternative.DEFAULT_VERSION, null, null, null);
@@ -348,6 +356,14 @@ public class TaskAttemptPolicy {
         public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
                     Forge forge, StatusProbe probe, ExhaustedProbe exhausted, boolean realAction,
                     String sceneCode, String source) {
+            this(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, exhausted, realAction,
+                    sceneCode, source, false);
+        }
+
+        /** 完整形态 + 信任响应（多档里程碑任务：列表中间态不作数，见 {@link #trustResponse}）。 */
+        public Site(String listField, String logPrefix, String bizKey, String taskSceneCode, String version,
+                    Forge forge, StatusProbe probe, ExhaustedProbe exhausted, boolean realAction,
+                    String sceneCode, String source, boolean trustResponse) {
             this.listField = listField;
             this.logPrefix = logPrefix;
             this.bizKey = bizKey;
@@ -359,18 +375,25 @@ public class TaskAttemptPolicy {
             this.realAction = realAction;
             this.sceneCode = sceneCode;
             this.source = source;
+            this.trustResponse = trustResponse;
         }
 
         /** 返回一个只把伪申报场景码换掉的副本；用法 {@code new Site(...).withScene("ORCHARD")}。 */
         public Site withScene(String sceneCode) {
             return new Site(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, exhausted,
-                    realAction, sceneCode, source);
+                    realAction, sceneCode, source, trustResponse);
         }
 
         /** 返回一个只把伪申报来源换掉的副本；用法 {@code new Site(...).withSource("AST")}。 */
         public Site withSource(String source) {
             return new Site(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, exhausted,
-                    realAction, sceneCode, source);
+                    realAction, sceneCode, source, trustResponse);
+        }
+
+        /** 返回一个「信任响应」的副本；用法 {@code new Site(...).withTrustResponse()}。 */
+        public Site withTrustResponse() {
+            return new Site(listField, logPrefix, bizKey, taskSceneCode, version, forge, probe, exhausted,
+                    realAction, sceneCode, source, true);
         }
     }
 
@@ -466,7 +489,8 @@ public class TaskAttemptPolicy {
         try {
             outcome = attempt.run();
             // 列表复核：完成与否一律以任务列表为准——只有列表能宣布"完成"，响应不可信
-            if (site != null && site.probe != null) {
+            // （多档里程碑任务除外：中间态在列表上永远不完成，见 Site#trustResponse）
+            if (site != null && site.probe != null && !site.trustResponse) {
                 // 仅当响应成功时才长轮询等待异步落定（如森林「消耗活力值得机会」十几秒才变完成）；
                 // 未成功的尝试无需空等，单次快速核对即可，避免把每个做不了的任务都拖满整段轮询窗口。
                 ProbeResult pr = (outcome == Outcome.DONE)
@@ -650,9 +674,17 @@ public class TaskAttemptPolicy {
         }
     }
 
-    /** 定位键可能含 : / | 等字符，压成安全形式并限长（当日标记落进 status.json，伪申报记录落进 runtimeInfo.json） */
+    /**
+     * 定位键可能含 : / | 等字符，压成安全形式并限长（当日标记落进 status.json，伪申报记录落进 runtimeInfo.json）。
+     * <p>超长时**头尾各留一段**：档位/序号在键尾（{@code #5}、{@code @2}），只截前段会让不同档位串成同一个键，
+     * 首档的当日标记就会挡住后续档位（键越长的任务越容易踩到，实测最长已到 87 字符、余量不足 33）。
+     */
     private static String sanitize(String key) {
         String safe = key.replaceAll("[^0-9A-Za-z_.\\-]", "_");
-        return safe.length() > 120 ? safe.substring(0, 120) : safe;
+        if (safe.length() <= 120) {
+            return safe;
+        }
+        // 头 40 + 分隔符 + 尾 79 = 120
+        return safe.substring(0, 40) + "_" + safe.substring(safe.length() - 79);
     }
 }
