@@ -2458,7 +2458,15 @@ public class AntForestV2 extends ModelTask {
                 if (count == null || count < 0) {
                     continue;
                 }
-                while (Status.canVitalityExchangeBenefitToday(skuId, count) && exchangeBenefit(skuId)) {
+                // 失效 skuId（权益下架/换号/服务端改 ID）当日已判过就跳过，避免每轮刷屏并拖累后续任务
+                if (Status.hasFlagToday("forest::exchangeSkuMissing::" + skuId)) {
+                    continue;
+                }
+                // 每日次数之外再加硬循环上限：即便出现意外也不会空转
+                int loopCount = 0;
+                while (loopCount++ < count
+                        && Status.canVitalityExchangeBenefitToday(skuId, count)
+                        && exchangeBenefit(skuId)) {
                     TimeUtil.sleep(3000);
                 }
             }
@@ -5006,6 +5014,12 @@ public class AntForestV2 extends ModelTask {
     /** 单分类翻页上限：hasMore 异常一直为真时兜底 */
     private static final int VITALITY_ITEM_MAX_PAGES = 10;
 
+    /** 活力值商店列表拉取失败的当日重试上限：服务端持续失败时避免每轮都重拉（单轮最多 5 分类 × 10 页） */
+    private static final int VITALITY_SKU_RETRY_MAX = 3;
+
+    /** 活力值商店列表拉取失败次数的当日计数 key */
+    private static final String FLAG_VITALITY_SKU_RETRY = "forest::vitalitySkuListRetry";
+
     /**
      * 获取活力值商店所有商品信息。
      * <p>原先只查 SC_ASSETS 的第一页 ⇒ 权益列表只有一小部分；改为按官方实测的 5 个 labelType
@@ -5013,11 +5027,16 @@ public class AntForestV2 extends ModelTask {
      * <p>当日标记的判断放在方法内部，因为除了 vitalityExchangeBenefit() 外，
      * useEnergyRainCard()/兑换道具等路径也会直接调用它，那些路径同样需要"当日只拉一次"。
      */
-    /** @return 是否真的取到 SKU（取不到时留给下一轮重试） */
+    /** @return 是否真的取到 SKU（取不到时留给下一轮重试，但当日重试次数有上限） */
     private boolean getAllSkuInfo() {
         try {
             if (Status.hasFlagToday("forest::vitalitySkuList")) {
                 return true;
+            }
+            // 失败重试上限：服务端持续失败时避免每轮都重拉（单轮最多 5 分类 × 10 页）
+            int retries = Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY);
+            if (retries >= VITALITY_SKU_RETRY_MAX) {
+                return false;
             }
             int got = 0;
             for (String labelType : VITALITY_LABEL_TYPES) {
@@ -5047,11 +5066,23 @@ public class AntForestV2 extends ModelTask {
             if (got > 0) {
                 // 拉到了才打当日标记；拉不到留给下一轮重试
                 Status.flagToday("forest::vitalitySkuList");
+                return true;
             }
-            return got > 0;
+            accountVitalitySkuRetry();
+            return false;
         } catch (Throwable th) {
             Log.err(TAG, "getAllSkuInfo err:", th);
+            accountVitalitySkuRetry();
             return false;
+        }
+    }
+
+    /** 活力值商店列表拉取失败计数：达上限后当日不再重拉，避免每轮都重试 */
+    private static void accountVitalitySkuRetry() {
+        int tries = Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY) + 1;
+        Status.setIntFlagToday(FLAG_VITALITY_SKU_RETRY, tries);
+        if (tries >= VITALITY_SKU_RETRY_MAX) {
+            Log.i("活力值商店列表：连续" + tries + "次未取到，今日不再重试");
         }
     }
 
@@ -5122,7 +5153,12 @@ public class AntForestV2 extends ModelTask {
         }
         JSONObject sku = skuInfo.get(skuId);
         if (sku == null) {
-            Log.record("活力兑换🎐找不到要兑换的权益！");
+            // 失效 skuId（权益下架/换号/服务端改 ID）：打当日标记，当天不再重试；
+            // 否则每轮都会遍历到它并刷一条日志，既刷屏又拖累后续任务
+            if (!Status.hasFlagToday("forest::exchangeSkuMissing::" + skuId)) {
+                Log.record("活力兑换🎐找不到要兑换的权益！" + skuId + "#今日不再尝试");
+                Status.flagToday("forest::exchangeSkuMissing::" + skuId);
+            }
             return false;
         }
         try {
