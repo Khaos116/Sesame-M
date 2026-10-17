@@ -191,6 +191,7 @@ public class AntForestV2 extends ModelTask {
     private SelectModelField dontCollectList;
 
     private BooleanModelField drawGameCenterAward;
+    private BooleanModelField teamPriority;
     private ChoiceModelField CollectSelfEnergyType;
 
     private IntegerModelField CollectSelfEnergyThreshold;
@@ -307,6 +308,7 @@ public class AntForestV2 extends ModelTask {
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();
         modelFields.addField(collectEnergy = new BooleanModelField("collectEnergy", "收集能量", false));
+        modelFields.addField(teamPriority = new BooleanModelField("teamPriority", "组队收集能量优先", false));
         modelFields.addField(dontCollectList = new SelectModelField("dontCollectList", "不收取能量列表", new LinkedHashSet<>(), AlipayUser::getList));
         modelFields.addField(batchRobEnergy = new BooleanModelField("batchRobEnergy", "一键收取", false));
         modelFields.addField(CollectSelfEnergyType = new ChoiceModelField("CollectSelfEnergyType", "收单个能量球 | " + "方式", CollectSelfType.ALL, CollectSelfType.nickNames));
@@ -434,6 +436,8 @@ public class AntForestV2 extends ModelTask {
 
     @Override
     public void run() {
+        // 组队优先：本次运行是否由本方法切到组队模式（结束时需切回个人）
+        boolean prioritySwitchedToTeam = false;
         try {
             taskCount.set(0);
             selfId = UserIdMap.getCurrentUid();
@@ -441,6 +445,18 @@ public class AntForestV2 extends ModelTask {
 
             // 组队合种浇水异常中断后，把账号从组队模式恢复回个人模式
             fixTeamModeIfNeeded();
+
+            // 组队优先：主动切到组队模式，让 queryHomePage 返回组队主页（个人能量在 mainMember 里）
+            if (teamPriority.getValue()) {
+                if (updateUserConfiginTeam(true)) {
+                    prioritySwitchedToTeam = true;
+                    Status.flagToday(FLAG_TEAM_MODE_SWITCHED);
+                    Log.record("组队优先：已切换到组队模式");
+                } else {
+                    // 账号不在任何队伍 / 切换失败：降级为个人模式（原行为）
+                    Log.record("组队优先：切换到组队模式失败（可能不在任何队伍），按个人模式继续");
+                }
+            }
 
             if (waterFriendEnergyFirst.getValue()) {
                 waterFriendEnergy();
@@ -784,6 +800,15 @@ public class AntForestV2 extends ModelTask {
             syncTodayCollectedFromServer();
             Statistics.save();
             FriendWatch.save();
+            // 组队优先：本轮结束切回个人模式（放在倍卡/校准之后，避免它们落到个人版）
+            if (prioritySwitchedToTeam) {
+                if (updateUserConfiginTeam(false)) {
+                    Status.clearFlag(FLAG_TEAM_MODE_SWITCHED);
+                    Log.record("组队优先：已切回个人模式");
+                } else {
+                    Log.record("组队优先：切回个人模式失败，下次运行自动重试");
+                }
+            }
         }
     }
 
@@ -5336,8 +5361,9 @@ public class AntForestV2 extends ModelTask {
         } catch (Throwable t) {
             Log.err(TAG, "teamCooperateWater err:", t);
         } finally {
-            // 任何分支（含异常和提前 return）都要切回个人模式，否则会一直停在组队模式影响其它功能
-            if (switchedToTeam) {
+            // 任何分支（含异常和提前 return）都要切回个人模式，否则会一直停在组队模式影响其它功能。
+            // 组队优先时由 run() 收尾统一切回，这里不切（否则会把本轮后续活动打回个人版）
+            if (switchedToTeam && !teamPriority.getValue()) {
                 if (updateUserConfiginTeam(false)) {
                     Status.clearFlag(FLAG_TEAM_MODE_SWITCHED);
                     Log.record("已返回个人模式");
@@ -5389,7 +5415,11 @@ public class AntForestV2 extends ModelTask {
      * <p>
      * 没开「组队合种浇水」也会执行：正是"开了功能 → 切换中途中断 → 用户随后把开关关掉"这种情况最需要校正。
      */
-    private static void fixTeamModeIfNeeded() {
+    private void fixTeamModeIfNeeded() {
+        // 组队优先时组队是预期状态，不做"切回个人"的校正（否则刚切过去又被切回来）
+        if (teamPriority.getValue()) {
+            return;
+        }
         if (!Status.hasFlagToday(FLAG_TEAM_MODE_SWITCHED)) {
             return;
         }
