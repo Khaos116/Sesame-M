@@ -84,6 +84,23 @@ public class MergeConfigCheck {
         test.setModelFieldsMap(Map.of("AntMember", oldMember));
         assert Boolean.TRUE.equals(member.get("enableGoldTicketTask").getValue()) && Boolean.TRUE.equals(member.get("enableGoldTicketConsume").getValue());
         ModelTask.configs.remove("AntMember");
+        var cards = new SelectAndCountModelField("continuousUseCardOptions", "cards",
+                new LinkedHashMap<>(), Collections.<IdAndName>emptyList());
+        var forest = new ModelFields(); forest.addField(cards);
+        ModelTask.configs.put("AntForestV2", new ModelConfig("AntForestV2", forest));
+        var oldForest = new ModelFields();
+        oldForest.addField(field("continuousUseCardOptions", List.of("doubleClick", "robExpandCard")));
+        test.setModelFieldsMap(Map.of("AntForestV2", oldForest));
+        assert cards.getValue().equals(Map.of("doubleClick", 0, "robExpandCard", 0)) : "old selected cards lost";
+        oldForest.put("continuousUseCardOptions", field("continuousUseCardOptions", Map.of("doubleClick", 2)));
+        test.setModelFieldsMap(Map.of("AntForestV2", oldForest));
+        assert cards.getValue().equals(Map.of("doubleClick", 2)) : "explicit new daily limits changed";
+        test.setModelFieldsMap(Map.of("AntForestV2", test.modelFieldsMap.get("AntForestV2")));
+        assert cards.get("doubleClick") == 2 : "card migration is not idempotent";
+        oldForest.put("continuousUseCardOptions", field("continuousUseCardOptions", List.of()));
+        test.setModelFieldsMap(Map.of("AntForestV2", oldForest));
+        assert cards.getValue().isEmpty() : "empty old selection enabled cards";
+        ModelTask.configs.remove("AntForestV2");
         var scenes = new SelectAndCountModelField("orchardSpreadManureSceneList", "scenes",
                 new LinkedHashMap<>(), Collections.<IdAndName>emptyList());
         var orchard = new ModelFields(); orchard.addField(scenes);

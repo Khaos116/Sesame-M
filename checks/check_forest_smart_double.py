@@ -10,7 +10,7 @@ code=r'''
 import java.util.*;import org.json.*;import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class ForestSmartDoubleCheck {
  static String TAG="check";String selfId="self",smartDoubleCheckId;Object usePropLockObj=new Object();boolean hasErrorWait,quiet;int advanceTimeInt;
- static class Bool {boolean n;boolean getValue(){return n;}}static class Num {int n;int getValue(){return n;}}static class Select {Set<String> n=new HashSet<>();Set<String> getValue(){return n;}}
+ static class Bool {boolean n;boolean getValue(){return n;}}static class Num {int n;int getValue(){return n;}}static class Select {Set<String> n=new HashSet<>();Map<String,Integer> limits=new HashMap<>();Set<String> getValue(){return n;}boolean contains(String g){return n.contains(g);}Integer get(String g){return limits.get(g);}}
  Bool smartDoubleCard=new Bool(),collectEnergy=new Bool();Num smartDoubleCardThreshold=new Num(),smartDoubleCardDailyLimit=new Num();Select continuousUseCardOptions=new Select();Set<String> dontCollectMap=new HashSet<>();Set<String> blocked=new HashSet<>();
  static class UserIdMap {static String getCurrentUid(){return "self";}}
  Bool smartDoublePermanent=new Bool(),smartDouble31Days=new Bool(),forestPropRefill=new Bool();int advanced;
@@ -39,9 +39,11 @@ public class ForestSmartDoubleCheck {
  static class AntForestRpcCall {static String VERSION="check";static String getRandomString(int n){return "nonce";}static String queryMiscInfo(){return ApplicationHook.requestString("queryMiscInfo","[{}]");}static String queryPropList(boolean ignored){return ApplicationHook.requestString("queryPropList","[{}]");}@@RPC@@}
  @@METHODS@@
  void waiting(String uid,int index,long at,boolean doubled){addChildTask(new BubbleTimerTask(uid,index,at,"friend",doubled));}
- static void reset(ForestSmartDoubleCheck f){f.smartDoubleCard.n=f.collectEnergy.n=true;f.smartDoubleCardThreshold.n=2;f.smartDoubleCardDailyLimit.n=6;f.continuousUseCardOptions.n=Set.of("doubleClick");f.hasErrorWait=f.quiet=false;f.childTaskMap.clear();f.smartDoubleCheckId=null;f.dontCollectMap.clear();f.blocked.clear();Status.flags.clear();Status.counts.clear();TimeUtil.cancel=false;now=System.currentTimeMillis();end=0;uses=queries=bagCase=Log.ok=0;wrongUid=drift=consumeReject=false;eligible=stock=effect=true;fail=unknown=duplicate=shield=cancelAfter=false;type="LIMIT_TIME_ENERGY_DOUBLE_CLICK";f.waiting("friend",1,now+120000,true);f.waiting("friend",2,now+121000,true);}
+ static void reset(ForestSmartDoubleCheck f){f.smartDoubleCard.n=f.collectEnergy.n=true;f.smartDoubleCardThreshold.n=2;f.smartDoubleCardDailyLimit.n=6;f.continuousUseCardOptions.n=Set.of("doubleClick");f.hasErrorWait=f.quiet=false;f.childTaskMap.clear();f.smartDoubleCheckId=null;f.dontCollectMap.clear();f.blocked.clear();Status.flags.clear();Status.counts.clear();f.continuousUseCardOptions.limits.clear();TimeUtil.cancel=false;now=System.currentTimeMillis();end=0;uses=queries=bagCase=Log.ok=0;wrongUid=drift=consumeReject=false;eligible=stock=effect=true;fail=unknown=duplicate=shield=cancelAfter=false;type="LIMIT_TIME_ENERGY_DOUBLE_CLICK";f.waiting("friend",1,now+120000,true);f.waiting("friend",2,now+121000,true);}
  public static void main(String[] args){ForestSmartDoubleCheck f=new ForestSmartDoubleCheck();
   reset(f);f.useSmartDoubleCard();f.useSmartDoubleCard();assert uses==1&&Log.ok==1&&Status.getIntFlagToday("forest::smartDoubleAttempts")==1;
+  reset(f);f.continuousUseCardOptions.limits.put("doubleClick",1);Status.setIntFlagToday("continuousUseCard::count::doubleClick",1);f.useSmartDoubleCard();assert uses==0&&queries==0;
+  reset(f);f.useSmartDoubleCard();assert Status.getIntFlagToday("continuousUseCard::count::doubleClick")==1;
   reset(f);f.smartDoubleCard.n=false;f.useSmartDoubleCard();assert uses==0&&queries==0;
   reset(f);f.continuousUseCardOptions.n=Set.of();f.useSmartDoubleCard();assert uses==0;
   reset(f);f.smartDoubleCardThreshold.n=3;f.useSmartDoubleCard();assert uses==0&&queries==0;
@@ -75,7 +77,7 @@ public class ForestSmartDoubleCheck {
 '''
 code=code.replace('@@CTOR@@',method(forest,'BubbleTimerTask(String ui, long bi, long pt, String un, boolean doubled)'))
 code=code.replace('@@SNAPSHOT@@',method('data/task/ModelTask.java','protected List<ChildModelTask> getChildTaskSnapshot('))
-code=code.replace('@@METHODS@@','\n'.join(method(forest,s) for s in ('private boolean smartDoubleEnabled(','private List<BubbleTimerTask> smartDoubleTargets(','private List<BubbleTimerTask> confirmSmartDoubleTargets(','private long querySmartDoubleEnd(','private JSONArray querySmartDoubleInventory(','private JSONObject chooseSmartDoubleCard(','private static long smartDoubleStock(','private static boolean smartDoubleHasId(','private void useSmartDoubleCard(','private void scheduleSmartDoubleCheck(','static JSONObject forestSignPayload(','static long forestFeatureLong(')))
+code=code.replace('@@METHODS@@','\n'.join(method(forest,s) for s in ('private boolean canUseContinuousCard(','private void recordContinuousCardUse(','private boolean smartDoubleEnabled(','private List<BubbleTimerTask> smartDoubleTargets(','private List<BubbleTimerTask> confirmSmartDoubleTargets(','private long querySmartDoubleEnd(','private JSONArray querySmartDoubleInventory(','private JSONObject chooseSmartDoubleCard(','private static long smartDoubleStock(','private static boolean smartDoubleHasId(','private void useSmartDoubleCard(','private void scheduleSmartDoubleCheck(','static JSONObject forestSignPayload(','static long forestFeatureLong(')))
 code=code.replace('@@RPC@@',method(rpc,'public static String consumeProp(String propGroup, String propId, String propType, Boolean secondConfirm)'))
 cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1/org.json/json'
 jar=sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar','-javadoc.jar')))[-1]

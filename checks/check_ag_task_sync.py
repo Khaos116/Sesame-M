@@ -106,6 +106,11 @@ public class AgTaskSyncCheck {
   assert MemberBrowseTasks.rows("{success:true,resultData:{categoryTaskList:[{taskProcessVOList:[]}]}}").isEmpty();
   resetMember();JSONObject two=member("one",true);two.optJSONObject("simpleTaskConfig").put("targetBusiness",new JSONArray().put("sub#one"));two.put("extInfo",new JSONObject().put("awardCurrentPoint",5));AntMemberRpcCall.tasks.put("one",two);MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.execute==1&&!Log.category.isEmpty()&&Log.category.get(0).contains("5");
   assert MemberBrowseTasks.target(member("one",false).put("targetBusiness",new JSONArray().put("CALL_APP#scene")))==null;
+  for(String target:new String[]{"CALL_APP#scene", "CALL_APP#sub#param", "OTHER#sub#param", "BROWSE##param"}) {
+   resetMember();JSONObject unsupported=member("one",false);unsupported.optJSONObject("simpleTaskConfig").put("targetBusiness",new JSONArray().put(target));
+   AntMemberRpcCall.tasks.put("one",unsupported);MemberBrowseTasks.run(Set.of());MemberBrowseTasks.run(Set.of());
+   assert AntMemberRpcCall.apply==0&&AntMemberRpcCall.execute==0 : "unsupported member task issued an RPC";
+  }
   resetMember();AntMemberRpcCall.tasks.put("one",member("one",true));AntMemberRpcCall.advance=false;AntMemberRpcCall.executeReply="{success:false,resultCode:'UNSUPPORTED'}";MemberBrowseTasks.run(Set.of());assert MessageUtil.rejected==1;
   resetMember();AntMemberRpcCall.tasks.put("one",member("one",true));AntMemberRpcCall.advance=false;AntMemberRpcCall.executeReply="{}";MemberBrowseTasks.run(Set.of());assert MessageUtil.rejected==0;
   reset();RpcContract.signPageTaskList(2,"session");JSONObject payload=ApplicationHook.calls.get(0);assert payload.optInt("pageNo")==2&&payload.optString("session").equals("session")&&payload.optBoolean("switchNormal");assert payload.optJSONObject("sourcePassMap").optString("source").equals("mytab");

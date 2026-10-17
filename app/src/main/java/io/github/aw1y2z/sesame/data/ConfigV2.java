@@ -74,6 +74,16 @@ public class ConfigV2 {
                         }
                         if (modelField != null) {
                             Object value = modelField.getValue();
+                            // 旧多选列表迁为每类次数，0 保留原来的不限次数行为。
+                            if ("AntForestV2".equals(modelCode)
+                                    && "continuousUseCardOptions".equals(configModelField.getCode())
+                                    && value instanceof java.util.Collection<?>) {
+                                Map<String, Integer> counts = new LinkedHashMap<>();
+                                for (Object group : (java.util.Collection<?>) value) {
+                                    if (group instanceof String && !((String) group).trim().isEmpty()) counts.put((String) group, 0);
+                                }
+                                value = counts;
+                            }
                             // 兼容曾保存为“场景列表 + 统一次数”的版本；旧 Map 原样保留。
                             if ("AntOrchard".equals(modelCode)
                                     && "orchardSpreadManureSceneList".equals(configModelField.getCode())

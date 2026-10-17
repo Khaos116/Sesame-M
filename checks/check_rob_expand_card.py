@@ -19,11 +19,15 @@ import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class RobCardCheck {
     static final String TAG = "check", VERSION = "20250813";
     static class Field { int n; Field(int n) { this.n=n; } int getValue() { return n; } }
+    Map<String,Integer> continuousUseCardOptions = new HashMap<>();
     Field robExpandCardReplaceRemainDays = new Field(7), robExpandCardForceReplaceExpireDays = new Field(2);
     static class MyUtils { static JSONObject newJSONObject(String s) { try { return new JSONObject(s); } catch(Exception e) { return new JSONObject(); } } }
     static class RpcRequestGuard { static boolean isFailure(JSONObject j) { return Boolean.FALSE.equals(j.opt("success")); } }
     static class Status {
         static Set<String> flags = new HashSet<>();
+        static Map<String,Integer> counts = new HashMap<>();
+        static int getIntFlagToday(String key){return counts.getOrDefault(key,0);}
+        static void setIntFlagToday(String key,int n){counts.put(key,n);}
         static boolean hasFlagToday(String s) { return flags.contains(s); }
         static void flagToday(String s) { flags.add(s); }
     }
@@ -70,7 +74,7 @@ public class RobCardCheck {
             new JSONObject().put("usingProp",new JSONObject().put("userPropVOS",props))).toString();
     }
     static void setup(RobCardCheck check, JSONArray bag, String... states) {
-        check.bag=bag; Status.flags.clear(); ApplicationHook.requests.clear(); ApplicationHook.replies.clear();
+        check.bag=bag; Status.flags.clear(); Status.counts.clear(); check.continuousUseCardOptions.clear(); ApplicationHook.requests.clear(); ApplicationHook.replies.clear();
         AntForestRpcCall.states.clear(); AntForestRpcCall.states.addAll(Arrays.asList(states)); Log.success=0;
     }
     public static void main(String[] args) throws Exception {
@@ -127,10 +131,14 @@ public class RobCardCheck {
         ApplicationHook.replies.add("{\"resultCode\":\"SUCCESS\",\"resData\":{\"usePropStatus\":\"NEED_CONFIRM_REPLACE\"}}");
         ApplicationHook.replies.add("{\"resultCode\":\"SUCCESS\"}");
         check.usePreferredRobExpandCard();
+        assert Status.getIntFlagToday("continuousUseCard::count::robExpandCard")==1 : "confirmed replacement did not count once";
         assert ApplicationHook.requests.size()==2 && !ApplicationHook.requests.get(0).optBoolean("secondConfirm")
             && ApplicationHook.requests.get(1).optBoolean("secondConfirm") && Log.success==1;
         AntForestRpcCall.states.add(before); check.usePreferredRobExpandCard();
         assert ApplicationHook.requests.size()==2 : "same id cannot be consumed twice today";
+        setup(check,new JSONArray().put(normal),before,after);check.continuousUseCardOptions.put("robExpandCard",1);
+        Status.setIntFlagToday("continuousUseCard::count::robExpandCard",1);check.usePreferredRobExpandCard();
+        assert ApplicationHook.requests.isEmpty() : "preferred N-card path bypassed daily quota";
         setup(check,new JSONArray().put(normal),before,after);
         ApplicationHook.replies.add("{\"resultCode\":\"SUCCESS\",\"usePropStatus\":\"REPLACE\"}");
         check.usePreferredRobExpandCard(); assert ApplicationHook.requests.size()==1 && Log.success==0 : "changed before confirm";
@@ -158,7 +166,7 @@ public class RobCardCheck {
 code = code.replace("@@METHODS@@", "\n".join(method(forest, name) for name in (
     "static long forestFeatureLong(", "private JSONObject queryRobExpandCardState(",
     "private static double robExpandCardFactor(", "private static JSONObject choosePreferredRobExpandCard(",
-    "private void usePreferredRobExpandCard(")))
+    "private boolean canUseContinuousCard(", "private void recordContinuousCardUse(", "private void usePreferredRobExpandCard(")))
 code = code.replace("@@RPC@@", method(rpc, "public static String consumeProp(String propGroup, String propId, String propType, Boolean secondConfirm)"))
 code = code.replace("@@COLLECT_ROB@@", method(forest, "private void collectRobExpandEnergy(JSONObject joHomePage)"))
 source = (SOURCE / forest).read_text(encoding="utf-8")
