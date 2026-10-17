@@ -294,7 +294,7 @@ public class AntForestV2 extends ModelTask {
     private BooleanModelField ForestHuntHelp;
     private SelectModelField ForestHuntHelpList;
 
-    private SelectModelField continuousUseCardOptions;
+    private SelectAndCountModelField continuousUseCardOptions;
 
     private BooleanModelField autoUseShieldCard;
     private IntegerModelField continuousUseShieldHour;
@@ -327,7 +327,7 @@ public class AntForestV2 extends ModelTask {
         modelFields.addField(retryInterval = new IntegerModelField("retryInterval", "重试间隔(毫秒)", 1000, 0, 10000));
         modelFields.addField(drawGameCenterAward = new BooleanModelField("drawGameCenterAward", "森林乐园 | 游戏宝箱", true));
         modelFields.addField(CollectBombEnergyLimit = new IntegerModelField("CollectBombEnergyLimit", "单个炸弹能量大于该值收取", 0, 0, 100000));
-        modelFields.addField(continuousUseCardOptions = new SelectModelField("continuousUseCardOptions", "连续兑换使用道具卡片 | 选项", new LinkedHashSet<>(), CustomOption::getContinuousUseCardOptions));
+        modelFields.addField(continuousUseCardOptions = new SelectAndCountModelField("continuousUseCardOptions", "连续兑换使用道具卡片", new LinkedHashMap<>(), CustomOption::getContinuousUseCardOptions, "请填写使用次数(每日,0不限)"));
         modelFields.addField(autoUseShieldCard = new BooleanModelField("autoUseShieldCard", "自动续用保护罩", false));
         modelFields.addField(continuousUseShieldHour = new IntegerModelField("continuousUseShieldHour", "自动续用保护罩(小时)", 24, 1, 168).setDependsOn("autoUseShieldCard"));
         //modelFields.addField(doubleClickType = new ChoiceModelField("doubleClickType", "双击卡 | " + "自动使用", UsePropType.CLOSE, UsePropType.nickNames));
@@ -2458,7 +2458,15 @@ public class AntForestV2 extends ModelTask {
                 if (count == null || count < 0) {
                     continue;
                 }
-                while (Status.canVitalityExchangeBenefitToday(skuId, count) && exchangeBenefit(skuId)) {
+                // 失效 skuId（权益下架/换号/服务端改 ID）当日已判过就跳过，避免每轮刷屏并拖累后续任务
+                if (Status.hasFlagToday("forest::exchangeSkuMissing::" + skuId)) {
+                    continue;
+                }
+                // 每日次数之外再加硬循环上限：即便出现意外也不会空转
+                int loopCount = 0;
+                while (loopCount++ < count
+                        && Status.canVitalityExchangeBenefitToday(skuId, count)
+                        && exchangeBenefit(skuId)) {
                     TimeUtil.sleep(3000);
                 }
             }
@@ -3576,9 +3584,20 @@ public class AntForestV2 extends ModelTask {
 
     private void continuousUseAndExchangeCard(String propGroupType, String exchangeProp) {
         try {
-            if (propGroupType.equals("shield") || continuousUseCardOptions.getValue().contains(propGroupType)) {
+            if (propGroupType.equals("shield") || continuousUseCardOptions.contains(propGroupType)) {
                 long continuousUseCardSecond = continuousUseCardCheak(propGroupType);
-                if (continuousUseCardSecond >= 0) {
+                // 仅当"未使用且可用"（==0）才处理：使用中（>0）或不可用（-1）都不消耗
+                if (continuousUseCardSecond == 0) {
+                    // 每日使用次数上限（0 = 不限制）：达到后当天不再消耗该卡片，也不再兑换补充
+                    Integer optLimit = continuousUseCardOptions.get(propGroupType);
+                    int cardLimit = optLimit == null ? 0 : optLimit;
+                    if (cardLimit > 0) {
+                        int used = Status.getIntFlagToday("continuousUseCard::count::" + propGroupType);
+                        if (used >= cardLimit) {
+                            Log.forest("连续兑换使用道具卡片🌟[" + propGroupType + "]今日已用满[" + used + "/" + cardLimit + "]#停止");
+                            return;
+                        }
+                    }
                     TimeUtil.sleep(500);
                     JSONObject rightCard = chooseContinuousLIMITTIMECard(propGroupType);
                     if (rightCard == null) {
@@ -3613,10 +3632,19 @@ public class AntForestV2 extends ModelTask {
                         if (propIdList.length() == 0) {
                             return;
                         }
+                        // 当日使用次数上限（0 = 不限制）：达到后不再消耗该道具卡片（在真正消耗前拦截）
+                        // cardLimit 取自外层 if(==0) 块（每选项独立设置），此处直接复用
+                        if (cardLimit > 0) {
+                            int used = Status.getIntFlagToday("continuousUseCard::count::" + propGroupType);
+                            if (used >= cardLimit) {
+                                Log.forest("连续兑换使用道具卡片🌟[" + propGroupType + "]今日已用满[" + used + "/" + cardLimit + "]#停止");
+                                return;
+                            }
+                        }
                         String propId = propIdList.optString(0);
                         String propType = rightCard.optString("propType");
                         String propName = rightCard.getJSONObject("propConfigVO").getString("propName");
-                        JSONObject joResult;
+                        JSONObject joResult = null;
                         switch (propGroupType) {
                             case "doubleClick":
                             case "shield":
@@ -3649,6 +3677,11 @@ public class AntForestV2 extends ModelTask {
                                     Log.forest("使用道具🎭[" + propName + "]");
                                 }
                                 break;*/
+                        }
+                        // 使用成功才计入当日次数（上限已在循环开头拦截，此处不会多发请求）
+                        if (cardLimit > 0 && MessageUtil.checkResultCode(TAG, joResult)) {
+                            Status.setIntFlagToday("continuousUseCard::count::" + propGroupType,
+                                    Status.getIntFlagToday("continuousUseCard::count::" + propGroupType) + 1);
                         }
                         continuousUseCardSecond = continuousUseCardCheak(propGroupType);
                         if (continuousUseCardSecond < 0) {
@@ -4981,6 +5014,12 @@ public class AntForestV2 extends ModelTask {
     /** 单分类翻页上限：hasMore 异常一直为真时兜底 */
     private static final int VITALITY_ITEM_MAX_PAGES = 10;
 
+    /** 活力值商店列表拉取失败的当日重试上限：服务端持续失败时避免每轮都重拉（单轮最多 5 分类 × 10 页） */
+    private static final int VITALITY_SKU_RETRY_MAX = 3;
+
+    /** 活力值商店列表拉取失败次数的当日计数 key */
+    private static final String FLAG_VITALITY_SKU_RETRY = "forest::vitalitySkuListRetry";
+
     /**
      * 获取活力值商店所有商品信息。
      * <p>原先只查 SC_ASSETS 的第一页 ⇒ 权益列表只有一小部分；改为按官方实测的 5 个 labelType
@@ -4988,11 +5027,16 @@ public class AntForestV2 extends ModelTask {
      * <p>当日标记的判断放在方法内部，因为除了 vitalityExchangeBenefit() 外，
      * useEnergyRainCard()/兑换道具等路径也会直接调用它，那些路径同样需要"当日只拉一次"。
      */
-    /** @return 是否真的取到 SKU（取不到时留给下一轮重试） */
+    /** @return 是否真的取到 SKU（取不到时留给下一轮重试，但当日重试次数有上限） */
     private boolean getAllSkuInfo() {
         try {
             if (Status.hasFlagToday("forest::vitalitySkuList")) {
                 return true;
+            }
+            // 失败重试上限：服务端持续失败时避免每轮都重拉（单轮最多 5 分类 × 10 页）
+            int retries = Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY);
+            if (retries >= VITALITY_SKU_RETRY_MAX) {
+                return false;
             }
             int got = 0;
             for (String labelType : VITALITY_LABEL_TYPES) {
@@ -5022,11 +5066,23 @@ public class AntForestV2 extends ModelTask {
             if (got > 0) {
                 // 拉到了才打当日标记；拉不到留给下一轮重试
                 Status.flagToday("forest::vitalitySkuList");
+                return true;
             }
-            return got > 0;
+            accountVitalitySkuRetry();
+            return false;
         } catch (Throwable th) {
             Log.err(TAG, "getAllSkuInfo err:", th);
+            accountVitalitySkuRetry();
             return false;
+        }
+    }
+
+    /** 活力值商店列表拉取失败计数：达上限后当日不再重拉，避免每轮都重试 */
+    private static void accountVitalitySkuRetry() {
+        int tries = Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY) + 1;
+        Status.setIntFlagToday(FLAG_VITALITY_SKU_RETRY, tries);
+        if (tries >= VITALITY_SKU_RETRY_MAX) {
+            Log.i("活力值商店列表：连续" + tries + "次未取到，今日不再重试");
         }
     }
 
@@ -5097,7 +5153,12 @@ public class AntForestV2 extends ModelTask {
         }
         JSONObject sku = skuInfo.get(skuId);
         if (sku == null) {
-            Log.record("活力兑换🎐找不到要兑换的权益！");
+            // 失效 skuId（权益下架/换号/服务端改 ID）：打当日标记，当天不再重试；
+            // 否则每轮都会遍历到它并刷一条日志，既刷屏又拖累后续任务
+            if (!Status.hasFlagToday("forest::exchangeSkuMissing::" + skuId)) {
+                Log.record("活力兑换🎐找不到要兑换的权益！" + skuId + "#今日不再尝试");
+                Status.flagToday("forest::exchangeSkuMissing::" + skuId);
+            }
             return false;
         }
         try {
@@ -5182,9 +5243,15 @@ public class AntForestV2 extends ModelTask {
             // 必须先把模式切到组队，个人模式的返回体里没有 teamHomeResult，取不到 teamId
             int state = teamState(homeJo);
             if (state < 0) {
-                // 无法判定组队状态（字段缺失/异常）：不主动改账户设置，直接跳过
-                Log.record("无法判定组队状态，跳过组队合种浇水");
-                return;
+                // nextAction 取值不稳定（线上部分账号缺失/异常）：用 teamHomeResult.mainMember 兜底，
+                // 该字段只有组队主页才下发，比 nextAction 字面量更可靠（与 isTeam 一致）。
+                // 命中则视为已在组队（不切换、直接取 teamId 浇水），否则保守跳过、不主动改账户设置。
+                if (isTeam(homeJo)) {
+                    state = 1;
+                } else {
+                    Log.record("无法判定组队状态，跳过组队合种浇水");
+                    return;
+                }
             }
             if (state == 0) {
                 Log.record("不在队伍模式,已为您切换至组队浇水");
