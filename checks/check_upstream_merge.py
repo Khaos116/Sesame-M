@@ -117,7 +117,7 @@ transaction_source=(SOURCE / "model/base/TaskAlternative.java").read_text(encodi
 code=code.replace("@@TRANSACTION_WORDS@@", "static final String[] TRANSACTION_KEYWORDS = " + transaction_source.split("private static final String[] TRANSACTION_KEYWORDS = ",1)[1].split(";",1)[0] + ";")
 
 flows = r'''
-import org.json.*; import java.util.*;
+import org.json.*; import java.util.*; import java.util.concurrent.TimeUnit;
 public class FlowCheck {
     static class TaskCancelledException extends RuntimeException {}
     static final String TAG = "test";
@@ -233,6 +233,7 @@ public class FlowCheck {
         static final String FLAG_LOVETEAM_WATER = "Forest::loveteamWater", FLAG_TEAM_MODE_SWITCHED = "Forest::teamWaterSwitchedToTeam";
         static final String FLAG_TEAM_WATER_DAILY_COUNT = "FLAG_TEAM_WATER_DAILY_COUNT";
         Field<Integer> partnerteamWaterNum = new Field<>(20); Map<String,JSONObject> skuInfo = new HashMap<>();
+        Long vitalitySkuLastFailureNanos;
         @@FOREST@@
     }
     enum PlantScene { MAIN; String nickname() { return name(); } }
@@ -388,6 +389,7 @@ public class FlowCheck {
         AntForestRpcCall.pages.clear();
         Status.flags.clear(); AntForestRpcCall.forever = true; f.getAllSkuInfo();
         assert AntForestRpcCall.pages.size() == 50;
+        f.vitalitySkuLastFailureNanos=System.nanoTime()-TimeUnit.MINUTES.toNanos(6);
         Status.flags.clear(); AntForestRpcCall.brokenItems = true; assert !f.getAllSkuInfo() : "old cache cannot confirm a fresh fetch";
         f = new Forest(); assert !f.getAllSkuInfo() && f.skuInfo.isEmpty();
         int pageCount = AntForestRpcCall.pages.size();
@@ -396,6 +398,7 @@ public class FlowCheck {
         AntForestRpcCall.partial = true; f = new Forest();
         assert !f.getAllSkuInfo() && !f.skuInfo.isEmpty() && !Status.hasFlagToday("forest::vitalitySkuList") : "partial catalogue claimed complete";
         AntForestRpcCall.partial = false;
+        f.vitalitySkuLastFailureNanos=System.nanoTime()-TimeUnit.MINUTES.toNanos(6);
         assert f.getAllSkuInfo() && Status.hasFlagToday("forest::vitalitySkuList") : "transient catalogue error blocked later recovery";
         Status.flags.clear(); Status.counts.clear(); AntForestRpcCall.cancelList = true;
         try { new Forest().getAllSkuInfo(); throw new AssertionError("catalogue cancellation swallowed"); } catch (TaskCancelledException expected) {}
@@ -477,7 +480,7 @@ public class FlowCheck {
 for placeholder, path, signatures in (
     ("@@RETRY@@", "util/MessageUtil.java", ("public static boolean isRetryable(",)),
     ("@@MEMBER@@", member, ("private void collectSesameFeedback(", "private void collectSesame(", "private boolean reportSesameTask(", "private String lastOperateRecordId(", "private String activeSesameRecordId(", "public void gameCenterTaskPrize(", "private static boolean collectNotDoneIds(", "private static boolean collectNotDoneFromArray(")),
-    ("@@FOREST@@", "model/task/antForest/AntForestV2.java", ("private boolean getAllSkuInfo(", "private static void accountVitalitySkuRetry(", "private static JSONArray optItemInfoVOList(",
+    ("@@FOREST@@", "model/task/antForest/AntForestV2.java", ("private boolean getAllSkuInfo(", "private void accountVitalitySkuRetry(", "private static JSONArray optItemInfoVOList(",
         "private static boolean hasMore(", "private boolean getSkuInfoByItemInfoVO(", "private void teamCooperateWater(",
         "private static JSONObject queryTeamHomePage(", "private static String getTeamId(", "private static int getTeamCanWaterCount(",
         "private static boolean updateUserConfiginTeam(", "private static int teamState(", "private static void loveteam(",
@@ -802,7 +805,7 @@ reload_check = reload_check.replace('@@NOTICE@@', '\n'.join(method('util/Notific
 reload_check = reload_check.replace('@@EXCHANGE@@',method('model/task/antForest/AntForestV2.java','private static Boolean exchangeBenefit('))
 
 cards_check = r'''
-import java.util.*; import org.json.*;
+import java.util.*; import java.util.concurrent.TimeUnit; import org.json.*;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class CardLimitCheck {
     static String TAG="check";
@@ -813,6 +816,7 @@ public class CardLimitCheck {
     Selection continuousUseCardOptions=new Selection(), vitality_ExchangeBenefitList=new Selection();
     Field<Boolean> smartDoubleCard=new Field<>(false), forestPropRefill=new Field<>(false);
     Field<Integer> robExpandCardReplaceRemainDays=new Field<>(0), robExpandCardForceReplaceExpireDays=new Field<>(0);
+    Field<Integer> forestPropRefillBudget=new Field<>(10);boolean hasErrorWait;String selfId=UserIdMap.getCurrentUid();
     static class Status {
         static String uid="A"; static int day=1;
         static Map<String,Integer> counts=new HashMap<>(); static Set<String> flags=new HashSet<>();
@@ -821,31 +825,126 @@ public class CardLimitCheck {
         static void setIntFlagToday(String s,int n){counts.put(key(s),n);}
         static boolean hasFlagToday(String s){return flags.contains(key(s));}
         static void flagToday(String s){flags.add(key(s));}
+        static void clearFlag(String s){flags.remove(key(s));}
         static boolean canVitalityExchangeBenefitToday(String s,int n){return true;} // Counter failure must not create an infinite loop.
     }
     static class ForestExpiringProps {static boolean hasUnconfirmed(String g){return false;}}
-    static class ForestPropSupport {static boolean hasUnconfirmedRefill(String g){return false;}}
+    static class ForestPropSupport {
+        static boolean hasUnconfirmedRefill(String g){return false;}
+        static JSONArray replenish(String g,boolean enabled,Map<String,Integer> selected,Map<String,JSONObject> sku,int budget){return new JSONArray();}
+    }
     static class TimeUtil {static void sleep(long n){}}
     static class MyUtils {static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
-    static class RpcRequestGuard {static boolean isFailure(JSONObject j){return Boolean.FALSE.equals(j.opt("success"));}}
-    static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return j!=null&&"SUCCESS".equals(j.optString("resultCode"));}}
-    static class Log {static int missing; static void forest(String s){} static void record(String s){missing++;}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
+    static class RpcRequestGuard {@@FAILURE@@}
+    static class MessageUtil {
+        @@RESULT@@
+        static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}
+        static boolean isServerBusy(JSONObject j){return false;}
+        static void printErrorMessage(String t,JSONObject j,String k){}
+    }
+    static class Log {static int missing,used;static void i(String s){}static void i(String t,String s){}static void forest(String s){used++;} static void record(String s){missing++;}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
+    static class VitalityBenefitIdMap {
+        static Map<String,String> map=new HashMap<>();static Map<String,String> getMap(){return map;}
+        static void add(String id,String name){map.put(id,name);}static void save(String uid){}
+    }
+    static class UserIdMap {static String getCurrentUid(){return Status.uid;}}
+    static final String[] VITALITY_LABEL_TYPES={"","SC_ASSETS","SKIN","JEWELRY","OTHER"};
+    static final int VITALITY_ITEM_MAX_PAGES=10,VITALITY_SKU_RETRY_MAX=3;
+    static final String FLAG_VITALITY_SKU_RETRY="forest::vitalitySkuListRetry";
     static class AntForestRpcCall {
-        static int uses; static boolean fail, confirm;
-        static String consumeProp(String g,String id,String type,boolean second){uses++;confirm=second;return "{resultCode:'"+(fail?"FAIL":"SUCCESS")+"'}";}
+        static int uses,catalogCalls; static boolean fail, confirm,catalogFail,partial;static String reply;
+        static final int VITALITY_ITEM_PAGE_SIZE=20;
+        static String itemList(String label,int offset){
+            catalogCalls++;
+            if(catalogFail||partial&&"SKIN".equals(label))return "broken";
+            String sku=label.isEmpty()?"sku":"SKIN".equals(label)?"late":label;
+            JSONObject item=new JSONObject().put("spuId","spu").put("skuModelList",new JSONArray().put(new JSONObject().put("skuId",sku)));
+            return new JSONObject().put("success",true).put("hasMore",false).put("itemInfoVOList",new JSONArray().put(item)).toString();
+        }
+        static String consumeProp(String g,String id,String type,boolean second){uses++;confirm=second;return reply!=null?reply:"{resultCode:'"+(fail?"FAIL":"SUCCESS")+"'}";}
         static String consumeProp(String g,String id,String type){return consumeProp(g,id,type,false);}
     }
-    int queries, exchanges; boolean absent, malformed, loaded=true; long active;
+    int queries, exchanges; boolean absent, malformed; long active;
     void useSmartDoubleCard(){throw new AssertionError();} void usePreferredRobExpandCard(){throw new AssertionError();}
-    JSONArray refillForestProp(String g){throw new AssertionError("quota must precede refill");}
     long continuousUseCardCheak(String g){queries++;return active;}
     JSONObject chooseContinuousLIMITTIMECard(String g){return absent?null:new JSONObject().put("holdsNum",20).put("propType","card").put("propIdList",malformed?"bad":new JSONArray().put("id"));}
     Map<String,JSONObject> skuInfo=new HashMap<>();
-    boolean getAllSkuInfo(){return loaded;} void getSkuInfoBySpuId(String id){}
+    Long vitalitySkuLastFailureNanos;
+    void getSkuInfoBySpuId(String id){}
     boolean exchangeBenefit(String spu,String sku,String name){exchanges++;return true;}
     enum ItemStatus {REACH_LIMIT, NO_ENOUGH_POINT, NO_ENOUGH_STOCK; String nickName(){return name();}}
     @@METHODS@@
-    static void reset(){Status.counts.clear();Status.flags.clear();Status.uid="A";Status.day=1;AntForestRpcCall.uses=0;AntForestRpcCall.fail=false;Log.missing=0;}
+    static void reset(){Status.counts.clear();Status.flags.clear();Status.uid="A";Status.day=1;AntForestRpcCall.uses=AntForestRpcCall.catalogCalls=0;AntForestRpcCall.fail=AntForestRpcCall.catalogFail=AntForestRpcCall.partial=false;AntForestRpcCall.reply=null;Log.missing=Log.used=0;}
+    static void restartCatalogue(){
+        reset();CardLimitCheck f=new CardLimitCheck();assert f.getAllSkuInfo();
+        assert Status.hasFlagToday("forest::vitalitySkuList");
+        f=new CardLimitCheck();AntForestRpcCall.partial=true;assert !f.getAllSkuInfo();
+        assert !f.exchangeBenefit("late")&&!Status.hasFlagToday("forest::exchangeSkuMissing::late") : "restart partial catalogue poisoned a valid SKU";
+        AntForestRpcCall.partial=false;f.vitalitySkuLastFailureNanos=System.nanoTime()-TimeUnit.MINUTES.toNanos(6);
+        assert f.getAllSkuInfo()&&f.exchangeBenefit("late") : "partial catalogue prevented recovery";
+    }
+    static void retryRound(){
+        reset();CardLimitCheck f=new CardLimitCheck();AntForestRpcCall.catalogFail=true;
+        f.vitality_ExchangeBenefitList.value.put("sku",1);f.vitality_ExchangeBenefitList.value.put("late",1);
+        for(int round=1;round<=3;round++){
+            if(round>1)f.vitalitySkuLastFailureNanos=System.nanoTime()-TimeUnit.MINUTES.toNanos(6);
+            f.vitalityExchangeBenefit();
+            assert Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY)==round&&AntForestRpcCall.catalogCalls==round*5 : "one exchange round consumed multiple catalogue attempts";
+        }
+        f.vitalityExchangeBenefit();assert AntForestRpcCall.catalogCalls==15 : "daily catalogue retry limit bypassed";
+    }
+    static void retryReset(){
+        reset();CardLimitCheck f=new CardLimitCheck();AntForestRpcCall.catalogFail=true;
+        assert !f.getAllSkuInfo();f.vitalitySkuLastFailureNanos=System.nanoTime()-TimeUnit.MINUTES.toNanos(6);
+        assert !f.getAllSkuInfo()&&Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY)==2;
+        AntForestRpcCall.catalogFail=false;f.vitalitySkuLastFailureNanos=System.nanoTime()-TimeUnit.MINUTES.toNanos(6);assert f.getAllSkuInfo();
+        assert Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY)==0 : "successful fetch retained old failures";
+        AntForestRpcCall.partial=true;assert !new CardLimitCheck().getAllSkuInfo();
+        assert Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY)==1 : "new failure inherited old retry budget";
+        AntForestRpcCall.partial=false;assert new CardLimitCheck().getAllSkuInfo() : "successful recovery was blocked after restart";
+    }
+    static void sharedCatalogueRetry(){
+        reset();CardLimitCheck f=new CardLimitCheck();AntForestRpcCall.catalogFail=true;f.forestPropRefill.value=true;
+        f.exchangeBenefit("rain");f.exchangeBenefit("double31");f.exchangeBenefit("doubleLimit");f.refillForestProp("doubleClick");f.vitalityExchangeBenefit();
+        assert AntForestRpcCall.catalogCalls==5&&Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY)==1 : "mixed exchange/refill entries exhausted retries in one round";
+        f.vitalitySkuLastFailureNanos=System.nanoTime()-TimeUnit.MINUTES.toNanos(4);
+        assert !f.getAllSkuInfo()&&AntForestRpcCall.catalogCalls==5 : "cooldown ended before five minutes";
+        f.vitalitySkuLastFailureNanos=System.nanoTime()-TimeUnit.MINUTES.toNanos(6);
+        f.refillForestProp("doubleClick");f.exchangeBenefit("rain");
+        assert AntForestRpcCall.catalogCalls==10&&Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY)==2 : "retry did not resume after cooldown";
+        f.vitalitySkuLastFailureNanos=System.nanoTime()-TimeUnit.MINUTES.toNanos(6);f.exchangeBenefit("rain");
+        f.vitalitySkuLastFailureNanos=System.nanoTime()-TimeUnit.MINUTES.toNanos(6);f.refillForestProp("doubleClick");
+        assert AntForestRpcCall.catalogCalls==15&&Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY)==3 : "daily cap bypassed by another entry";
+        f.vitalitySkuLastFailureNanos=System.nanoTime();Status.day++;f.exchangeBenefit("rain");assert AntForestRpcCall.catalogCalls==20&&Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY)==1 : "yesterday cooldown blocked new day";
+        Status.uid="B";CardLimitCheck other=new CardLimitCheck();other.exchangeBenefit("rain");
+        assert AntForestRpcCall.catalogCalls==25&&Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY)==1 : "previous account cooldown blocked new model";
+        reset();f=new CardLimitCheck();AntForestRpcCall.partial=true;assert !f.getAllSkuInfo();int calls=AntForestRpcCall.catalogCalls;
+        assert f.exchangeBenefit("sku")&&!f.exchangeBenefit("late")&&AntForestRpcCall.catalogCalls==calls : "cooldown discarded known SKU or marked missing partial SKU";
+        assert !Status.hasFlagToday("forest::exchangeSkuMissing::late");
+    }
+    static void cardReplies(){
+        for(String group:new String[]{"doubleClick","stealthCard","shield","robExpandCard"}){
+            for(String ack:new String[]{"{resultCode:'success'}","{resultCode:'100'}","{resultCode:200}","{success:true,desc:'处理成功'}"}){
+                reset();CardLimitCheck f=new CardLimitCheck();f.continuousUseCardOptions.value.put(group,1);AntForestRpcCall.reply=ack;
+                f.continuousUseAndExchangeCard(group,null);f.continuousUseAndExchangeCard(group,null);
+                assert AntForestRpcCall.uses==1&&Status.getIntFlagToday("continuousUseCard::count::"+group)==1&&Log.used==1 : "accepted success reply bypassed quota: "+group+ack;
+            }
+        }
+        for(String ack:new String[]{"{resultCode:'SUCCESS',success:false}","{resultCode:'SUCCESS',error:'failed'}"}){
+            reset();CardLimitCheck f=new CardLimitCheck();f.continuousUseCardOptions.value.put("doubleClick",1);AntForestRpcCall.reply=ack;
+            f.continuousUseAndExchangeCard("doubleClick",null);assert Status.counts.isEmpty()&&Log.used==0 : "failure reply was logged or counted as success";
+        }
+    }
+    static void feedbackCases(){
+        List<String> failures=new ArrayList<>();
+        Map<String,Runnable> cases=new LinkedHashMap<>();
+        cases.put("restart catalogue",CardLimitCheck::restartCatalogue);cases.put("retry per round",CardLimitCheck::retryRound);
+        cases.put("reset retries",CardLimitCheck::retryReset);cases.put("card reply variants",CardLimitCheck::cardReplies);
+        cases.put("shared catalogue cooldown",CardLimitCheck::sharedCatalogueRetry);
+        for(var entry:cases.entrySet())try{entry.getValue().run();System.out.println("PASS feedback: "+entry.getKey());}
+        catch(AssertionError e){failures.add(entry.getKey()+": "+e.getMessage());}
+        assert failures.isEmpty():String.join("; ",failures);
+    }
     public static void main(String[] args){
         reset(); CardLimitCheck f=new CardLimitCheck(); f.continuousUseCardOptions.value.put("doubleClick",1);
         f.continuousUseAndExchangeCard("doubleClick",null);f.continuousUseAndExchangeCard("doubleClick",null);
@@ -865,16 +964,22 @@ public class CardLimitCheck {
         f.continuousUseAndExchangeCard("doubleClick",null);assert AntForestRpcCall.uses==0 : "invalid ID array consumed a card";
         reset();f=new CardLimitCheck();f.vitality_ExchangeBenefitList.value.put("sku",4);f.skuInfo.put("sku",new JSONObject().put("spuId","spu"));
         f.vitalityExchangeBenefit();assert f.exchanges==4 : "exchange loop did not honor hard limit";
+        Status.clearFlag("forest::vitalitySkuList");
         assert !f.exchangeBenefit("missing")&&!Status.hasFlagToday("forest::exchangeSkuMissing::missing") : "partial/failed catalogue poisoned SKU";
         Status.flagToday("forest::vitalitySkuList");assert !f.exchangeBenefit("missing");assert !f.exchangeBenefit("missing")&&Log.missing==1;
         Status.day++;Status.flagToday("forest::vitalitySkuList");assert !f.exchangeBenefit("missing")&&Log.missing==2 : "missing SKU remained blocked on next day";
         System.out.println("PASS continuous-card per-type/account/day limits, successful consumption, M renewal, malformed inventory, bounded exchange and missing SKU recovery");
+        feedbackCases();
     }
 }
 '''
 cards_check=cards_check.replace('@@METHODS@@','\n'.join(method('model/task/antForest/AntForestV2.java',s) for s in (
-    'private void continuousUseAndExchangeCard(', 'private boolean canUseContinuousCard(', 'private void recordContinuousCardUse(',
-    'private void vitalityExchangeBenefit(', 'private Boolean exchangeBenefit(String skuId)')))
+    'private void continuousUseAndExchangeCard(', 'private boolean canUseContinuousCard(', 'private void recordContinuousCardUse(', 'private JSONArray refillForestProp(',
+    'private void vitalityExchangeBenefit(', 'private Boolean exchangeBenefit(String skuId)', 'private boolean getAllSkuInfo(',
+    'private void accountVitalitySkuRetry(', 'private static JSONArray optItemInfoVOList(', 'private static boolean hasMore(', 'private boolean getSkuInfoByItemInfoVO(')))
+cards_check=cards_check.replace('@@FAILURE@@',method('rpc/intervallimit/RpcRequestGuard.java','public static boolean isFailure('))
+cards_check=cards_check.replace('@@RESULT@@','\n'.join(method('util/MessageUtil.java',s) for s in (
+    'public static Boolean checkResultCode(String tag, JSONObject jo)', 'public static Boolean checkResultCodeString(', 'public static Boolean checkResultCodeInteger(')))
 
 with tempfile.TemporaryDirectory(prefix="sesame-merge-") as tmp:
     for name, source in (("MergeCheck", code), ("FlowCheck", flows), ("UpstreamFixCheck", fixes), ("ToastCheck", toast), ("PatrolSyncCheck", patrol), ("LoveWaterRequestCheck", love_request), ("SyncProbeCheck", sync_probe), ("ReloadCheck",reload_check), ("CardLimitCheck",cards_check)):

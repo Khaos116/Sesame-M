@@ -3047,12 +3047,13 @@ public class AntForestV2 extends ModelTask {
 
     // skuId, sku
     Map<String, JSONObject> skuInfo = new HashMap<>();
+    private Long vitalitySkuLastFailureNanos;
 
     private void vitalityExchangeBenefit() {
         try {
             // 清单当日拉一次即可：单轮最多 5 个分类共 20 多次请求，且它同时是配置页兑换选项的来源，
             // 不能完全不拉；当日标记与重试逻辑都在 getAllSkuInfo() 内部
-            getAllSkuInfo();
+            if (!getAllSkuInfo() && skuInfo.isEmpty()) return;
             Map<String, Integer> exchangeList = vitality_ExchangeBenefitList.getValue();
             for (Map.Entry<String, Integer> entry : exchangeList.entrySet()) {
                 String skuId = entry.getKey();
@@ -4703,18 +4704,12 @@ public class AntForestV2 extends ModelTask {
                                 }
                                 holdsNum--;
                                 TimeUtil.sleep(500);
-                                if (MessageUtil.checkResultCode(TAG, joResult)) {
-                                    Log.forest("使用道具🎭[" + propName + "]");
-                                }
                                 break;
 
                             case "stealthCard":
                                 joResult = MyUtils.newJSONObject(AntForestRpcCall.consumeProp(propGroupType, propId, propType));
                                 holdsNum--;
                                 TimeUtil.sleep(1000);
-                                if (MessageUtil.checkResultCode(TAG, joResult)) {
-                                    Log.forest("使用道具🎭[" + propName + "]");
-                                }
                                 break;
                             /*case "energyBombCard":
                                 joResult = MyUtils.newJSONObject(AntForestRpcCall.consumeProp(propGroupType, propId, propType,false));
@@ -4725,8 +4720,12 @@ public class AntForestV2 extends ModelTask {
                                 }
                                 break;*/
                         }
-                        if (joResult != null && "SUCCESS".equals(joResult.optString("resultCode"))
-                                && !RpcRequestGuard.isFailure(joResult)) recordContinuousCardUse(propGroupType);
+                        boolean used = joResult != null && MessageUtil.checkResultCode(TAG, joResult)
+                                && !RpcRequestGuard.isFailure(joResult);
+                        if (used) {
+                            recordContinuousCardUse(propGroupType);
+                            Log.forest("使用道具🎭[" + propName + "]");
+                        }
                         continuousUseCardSecond = continuousUseCardCheak(propGroupType);
                         if (continuousUseCardSecond < 0) {
                             return;
@@ -6791,9 +6790,14 @@ public class AntForestV2 extends ModelTask {
             if (Status.hasFlagToday("forest::vitalitySkuList") && !skuInfo.isEmpty()) {
                 return true;
             }
+            // 重启后要重建内存清单，旧日标记不能证明本次拉取完整。
+            Status.clearFlag("forest::vitalitySkuList");
             // 失败重试上限：服务端持续失败时避免每轮都重拉（单轮最多 5 分类 × 10 页）
             int retries = Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY);
-            if (retries >= VITALITY_SKU_RETRY_MAX) {
+            // 各入口共用失败后的冷却，避免同轮用完重试次数。
+            Long lastFailureNanos = vitalitySkuLastFailureNanos;
+            if (retries >= VITALITY_SKU_RETRY_MAX || retries > 0 && lastFailureNanos != null
+                    && System.nanoTime() - lastFailureNanos < TimeUnit.MINUTES.toNanos(5)) {
                 return false;
             }
             int got = 0;
@@ -6831,6 +6835,8 @@ public class AntForestV2 extends ModelTask {
             VitalityBenefitIdMap.save(UserIdMap.getCurrentUid());
             Log.i("活力值商店列表：共取" + got + "条，清单共" + VitalityBenefitIdMap.getMap().size() + "条");
             if (gotSku && complete) {
+                vitalitySkuLastFailureNanos = null;
+                if (retries > 0) Status.setIntFlagToday(FLAG_VITALITY_SKU_RETRY, 0);
                 Status.flagToday("forest::vitalitySkuList");
                 return true;
             }
@@ -6845,7 +6851,8 @@ public class AntForestV2 extends ModelTask {
     }
 
     /** 活力值商店列表拉取失败计数：达上限后当日不再重拉，避免每轮都重试 */
-    private static void accountVitalitySkuRetry() {
+    private void accountVitalitySkuRetry() {
+        vitalitySkuLastFailureNanos = System.nanoTime();
         int tries = Status.getIntFlagToday(FLAG_VITALITY_SKU_RETRY) + 1;
         Status.setIntFlagToday(FLAG_VITALITY_SKU_RETRY, tries);
         if (tries >= VITALITY_SKU_RETRY_MAX) {
