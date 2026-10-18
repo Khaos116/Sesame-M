@@ -202,6 +202,7 @@ public class AntForestV2 extends ModelTask {
 
     private BooleanModelField drawGameCenterAward;
     private BooleanModelField readForest;
+    private BooleanModelField teamPriority;
     private ChoiceModelField CollectSelfEnergyType;
 
     private IntegerModelField CollectSelfEnergyThreshold;
@@ -346,6 +347,7 @@ public class AntForestV2 extends ModelTask {
     public ModelFields getFields() {
         ModelFields modelFields = new ModelFields();
         modelFields.addField(collectEnergy = new BooleanModelField("collectEnergy", "收集能量", false));
+        modelFields.addField(teamPriority = new BooleanModelField("teamPriority", "组队收集能量优先", false));
         modelFields.addField(findEnergyCollect = new BooleanModelField("findEnergyCollect", "找能量", false).setDependsOn("collectEnergy"));
         modelFields.addField(enableCycleTakeLook = new BooleanModelField("enableCycleTakeLook", "周期找能量 | 开关", false).setDependsOn("collectEnergy"));
         modelFields.addField(cycleTakeLookTime = new StringModelField("cycleTakeLookTime", "周期找能量 | GMT+8时间窗口", "0700-0730")
@@ -513,6 +515,8 @@ public class AntForestV2 extends ModelTask {
 
     @Override
     public void run() {
+        // 组队优先：本次运行是否由本方法切到组队模式（结束时需切回个人）
+        boolean prioritySwitchedToTeam = false;
         try {
             taskCount.set(0);
             selfId = UserIdMap.getCurrentUid();
@@ -524,6 +528,18 @@ public class AntForestV2 extends ModelTask {
 
             // 组队合种浇水异常中断后，把账号从组队模式恢复回个人模式
             fixTeamModeIfNeeded();
+
+            // 组队优先：主动切到组队模式，让 queryHomePage 返回组队主页（个人能量在 mainMember 里）
+            if (teamPriority.getValue()) {
+                if (updateUserConfiginTeam(true)) {
+                    prioritySwitchedToTeam = true;
+                    Status.flagToday(FLAG_TEAM_MODE_SWITCHED);
+                    Log.record("组队优先：已切换到组队模式");
+                } else {
+                    // 账号不在任何队伍 / 切换失败：降级为个人模式（原行为）
+                    Log.record("组队优先：切换到组队模式失败（可能不在任何队伍），按个人模式继续");
+                }
+            }
 
             if (waterFriendEnergyFirst.getValue()) {
                 waterFriendEnergy();
@@ -913,31 +929,43 @@ public class AntForestV2 extends ModelTask {
             if (t instanceof io.github.aw1y2z.sesame.util.TaskCancelledException) throw (io.github.aw1y2z.sesame.util.TaskCancelledException) t;
             Log.err(TAG, "AntForestV2.run err:", t);
         } finally {
-            scheduleForestCycles(0, 0);
-            scheduleForestCycles(1, 0);
-            scheduleBubbleBoost(0);
             try {
-                synchronized (AntForestV2.this) {
-                    int count = taskCount.get();
-                    if (count > 0) {
-                        AntForestV2.this.wait(TimeUnit.MINUTES.toMillis(30));
-                        count = taskCount.get();
+                scheduleForestCycles(0, 0);
+                scheduleForestCycles(1, 0);
+                scheduleBubbleBoost(0);
+                try {
+                    synchronized (AntForestV2.this) {
+                        int count = taskCount.get();
+                        if (count > 0) {
+                            AntForestV2.this.wait(TimeUnit.MINUTES.toMillis(30));
+                            count = taskCount.get();
+                        }
+                        if (count > 0) {
+                            Log.record("执行超时-蚂蚁森林");
+                        } else if (count != 0) {
+                            Log.record("执行完成-蚂蚁森林");
+                        }
                     }
-                    if (count > 0) {
-                        Log.record("执行超时-蚂蚁森林");
-                    } else if (count != 0) {
-                        Log.record("执行完成-蚂蚁森林");
+                } catch (InterruptedException ie) {
+                    Log.i(TAG, "执行中断-蚂蚁森林");
+                }
+                // 倍卡与校准都放在异步子任务跑完之后（好友能量是异步收取的，先查只能看到旧值）：
+                // 先收倍卡，再由校准按服务端明细覆盖今日收取——顺序反了校准就统计不到这笔
+                collectRobExpandEnergy();
+                syncTodayCollectedFromServer();
+                Statistics.save();
+                FriendWatch.save();
+            } finally {
+                // 组队优先：本轮结束切回个人模式（放在倍卡/校准之后，避免它们落到个人版）
+                if (prioritySwitchedToTeam) {
+                    if (updateUserConfiginTeam(false)) {
+                        Status.clearFlag(FLAG_TEAM_MODE_SWITCHED);
+                        Log.record("组队优先：已切回个人模式");
+                    } else {
+                        Log.record("组队优先：切回个人模式失败，下次运行自动重试");
                     }
                 }
-            } catch (InterruptedException ie) {
-                Log.i(TAG, "执行中断-蚂蚁森林");
             }
-            // 倍卡与校准都放在异步子任务跑完之后（好友能量是异步收取的，先查只能看到旧值）：
-            // 先收倍卡，再由校准按服务端明细覆盖今日收取——顺序反了校准就统计不到这笔
-            collectRobExpandEnergy();
-            syncTodayCollectedFromServer();
-            Statistics.save();
-            FriendWatch.save();
         }
     }
 
@@ -7178,10 +7206,10 @@ public class AntForestV2 extends ModelTask {
             String updateStr = AntForestRpcCall.updateUserConfiginTeam(needReturn);
             JSONObject updateJo = MyUtils.newJSONObject(updateStr);
             if (!MessageUtil.checkResultCode(TAG, updateJo)) {
-                Log.record("updateUserConfig 返回异常");
+                Log.record("森林模式切换失败：目标=" + (needReturn ? "组队" : "个人")
+                        + "，code=" + updateJo.optString("resultCode", "缺失"));
                 return false;
             } else {
-                Log.record("合种浇水切换成功：" + (needReturn ? "切到组队模式" : "切到个人模式"));
                 return true;
             }
         } catch (TaskCancelledException e) { throw e; }

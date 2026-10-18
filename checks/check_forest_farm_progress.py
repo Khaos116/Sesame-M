@@ -112,3 +112,97 @@ with tempfile.TemporaryDirectory(prefix='sesame-forest-farm-progress-') as tmp:
     f.write_text(code, encoding='utf-8')
     subprocess.run(['javac', '-encoding', 'UTF-8', '-cp', str(jar), '-d', tmp, str(f), str(SOURCE/'util/TaskCancelledException.java')], check=True)
     subprocess.run(['java', '-ea', '-cp', tmp+os.pathsep+str(jar), 'ForestFarmProgressCheck'], check=True)
+
+# Keep the real run entry, catch/finally and mode helpers; isolate unrelated task work at body().
+priority_run = run[:run.index('            if (waterFriendEnergyFirst.getValue())')] + '            body();\n' + run[run.rindex('        } catch (Throwable t)'):]
+priority_run = priority_run.replace('AntForestV2.this', 'ForestTeamPriorityCheck.this')
+priority = r'''
+import org.json.*;import java.util.*;import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;import io.github.aw1y2z.sesame.util.TaskCancelledException;
+public class ForestTeamPriorityCheck {
+ static final String TAG="test",FLAG_TEAM_MODE_SWITCHED="Forest::teamWaterSwitchedToTeam",FLAG_TEAM_WATER_DAILY_COUNT="water";
+ static class Bool {boolean value;boolean getValue(){return value;}}
+ static class Num {int getValue(){return 20;}}
+ Bool teamPriority=new Bool();Num partnerteamWaterNum=new Num();
+ AtomicInteger taskCount=new AtomicInteger();String selfId;boolean hasErrorWait;
+ static boolean mode,quiet,waterInBody,cancelRestore;static int failTeam,failPersonal,bodyError,waters,errors;static String failPhase;
+ static Boolean collectionMode;static List<String> events=new ArrayList<>(),requests=new ArrayList<>();
+ static class Status {
+  static Set<String> flags=new HashSet<>();static int used;
+  static boolean hasFlagToday(String k){return flags.contains(k);}static void flagToday(String k){flags.add(k);}static void clearFlag(String k){flags.remove(k);}
+  static int getforestHuntHelpToday(String k){return used;}static void forestHuntHelpToday(String k,int n,String uid){used=n;}
+ }
+ static class UserIdMap {static String getCurrentUid(){return "self";}}
+ static class ApplicationHook {static boolean isOffline(){return false;}}
+ static class MyUtils {static JSONObject newJSONObject(String raw){try{return new JSONObject(raw);}catch(Exception e){return new JSONObject();}}}
+ static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}}
+ static class TimeUtil {static void sleep(long ms){}}
+ static class Toast {static void show(String s){}}
+ static class Log {static void record(String s){}static void forest(String s){}static void i(String t,String s){}static void err(String t,String s,Throwable e){errors++;}}
+ static class AntForestRpcCall {
+  static String updateUserConfiginTeam(Boolean target){
+   String event=target?"team":"personal";requests.add(event);events.add(event);
+   if(!target&&cancelRestore)throw new TaskCancelledException();
+   if(target&&failTeam>0){failTeam--;return "{resultCode:'FAIL'}";}
+   if(!target&&failPersonal>0){failPersonal--;return "{resultCode:'FAIL'}";}
+   mode=target;return "{resultCode:'SUCCESS'}";
+  }
+  static String queryHomePage(){JSONObject h=new JSONObject().put("resultCode","SUCCESS").put("nextAction",mode?"Cultivate":"Team")
+   .put("userBaseInfo",new JSONObject().put("currentEnergy",100));
+   if(mode)h.put("teamHomeResult",new JSONObject().put("mainMember",new JSONObject()).put("teamBaseInfo",new JSONObject().put("teamId","team")));
+   return h.toString();}
+  static String queryMiscInfo(String kind,String id){return "{resultCode:'SUCCESS',combineHandlerVOMap:{teamCanWaterCount:{waterCount:100}}}";}
+  static String teamWater(String id,int amount){assert mode;waters++;return "{resultCode:'SUCCESS'}";}
+ }
+ static void phase(String name){events.add(name);if(name.equals(failPhase))throw new IllegalStateException(name);}
+ static class Statistics {static void save(){phase("statistics");}}
+ static class FriendWatch {static void save(){phase("friends");}}
+ boolean isRevivedSelfQuietTime(){return quiet;}
+ void body(){events.add("body");if(waterInBody)teamCooperateWater();if(bodyError==1)throw new IllegalStateException("body");if(bodyError==2)throw new TaskCancelledException();}
+ void scheduleForestCycles(int kind,long delay){phase("schedule");}void scheduleBubbleBoost(long delay){phase("boost");}
+ void collectRobExpandEnergy(){if(collectionMode!=null)assert mode==collectionMode:"wrong mode during final energy collection";phase("collect");}
+ void syncTodayCollectedFromServer(){phase("calibrate");}
+ @@RUN@@
+ @@HELPERS@@
+ static ForestTeamPriorityCheck reset(boolean enabled){
+  mode=quiet=waterInBody=cancelRestore=false;failTeam=failPersonal=bodyError=waters=errors=0;failPhase=null;collectionMode=null;
+  Status.flags.clear();Status.used=0;events.clear();requests.clear();ForestTeamPriorityCheck f=new ForestTeamPriorityCheck();f.teamPriority.value=enabled;return f;
+ }
+ static void enabled(){ForestTeamPriorityCheck f=reset(true);waterInBody=true;collectionMode=true;f.run();
+  assert requests.equals(List.of("team","personal"))&&waters==1&&!mode&&Status.flags.isEmpty():"priority mode restored during watering or not restored at end";
+  assert events.indexOf("collect")<events.indexOf("calibrate")&&events.indexOf("calibrate")<events.indexOf("personal"):"restored before extra energy/calibration";}
+ static void disabled(){ForestTeamPriorityCheck f=reset(false);f.run();assert requests.isEmpty()&&!mode;
+  f=reset(false);mode=true;f.run();assert requests.isEmpty()&&mode:"unowned user team mode changed";
+  f=reset(false);waterInBody=true;f.run();assert requests.equals(List.of("team","personal"))&&!mode&&waters==1;}
+ static void fallback(){ForestTeamPriorityCheck f=reset(true);failTeam=1;waterInBody=true;collectionMode=false;f.run();
+  assert requests.equals(List.of("team","team","personal"))&&!mode&&!Status.hasFlagToday(FLAG_TEAM_MODE_SWITCHED):"watering fallback leaked team mode after priority entry failed";}
+ static void cleanupFailures(){for(String phase:List.of("schedule","boost","collect","calibrate","statistics","friends")){
+  ForestTeamPriorityCheck f=reset(true);failPhase=phase;try{f.run();throw new AssertionError("cleanup error hidden");}catch(IllegalStateException expected){}
+  assert !mode&&requests.equals(List.of("team","personal"))&&!Status.hasFlagToday(FLAG_TEAM_MODE_SWITCHED):"cleanup failure bypassed personal restoration: "+phase;
+ }}
+ static void cancellation(){ForestTeamPriorityCheck f=reset(true);bodyError=2;try{f.run();throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}
+  assert !mode&&!Status.hasFlagToday(FLAG_TEAM_MODE_SWITCHED);
+  f=reset(true);bodyError=1;f.run();assert !mode&&errors==1;
+  f=reset(true);cancelRestore=true;try{f.run();throw new AssertionError("restore cancel swallowed");}catch(TaskCancelledException expected){}
+  assert mode&&Status.hasFlagToday(FLAG_TEAM_MODE_SWITCHED);cancelRestore=false;f.teamPriority.value=false;f.run();assert !mode&&!Status.hasFlagToday(FLAG_TEAM_MODE_SWITCHED);}
+ static void recovery(){ForestTeamPriorityCheck f=reset(true);mode=true;Status.flagToday(FLAG_TEAM_MODE_SWITCHED);failTeam=1;f.run();
+  assert requests.equals(List.of("personal","team"))&&!mode&&!Status.hasFlagToday(FLAG_TEAM_MODE_SWITCHED):"stale switch flag was not repaired before failed priority entry";
+  f=reset(true);failPersonal=1;f.run();assert mode&&Status.hasFlagToday(FLAG_TEAM_MODE_SWITCHED);
+  f.teamPriority.value=false;f.run();assert !mode&&!Status.hasFlagToday(FLAG_TEAM_MODE_SWITCHED);
+  f=reset(true);quiet=true;f.run();assert requests.isEmpty():"quiet window changed account mode";}
+ public static void main(String[] args){Map<String,Runnable> tests=new LinkedHashMap<>();tests.put("enabled",ForestTeamPriorityCheck::enabled);
+  tests.put("disabled",ForestTeamPriorityCheck::disabled);tests.put("failed entry/watering fallback",ForestTeamPriorityCheck::fallback);
+  tests.put("cleanup failures",ForestTeamPriorityCheck::cleanupFailures);tests.put("cancellation",ForestTeamPriorityCheck::cancellation);tests.put("recovery",ForestTeamPriorityCheck::recovery);
+  List<String> failures=new ArrayList<>();for(var t:tests.entrySet())try{t.getValue().run();System.out.println("PASS priority: "+t.getKey());}catch(AssertionError e){failures.add(t.getKey()+": "+e.getMessage());}
+  assert failures.isEmpty():String.join("; ",failures);
+ }
+}
+'''
+fix_signature=re.search(r'private (?:static )?void fixTeamModeIfNeeded\(', (SOURCE/forest).read_text(encoding='utf-8')).group(0)
+priority=priority.replace('@@RUN@@',priority_run).replace('@@HELPERS@@','\n'.join(method(forest,s) for s in (
+    fix_signature,'private void teamCooperateWater(','private static JSONObject queryTeamHomePage(', 'private static boolean updateUserConfiginTeam(',
+    'private static int teamState(', 'private static String getTeamId(', 'private static int getTeamCanWaterCount(')))
+with tempfile.TemporaryDirectory(prefix='sesame-team-priority-') as tmp:
+    f=Path(tmp)/'ForestTeamPriorityCheck.java';f.write_text(priority,encoding='utf-8')
+    subprocess.run(['javac','-encoding','UTF-8','-cp',str(jar),'-d',tmp,str(f),str(SOURCE/'util/TaskCancelledException.java')],check=True)
+    subprocess.run(['java','-ea','-cp',tmp+os.pathsep+str(jar),'ForestTeamPriorityCheck'],check=True)
