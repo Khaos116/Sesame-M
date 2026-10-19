@@ -476,21 +476,9 @@ public class AntOrchard extends ModelTask {
                     // 但下一轮可再试——服务端状态推进有延迟，跨轮仍可能落到新阶段
                     String attemptKey = taskType + "#" + rightsTimes + "@" + round;
 
-                    // 黑名单任务跳过
-                    if (AntOrchardTaskList.getValue().contains(title)) {
-                        continue;
-                    }
-                    // 底线：交易/支付/充值类一律不申报、一次即永久拉黑，绝不伪造
-                    if (TaskAlternative.isTransactionTask(taskType)
-                            || TaskAlternative.isTransactionTask(groupId)
-                            || TaskAlternative.isTransactionTask(sceneCode)) {
-                        MessageUtil.MarkTaskBlackListPermanent("AntOrchard", "AntOrchardTaskList",
-                                "农场乐园限定任务", title);
-                        Log.farm("农场乐园⏭️交易/履约类[" + title + "]#不申报，已永久拉黑");
-                        continue;
-                    }
-
-                    // 已完成待领：领奖。已领满（awardCountForReceive<=0）不再重复请求
+                    // 已完成待领：领奖。已领满（awardCountForReceive<=0）不再重复请求。
+                    // 领奖必须放在黑名单检查之前：黑名单只表示"不再尝试完成"，不应阻止领取已完成任务的奖励。
+                    // 原顺序（黑名单在前）会让"每日砸金蛋10次"这类已完成(FINISHED)但被拉黑的任务永远领不到奖。
                     if (TaskStatus.FINISHED.name().equals(taskStatus)) {
                         if (awardCountForReceive > 0 && attempted.add(attemptKey + "-award")) {
                             progressed = true;
@@ -511,6 +499,20 @@ public class AntOrchard extends ModelTask {
                                         msg -> Log.farm(msg));
                             }
                         }
+                        continue;
+                    }
+
+                    // 黑名单任务跳过（只拦截待完成任务的申报；领奖已在上面处理，不受黑名单影响）
+                    if (AntOrchardTaskList.getValue().contains(title)) {
+                        continue;
+                    }
+                    // 底线：交易/支付/充值类一律不申报、一次即永久拉黑，绝不伪造
+                    if (TaskAlternative.isTransactionTask(taskType)
+                            || TaskAlternative.isTransactionTask(groupId)
+                            || TaskAlternative.isTransactionTask(sceneCode)) {
+                        MessageUtil.MarkTaskBlackListPermanent("AntOrchard", "AntOrchardTaskList",
+                                "农场乐园限定任务", title);
+                        Log.farm("农场乐园⏭️交易/履约类[" + title + "]#不申报，已永久拉黑");
                         continue;
                     }
 
