@@ -183,7 +183,7 @@ public class AntOrchardRpcCall {
      * 农场抽抽乐-进入/查询活动
      */
     public static String enterDrawActivityantorchard(String activityId, String sceneCode, String source) {
-        String args = "[{\"activityId\":\"" + activityId + "\",\"context\":{\"appMode\":\"INT\"},\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"" + source + "\"}]";
+        String args = "[{\"activityId\":\"" + activityId + "\",\"context\":{\"appMode\":\"normal\"},\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"" + source + "\"}]";
         return ApplicationHook.requestString("com.alipay.antiepdrawprod.enterDrawActivityantorchard", args);
     }
 
@@ -191,7 +191,7 @@ public class AntOrchardRpcCall {
      * 农场抽抽乐-请求任务列表
      */
     public static String listTaskantorchard(String sceneCode, String source) {
-        String args = "[{\"extend\":{\"appMode\":\"INT\"},\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"" + source + "\"}]";
+        String args = "[{\"extend\":{\"appMode\":\"normal\"},\"requestType\":\"RPC\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"" + source + "\"}]";
         return ApplicationHook.requestString("com.alipay.antieptask.listTaskantorchard", args);
     }
 
