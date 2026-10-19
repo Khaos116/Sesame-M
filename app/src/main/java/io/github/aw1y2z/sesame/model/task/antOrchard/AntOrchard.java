@@ -476,21 +476,9 @@ public class AntOrchard extends ModelTask {
                     // 但下一轮可再试——服务端状态推进有延迟，跨轮仍可能落到新阶段
                     String attemptKey = taskType + "#" + rightsTimes + "@" + round;
 
-                    // 黑名单任务跳过
-                    if (AntOrchardTaskList.getValue().contains(title)) {
-                        continue;
-                    }
-                    // 底线：交易/支付/充值类一律不申报、一次即永久拉黑，绝不伪造
-                    if (TaskAlternative.isTransactionTask(taskType)
-                            || TaskAlternative.isTransactionTask(groupId)
-                            || TaskAlternative.isTransactionTask(sceneCode)) {
-                        MessageUtil.MarkTaskBlackListPermanent("AntOrchard", "AntOrchardTaskList",
-                                "农场乐园限定任务", title);
-                        Log.farm("农场乐园⏭️交易/履约类[" + title + "]#不申报，已永久拉黑");
-                        continue;
-                    }
-
-                    // 已完成待领：领奖。已领满（awardCountForReceive<=0）不再重复请求
+                    // 已完成待领：领奖。已领满（awardCountForReceive<=0）不再重复请求。
+                    // 领奖必须放在黑名单检查之前：黑名单只表示"不再尝试完成"，不应阻止领取已完成任务的奖励。
+                    // 原顺序（黑名单在前）会让"每日砸金蛋10次"这类已完成(FINISHED)但被拉黑的任务永远领不到奖。
                     if (TaskStatus.FINISHED.name().equals(taskStatus)) {
                         if (awardCountForReceive > 0 && attempted.add(attemptKey + "-award")) {
                             progressed = true;
@@ -511,6 +499,20 @@ public class AntOrchard extends ModelTask {
                                         msg -> Log.farm(msg));
                             }
                         }
+                        continue;
+                    }
+
+                    // 黑名单任务跳过（只拦截待完成任务的申报；领奖已在上面处理，不受黑名单影响）
+                    if (AntOrchardTaskList.getValue().contains(title)) {
+                        continue;
+                    }
+                    // 底线：交易/支付/充值类一律不申报、一次即永久拉黑，绝不伪造
+                    if (TaskAlternative.isTransactionTask(taskType)
+                            || TaskAlternative.isTransactionTask(groupId)
+                            || TaskAlternative.isTransactionTask(sceneCode)) {
+                        MessageUtil.MarkTaskBlackListPermanent("AntOrchard", "AntOrchardTaskList",
+                                "农场乐园限定任务", title);
+                        Log.farm("农场乐园⏭️交易/履约类[" + title + "]#不申报，已永久拉黑");
                         continue;
                     }
 
@@ -1906,11 +1908,17 @@ public class AntOrchard extends ModelTask {
         try {
             String triggerResult = AntOrchardRpcCall.triggerYebMoneyTree();
             JSONObject triggerJo = new JSONObject(triggerResult);
-            if (!MessageUtil.checkResultCode(TAG, triggerJo)) {
+            // 该接口响应内容在 result 对象里（外层无 resultCode/success），checkResultCode 会误判失败，
+            // 故优先看 result 是否存在；无 result 时才退回通用判定
+            JSONObject result = triggerJo.optJSONObject("result");
+            boolean ok = result != null || MessageUtil.checkResultCode(TAG, triggerJo);
+            if (!ok) {
                 Log.record("摇钱树触发未成功：" + (triggerResult.length() > 200 ? triggerResult.substring(0, 200) : triggerResult));
                 return;
             }
             // 只记"已受理"：金额是触发响应当次返回的值，不作为"已到账收益"上报
+            JSONObject awardInfo = result != null ? result.optJSONObject("awardInfo") : null;
+            String amount = awardInfo != null ? awardInfo.optString("totalAmount", "") : "";
             Log.farm("💰领取奖励[摇钱树]");
         } catch (Throwable t) {
             Log.err(TAG, "triggerYebMoneyTree err:", t);
