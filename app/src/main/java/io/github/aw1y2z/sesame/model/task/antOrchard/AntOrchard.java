@@ -61,6 +61,7 @@ public class AntOrchard extends ModelTask {
 
     private BooleanModelField orchardPlantNew;
     private BooleanModelField drawGameCenterAward;
+    private BooleanModelField receiveOrchardGameStay;
     private ChoiceModelField driveAnimalType;
     private SelectModelField driveAnimalList;
     private BooleanModelField batchHireAnimal;
@@ -115,6 +116,7 @@ public class AntOrchard extends ModelTask {
                 .setDependsOn("orchardSpreadManure")
                 .setDescription("按轮计：开一键施肥5次时精确施肥到该值，设为200则突破到204；未开启时全程单次施肥到该值"));
         modelFields.addField(drawGameCenterAward = new BooleanModelField("drawGameCenterAward", "农场乐园 | 游戏宝箱", true));
+        modelFields.addField(receiveOrchardGameStay = new BooleanModelField("receiveOrchardGameStay", "游戏时长任务 | 开启", false));
         //modelFields.addField(driveAnimalType = new ChoiceModelField("driveAnimalType", "驱赶小鸡 | 动作", DriveAnimalType.NONE, DriveAnimalType.nickNames));
         //modelFields.addField(driveAnimalList = new SelectModelField("driveAnimalList", "驱赶小鸡 | 好友列表", new LinkedHashSet<>(), AlipayUser::getList));
         //modelFields.addField(batchHireAnimal = new BooleanModelField("batchHireAnimal", "捉鸡除草 | 开启", false));
@@ -174,6 +176,11 @@ public class AntOrchard extends ModelTask {
             // 农场抽抽乐
             if (orchardChouChouLe.getValue()) {
                 orchardChouChouLe();
+            }
+
+            // 完成游戏时长任务: 极速模拟游玩悬浮球游戏领肥料
+            if (receiveOrchardGameStay.getValue()) {
+                AntOrchardGameStayTask.execute();
             }
 
         } catch (Throwable t) {
