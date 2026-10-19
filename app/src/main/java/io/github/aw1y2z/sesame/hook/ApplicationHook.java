@@ -203,6 +203,8 @@ public class ApplicationHook extends XposedModule {
                     try {
                         AlipayMiniMarkHelper.init(classLoader);
                         AuthCodeHelper.init(classLoader);
+                        // 小程序抓包（游戏等小程序数据）：与日志页「抓包记录」共用开关
+                        MiniProgramHook.install(classLoader, processName);
                         // 启动时不再调用 getAuthCode：返回值本就被丢弃，而它在当前支付宝版本上必然失败
                         //（自建实例未走宿主依赖注入，内部 facade 为 null），只会在日志里留下噪音
                         // 直接同步调用：此前试过的异步写法未采用，勿据旧注释以为此处不阻塞
@@ -1224,8 +1226,10 @@ public class ApplicationHook extends XposedModule {
                             // 「抓包记录」开关即时装卸钩子（原来只在 initHandler 判定，改了必须重启进程才生效）
                             if (AppConfig.INSTANCE.getEnableDebugLog()) {
                                 installRpcRecordHook();
+                                MiniProgramHook.install(classLoader, processName);
                             } else {
                                 uninstallRpcRecordHook();
+                                MiniProgramHook.uninstall();
                             }
                             Log.i(TAG, "reload AppConfig from UI");
                         } catch (Throwable th) {
