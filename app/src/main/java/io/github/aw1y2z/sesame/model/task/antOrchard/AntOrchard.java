@@ -1906,11 +1906,17 @@ public class AntOrchard extends ModelTask {
         try {
             String triggerResult = AntOrchardRpcCall.triggerYebMoneyTree();
             JSONObject triggerJo = new JSONObject(triggerResult);
-            if (!MessageUtil.checkResultCode(TAG, triggerJo)) {
+            // 该接口响应内容在 result 对象里（外层无 resultCode/success），checkResultCode 会误判失败，
+            // 故优先看 result 是否存在；无 result 时才退回通用判定
+            JSONObject result = triggerJo.optJSONObject("result");
+            boolean ok = result != null || MessageUtil.checkResultCode(TAG, triggerJo);
+            if (!ok) {
                 Log.record("摇钱树触发未成功：" + (triggerResult.length() > 200 ? triggerResult.substring(0, 200) : triggerResult));
                 return;
             }
             // 只记"已受理"：金额是触发响应当次返回的值，不作为"已到账收益"上报
+            JSONObject awardInfo = result != null ? result.optJSONObject("awardInfo") : null;
+            String amount = awardInfo != null ? awardInfo.optString("totalAmount", "") : "";
             Log.farm("💰领取奖励[摇钱树]");
         } catch (Throwable t) {
             Log.err(TAG, "triggerYebMoneyTree err:", t);
