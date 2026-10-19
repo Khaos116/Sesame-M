@@ -58,6 +58,7 @@ public class AntDodo extends ModelTask {
     private ChoiceModelField useUniversalCardBookCollectedStatusType;
     private ChoiceModelField useUniversalCardMedalGenerationStatusType;
     private ChoiceModelField useUniversalCardFantasticLevelType;
+    private BooleanModelField scratchCard;
     private BooleanModelField bookMedal;
     private SelectModelField bookMedalOptions;
     private ChoiceModelField collectToFriendType;
@@ -83,6 +84,7 @@ public class AntDodo extends ModelTask {
         modelFields.addField(useUniversalCardBookCollectedhasCollected = new BooleanModelField("useUniversalCardBookCollectedhasCollected", "万能卡片 | 优先兑换未获得状态卡片", false).setDependsOn("useProp"));
         modelFields.addField(useUniversalCardMedalGenerationStatusType = new ChoiceModelField("useUniversalCardMedalGenerationStatusType", "万能卡片 | 勋章合成状态", MedalGenerationStatusType.ALL, MedalGenerationStatusType.nickNames).setDependsOn("useProp"));
         modelFields.addField(useUniversalCardFantasticLevelType = new ChoiceModelField("useUniversalCardFantasticLevelType", "万能卡片 | 最低等级", FantasticLevelType.MAGIC, FantasticLevelType.nickNames).setDependsOn("useProp"));
+        modelFields.addField(scratchCard = new BooleanModelField("scratchCard", "自动刮卡 | 开启", false));
         modelFields.addField(bookMedal = new BooleanModelField("bookMedal", "图鉴勋章 | 开启", false));
         modelFields.addField(bookMedalOptions = new SelectModelField("bookMedalOptions", "图鉴勋章 | 选项", new LinkedHashSet<>(), CustomOption::getAntDodoBookMedalOptions).setDependsOn("bookMedal"));
         modelFields.addField(collectToFriendType = new ChoiceModelField("collectToFriendType", "帮抽卡片 | 动作", CollectToFriendType.NONE, CollectToFriendType.nickNames));
@@ -129,6 +131,9 @@ public class AntDodo extends ModelTask {
             }
             if (giftToFriend.getValue()) {
                 giftToFriend();
+            }
+            if (scratchCard.getValue()) {
+                scratchAnimalCard();
             }
         } catch (Throwable t) {
             Log.err(TAG, "AntoDodo.start.run err:", t);
@@ -685,6 +690,79 @@ public class AntDodo extends ModelTask {
             } while (hasMore);
         } catch (Throwable t) {
             Log.err(TAG, "generateBookMedal err:", t);
+        }
+    }
+
+    /**
+     * 刮开待刮卡：先取首页确认 showSpeciesV2（未推送该功能的账号直接跳过），再遍历 curCollection 逐个处理。
+     */
+    private void scratchAnimalCard() {
+        try {
+            JSONObject jo = new JSONObject(AntDodoRpcCall.homePage());
+            if (!MessageUtil.checkResultCode(TAG, jo)) {
+                return;
+            }
+            JSONObject data = jo.optJSONObject("data");
+            //showSpeciesV2=false表示账号未推送刮卡功能, 直接跳过兼容旧版
+            if (data == null || !data.optBoolean("showSpeciesV2", false)) {
+                Log.i(TAG, "scratchAnimalCard skip: showSpeciesV2=false, feature not pushed");
+                return;
+            }
+            JSONArray curCollection = data.optJSONArray("curCollection");
+            if (curCollection == null) {
+                return;
+            }
+            for (int i = 0; i < curCollection.length(); i++) {
+                JSONObject collection = curCollection.optJSONObject(i);
+                if (collection == null) {
+                    continue;
+                }
+                scratchNewCard(collection);
+            }
+        } catch (Throwable t) {
+            Log.i(TAG, "scratchAnimalCard err:");
+            Log.printStackTrace(TAG, t);
+        }
+    }
+
+    /**
+     * 刮开单次获卡响应中待刮的新卡（每日抽卡 collect / 道具 consumeProp / 帮抽交换 exchange 返回体同构）：
+     * 节点内含 animal 与 collectDetail.cardList[]，仅刮 scratchable=true 且 scratched=false 的卡。
+     * 旧版账号响应无 scratchable 字段，optBoolean 默认 false，不会发起任何刮卡调用。
+     */
+    private void scratchNewCard(JSONObject cardData) {
+        try {
+            if (cardData == null) {
+                return;
+            }
+            JSONObject animal = cardData.optJSONObject("animal");
+            JSONObject collectDetail = cardData.optJSONObject("collectDetail");
+            JSONArray cardList = collectDetail == null ? null : collectDetail.optJSONArray("cardList");
+            if (animal == null || cardList == null) {
+                return;
+            }
+            String animalId = animal.optString("animalId");
+            String bookId = animal.optString("bookId");
+            for (int i = 0; i < cardList.length(); i++) {
+                JSONObject card = cardList.optJSONObject(i);
+                if (card == null || !card.optBoolean("scratchable", false) || card.optBoolean("scratched", false)) {
+                    continue;
+                }
+                String cardInstanceId = card.optString("cardInstanceId");
+                if (cardInstanceId.isEmpty()) {
+                    continue;
+                }
+                JSONObject res = new JSONObject(AntDodoRpcCall.scratchCard(animalId, bookId, cardInstanceId));
+                if (MessageUtil.checkResultCode(TAG, res)) {
+                    JSONObject resData = res.optJSONObject("data");
+                    int energyGram = resData == null ? 0 : resData.optInt("energyGram");
+                    Log.forest("神奇物种🦕刮刮卡" + getAnimalInfo(animal) + "获得" + energyGram + "g能量");
+                    TimeUtil.sleep(500L);
+                }
+            }
+        } catch (Throwable t) {
+            Log.i(TAG, "scratchNewCard err:");
+            Log.printStackTrace(TAG, t);
         }
     }
 
