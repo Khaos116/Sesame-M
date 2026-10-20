@@ -86,11 +86,14 @@ public final class MiniProgramHook {
     private static volatile ClassLoader sClassLoader = null;
     private static volatile String sProcessName = "";
     private static volatile boolean sCaptureEnabled;
-    private static boolean deferredNetworkHookInstalled;
+    private static volatile boolean deferredNetworkHookInstalled;
 
     /** 已安装的 unhook 句柄，便于「抓包记录」关闭时卸载 */
     private static final List<XC_MethodHook.Unhook> sUnhooks =
             Collections.synchronizedList(new ArrayList<XC_MethodHook.Unhook>());
+    // 与业务钩子分开保存，统一在 sUnhooks 锁内访问。
+    private static final List<XC_MethodHook.Unhook> sDeferredUnhooks = new ArrayList<>();
+    private static final Set<String> installedNetworkClasses = new HashSet<>();
 
     /**
      * 安装小程序抓包 hook。由 {@code ApplicationHook} 在宿主进程 attach 后调用。
@@ -122,6 +125,14 @@ public final class MiniProgramHook {
                 }
             }
             sUnhooks.clear();
+            for (XC_MethodHook.Unhook unhook : sDeferredUnhooks) {
+                try {
+                    unhook.unhook();
+                } catch (Throwable ignored) {
+                }
+            }
+            sDeferredUnhooks.clear();
+            installedNetworkClasses.clear();
         }
         deferredHookedClasses.clear();
         deferredNetworkHookInstalled = false;
@@ -234,6 +245,7 @@ public final class MiniProgramHook {
                 }
             }
         });
+        if (hooked > 0) markNetworkHookInstalled(ASYNC_REQUEST_HANDLER_CLASS);
         if (hooked > 0 && miniDebugEnabled()) {
             Log.debug("小程序抓包hook已安装: AsyncRequestHandler.processAsyncRequest 进程=" + sProcessName);
         }
@@ -506,17 +518,35 @@ public final class MiniProgramHook {
             }
         };
         try {
-            installed |= addUnhook(XHelpers.findAndHookMethod(ClassLoader.class, "loadClass", String.class, loadClassHook));
+            installed |= addUnhook(XHelpers.findAndHookMethod(ClassLoader.class, "loadClass", String.class, loadClassHook), sDeferredUnhooks);
         } catch (Throwable ignored) {
         }
         try {
             Class<?> baseDexClassLoader = XHelpers.findClassIfExists("dalvik.system.BaseDexClassLoader", null);
             if (baseDexClassLoader != null) {
-                installed |= addUnhook(XHelpers.findAndHookMethod(baseDexClassLoader, "loadClass", String.class, loadClassHook));
+                installed |= addUnhook(XHelpers.findAndHookMethod(baseDexClassLoader, "loadClass", String.class, loadClassHook), sDeferredUnhooks);
             }
         } catch (Throwable ignored) {
         }
-        deferredNetworkHookInstalled = installed;
+        if (installed) deferredNetworkHookInstalled = true;
+    }
+
+    /** 两个网络类真正装钩成功后撤掉热路径监听；保留成功标记，避免配置重载时再装。 */
+    private static void markNetworkHookInstalled(String className) {
+        synchronized (sUnhooks) {
+            if (!sCaptureEnabled) return;
+            installedNetworkClasses.add(className);
+            if (!installedNetworkClasses.contains(MINI_RESP_CLASS)
+                    || !installedNetworkClasses.contains(ASYNC_REQUEST_HANDLER_CLASS)) return;
+            deferredNetworkHookInstalled = true;
+            for (XC_MethodHook.Unhook unhook : sDeferredUnhooks) {
+                try {
+                    unhook.unhook();
+                } catch (Throwable ignored) {
+                }
+            }
+            sDeferredUnhooks.clear();
+        }
     }
 
     /** 对小程序网络请求/响应类安装定点 hook（只记录，不修改参数和返回值） */
@@ -541,6 +571,7 @@ public final class MiniProgramHook {
                     }
                 });
                 if (hooked == 0) deferredHookedClasses.remove(name);
+                else markNetworkHookInstalled(name);
                 if (miniDebugEnabled()) {
                     Log.debug("小程序抓包hook" + (hooked > 0 ? "已安装: " : "未匹配: ")
                             + name + " onHandleResponse方法=" + hooked + " 进程=" + sProcessName);
@@ -596,13 +627,18 @@ public final class MiniProgramHook {
     }
 
     private static boolean addUnhook(XC_MethodHook.Unhook unhook) {
+        return addUnhook(unhook, sUnhooks);
+    }
+
+    private static boolean addUnhook(XC_MethodHook.Unhook unhook, List<XC_MethodHook.Unhook> handles) {
         if (unhook != null) {
             synchronized (sUnhooks) {
-                if (!sCaptureEnabled || !miniDebugEnabled()) {
+                if (!sCaptureEnabled || !miniDebugEnabled()
+                        || (handles == sDeferredUnhooks && deferredNetworkHookInstalled)) {
                     unhook.unhook();
                     return false;
                 }
-                sUnhooks.add(unhook);
+                handles.add(unhook);
                 return true;
             }
         }

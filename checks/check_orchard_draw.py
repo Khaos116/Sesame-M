@@ -79,6 +79,7 @@ public class OrchardDrawCheck {
             return "{\"success\":true,\"incAwardCount\":1,\"awardInfo\":{\"deltaAwardCount\":1}}";
         }
     }
+    static class Status {static String uid="A",day="D1";static Map<String,Integer> counts=new HashMap<>();static int getIntFlagToday(String k){return counts.getOrDefault(uid+day+k,0);}static void setIntFlagToday(String k,int n){counts.put(uid+day+k,n);}}
     static class Orchard {
         static String TAG="AntOrchard"; String userId=UserIdMap.getCurrentUid();
         Field OrchardChouChouLeTaskList=new Field();
@@ -94,7 +95,7 @@ public class OrchardDrawCheck {
     }
     static String list(JSONObject... tasks){return new JSONObject().put("success",true).put("taskInfoList",new JSONArray(List.of(tasks))).toString();}
     static void reset(){
-        ApplicationHook.calls.clear(); ApplicationHook.lists.clear();ApplicationHook.lists.add(list());
+        Status.uid="A";Status.day="D1";Status.counts.clear();ApplicationHook.calls.clear(); ApplicationHook.lists.clear();ApplicationHook.lists.add(list());
         ApplicationHook.fail="";ApplicationHook.invalid="";ApplicationHook.balance=41;ApplicationHook.badBalance=false;
         ApplicationHook.enter="{\"success\":true,\"drawActivity\":{\"activityId\":\"A\\\"B\",\"name\":\"阿肥寻宝记\"}}";
         Log.runtime.clear();Log.farm.clear();blacklisted.clear();GameTask.reports=0;GameTask.count=0;GameTask.result=2;TimeUtil.cancel=false;
@@ -166,6 +167,16 @@ public class OrchardDrawCheck {
         reset();ApplicationHook.lists.clear();ApplicationHook.lists.add(list(task("DRAW_GOLDENBEAN_liulan","TODO","",true)));TimeUtil.cancel=true;
         try{run();throw new AssertionError("cancellation swallowed");}catch(TaskCancelledException expected){}
         assert TaskLifecycle.isIdle() && calls("batchDrawantorchard").isEmpty();
+        reset();ApplicationHook.balance=0;ApplicationHook.lists.clear();ApplicationHook.lists.add(list(task("AWARD","FINISHED","",false)));ApplicationHook.fail="receiveTaskAwardantorchard";
+        for(int i=0;i<8;i++)run();assert calls("receiveTaskAwardantorchard").size()==3&&blacklisted.isEmpty():"draw award retries unbounded across task objects";
+        assert Log.runtime.stream().filter(v->v.contains("当日暂停")).count()==1;
+        Status.uid="B";run();assert calls("receiveTaskAwardantorchard").size()==4;Status.uid="A";run();assert calls("receiveTaskAwardantorchard").size()==4;Status.day="D2";run();assert calls("receiveTaskAwardantorchard").size()==5;
+        reset();ApplicationHook.balance=0;ApplicationHook.lists.clear();ApplicationHook.lists.add(list(task("AWARD","FINISHED","",false)));ApplicationHook.fail="receiveTaskAwardantorchard";
+        run();run();ApplicationHook.fail="";run();ApplicationHook.fail="receiveTaskAwardantorchard";for(int i=0;i<6;i++)run();assert calls("receiveTaskAwardantorchard").size()==6:"successful draw award did not reset failures";
+        reset();ApplicationHook.balance=0;ApplicationHook.lists.clear();ApplicationHook.lists.add(list(task("AWARD","FINISHED","",false)));ApplicationHook.fail="receiveTaskAwardantorchard";for(int i=0;i<6;i++)run();
+        JSONObject next=task("AWARD","FINISHED","",false).put("taskRights",new JSONObject().put("rightsTimes",1).put("rightsTimesLimit",2));ApplicationHook.lists.clear();ApplicationHook.lists.add(list(next));run();assert calls("receiveTaskAwardantorchard").size()==4:"capped draw stage blocked later stage";
+        reset();ApplicationHook.balance=0;for(int i=0;i<8;i++){ApplicationHook.lists.clear();ApplicationHook.lists.add(list(task("AWARD","FINISHED","",false).put("taskRights",new JSONObject().put("rightsTimes",i))));run();}assert calls("receiveTaskAwardantorchard").size()==8:"successful draw awards capped at three";
+        System.out.println("PASS daily failed-claim cap, account/day/restart isolation, success reset, later stages and eight successful awards");
         System.out.println("PASS old layouts, balance validation, failure reasons, no double draw, lifecycle and cancellation");
     }
 }

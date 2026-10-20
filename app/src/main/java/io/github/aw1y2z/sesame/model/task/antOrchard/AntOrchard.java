@@ -370,28 +370,27 @@ public class AntOrchard extends ModelTask {
                         continue;
                     }
 
-                    // 已完成任务领取奖励（如每日签到）
+                    // 每档只限制失败重试；成功领取和后续档位不受三次上限影响。
                     if ("FINISHED".equals(taskStatus)) {
-                        TimeUtil.sleep(2000);
-                        String awardRes = AntOrchardRpcCall.receiveDrawTaskAwardantorchard(taskSceneCode, taskType);
-                        JSONObject sginRes = MyUtils.newJSONObject(awardRes);
-                        if (orchardDrawSuccessful(sginRes, "领取[" + taskName + "]奖励")) {
-                            int incAwardCount = sginRes.optInt("incAwardCount", -1);
-                            orchardDrawLog("任务[" + taskName + "]领取成功；"
-                                    + (incAwardCount >= 0 ? "获得抽奖次数=" + incAwardCount : "奖励次数未返回"));
-                            if (rightsTimesLimit - rightsTimes > 0) {
-                                doublecheck = true;
+                        String awardKey = "orchard::awardRetry::draw::" + activityId + ":" + taskSceneCode
+                                + ":" + taskType + "#" + rightsTimes;
+                        boolean received = attemptOrchardAward(awardKey, taskName, () -> {
+                            TimeUtil.sleep(2000);
+                            JSONObject response = MyUtils.newJSONObject(
+                                    AntOrchardRpcCall.receiveDrawTaskAwardantorchard(taskSceneCode, taskType));
+                            if (orchardDrawSuccessful(response, "领取[" + taskName + "]奖励")) {
+                                int count = response.optInt("incAwardCount", -1);
+                                orchardDrawLog("任务[" + taskName + "]领取成功；"
+                                        + (count >= 0 ? "获得抽奖次数=" + count : "奖励次数未返回"));
+                                return true;
                             }
-                        } else {
-                            // 领奖响应失败：先按列表复核"已领到"；未确认也不拉黑——
-                            // 这是已获得的奖励（任务已完成），临时失败下轮重试即可，拉黑会让它 3 天不再领
-                            boolean received = TaskAward.confirmReceivedOrBlackList("农场抽抽乐🎖️",
+                            boolean confirmed = TaskAward.confirmReceivedOrBlackList("农场抽抽乐🎖️",
                                     k -> probeOrchardChouChouLeStatus(sceneCode, taskSceneCode, taskType), taskName,
-                                    taskName, null, msg -> Log.farm(msg));
-                            if (!received) {
-                                Log.farm("农场抽抽乐🎖️[" + taskName + "]#领奖失败，下轮重试");
-                            }
-                        }
+                                    taskName, null, null);
+                            if (confirmed) orchardDrawLog("任务[" + taskName + "]已按列表确认领取");
+                            return confirmed;
+                        });
+                        if (received && rightsTimesLimit > rightsTimes) doublecheck = true;
                     } else if ("TODO".equals(taskStatus)) {
                         boolean direct = "DRAW_GOLDENBEAN_liulan".equals(taskType);
                         java.util.regex.Matcher app = java.util.regex.Pattern.compile("[?&]appId=([0-9]+)(?:[&#]|$)")
@@ -531,6 +530,37 @@ public class AntOrchard extends ModelTask {
         Log.farm(text);
     }
 
+    /** Status 按账号及 GMT+8 业务日保存；取消不耗次数，成功回执或列表确认均清零。 */
+    private boolean attemptOrchardAward(String key, String title,
+                                       java.util.concurrent.Callable<Boolean> attempt) throws Exception {
+        int failures = Status.getIntFlagToday(key);
+        if (failures >= 3) return false;
+        boolean received;
+        try {
+            received = Boolean.TRUE.equals(attempt.call());
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
+        } catch (Exception failure) {
+            recordOrchardAwardFailure(key, title);
+            throw failure;
+        }
+        if (received) {
+            if (failures > 0) Status.setIntFlagToday(key, 0);
+        } else {
+            recordOrchardAwardFailure(key, title);
+        }
+        return received;
+    }
+
+    private void recordOrchardAwardFailure(String key, String title) {
+        int failures = Math.min(3, Math.max(0, Status.getIntFlagToday(key)) + 1);
+        Status.setIntFlagToday(key, failures);
+        String message = "农场领奖：[" + title + "]#领奖或回查未确认（" + failures + "/3）"
+                + (failures >= 3 ? "，当日暂停该档领奖，次日重试" : "，后续轮次重试");
+        Log.record(message);
+        Log.farm(message);
+    }
+
     /**
      * 检查农场是否已开启
      */
@@ -640,25 +670,28 @@ public class AntOrchard extends ModelTask {
                     if (taskType.isEmpty() || sceneCode.isEmpty() || title.isEmpty()) continue;
                     String attemptKey = sceneCode + "/" + taskType + "#" + rightsTimes;
 
-                    // 已完成待领：领奖。已领满（awardCountForReceive<=0）不再重复请求
+                    // 已完成待领：领奖；同一档失败达限后不再触发本轮重查。
                     if (TaskStatus.FINISHED.name().equals(taskStatus)) {
-                        if (awardCountForReceive > 0 && attempted.add(attemptKey + "-award")) {
+                        String awardKey = "orchard::awardRetry::optional::" + attemptKey + ":" + alreadyReceiveAwardCount;
+                        if (awardCountForReceive > 0 && Status.getIntFlagToday(awardKey) < 3
+                                && attempted.add(attemptKey + "-award")) {
                             progressed = true;
-                            JSONObject joReceived = MyUtils.newJSONObject(AntOrchardRpcCall.receiveTaskAwardantorchard(
-                                    awardCountForReceive, sceneCode, taskType));
-                            if (MessageUtil.checkSuccess(TAG, joReceived)) {
-                                int incAwardCount = joReceived.optInt("incAwardCount");
-                                JSONObject taskConfigResultVO = joReceived.optJSONObject("taskConfigResultVO");
-                                String awardType = taskConfigResultVO == null
-                                        ? "能量" : taskConfigResultVO.optString("awardType", "能量");
-                                Log.farm("农场乐园🎖️领取[" + title + "]奖励[" + awardType + "*" + incAwardCount + "]");
-                            } else {
-                                // 已完成任务仅重试领奖，不能因领奖临时失败禁止后续领取。
-                                boolean received = TaskAward.confirmReceivedOrBlackList("农场乐园🎖️",
+                            attemptOrchardAward(awardKey, title, () -> {
+                                JSONObject response = MyUtils.newJSONObject(AntOrchardRpcCall.receiveTaskAwardantorchard(
+                                        awardCountForReceive, sceneCode, taskType));
+                                if (MessageUtil.checkSuccess(TAG, response)) {
+                                    int count = response.optInt("incAwardCount");
+                                    JSONObject config = response.optJSONObject("taskConfigResultVO");
+                                    String type = config == null ? "能量" : config.optString("awardType", "能量");
+                                    Log.farm("农场乐园🎖️领取[" + title + "]奖励[" + type + "*" + count + "]");
+                                    return true;
+                                }
+                                boolean confirmed = TaskAward.confirmReceivedOrBlackList("农场乐园🎖️",
                                         k -> probeOrchardOptionalPlayStatus(sceneCode, taskType, -1), taskType, title,
-                                        null, msg -> Log.farm(msg));
-                                if (!received) Log.farm("农场乐园🎖️[" + title + "]#领奖未确认，下轮重试");
-                            }
+                                        null, null);
+                                if (confirmed) Log.farm("农场乐园🎖️[" + title + "]#已按列表确认领取");
+                                return confirmed;
+                            });
                         }
                         continue;
                     }
