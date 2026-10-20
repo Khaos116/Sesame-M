@@ -1,6 +1,7 @@
 package io.github.aw1y2z.sesame.model.task.antForest;
 
 import org.json.JSONObject;
+import io.github.aw1y2z.sesame.hook.ApplicationHook;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -104,8 +105,22 @@ public final class ReadForestRpcCall {
         return base + "#pages/index/index";
     }
 
+    /**
+     * 动态拼装 User-Agent：设备/系统/Chrome 部分取自系统 http.agent（真实设备，避免硬编码），
+     * 支付宝版本取自 {@link ApplicationHook#getAlipayVersion()}，与 GameTask 等保持一致。
+     */
     private static String getBaseUserAgent() {
-        return "Mozilla/5.0 (Linux; Android 11; M2006J10C Build/RP1A.200720.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/105.0.5195.148 MYWeb/0.11.0.241014163223 UWS/3.22.2.9999 UCBS/3.22.2.9999_220000000000 Mobile Safari/537.36 NebulaSDK/1.8.100112 Nebula AlipayDefined(nt:WIFI,ws:393|0|2.75) AliApp(AP/10.6.58.8000) AlipayClient/10.6.58.8000 Language/zh-Hans isConcaveScreen/false Region/CNAriver/1.0.0 ChannelId(" + (RANDOM.nextInt(10) + 1) + ")";
+        String systemUa = System.getProperty("http.agent");
+        if (systemUa == null || systemUa.isEmpty()) {
+            systemUa = "Mozilla/5.0 (Linux; Android 11)";
+        }
+        String alipayVer = ApplicationHook.getAlipayVersion().getVersionString();
+        return systemUa
+                + " MYWeb/0.11.0.241014163223 UWS/3.22.2.9999 UCBS/3.22.2.9999_220000000000"
+                + " NebulaSDK/1.8.100112 Nebula AlipayDefined(nt:WIFI,ws:393|0|2.75)"
+                + " AliApp(AP/" + alipayVer + ") AlipayClient/" + alipayVer
+                + " Language/zh-Hans isConcaveScreen/false Region/CNAriver/1.0.0"
+                + " ChannelId(" + (RANDOM.nextInt(10) + 1) + ")";
     }
 
     private static Map<String, String> getHeaders(String token, String referer) {
