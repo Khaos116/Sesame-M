@@ -80,7 +80,7 @@ public class FarmRewardSpaceCheck {
 }
 '''
 code=code.replace('@@METHODS@@','\n'.join(method(farm,s) for s in ('private static ToolType rewardToolType(','private static long npcTaskNumber(','private static boolean farmFeatureOk(','private JSONObject rewardToolStock(','private boolean toolRewardReady(','private void receiveToolRewardWithSpace(','private void useAccelerateTool(boolean releaseOneSlot)','private Boolean useFarmTool(','private JSONObject queryBigEaterState(','private boolean useBigEaterRewardTool(')))
-code=code.replace('@@RPC@@',method('model/task/antFarm/AntFarmRpcCall.java','public static String receiveToolTaskReward(')+method('model/task/antFarm/AntFarmRpcCall.java','public static String syncAnimalStatus('))
+code=code.replace('@@RPC@@',method('model/task/antFarm/AntFarmRpcCall.java','public static String receiveToolTaskReward(')+method('model/task/antFarm/AntFarmRpcCall.java','public static String syncAnimalStatus(String farmId)')+method('model/task/antFarm/AntFarmRpcCall.java','public static String syncAnimalStatus(String farmId, boolean queryFoodStockInfo)'))
 cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1/org.json/json'
 jar=sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar','-javadoc.jar')))[-1]
 with tempfile.TemporaryDirectory(prefix='sesame-reward-space-') as tmp:

@@ -1,35 +1,18 @@
 # 检查问题 AI 反馈
 
-检查对象：`my_dev` 分支，基于 `8806405f` 的未提交修复（`AntOrchard.java`、`MiniProgramHook.java` 和 3 个回归脚本）。
+检查对象：`my_dev` 分支，基于 `6220a68d` 的未提交修改，即庄园自动喂鸡（`AntFarm.java`、`AntFarmRpcCall.java`）。
 检查方式：只读审查，没有改代码。
 
-验证结果：`check_upstream_oct20`、`check_orchard_draw`、`check_forest_task_policy` 都通过。
+验证结果：`check_antfarm_auto_feed` 通过，共 38 项，包括新增的 `sleep` 场景。
 
-当前没有必须修改的代码问题。上一轮的 2 个问题都已处理。
+当前没有必须修改的代码问题。上一轮的问题已修复。
 
 ## 上一轮问题的核对结果
 
-### 问题 1：已修复
+已修复：`autoFeedAnimal` 在确认小鸡在家之后、判断饥饿之前，加了 SLEEPY 判断，只记一条“正在睡觉，起床后再检查投喂”就返回，不进入 30 秒重查。
 
-新增了 `attemptOrchardAward`。每一档领奖的失败次数用 `Status` 当日整型标记计数，所以按账号、按东八区的业务日分开统计。
+- **主流程：** 小鸡睡觉时，每轮只查一次状态，不建立 `UPDATE|FA|...` 子任务，不补领，也不投喂。
+- **重查和蹲点到点：** 已有的 30 秒重查或蹲点投喂到点后，如果查到小鸡在睡觉，就直接结束，不再继续轮询。
+- **起床后：** 由 `animalWakeUpNow()` 立即重新检查并投喂，回归的 `wake` 场景也补了“睡觉时不建立重查、不发领奖请求”的断言。
 
-- **上限：** 每档每天最多失败 3 次，达到后当天停止领这一档，并留下一条日志。第二天自动恢复。
-- **成功或已确认：** 领奖成功，或者按任务列表确认已经领到，失败计数都会清零。
-- **取消和异常：** 取消不消耗次数，取消异常会继续往外抛。其它异常会先计一次失败，再往外抛。
-- **计数的 key：**
-  - 抽抽乐：`activityId + 场景 + taskType + rightsTimes`
-  - 农场乐园：`attemptKey + alreadyReceiveAwardCount`
-
-  领成功之后档位会变，key 也跟着变，所以后面的档位不受上一档 3 次上限的影响。
-- **日志：** `TaskAward` 的日志回调改成传 null，失败时只由 `recordOrchardAwardFailure` 打一条日志，不再重复。
-- **农场乐园：** 达到上限后不会再设置 `progressed`，所以不会触发本轮重查。
-
-### 问题 2：已修复
-
-`loadClass` 的钩子单独放在 `sDeferredUnhooks` 里。两个网络类都装好钩子之后，`markNetworkHookInstalled` 会把它卸掉，并保留 `deferredNetworkHookInstalled=true`，这样配置重载时不会再装一次。下面几种情况也都处理到了：
-
-- **装钩时类已加载：** 两个类在 `install()` 时就已经加载好的话，会直接标记完成，跳过延迟监听。
-- **并发：** 两个 `loadClass` 钩子装到一半时如果目标类已经装好，后一个钩子会被 `addUnhook` 拒掉并当场卸载。
-- **卸载：** `uninstall()` 会一起清掉延迟钩子和已装记录。
-
-所有状态变更都在 `sUnhooks` 锁里进行，`deferredNetworkHookInstalled` 已改成 volatile。
+这次改动只在上一轮基础上加了这一段判断，其它喂鸡逻辑没有变化。

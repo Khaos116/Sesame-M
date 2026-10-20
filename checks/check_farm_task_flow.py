@@ -8,7 +8,7 @@ from daily_task_fixture import with_daily_task
 
 farm = 'model/task/antFarm/AntFarm.java'
 code = r'''
-import org.json.*;import java.util.*;
+import org.json.*;import java.util.*;import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class FarmFlowCheck {
  static final String TAG="farm";static final int MAX_FARM_TASK_ROUNDS=20;
  boolean farmTaskAwardBusy;Set<String> farmTaskAttempted;
@@ -31,11 +31,11 @@ public class FarmFlowCheck {
  TaskAttemptPolicy.ProbeResult probeFarmStatus(String s){return TaskAttemptPolicy.ProbeResult.UNKNOWN;}
  void add2FoodStock(int n){foodStock+=n;}
  static class AntFarmRpcCall {
-  static JSONArray rows;static int reads,claims,signs;static boolean busy;
+  static JSONArray rows;static int reads,claims,signs;static boolean busy,cancel;
   static String listFarmTask(){reads++;return new JSONObject().put("memo","SUCCESS").put("farmTaskList",rows)
    .put("signList",new JSONObject().put("currentSignKey","today").put("signList",new JSONArray().put(new JSONObject().put("signKey","today").put("signed",true)))).toString();}
   static String sign(){signs++;return "{}";}
-  static String receiveFarmTaskAward(String id,String type){claims++;if(busy)return "{\"memo\":\"FAIL\",\"resultCode\":\"102\"}";
+  static String receiveFarmTaskAward(String id,String type){claims++;if(cancel)throw new TaskCancelledException();if(busy)return "{\"memo\":\"FAIL\",\"resultCode\":\"102\"}";
    for(int i=0;i<rows.length();i++){JSONObject row=rows.optJSONObject(i);if(id.equals(row.optString("taskId")))row.put("taskStatus","RECEIVED");}return "{\"memo\":\"SUCCESS\"}";}
  }
  int completions;
@@ -69,7 +69,9 @@ public class FarmFlowCheck {
   f=new FarmFlowCheck();AntFarmRpcCall.busy=false;f.AntFarmDoFarmTaskList.value.add("blocked");
   AntFarmRpcCall.rows=new JSONArray().put(task("blocked","TODO")).put(task("allowed","TODO"));f.runFarmTaskRounds();
   assert f.completions==1&&Log.lines.stream().anyMatch(s->s.contains("blocked")&&s.contains("黑名单"));
-  System.out.println("PASS daily signs/manual/account isolation, later TODO after busy claim, bounded claim retries and blacklist diagnostics");
+  f=new FarmFlowCheck();AntFarmRpcCall.cancel=true;
+  try{f.receiveFarmTaskAward(task("cancel","FINISHED"));throw new AssertionError("claim cancellation swallowed");}catch(TaskCancelledException expected){}
+  System.out.println("PASS daily signs/manual/account isolation, later TODO after busy claim, bounded claim retries, blacklist diagnostics and claim cancellation");
  }
 }
 '''
@@ -82,5 +84,5 @@ cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/mod
 jar=next(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar','-javadoc.jar')))
 with tempfile.TemporaryDirectory(prefix='sesame-farm-flow-') as tmp:
  p=Path(tmp)/'FarmFlowCheck.java';p.write_text(code,encoding='utf-8')
- subprocess.run(['javac','-encoding','UTF-8','-cp',str(jar),'-d',tmp,str(p)],check=True)
+ subprocess.run(['javac','-encoding','UTF-8','-cp',str(jar),'-d',tmp,str(p),str(SOURCE/'util/TaskCancelledException.java')],check=True)
  subprocess.run(['java','-ea','-cp',tmp+os.pathsep+str(jar),'FarmFlowCheck'],check=True)

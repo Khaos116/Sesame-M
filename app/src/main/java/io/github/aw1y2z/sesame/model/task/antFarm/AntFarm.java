@@ -113,11 +113,6 @@ public class AntFarm extends ModelTask {
      * 一轮里连着刷 3 次只是白刷（每轮开头重置，见 {@link #run()}）。
      */
     private boolean farmTaskAwardBusy = false;
-    /**
-     * 本轮投喂时服务端回了「饲料槽已满」(结果码见 CODE_FEED_TROUGH_FULL)：本轮不再投喂；
-     * 槽满后每 10 秒级的重试只是白打接口，每轮开头重置 (见 run())。
-     */
-    private boolean feedTroughFullThisRun = false;
     private double finalScore = 0d;
     private int foodInTrough = 0;
 
@@ -437,7 +432,6 @@ public class AntFarm extends ModelTask {
     public void run() {
         try {
             farmTaskAwardBusy = false;
-            feedTroughFullThisRun = false;
             if (enterFarm() == null) {
                 return;
             }
@@ -608,28 +602,22 @@ public class AntFarm extends ModelTask {
                 }
             });
 
-            step("喂鸡", () -> {
-                if (AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)) {
-                    if (AnimalFeedStatus.HUNGRY.name().equals(ownerAnimal.animalFeedStatus)) {
-                        Log.record("小鸡在挨饿");
-                        if (feedAnimal.getValue()) {
-                            feedAnimal(ownerFarmId);
-                        }
-                    } else if (AnimalFeedStatus.EATING.name().equals(ownerAnimal.animalFeedStatus)) {
-                        if (useAccelerateTool.getValue()) {
-                            useAccelerateTool();
-                            TimeUtil.sleep(1000);
-                        }
-                        //使用加饭卡
-                        if (useBigEaterTool.getValue()) {
-                            useFarmTool(ownerFarmId, AntFarm.ToolType.BIG_EATER_TOOL);
-                        }
-                        if (feedAnimal.getValue()) {
-                            autoFeedAnimal();
-                            TimeUtil.sleep(1000);
-                        }
+            step("喂鸡前道具", () -> {
+                if (AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)
+                        && AnimalFeedStatus.EATING.name().equals(ownerAnimal.animalFeedStatus)) {
+                    if (useAccelerateTool.getValue()) {
+                        useAccelerateTool();
+                        TimeUtil.sleep(1000);
                     }
-
+                    //使用加饭卡
+                    if (useBigEaterTool.getValue()) {
+                        useFarmTool(ownerFarmId, AntFarm.ToolType.BIG_EATER_TOOL);
+                    }
+                }
+            });
+            step("喂鸡", () -> {
+                if (feedAnimal.getValue()) autoFeedAnimal();
+                if (AnimalInteractStatus.HOME.name().equals(ownerAnimal.animalInteractStatus)) {
                     checkUnReceiveTaskAward();
                 }
             });
@@ -965,15 +953,24 @@ public class AntFarm extends ModelTask {
 
     private static final int MAX_AUTO_FEED_RECHECKS = 5;
 
+    private boolean canAutoFeed(String farmId, String uid) {
+        return isEnable() && feedAnimal.getValue() && farmId != null && !farmId.isEmpty()
+                && uid != null && !uid.isEmpty() && uid.equals(UserIdMap.getCurrentUid())
+                && farmId.equals(ownerFarmId);
+    }
+
     private void autoFeedAnimal(String farmId, String uid, int rechecks) {
-        if (!feedAnimal.getValue() || uid == null || uid.isEmpty()
-                || !uid.equals(UserIdMap.getCurrentUid()) || !farmId.equals(ownerFarmId)) {
-            Log.record("自动喂鸡🥣停止重查：开关已关闭或账号/庄园已变化");
+        autoFeedAnimal(farmId, uid, rechecks, true);
+    }
+
+    private synchronized void autoFeedAnimal(String farmId, String uid, int rechecks, boolean collectRewards) {
+        if (!canAutoFeed(farmId, uid)) {
+            Log.record("自动喂鸡🥣停止重查：模块/开关已关闭或账号/庄园已变化");
             return;
         }
         try {
             // 仅用本次返回计算，查询失败时不能沿用缓存中的进食状态与速度。
-            JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.syncAnimalStatus(farmId));
+            JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.syncAnimalStatus(farmId, true));
             JSONObject farm = jo.optJSONObject("subFarmVO");
             JSONArray currentAnimals = farm == null ? null : farm.optJSONArray("animals");
             if (!MessageUtil.checkMemo(TAG, jo) || farm == null
@@ -992,6 +989,43 @@ public class AntFarm extends ModelTask {
             }
             JSONObject status = ownAnimal == null ? null : ownAnimal.optJSONObject("animalStatusVO");
             String feedStatus = status == null ? "" : status.optString("animalFeedStatus");
+            String location = status == null ? "" : status.optString("animalInteractStatus");
+            if (location.isEmpty()) {
+                retryAutoFeedAnimal(farmId, uid, rechecks, "自家小鸡位置状态缺失");
+                return;
+            }
+            if (!AnimalInteractStatus.HOME.name().equals(location)) {
+                Log.record("自动喂鸡🥣本次未投喂：自家小鸡不在家，状态=" + location);
+                return;
+            }
+            if (AnimalFeedStatus.SLEEPY.name().equals(feedStatus)) {
+                Log.record("自动喂鸡🥣小鸡正在睡觉，起床后再检查投喂");
+                return;
+            }
+            if (AnimalFeedStatus.HUNGRY.name().equals(feedStatus)) {
+                int stock = rankingInt(farm, "foodStock");
+                if (stock < 0) {
+                    retryAutoFeedAnimal(farmId, uid, rechecks, "饥饿状态已确认，但饲料库存缺失/异常");
+                    return;
+                }
+                foodStock = stock;
+                if (stock < 180) {
+                    if (collectRewards) {
+                        int capacity = rankingInt(farm, "foodStockLimit");
+                        if (capacity > 0) foodStockLimit = capacity;
+                        Log.record("自动喂鸡🥣库存[" + stock + "g]不足180g，先检查已完成任务的饲料奖励");
+                        collectCompletedFeedForHungryAnimal(farmId, uid);
+                        // 只补领一轮；投喂资格仍由新的庄园状态和实际库存决定。
+                        autoFeedAnimal(farmId, uid, rechecks, false);
+                    } else {
+                        Log.record("自动喂鸡🥣任务奖励检查后库存[" + stock + "g]仍不足180g，等待补充饲料");
+                    }
+                    return;
+                }
+                if (!collectRewards) Log.record("自动喂鸡🥣补领检查后确认库存[" + stock + "g]，开始投喂饥饿小鸡");
+                feedHungryAnimal(farmId, uid, rechecks);
+                return;
+            }
             if (!AnimalFeedStatus.EATING.name().equals(feedStatus)) {
                 retryAutoFeedAnimal(farmId, uid, rechecks, "小鸡尚未恢复进食，状态="
                         + (feedStatus.isEmpty() ? "缺失" : feedStatus));
@@ -1023,7 +1057,7 @@ public class AntFarm extends ModelTask {
             if (hasChildTask(taskId)) removeChildTask(taskId);
             if (addChildTask(new ChildModelTask(taskId, "FA", () -> {
                 if (feedAnimal.getValue() && uid.equals(UserIdMap.getCurrentUid()) && farmId.equals(ownerFarmId)) {
-                    feedAnimal(farmId);
+                    autoFeedAnimal(farmId, uid, 0);
                 } else {
                     Log.record("自动喂鸡🥣停止投喂：开关已关闭或账号/庄园已变化");
                 }
@@ -1041,6 +1075,52 @@ public class AntFarm extends ModelTask {
         }
     }
 
+    private void collectCompletedFeedForHungryAnimal(String farmId, String uid) {
+        if (!canAutoFeed(farmId, uid)) return;
+        if (farmTaskAwardBusy) {
+            Log.record("自动喂鸡🥣本轮饲料领奖繁忙，暂不发送补领请求");
+            return;
+        }
+        try {
+            JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.listFarmTask());
+            JSONArray tasks = response.optJSONArray("farmTaskList");
+            if (!MessageUtil.checkMemo(TAG, response) || tasks == null) {
+                Log.record("自动喂鸡🥣已完成饲料任务查询失败或列表缺失，未发送领奖请求，code="
+                        + response.optString("resultCode", "未知"));
+                return;
+            }
+            Set<String> seen = new HashSet<>();
+            int eligible = 0, invalid = 0;
+            for (int i = 0; i < tasks.length(); i++) {
+                if (!canAutoFeed(farmId, uid)) return;
+                if (foodStock >= 180 || farmTaskAwardBusy) break;
+                JSONObject task = tasks.optJSONObject(i);
+                if (task == null || !"FINISHED".equals(task.optString("taskStatus"))
+                        || !"ALLPURPOSE".equals(task.optString("awardType"))) continue;
+                int total = rankingInt(task, "awardCount");
+                int received = task.has("alreadyReceiveStageAwardCount")
+                        ? rankingInt(task, "alreadyReceiveStageAwardCount") : 0;
+                if (!(task.opt("taskId") instanceof String) || task.optString("taskId").isEmpty()
+                        || total < 0 || received < 0) {
+                    invalid++;
+                    continue;
+                }
+                if (pendingAward(task) <= 3 || !seen.add(task.optString("taskId"))) continue;
+                eligible++;
+                receiveFarmTaskAward(task);
+            }
+            if (eligible == 0) {
+                Log.record(invalid > 0 ? "自动喂鸡🥣已完成饲料任务字段异常[" + invalid + "]，未发送领奖请求"
+                        : "自动喂鸡🥣没有可领取的已完成饲料任务");
+            }
+        } catch (TaskCancelledException e) {
+            throw e;
+        } catch (Exception e) {
+            Log.err(TAG, "collectCompletedFeedForHungryAnimal err:", e);
+            Log.record("自动喂鸡🥣已完成饲料任务查询或补领异常，稍后以实际库存回查");
+        }
+    }
+
     private void retryAutoFeedAnimal(String farmId, String uid, int rechecks, String reason) {
         if (hasChildTask("FA|" + farmId)) removeChildTask("FA|" + farmId);
         if (rechecks >= MAX_AUTO_FEED_RECHECKS) {
@@ -1049,7 +1129,6 @@ public class AntFarm extends ModelTask {
             return;
         }
         int next = rechecks + 1;
-        // 执行器结束回调后按 ID 清理，下一次必须使用不同 ID，否则新排期也会被旧回调删掉。
         String taskId = "UPDATE|FA|" + farmId + "|" + next;
         if (hasChildTask(taskId)) return;
         if (addChildTask(new ChildModelTask(taskId, "UPDATE", () -> autoFeedAnimal(farmId, uid, next),
@@ -1097,13 +1176,17 @@ public class AntFarm extends ModelTask {
             }
             if (sleepInfo.optLong("sleepBeginTime") + TimeUnit.MINUTES.toMillis(sleepMinutes.getValue()) <= System.currentTimeMillis()) {
                 // 亲密家庭开启时优先在"家庭"起床；否则按 spaceType 兜底
-                if (family.getValue() || SPACE_TYPE_CHICK_FAMILY.equals(jo.optString("spaceType"))) {
-                    return familyWakeUp();
+                boolean woken = family.getValue() || SPACE_TYPE_CHICK_FAMILY.equals(jo.optString("spaceType"))
+                        ? familyWakeUp() : animalWakeUp();
+                if (woken && feedAnimal.getValue()) {
+                    autoFeedAnimal(ownerFarmId, UserIdMap.getCurrentUid(), 0);
                 }
-                return animalWakeUp();
+                return woken;
             } else {
                 Log.record("小鸡无需起床🔆");
             }
+        } catch (TaskCancelledException e) {
+            throw e;
         } catch (Throwable t) {
             Log.i(TAG, "animalWakeUpNow err:");
             Log.printStackTrace(t);
@@ -3263,6 +3346,8 @@ public class AntFarm extends ModelTask {
                 Log.farm("饲料领取🎖️任务[" + title + "]奖励#类型[" + awardType + "]");
             }
             return true;
+        } catch (TaskCancelledException e) {
+            throw e;
         } catch (Throwable t) {
             Log.err(TAG, "receiveFarmTaskAward err:", t);
         }
@@ -3281,38 +3366,58 @@ public class AntFarm extends ModelTask {
     }
 
     private void feedAnimal(String farmId) {
-        if (feedTroughFullThisRun) {
+        autoFeedAnimal(farmId, UserIdMap.getCurrentUid(), 0);
+    }
+
+    private void feedHungryAnimal(String farmId, String uid, int rechecks) {
+        if (!canAutoFeed(farmId, uid)) {
+            Log.record("自动喂鸡🥣停止投喂：模块/开关已关闭或账号/庄园已变化");
             return;
         }
+        boolean received = false, cancelled = false;
+        String reason = "投喂结果未确认";
         try {
-            syncAnimalStatus(ownerFarmId);
-            if (foodStock < 180) {
-                Log.record("剩余饲料不足以投喂小鸡");
-                return;
-            }
             JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.feedAnimal(farmId));
             boolean ok = MessageUtil.checkMemo(TAG, jo);
             if (!ok && CODE_FEED_TROUGH_FULL.equals(jo.optString("resultCode"))) {
-                // 服务端回读：饲料槽已满，本轮不再投喂 (下一轮再看)
-                feedTroughFullThisRun = true;
-                Log.record("投喂小鸡⏭️饲料槽已满，本轮不再投喂");
+                reason = "服务端提示食槽已满";
                 return;
             }
             if (ok) {
-                int feedFood = foodStock - jo.optInt("foodStock");
-                add2FoodStock(-feedFood);
+                int remaining = rankingInt(jo, "foodStock");
+                if (remaining < 0 || remaining >= foodStock) {
+                    reason = "投喂回执库存缺失或未减少";
+                    return;
+                }
+                int feedFood = foodStock - remaining;
+                foodStock = remaining;
+                received = true;
                 Log.farm("投喂小鸡🥣消耗[" + feedFood + "g]#剩余[" + foodStock + "g饲料]");
                 if (useAccelerateTool.getValue()) {
                     TimeUtil.sleep(1000);
                     useAccelerateTool();
                 }
-            }
+            } else reason = "投喂请求未成功，code=" + jo.optString("resultCode", "未知");
+        } catch (TaskCancelledException e) {
+            cancelled = true;
+            throw e;
         } catch (Throwable t) {
             Log.err(TAG, "feedAnimal err:", t);
+            reason = "投喂请求异常，结果未确认";
         } finally {
-            long updateTime = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(10);
-            String taskId = "UPDATE|FA|" + farmId;
-            addChildTask(new ChildModelTask(taskId, "UPDATE", this::autoFeedAnimal, updateTime));
+            if (!cancelled && canAutoFeed(farmId, uid)) {
+                if (!received && rechecks >= MAX_AUTO_FEED_RECHECKS) {
+                    Log.record("自动喂鸡🥣" + reason + "；达到连续重试上限，等待下一轮庄园任务");
+                } else {
+                    int next = received ? 0 : rechecks + 1;
+                    long updateTime = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(10);
+                    String taskId = "UPDATE|FA|" + farmId;
+                    boolean added = addChildTask(new ChildModelTask(taskId, "UPDATE",
+                            () -> autoFeedAnimal(farmId, uid, next), updateTime));
+                    if (!added) Log.record("自动喂鸡🥣投喂后回查排期失败，等待下一轮庄园任务");
+                    else if (!received) Log.record("自动喂鸡🥣" + reason + "；10 秒后回查");
+                }
+            }
         }
     }
 

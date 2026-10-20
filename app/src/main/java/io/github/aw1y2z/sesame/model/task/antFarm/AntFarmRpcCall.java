@@ -48,8 +48,12 @@ public class AntFarmRpcCall {
     }
 
     public static String syncAnimalStatus(String farmId) throws org.json.JSONException {
+        return syncAnimalStatus(farmId, false);
+    }
+
+    public static String syncAnimalStatus(String farmId, boolean queryFoodStockInfo) throws org.json.JSONException {
         JSONObject args = MyUtils.newJSONObject("{}");
-        args.put("farmId", farmId).put("operType", "FEEDSYNC").put("queryFoodStockInfo", false)
+        args.put("farmId", farmId).put("operType", "FEEDSYNC").put("queryFoodStockInfo", queryFoodStockInfo)
                 .put("recall", false).put("requestType", "NORMAL").put("sceneCode", "ANTFARM")
                 .put("source", "H5").put("userId", farmId2UserId(farmId)).put("version", VERSION);
         return ApplicationHook.requestString("com.alipay.antfarm.syncAnimalStatus", new JSONArray().put(args).toString());
