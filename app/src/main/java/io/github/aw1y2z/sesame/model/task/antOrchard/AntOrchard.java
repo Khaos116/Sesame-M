@@ -348,7 +348,7 @@ public class AntOrchard extends ModelTask {
                         Log.record("农场抽抽乐：跳过[" + taskName + "]，任务类型或状态缺失");
                         continue;
                     }
-                    if (OrchardChouChouLeTaskList.getValue().contains(taskName)) {
+                    if ("TODO".equals(taskStatus) && OrchardChouChouLeTaskList.getValue().contains(taskName)) {
                         Log.record("农场抽抽乐：跳过[" + taskName + "]，命中黑名单");
                         continue;
                     }
@@ -383,12 +383,14 @@ public class AntOrchard extends ModelTask {
                                 doublecheck = true;
                             }
                         } else {
-                            // 领奖收口：先按任务列表复核"已领到"，未确认才交自动拉黑（顺序由 TaskAward 固定）
-                            TaskAward.confirmReceivedOrBlackList("农场抽抽乐🎖️",
+                            // 领奖响应失败：先按列表复核"已领到"；未确认也不拉黑——
+                            // 这是已获得的奖励（任务已完成），临时失败下轮重试即可，拉黑会让它 3 天不再领
+                            boolean received = TaskAward.confirmReceivedOrBlackList("农场抽抽乐🎖️",
                                     k -> probeOrchardChouChouLeStatus(sceneCode, taskSceneCode, taskType), taskName,
-                                    taskName,
-                                    () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("OrchardChouChouLeTaskList", taskName, sginRes),
-                                    msg -> Log.farm(msg));
+                                    taskName, null, msg -> Log.farm(msg));
+                            if (!received) {
+                                Log.farm("农场抽抽乐🎖️[" + taskName + "]#领奖失败，下轮重试");
+                            }
                         }
                     } else if ("TODO".equals(taskStatus)) {
                         boolean direct = "DRAW_GOLDENBEAN_liulan".equals(taskType);
@@ -638,17 +640,6 @@ public class AntOrchard extends ModelTask {
                     if (taskType.isEmpty() || sceneCode.isEmpty() || title.isEmpty()) continue;
                     String attemptKey = sceneCode + "/" + taskType + "#" + rightsTimes;
 
-                    // 黑名单任务跳过
-                    if (AntOrchardTaskList.getValue().contains(title)) {
-                        continue;
-                    }
-                    // 本地交易类判断只跳过，不作为服务端失败证据。
-                    if (TaskAlternative.isTransactionTask(taskType)
-                            || TaskAlternative.isTransactionTask(groupId)
-                            || TaskAlternative.isTransactionTask(sceneCode)) {
-                        continue;
-                    }
-
                     // 已完成待领：领奖。已领满（awardCountForReceive<=0）不再重复请求
                     if (TaskStatus.FINISHED.name().equals(taskStatus)) {
                         if (awardCountForReceive > 0 && attempted.add(attemptKey + "-award")) {
@@ -662,14 +653,24 @@ public class AntOrchard extends ModelTask {
                                         ? "能量" : taskConfigResultVO.optString("awardType", "能量");
                                 Log.farm("农场乐园🎖️领取[" + title + "]奖励[" + awardType + "*" + incAwardCount + "]");
                             } else {
-                                // 领奖收口：先按任务列表复核"已领到"，未确认才交自动拉黑
-                                TaskAward.confirmReceivedOrBlackList("农场乐园🎖️",
+                                // 已完成任务仅重试领奖，不能因领奖临时失败禁止后续领取。
+                                boolean received = TaskAward.confirmReceivedOrBlackList("农场乐园🎖️",
                                         k -> probeOrchardOptionalPlayStatus(sceneCode, taskType, -1), taskType, title,
-                                        () -> MessageUtil.checkResultCodeAndMarkTaskBlackList(
-                                                "AntOrchardTaskList", title, joReceived),
-                                        msg -> Log.farm(msg));
+                                        null, msg -> Log.farm(msg));
+                                if (!received) Log.farm("农场乐园🎖️[" + title + "]#领奖未确认，下轮重试");
                             }
                         }
+                        continue;
+                    }
+
+                    // 黑名单任务跳过
+                    if (AntOrchardTaskList.getValue().contains(title)) {
+                        continue;
+                    }
+                    // 本地交易类判断只跳过，不作为服务端失败证据。
+                    if (TaskAlternative.isTransactionTask(taskType)
+                            || TaskAlternative.isTransactionTask(groupId)
+                            || TaskAlternative.isTransactionTask(sceneCode)) {
                         continue;
                     }
 
@@ -2285,6 +2286,8 @@ public class AntOrchard extends ModelTask {
                     triggerYebMoneyTreeOnce();
                 }
             }
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
         } catch (Throwable t) {
             Log.err(TAG, "queryYebRevenueDetail err:", t);
         }
@@ -2295,14 +2298,19 @@ public class AntOrchard extends ModelTask {
      */
     private void triggerYebMoneyTreeOnce() {
         try {
-            String triggerResult = AntOrchardRpcCall.triggerYebMoneyTree();
-            JSONObject triggerJo = MyUtils.newJSONObject(triggerResult);
-            if (!MessageUtil.checkResultCode(TAG, triggerJo)) {
-                Log.record("摇钱树触发未成功：" + triggerJo.optString("resultCode"));
+            JSONObject triggerJo = MyUtils.newJSONObject(AntOrchardRpcCall.triggerYebMoneyTree());
+            JSONObject result = triggerJo.optJSONObject("result");
+            boolean accepted = !RpcRequestGuard.isFailure(triggerJo)
+                    && (result == null ? MessageUtil.checkResultCode(TAG, triggerJo)
+                    : !RpcRequestGuard.isFailure(result)
+                    && (result.optJSONObject("awardInfo") != null || MessageUtil.checkResultCode(TAG, result)));
+            if (!accepted) {
+                Log.record("摇钱树：领奖触发未确认#状态=" + triggerJo.optString("resultCode", "未返回"));
                 return;
             }
-            // 只记"已受理"：金额是触发响应当次返回的值，不作为"已到账收益"上报
-            Log.farm("💰领取奖励[摇钱树]");
+            Log.farm("摇钱树：领奖请求已受理，实际到账以收益页为准");
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
         } catch (Throwable t) {
             Log.err(TAG, "triggerYebMoneyTree err:", t);
         }

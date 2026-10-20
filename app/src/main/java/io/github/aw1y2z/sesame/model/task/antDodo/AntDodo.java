@@ -2,6 +2,7 @@ package io.github.aw1y2z.sesame.model.task.antDodo;
 
 import io.github.aw1y2z.sesame.util.DailyTask;
 import io.github.aw1y2z.sesame.util.MyUtils;
+import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -62,6 +63,7 @@ public class AntDodo extends ModelTask {
     private ChoiceModelField useUniversalCardBookCollectedStatusType;
     private ChoiceModelField useUniversalCardMedalGenerationStatusType;
     private ChoiceModelField useUniversalCardFantasticLevelType;
+    private BooleanModelField scratchCard;
     private BooleanModelField bookMedal;
     private SelectModelField bookMedalOptions;
     private ChoiceModelField collectToFriendType;
@@ -87,6 +89,7 @@ public class AntDodo extends ModelTask {
         modelFields.addField(useUniversalCardBookCollectedhasCollected = new BooleanModelField("useUniversalCardBookCollectedhasCollected", "万能卡片 | 优先兑换未获得状态卡片", false).setDependsOn("useProp"));
         modelFields.addField(useUniversalCardMedalGenerationStatusType = new ChoiceModelField("useUniversalCardMedalGenerationStatusType", "万能卡片 | 勋章合成状态", MedalGenerationStatusType.ALL, MedalGenerationStatusType.nickNames).setDependsOn("useProp"));
         modelFields.addField(useUniversalCardFantasticLevelType = new ChoiceModelField("useUniversalCardFantasticLevelType", "万能卡片 | 最低等级", FantasticLevelType.MAGIC, FantasticLevelType.nickNames).setDependsOn("useProp"));
+        modelFields.addField(scratchCard = new BooleanModelField("scratchCard", "自动刮卡 | 开启", false));
         modelFields.addField(bookMedal = new BooleanModelField("bookMedal", "图鉴勋章 | 开启", false));
         modelFields.addField(bookMedalOptions = new SelectModelField("bookMedalOptions", "图鉴勋章 | 选项", new LinkedHashSet<>(), CustomOption::getAntDodoBookMedalOptions).setDependsOn("bookMedal"));
         modelFields.addField(collectToFriendType = new ChoiceModelField("collectToFriendType", "帮抽卡片 | 动作", CollectToFriendType.NONE, CollectToFriendType.nickNames));
@@ -133,6 +136,9 @@ public class AntDodo extends ModelTask {
             }
             if (giftToFriend.getValue()) {
                 giftToFriend();
+            }
+            if (scratchCard.getValue()) {
+                scratchAnimalCard();
             }
         } catch (Throwable t) {
             if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
@@ -781,6 +787,99 @@ public class AntDodo extends ModelTask {
         } catch (Throwable t) {
             if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "generateBookMedal err:", t);
+        }
+    }
+
+    /**
+     * 刮开待刮卡：先取首页确认 showSpeciesV2（未推送该功能的账号直接跳过），再遍历 curCollection 逐个处理。
+     */
+    private void scratchAnimalCard() {
+        try {
+            JSONObject jo = MyUtils.newJSONObject(AntDodoRpcCall.homePage());
+            if (RpcRequestGuard.isFailure(jo) || !MessageUtil.checkResultCode(TAG, jo)) {
+                Log.record("神奇物种：刮卡首页查询未确认#状态=" + jo.optString("resultCode", "未返回"));
+                return;
+            }
+            JSONObject data = jo.optJSONObject("data");
+            //showSpeciesV2=false表示账号未推送刮卡功能, 直接跳过兼容旧版
+            if (data == null || !data.optBoolean("showSpeciesV2", false)) {
+                return;
+            }
+            JSONArray curCollection = data.optJSONArray("curCollection");
+            if (curCollection == null) {
+                Log.record("神奇物种：刮卡停止，首页缺少卡片列表");
+                return;
+            }
+            Set<String> attempted = new HashSet<>();
+            for (int i = 0; i < curCollection.length(); i++) {
+                JSONObject collection = curCollection.optJSONObject(i);
+                if (collection == null) {
+                    continue;
+                }
+                scratchNewCard(collection, attempted);
+            }
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
+        } catch (Throwable t) {
+            Log.err(TAG, "scratchAnimalCard err:", t);
+        }
+    }
+
+    /**
+     * 刮开单次获卡响应中待刮的新卡（每日抽卡 collect / 道具 consumeProp / 帮抽交换 exchange 返回体同构）：
+     * 节点内含 animal 与 collectDetail.cardList[]，仅刮 scratchable=true 且 scratched=false 的卡。
+     * 旧版账号响应无 scratchable 字段，optBoolean 默认 false，不会发起任何刮卡调用。
+     */
+    private void scratchNewCard(JSONObject cardData, Set<String> attempted) {
+        try {
+            if (cardData == null) {
+                return;
+            }
+            JSONObject animal = cardData.optJSONObject("animal");
+            JSONObject collectDetail = cardData.optJSONObject("collectDetail");
+            JSONArray cardList = collectDetail == null ? null : collectDetail.optJSONArray("cardList");
+            if (animal == null || cardList == null) {
+                return;
+            }
+            if (!(animal.opt("animalId") instanceof String || animal.opt("animalId") instanceof Number)
+                    || !(animal.opt("bookId") instanceof String || animal.opt("bookId") instanceof Number)) {
+                Log.record("神奇物种：刮卡跳过，动物或图鉴标识类型异常");
+                return;
+            }
+            String animalId = animal.optString("animalId").trim();
+            String bookId = animal.optString("bookId").trim();
+            if (animalId.isEmpty() || bookId.isEmpty()) {
+                Log.record("神奇物种：刮卡跳过，动物或图鉴标识缺失");
+                return;
+            }
+            for (int i = 0; i < cardList.length(); i++) {
+                JSONObject card = cardList.optJSONObject(i);
+                if (card == null || !card.optBoolean("scratchable", false) || card.optBoolean("scratched", false)) {
+                    continue;
+                }
+                Object cardId = card.opt("cardInstanceId");
+                if (!(cardId instanceof String || cardId instanceof Number)) continue;
+                String cardInstanceId = card.optString("cardInstanceId").trim();
+                if (cardInstanceId.isEmpty() || !attempted.add(cardInstanceId)) {
+                    continue;
+                }
+                JSONObject res = MyUtils.newJSONObject(AntDodoRpcCall.scratchCard(animalId, bookId, cardInstanceId));
+                if (!RpcRequestGuard.isFailure(res) && MessageUtil.checkResultCode(TAG, res)) {
+                    JSONObject resData = res.optJSONObject("data");
+                    int energyGram = resData == null ? -1 : resData.optInt("energyGram", -1);
+                    String message = "神奇物种🦕刮刮卡" + getAnimalInfo(animal)
+                            + (energyGram >= 0 ? "获得" + energyGram + "g能量" : "已受理，奖励数量未返回");
+                    Log.record(message);
+                    Log.forest(message);
+                    TimeUtil.sleep(500L);
+                } else {
+                    Log.record("神奇物种：刮卡未确认#状态=" + res.optString("resultCode", "未返回"));
+                }
+            }
+        } catch (TaskCancelledException cancelled) {
+            throw cancelled;
+        } catch (Throwable t) {
+            Log.err(TAG, "scratchNewCard err:", t);
         }
     }
 

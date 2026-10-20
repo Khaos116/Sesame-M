@@ -1,5 +1,9 @@
 package io.github.aw1y2z.sesame.model.task.antDodo;
 
+import io.github.aw1y2z.sesame.util.MyUtils;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.util.RandomUtil;
 
@@ -103,5 +107,27 @@ public class AntDodoRpcCall {
     public static String collect(String targetUserId) {
         return ApplicationHook.requestString("alipay.antdodo.rpc.h5.collect",
                 "[{\"targetUserId\":" + targetUserId + "}]");
+    }
+
+    // 图鉴动物列表（含待刮卡）
+    public static String queryBookAnimalList(int pageSize, int pageStart) {
+        String args = "[{\"dangerLevelTag\":\"\",\"pageSize\":" + pageSize + ",\"pageStart\":" + pageStart + "}]";
+        return ApplicationHook.requestString("alipay.antdodo.rpc.h5.queryBookAnimalList", args);
+    }
+
+    // V2刮刮卡: 刮开待刮卡(alipay.antdodo.rpc.h5.scratchCard), 获得森林能量, 仅灰度推送账号支持
+    public static String scratchCard(String animalId, String bookId, String cardInstanceId) throws org.json.JSONException {
+        JSONObject body = MyUtils.newJSONObject().put("animalId", animalId).put("bookId", bookId)
+                .put("cardInstanceId", cardInstanceId);
+        return ApplicationHook.requestString("alipay.antdodo.rpc.h5.scratchCard",
+                new JSONArray().put(body).toString());
+    }
+
+    public static String queryMyAchievement() {
+        return ApplicationHook.requestString("alipay.antdodo.rpc.h5.queryMyAchievement", "[{}]");
+    }
+
+    public static String queryMedalAndConfig() {
+        return ApplicationHook.requestString("alipay.antdodo.rpc.h5.queryMedalAndConfig", "[{\"calculateV2\":true}]");
     }
 }
