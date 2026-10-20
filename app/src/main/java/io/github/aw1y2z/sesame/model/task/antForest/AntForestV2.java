@@ -114,9 +114,10 @@ public class AntForestV2 extends ModelTask {
     private static final String FLAG_TEAM_WATER_DAILY_COUNT = "FLAG_TEAM_WATER_DAILY_COUNT";
 
     /**
-     * 新版保护地任务：只有洪山动物园区域下发了任务场景，其余区域没有任务列表。
+     * 新版保护地任务场景码：跨保护地区域固定的场景标识。
+     * 保护地区域会轮换（洪山动物园→玉树东仲→…），但 regionCode 由 entryInfo 动态下发、
+     * sceneCode 始终复用此值；服务端按 regionCode 返回该区域任务，故区域轮换无需改代码。
      */
-    private static final String MONOPOLY_REGION_HSDWY = "hongshandongwuyuan";
     private static final String MONOPOLY_TASK_SCENE_HSDWY = "ANTFOREST_MONOPOLY_TASK_HSDWY";
 
     /**
@@ -2057,22 +2058,26 @@ public class AntForestV2 extends ModelTask {
     public void initMonopolyTaskListMap() {
         try {
             MonopolyTaskListMap.load();
-            JSONObject jo = monopolyResponse(AntForestRpcCall.listMonopolyTasks(MONOPOLY_REGION_HSDWY, MONOPOLY_TASK_SCENE_HSDWY));
-            if (MessageUtil.checkSuccess(TAG, jo)) {
-                JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
-                if (taskInfoList != null) {
-                    for (int i = 0; i < taskInfoList.length(); i++) {
-                        JSONObject task = taskInfoList.optJSONObject(i);
-                        JSONObject base = task == null ? null : task.optJSONObject("taskBaseInfo");
-                        if (base == null || !MONOPOLY_TASK_SCENE_HSDWY.equals(base.optString("sceneCode"))) {
-                            continue;
+            // regionCode 由 entryInfo 动态下发(区域轮换无需改代码),只拉当前区域任务作为黑名单候选项
+            String regionCode = getMonopolyRegionCode();
+            if (!regionCode.isEmpty()) {
+                JSONObject jo = monopolyResponse(AntForestRpcCall.listMonopolyTasks(regionCode, MONOPOLY_TASK_SCENE_HSDWY));
+                if (MessageUtil.checkSuccess(TAG, jo)) {
+                    JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
+                    if (taskInfoList != null) {
+                        for (int i = 0; i < taskInfoList.length(); i++) {
+                            JSONObject task = taskInfoList.optJSONObject(i);
+                            JSONObject base = task == null ? null : task.optJSONObject("taskBaseInfo");
+                            if (base == null) {
+                                continue;
+                            }
+                            String taskType = base.optString("taskType");
+                            if (taskType.isEmpty()) {
+                                continue;
+                            }
+                            String title = blackTaskKey(monopolyTaskTitle(base, taskType));
+                            MonopolyTaskListMap.add(title, title);
                         }
-                        String taskType = base.optString("taskType");
-                        if (taskType.isEmpty()) {
-                            continue;
-                        }
-                        String title = blackTaskKey(monopolyTaskTitle(base, taskType));
-                        MonopolyTaskListMap.add(title, title);
                     }
                 }
             }
@@ -2907,8 +2912,8 @@ public class AntForestV2 extends ModelTask {
             }
             boolean isReceived = TaskStatus.RECEIVED.name().equals(status);
             if (!isReceived && TaskStatus.FINISHED.name().equals(status)) {
-                String award = AntForestRpcCall.receiveYouthPrivilegeTaskAward(route.source, route.awardTaskType);
-                Log.forest("青春特权道具[" + route.displayName + "]领奖请求 " + award);
+                // 领奖 RPC 照常执行,但不再把响应 JSON dump 进 forest 日志(成败以随后查到的 已领取/未领取 状态为准)
+                AntForestRpcCall.receiveYouthPrivilegeTaskAward(route.source, route.awardTaskType);
                 TimeUtil.sleep(1000);
                 status = queryYouthForestTaskStatus(route);
                 isReceived = TaskStatus.RECEIVED.name().equals(status);
@@ -4493,15 +4498,26 @@ public class AntForestV2 extends ModelTask {
         return resData == null ? jo : resData;
     }
 
+    /** 当前保护地区域码：由 entryInfo 动态下发，区域轮换无需改代码；取不到返回空串 */
+    private String getMonopolyRegionCode() {
+        try {
+            JSONObject state = new JSONObject(AntForestRpcCall.queryMonopolyEntryInfo());
+            if (!MessageUtil.checkResultCode(TAG, state)) {
+                return "";
+            }
+            JSONObject regionInfo = state.optJSONObject("regionInfo");
+            return regionInfo == null ? "" : regionInfo.optString("regionCode");
+        } catch (Throwable t) {
+            Log.err(TAG, "getMonopolyRegionCode err:", t);
+            return "";
+        }
+    }
+
     /* 新版保护地：完成可自动执行的任务并领取奖励 */
     private boolean monopolyTask(String regionCode) {
-        String sceneCode;
-        if (MONOPOLY_REGION_HSDWY.equals(regionCode)) {
-            sceneCode = MONOPOLY_TASK_SCENE_HSDWY;
-        } else {
-            Log.forest("新版保护地🌲当前区域[" + regionCode + "]没有任务场景，继续地图巡护");
-            return false;
-        }
+        // sceneCode 为跨保护地区域固定的任务场景标识；regionCode 由 entryInfo 动态下发(区域轮换无需改代码)。
+        // 服务端按 regionCode 返回该区域任务,请求带固定 sceneCode 即可,拿不到任务时按空列表跳过。
+        String sceneCode = MONOPOLY_TASK_SCENE_HSDWY;
         boolean changed = false;
         try {
             // 每轮只处理一个任务，最多 20 轮：服务端状态不变时靠轮次上限收敛
@@ -4519,7 +4535,9 @@ public class AntForestV2 extends ModelTask {
                 for (int i = 0; i < taskInfoList.length() && !acted; i++) {
                     JSONObject task = taskInfoList.optJSONObject(i);
                     JSONObject base = task == null ? null : task.optJSONObject("taskBaseInfo");
-                    if (base == null || !sceneCode.equals(base.optString("sceneCode"))) {
+                    // 用任务自带的真实 sceneCode 做完成/领奖(服务端按 regionCode 返回,sceneCode 以任务为准)
+                    String taskSceneCode = base == null ? "" : base.optString("sceneCode");
+                    if (taskSceneCode.isEmpty()) {
                         continue;
                     }
                     String taskType = base.optString("taskType");
@@ -4534,12 +4552,12 @@ public class AntForestV2 extends ModelTask {
                     }
                     if ("FINISHED".equals(status)) {
                         acted = true;
-                        changed |= monopolyReceiveTaskAward(regionCode, taskType, sceneCode, title);
+                        changed |= monopolyReceiveTaskAward(regionCode, taskType, taskSceneCode, title);
                     } else if ("TODO".equals(status) && "NORMAL".equals(base.optString("taskMode"))
                             && "VISIT_FLOAT_BALL".equals(base.optString("taskProdPlayType"))) {
                         // 只自动做"浏览浮球"这类纯等待任务，其余需要真实业务动作的任务不碰
                         acted = true;
-                        changed |= monopolyFinishTask(base, taskType, sceneCode, title);
+                        changed |= monopolyFinishTask(base, taskType, taskSceneCode, title);
                     }
                 }
                 if (!acted) {
