@@ -3619,8 +3619,9 @@ public class AntForestV2 extends ModelTask {
         try {
             if (propGroupType.equals("shield") || continuousUseCardOptions.contains(propGroupType)) {
                 long continuousUseCardSecond = continuousUseCardCheak(propGroupType);
-                // 仅当"未使用且可用"（==0）才处理：使用中（>0）或不可用（-1）都不消耗
-                if (continuousUseCardSecond == 0) {
+                // 未使用/已过期（==0）需新开；shield 且在用且剩余<阈值（>0）需续用延长；其余（-1 充足）不处理
+                if (continuousUseCardSecond == 0
+                        || (propGroupType.equals("shield") && continuousUseCardSecond > 0)) {
                     // 每日使用次数上限（0 = 不限制）：达到后当天不再消耗该卡片，也不再兑换补充
                     Integer optLimit = continuousUseCardOptions.get(propGroupType);
                     int cardLimit = optLimit == null ? 0 : optLimit;
@@ -3649,7 +3650,7 @@ public class AntForestV2 extends ModelTask {
                     }
                     int loopCount = 0; // 循环次数计数
                     final int MAX_LOOP = 10; // 最大循环次数，避免死循环
-                    do {
+                    cardLoop: do {
                         rightCard = chooseContinuousLIMITTIMECard(propGroupType);
                         if (rightCard == null) {
                             return;
@@ -3710,6 +3711,10 @@ public class AntForestV2 extends ModelTask {
                                     Log.forest("使用道具🎭[" + propName + "]");
                                 }
                                 break;*/
+                        }
+                        // 保护罩：续用到剩余保护时间≥"自动续用保护罩(小时)"阈值即停止，避免一次用光背包多张
+                        if (propGroupType.equals("shield") && continuousUseCardCheak("shield") == -1) {
+                            break cardLoop;
                         }
                         // 使用成功才计入当日次数（上限已在循环开头拦截，此处不会多发请求）
                         if (cardLimit > 0 && MessageUtil.checkResultCode(TAG, joResult)) {
@@ -3788,11 +3793,9 @@ public class AntForestV2 extends ModelTask {
                         case "stealthCard":
                             return -1;
                         case "shield":
-                            if (duringTime / (1000 * 60) < 60 * continuousUseShieldHour.getValue()) {
-                                return duringTime;
-                            } else {
-                                return -1;
-                            }
+                            // 在保护中且剩余<阈值：返回 >0 表示"需续用延长"；充足则返回 -1 不处理
+                            return duringTime / (1000 * 60) < 60 * continuousUseShieldHour.getValue()
+                                    ? duringTime : -1;
                         /*case "energyBombCard":
                             if (duringTime / (1000 * 60) < 3*60 * 24) {
                                 Log.forest("duringTime");
