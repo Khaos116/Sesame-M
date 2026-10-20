@@ -38,6 +38,7 @@ public class AppConfig {
     private Boolean enableDebugLog = false;
     private Boolean enableViewErrorLog = true;
     private Boolean enableViewRuntimeLog = true;
+    private Boolean logViewByRun = false;
     private Boolean batteryPerm = true;
 
     // 模块级开关：原先是按账号存在 BaseModel 里，现改为全局（注入进程与模块 App 共用同一份）
@@ -85,6 +86,14 @@ public class AppConfig {
 
     public void setCloseCaptchaDialog(Boolean value) {
         closeCaptchaDialog = value;
+    }
+
+    public Boolean getLogViewByRun() {
+        return logViewByRun;
+    }
+
+    public void setLogViewByRun(Boolean value) {
+        logViewByRun = value;
     }
 
     public Boolean getLanguageSimplifiedChinese() {
