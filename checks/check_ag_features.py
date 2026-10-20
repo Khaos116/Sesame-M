@@ -14,6 +14,7 @@ jar = sorted((Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) 
               "caches/modules-2/files-2.1/org.json/json").glob("*/*/json-*.jar"))[-1]
 forest = "model/task/antForest/AntForestV2.java"
 farm = "model/task/antFarm/AntFarm.java"
+farm_source = (SOURCE / farm).read_text(encoding="utf-8")
 orchard = "model/task/antOrchard/AntOrchard.java"
 
 def methods(path, names):
@@ -46,22 +47,26 @@ public class AGCheck {
     static class StringUtil {static boolean isEmpty(String s){return s==null||s.isEmpty();}}
     static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}
     static class RandomUtil {static String getRandomString(int n){return "token";}}
-    static class UserIdMap {static String getCurrentUid(){return "self";}static String getMaskName(String s){return "friend";}}
+    static class UserIdMap {static String uid="self";static String getCurrentUid(){return uid;}static String getMaskName(String s){return "friend";}}
     static class TimeUtil {static boolean cancel;static List<Long> waits=new ArrayList<>();static void sleep(long ms){if(cancel)throw new TaskCancelledException();waits.add(ms);}}
     static class Status {
-        static Set<String> flags=new HashSet<>();static Map<String,Integer> watered=new HashMap<>();
-        static boolean hasFlagToday(String s){return flags.contains(s);}static void flagToday(String s){flags.add(s);}
-        static void clearFlag(String s){flags.remove(s);}static int getWaterFriendToday(String s){return watered.getOrDefault(s,0);}
+        static int day;static Set<String> flags=new HashSet<>();static Map<String,Integer> watered=new HashMap<>(),intFlags=new HashMap<>();
+        static String key(String s){return UserIdMap.uid+"|"+day+"|"+s;}
+        static boolean hasFlagToday(String s){return flags.contains(key(s));}static void flagToday(String s){flags.add(key(s));}
+        static void clearFlag(String s){flags.remove(key(s));}static int getWaterFriendToday(String s){return watered.getOrDefault(s,0);}
+        static int getIntFlagToday(String s){return intFlags.getOrDefault(key(s),0);}static void setIntFlagToday(String s,int n){intFlags.put(key(s),n);}
         static void waterFriendToday(String id,int n,String uid){watered.merge(id,n,Integer::sum);}
     }
     static class Field<T> {T value;Field(T v){value=v;}T getValue(){return value;}}
     static class KVNode<A,B> {A a;B b;KVNode(A x,B y){a=x;b=y;}A getKey(){return a;}B getValue(){return b;}}
     static class ApplicationHook {
+        static boolean cancelUse;
         static Map<String,Deque<String>> responses=new HashMap<>();static List<JSONObject> calls=new ArrayList<>();
         static String requestString(String op,String raw,int... ignored){
             assert !TaskLifecycle.isIdle():"RPC outside lifecycle scope";
             JSONObject args=new JSONArray(raw).optJSONObject(0);assert args!=null;
             String name=op.substring(op.lastIndexOf('.')+1);calls.add(new JSONObject().put("op",name).put("body",args));
+            if(cancelUse&&name.equals("useFarmTool"))throw new TaskCancelledException();
             Deque<String> q=responses.get(name);return q==null?ok().toString():q.size()>1?q.removeFirst():q.peekFirst();
         }
     }
@@ -85,13 +90,15 @@ public class AGCheck {
     static class Farm {
         static String TAG="Farm";String ownerFarmId="farm";
         Field<Integer> dollSupplementOrder=new Field<>(0),collectChickenDiary=new Field<>(1);
+        Field<Boolean> useFenceTool=new Field<>(false);
+        void runFenceStep(){@@FENCESTEP@@}
         @@FARM@@
     }
     static class Orchard {
         static String TAG="Orchard";Field<Set<String>> AntOrchardTaskList=new Field<>(new HashSet<>());
         @@ORCHARD@@
     }
-    static void reset(){ApplicationHook.responses.clear();ApplicationHook.calls.clear();Status.flags.clear();Status.watered.clear();Log.lines.clear();TimeUtil.waits.clear();TimeUtil.cancel=false;AntOrchardTaskListMap.values.clear();AntOrchardTaskListMap.saves=0;}
+    static void reset(){ApplicationHook.responses.clear();ApplicationHook.calls.clear();ApplicationHook.cancelUse=false;UserIdMap.uid="self";Status.day=0;Status.flags.clear();Status.intFlags.clear();Status.watered.clear();Log.lines.clear();TimeUtil.waits.clear();TimeUtil.cancel=false;AntOrchardTaskListMap.values.clear();AntOrchardTaskListMap.saves=0;}
     static void replies(String op,JSONObject... values){Deque<String> q=new ArrayDeque<>();for(JSONObject v:values)q.add(v.toString());ApplicationHook.responses.put(op,q);}
     static List<JSONObject> calls(String op){List<JSONObject> list=new ArrayList<>();for(JSONObject c:ApplicationHook.calls)if(op.equals(c.optString("op")))list.add(c.optJSONObject("body"));return list;}
     static boolean logged(String part){return Log.lines.stream().anyMatch(s->s.contains(part));}
@@ -157,10 +164,10 @@ public class AGCheck {
         reset();replies("syncAnimalStatus",farmState(false),farmState(true));replies("listFarmTool",tools("FENCETOOL",20));f.useFenceTool();f.useFenceTool();
         assert calls("useFarmTool").size()==1&&!Status.hasFlagToday("farm::fenceUnconfirmed::v2")&&logged("使用成功"):"twenty stocked cards must use one and confirm the nested effect";
         reset();replies("syncAnimalStatus",farmState(false),farmState(true));replies("listFarmTool",tools("FENCETOOL",1));f.useFenceTool();f.useFenceTool();assert calls("useFarmTool").size()==1&&logged("使用成功");
-        reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",1));f.useFenceTool();f.useFenceTool();assert calls("useFarmTool").size()==1&&logged("避免重复消耗");
+        reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",1));f.useFenceTool();f.useFenceTool();assert calls("useFarmTool").size()==2&&!Status.hasFlagToday("farm::fenceUnconfirmed::v2")&&logged("未确认"):"each fresh inactive state with stock must allow one use attempt";
         reset();replies("syncAnimalStatus",new JSONObject());f.useFenceTool();assert calls("useFarmTool").isEmpty();
         reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",2));f.useFenceTool();
-        assert Status.hasFlagToday("farm::fenceUnconfirmed::v2");
+        assert !Status.hasFlagToday("farm::fenceUnconfirmed::v2"):"unconfirmed replies must not block the whole day";
         replies("syncAnimalStatus",farmState(true));f.useFenceTool();assert !Status.hasFlagToday("farm::fenceUnconfirmed::v2"):"later confirmed fence left stale reservation";
         replies("syncAnimalStatus",farmState(false),farmState(true));f.useFenceTool();assert calls("useFarmTool").size()==2:"expired fence could not renew after delayed confirmation";
         for(boolean localRule:new boolean[]{true,false}) {
@@ -187,7 +194,7 @@ public class AGCheck {
         replies("queryChickenDiaryList",ok().put("data",new JSONObject().put("hasPreviousMore",true).put("chickenDiaryBriefList",new JSONArray().put(new JSONObject().put("dateStr","2026-10-01")))),
             ok().put("data",new JSONObject().put("hasPreviousMore",false).put("chickenDiaryBriefList",new JSONArray().put(new JSONObject().put("dateStr","2026-09-01")))));
         TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));f.likeChickenDiaries();assert calls("collectChickenDiary").size()==2&&calls("queryChickenDiaryList").get(0).optString("queryMonthStr").equals("2026-10")&&calls("queryChickenDiaryList").get(1).optString("queryMonthStr").equals("2026-09");
-        System.out.println("PASS farm: fence effect/repeat guard, doll budget/ownership/escaped targets, diary confirmation/GMT+8 history");
+        System.out.println("PASS farm: fence live effect/renewal, doll budget/ownership/escaped targets, diary confirmation/GMT+8 history");
     }
     static JSONObject star(String id,String state){return new JSONObject().put("taskType",id).put("taskStatus",state).put("sceneCode","starScene").put("bizInfo",new JSONObject().put("title","star").toString());}
     static JSONObject starList(JSONObject task){return ok().put("taskInfos",new JSONArray().put(task));}
@@ -229,8 +236,80 @@ public class AGCheck {
         reset();TimeUtil.cancel=true;try{o.runExtraOrchardTask(browse(0),false);throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}assert calls("finish").isEmpty();TimeUtil.cancel=false;
         System.out.println("PASS orchard: star query/finish/reward/contracts, blacklist, visit source, real ad events/paging, progress/limits/failure/cancellation");
     }
+    static void fenceRuleChecks() {
+        Farm f=new Farm();reset();f.runFenceStep();assert ApplicationHook.calls.isEmpty():"disabled fence step issued an RPC";
+        for(String oldFlag:List.of("farm::fenceUnconfirmed","farm::fenceUnconfirmed::v2")) {
+            reset();Status.flagToday(oldFlag);f=new Farm();f.useFenceTool.value=true;
+            replies("syncAnimalStatus",farmState(false),farmState(true));replies("listFarmTool",tools("FENCETOOL",20));f.runFenceStep();
+            assert calls("useFarmTool").size()==1&&logged("使用成功")&&!Status.hasFlagToday(oldFlag):"old daily reservation blocked an expired fence with stock";
+        }
+        reset();replies("syncAnimalStatus",farmState(true));f.runFenceStep();assert calls("listFarmTool").isEmpty()&&calls("useFarmTool").isEmpty():"active fence must skip before inventory lookup";
+        for(JSONObject inventory:List.of(tools("FENCETOOL",0),tools("OTHER",20),new JSONObject(),ok().put("toolList",new JSONArray()))) {
+            reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",inventory);f.runFenceStep();assert calls("useFarmTool").isEmpty():"empty or failed inventory must not use a card";
+        }
+        for(int invalid=0;invalid<3;invalid++) {
+            reset();JSONObject state=farmState(false);
+            if(invalid==0)state=new JSONObject();
+            if(invalid==1)state.optJSONObject("subFarmVO").put("farmId","other");
+            if(invalid==2)state.optJSONObject("subFarmVO").optJSONObject("buffInfoVO").put("hasBuffEffect","bad");
+            replies("syncAnimalStatus",state);f.runFenceStep();assert calls("useFarmTool").isEmpty()&&calls("listFarmTool").isEmpty():"invalid state must not be treated as expiry";
+        }
+        for(JSONObject reply:List.of(ok(),new JSONObject(),new JSONObject().put("success",false).put("resultCode","102"))) {
+            reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",20));replies("useFarmTool",reply);f.runFenceStep();
+            assert calls("useFarmTool").size()==1&&!Status.hasFlagToday("farm::fenceUnconfirmed::v2"):"one check must only send one use and leave no daily gate";
+            f=new Farm();f.useFenceTool.value=true;replies("syncAnimalStatus",farmState(false),farmState(true));replies("useFarmTool",ok());f.runFenceStep();
+            assert calls("useFarmTool").size()==2&&logged("使用成功"):"next check after failure or unconfirmed reply must renew from current state";
+        }
+        reset();JSONObject noBuff=farmState(false);noBuff.optJSONObject("subFarmVO").remove("buffInfoVO");replies("syncAnimalStatus",noBuff,farmState(true));replies("listFarmTool",tools("FENCETOOL",20));f.runFenceStep();assert calls("useFarmTool").size()==1&&logged("使用成功");
+        System.out.println("PASS fence: enabled/disabled, active/expired, stock, old flags, failed/unknown replies and fresh next-round renewal");
+    }
+    static void fenceConsumptionChecks() {
+        String spent="farm::fenceConsumedUnconfirmed",pending="farm::fencePendingStock";
+        Farm f=new Farm();
+        for(JSONObject reply:List.of(ok(),new JSONObject(),new JSONObject().put("success",false).put("resultCode","102"))) {
+            reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",20),tools("FENCETOOL",19));replies("useFarmTool",reply);
+            f.useFenceTool();assert calls("useFarmTool").size()==1&&Status.hasFlagToday(spent):"confirmed stock debit must pause further use until effect or next day";
+            assert !logged("使用成功"):"stock debit without effect was reported as active";
+            f=new Farm();for(int round=0;round<3;round++)f.useFenceTool();assert calls("useFarmTool").size()==1:"new instance or repeated main check consumed another card";
+            replies("syncAnimalStatus",farmState(true));f.useFenceTool();assert !Status.hasFlagToday(spent)&&Status.getIntFlagToday(pending)==0:"confirmed active effect did not clear the receipt guard";
+            replies("syncAnimalStatus",farmState(false),farmState(true));replies("listFarmTool",tools("FENCETOOL",19));replies("useFarmTool",ok());f.useFenceTool();assert calls("useFarmTool").size()==2&&logged("使用成功"):"expiry after confirmed effect could not renew";
+        }
+        for(int mode=0;mode<2;mode++) {
+            reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",1),tools("FENCETOOL",0));f.useFenceTool();assert Status.hasFlagToday(spent):"last card debit was not preserved";
+            if(mode==0)Status.day++;else UserIdMap.uid="other";
+            replies("syncAnimalStatus",farmState(false),farmState(true));replies("listFarmTool",tools("FENCETOOL",20));f.useFenceTool();assert calls("useFarmTool").size()==2:"previous account/day blocked eligible renewal";
+            if(mode==1){UserIdMap.uid="self";assert Status.hasFlagToday(spent):"switching account cleared the original account guard";replies("syncAnimalStatus",farmState(false));f.useFenceTool();assert calls("useFarmTool").size()==2;}
+        }
+        for(JSONObject emptyStock:List.of(ok().put("toolList",new JSONArray()),tools("OTHER",20))) {
+            reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",1),emptyStock);f.useFenceTool();
+            assert Status.hasFlagToday(spent)&&Status.getIntFlagToday(pending)==0:"valid list omitting the last card was not reconciled as zero stock";
+            f=new Farm();replies("listFarmTool",tools("FENCETOOL",1));f.useFenceTool();assert calls("useFarmTool").size()==1:"newly awarded card bypassed the last-card consumption guard";
+            Status.day++;replies("syncAnimalStatus",farmState(false),farmState(true));f.useFenceTool();assert calls("useFarmTool").size()==2:"last-card guard did not expire on the next day";
+        }
+        for(JSONObject badList:List.of(ok(),ok().put("toolList",new JSONArray().put("bad")),ok().put("toolList",new JSONArray().put(JSONObject.NULL)),ok().put("toolList",new JSONArray().put(new JSONObject())),ok().put("toolList",new JSONArray().put(new JSONObject().put("toolType",7))))) {
+            reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",1),badList);f.useFenceTool();
+            assert !Status.hasFlagToday(spent)&&Status.getIntFlagToday(pending)==1:"incomplete inventory was treated as confirmed zero stock";
+            f=new Farm();replies("listFarmTool",badList);f.useFenceTool();assert calls("useFarmTool").size()==1:"unreadable inventory allowed another card request";
+        }
+        for(int stock:new int[]{19,20,21}) {
+            reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",20),new JSONObject());f.useFenceTool();
+            assert calls("useFarmTool").size()==1&&Status.getIntFlagToday(pending)==20:"failed inventory readback lost the pre-use receipt";
+            f=new Farm();replies("listFarmTool",tools("FENCETOOL",stock));f.useFenceTool();
+            assert calls("useFarmTool").size()==(stock==20?2:1):"next check did not reconcile pending stock before another use";
+            assert Status.hasFlagToday(spent)==(stock==19):"unknown/increased stock must not be reported as a confirmed debit";
+        }
+        for(boolean consumed:new boolean[]{false,true}) {
+            reset();replies("syncAnimalStatus",farmState(false));replies("listFarmTool",tools("FENCETOOL",20));ApplicationHook.cancelUse=true;
+            try{f.useFenceTool();throw new AssertionError("request cancellation swallowed");}catch(TaskCancelledException expected){}
+            assert Status.getIntFlagToday(pending)==20:"interrupted request lost the pre-use stock";
+            ApplicationHook.cancelUse=false;replies("listFarmTool",tools("FENCETOOL",consumed?19:20));f=new Farm();f.useFenceTool();
+            assert calls("useFarmTool").size()==(consumed?1:2):"interrupted request did not reconcile actual consumption";
+        }
+        reset();JSONObject badCount=tools("FENCETOOL",20);badCount.optJSONArray("toolList").optJSONObject(0).put("toolCount",20.5);replies("syncAnimalStatus",farmState(false));replies("listFarmTool",badCount);f.useFenceTool();assert calls("useFarmTool").isEmpty():"invalid count was used for receipt comparison";
+        System.out.println("PASS fence receipt: confirmed debit, unchanged stock retry, missing readback, delayed effect, last card, instance/account/day isolation");
+    }
     public static void main(String[] args) throws Exception {
-        try(TaskLifecycle.Work w=TaskLifecycle.enter()){assert w!=null;forestChecks();farmChecks();orchardChecks();}
+        try(TaskLifecycle.Work w=TaskLifecycle.enter()){assert w!=null;forestChecks();fenceConsumptionChecks();fenceRuleChecks();farmChecks();orchardChecks();}
         assert TaskLifecycle.isIdle();
     }
 }
@@ -238,7 +317,8 @@ public class AGCheck {
 tokens = {
     "@@GUARD@@": methods("rpc/intervallimit/RpcRequestGuard.java", ["    public static boolean isFailure(JSONObject result)", "    public static String errorMessage(JSONObject result)"]),
     "@@FOREST@@": methods(forest, ["    private int friendWaterEnergy(", "    private void waterFriendEnergy()", "    private boolean dispatchMonopolyAnimal(", "    private boolean isMonopolyCreatureExpired(", "    private boolean isMonopolyCreatureIdle(", "    static long forestFeatureLong(", "    private void waterMemberPlant()", "    private void exchangeMonopolyCertificate()"]),
-    "@@FARM@@": methods(farm, ["    private static boolean farmFeatureOk(", "    private JSONObject findFeatureTool(", "    private void useFenceTool()", "    private void supplementDolls()", "    private void supplementDolls(int", "    private boolean likeChickenDiary(", "    private void likeChickenDiaries()"]),
+    "@@FARM@@": methods(farm, ["    private static boolean farmFeatureOk(", "    private JSONObject findFeatureTool(", re.search(r"    private (?:synchronized )?void useFenceTool\(\)",farm_source).group(0), "    private static int rankingInt(", "    private void step(", "    private void supplementDolls()", "    private void supplementDolls(int", "    private boolean likeChickenDiary(", "    private void likeChickenDiaries()"]) + methods(farm, [sig for sig in ["    private JSONObject queryFenceTool(", "    private boolean reconcileFenceStock("] if sig in farm_source]),
+    "@@FENCESTEP@@": next(line.strip() for line in (SOURCE / farm).read_text(encoding="utf-8").splitlines() if line.strip().startswith('step("篱笆卡",')),
     "@@ORCHARD@@": methods(orchard, ["    private static JSONObject orchardExtraDisplay(", "    private static String orchardUrlParam(", "    private static String orchardTaskSource(", "    private static boolean orchardExtraOk(", "    private static JSONObject orchardUnwrapExtra(", "    private static boolean isExtraOrchardBrowse(", "    private void orchardStarTasks()", "    private static int extraOrchardCount(", "    private static String extraOrchardSnapshot(", "    private static int extraOrchardStage(", "    private static boolean extraOrchardAdvanced(", "    private JSONObject refreshExtraOrchardTask(", "    private void runExtraOrchardTask(", "    private boolean reportOrchardStarGame(", "    private JSONObject performOrchardBrowse("]),
     "@@FORESTRPC@@": rpc_methods("model/task/antForest/AntForestRpcCall.java", ["queryMonopolyEntryInfo", "assignMonopolyCreature", "queryUsingCreatureInfo", "queryMonopolyCertificate", "exchangeMonopolyCertificate", "memberForestSignin", "plantAward", "queryFriendHomePage"]) + methods("model/task/antForest/AntForestRpcCall.java", ["    private static String monopolyPayload("]) + 'static final String MONOPOLY_SOURCE="monopoly_home_board";',
     "@@FARMRPC@@": rpc_methods("model/task/antFarm/AntFarmRpcCall.java", ["listFarmTool", "useFarmTool", "useDollTool", "queryAntfarmDoll", "queryLoveCabin", "syncAnimalStatus", "queryChickenDiary", "queryChickenDiaryList", "collectChickenDiary"]),

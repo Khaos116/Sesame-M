@@ -3506,55 +3506,113 @@ public class AntFarm extends ModelTask {
         return null;
     }
 
-    private void useFenceTool() {
+    private JSONObject queryFenceTool() throws JSONException {
+        JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.listFarmTool());
+        JSONArray tools = response.optJSONArray("toolList");
+        if (!farmFeatureOk(response) || tools == null) {
+            Log.record("篱笆卡：库存查询失败或缺少列表，" + RpcRequestGuard.errorMessage(response));
+            return null;
+        }
+        JSONObject found = null;
+        for (int i = 0; i < tools.length(); i++) {
+            JSONObject tool = tools.optJSONObject(i);
+            if (tool == null || !(tool.opt("toolType") instanceof String) || tool.optString("toolType").trim().isEmpty()) {
+                Log.record("篱笆卡：库存列表条目无效，未确认当前数量");
+                return null;
+            }
+            if (!"FENCETOOL".equals(tool.optString("toolType"))) continue;
+            if (found != null || rankingInt(tool, "toolCount") < 0
+                    || !(tool.opt("toolId") instanceof String) || tool.optString("toolId").isEmpty()) {
+                Log.record("篱笆卡：库存字段无效或重复，未确认当前数量");
+                return null;
+            }
+            found = tool;
+        }
+        return found != null ? found : MyUtils.newJSONObject().put("toolType", "FENCETOOL").put("toolCount", 0);
+    }
+
+    private boolean reconcileFenceStock(int stock, String pending, String spent) {
+        int before = Status.getIntFlagToday(pending);
+        if (before <= 0) return false;
+        if (stock < before) {
+            Status.flagToday(spent);
+            Status.setIntFlagToday(pending, 0);
+            Log.record("篱笆卡：已确认库存减少，但效果尚未显示，暂停补用，等待查到生效或次日");
+            return true;
+        }
+        if (stock > before) {
+            Log.record("篱笆卡：库存较用卡前增加，尚不能确定是否扣卡，暂不重复用卡");
+            return true;
+        }
+        Status.setIntFlagToday(pending, 0);
+        return false;
+    }
+
+    private synchronized void useFenceTool() {
+        String pending = "farm::fencePendingStock", spent = "farm::fenceConsumedUnconfirmed";
+        String phase = "查询当前效果";
         try {
             TimeUtil.sleep(0);
-            String legacyFlag = "farm::fenceUnconfirmed";
-            String flag = legacyFlag + "::v2";
             JSONObject state = MyUtils.newJSONObject(AntFarmRpcCall.syncAnimalStatus(ownerFarmId));
             JSONObject farm = state.optJSONObject("subFarmVO");
             if (!farmFeatureOk(state) || farm == null || !ownerFarmId.equals(farm.optString("farmId"))) { Log.record("篱笆卡：庄园状态查询失败或不符，跳过；" + RpcRequestGuard.errorMessage(state)); return; }
+            // 旧未确认标记不再限制续用，以本次实时效果和背包为准。
+            Status.clearFlag("farm::fenceUnconfirmed");
+            Status.clearFlag("farm::fenceUnconfirmed::v2");
             JSONObject buff = farm.optJSONObject("buffInfoVO");
             if (buff == null) buff = state.optJSONObject("buffInfoVO");
             if (buff != null && "FENCE".equals(buff.optString("buffType"))) {
                 if (!(buff.opt("hasBuffEffect") instanceof Boolean)) { Log.record("篱笆卡：效果状态无效，跳过"); return; }
                 if (Boolean.TRUE.equals(buff.opt("hasBuffEffect"))) {
-                    Status.clearFlag(legacyFlag);
-                    Status.clearFlag(flag);
+                    if (Status.getIntFlagToday(pending) > 0) Status.setIntFlagToday(pending, 0);
+                    Status.clearFlag(spent);
                     Log.record("篱笆卡：仍在生效，剩余" + buff.optInt("buffCountDown", 0) / 60 + "分钟，跳过重复使用"); return;
                 }
             }
-            if (Status.hasFlagToday(legacyFlag)) {
-                Status.clearFlag(legacyFlag);
-                Log.record("篱笆卡：旧版未确认标记已作废，按本次庄园状态重新判断");
+            if (Status.hasFlagToday(spent)) {
+                Log.record("篱笆卡：本日已确认扣卡但效果未显示，暂停补用，等待查到生效或次日");
+                return;
             }
-            if (Status.hasFlagToday(flag)) { Log.record("篱笆卡：本日已提交但结果未确认，避免重复消耗"); return; }
-            JSONObject tool = findFeatureTool("FENCETOOL");
+            phase = "查询背包库存";
+            JSONObject tool = queryFenceTool();
             if (tool == null) return;
-            Status.flagToday(flag);
+            int stock = rankingInt(tool, "toolCount");
+            if (reconcileFenceStock(stock, pending, spent)) return;
+            if (stock == 0) { Log.record("篱笆卡：库存为0，暂无卡可用"); return; }
+            // 请求前保存原数量，重启或回查失败后仍能先核对是否扣卡。
+            Status.setIntFlagToday(pending, stock);
+            phase = "发送用卡请求";
             JSONObject used = MyUtils.newJSONObject(AntFarmRpcCall.useFarmTool(ownerFarmId, tool.optString("toolId"), "FENCETOOL"));
             if ("RPC_SKIPPED".equals(used.optString("error"))) {
-                Status.clearFlag(flag);
+                Status.setIntFlagToday(pending, 0);
                 if (!used.optBoolean("localRuleSkip") && !"400000040".equals(used.optString("code")))
                     Log.record("篱笆卡：本地请求保护暂停，未发送RPC，保留后续使用机会；" + RpcRequestGuard.errorMessage(used));
                 return;
             }
             if ("722".equals(used.optString("resultCode"))) {
-                Status.clearFlag(flag);
+                Status.setIntFlagToday(pending, 0);
                 Log.record("篱笆卡：服务端确认当前已有篱笆(code=722)，本次未新用卡，保留到期续用机会");
                 return;
             }
+            phase = "回查篱笆效果";
             JSONObject after = MyUtils.newJSONObject(AntFarmRpcCall.syncAnimalStatus(ownerFarmId));
             JSONObject afterFarm = after.optJSONObject("subFarmVO");
             JSONObject afterBuff = afterFarm != null ? afterFarm.optJSONObject("buffInfoVO") : null;
             if (afterBuff == null) afterBuff = after.optJSONObject("buffInfoVO");
             if (farmFeatureOk(after) && afterFarm != null && ownerFarmId.equals(afterFarm.optString("farmId")) && afterBuff != null
                     && "FENCE".equals(afterBuff.optString("buffType")) && Boolean.TRUE.equals(afterBuff.opt("hasBuffEffect"))) {
-                Status.clearFlag(flag);
+                Status.setIntFlagToday(pending, 0);
+                Status.clearFlag(spent);
                 String message = "篱笆卡：使用成功，已确认篱笆生效"; Log.record(message); Log.farm(message);
-            } else { Log.record("篱笆卡：使用未确认，code=" + used.optString("resultCode", "缺失") + "，原因=" + RpcRequestGuard.errorMessage(used)); }
+            } else {
+                phase = "回查用卡后库存";
+                JSONObject remaining = queryFenceTool();
+                if (remaining != null && reconcileFenceStock(rankingInt(remaining, "toolCount"), pending, spent)) return;
+                Log.record("篱笆卡：使用未确认，code=" + used.optString("resultCode", "缺失") + "，原因=" + RpcRequestGuard.errorMessage(used)
+                        + (remaining == null ? "；库存尚未确认，下轮先核对是否扣卡" : "；回查库存未减少，下轮可以重试"));
+            }
         } catch (TaskCancelledException e) { throw e;
-        } catch (Throwable t) { Log.record("篱笆卡：执行异常，" + t.getClass().getSimpleName()); Log.err(TAG, "useFenceTool", t); }
+        } catch (Throwable t) { Log.record("篱笆卡：" + phase + "异常，" + t.getClass().getSimpleName()); Log.err(TAG, "useFenceTool", t); }
     }
 
     private void supplementDolls() {

@@ -1,18 +1,15 @@
 # 检查问题 AI 反馈
 
-检查对象：`my_dev` 分支，基于 `6220a68d` 的未提交修改，即庄园自动喂鸡（`AntFarm.java`、`AntFarmRpcCall.java`）。
+检查对象：`my_dev` 分支上 `3c8fbd52` 之后的未提交修改，即篱笆卡自动使用（`AntFarm.useFenceTool()`、`queryFenceTool()`、`reconcileFenceStock()`）。
 检查方式：只读审查，没有改代码。
 
-验证结果：`check_antfarm_auto_feed` 通过，共 38 项，包括新增的 `sleep` 场景。
+验证结果：`check_ag_features` 全部通过，包括 `fence receipt`、`fence` 和 `farm` 三组场景。
 
-当前没有必须修改的代码问题。上一轮的问题已修复。
+当前没有需要修改的代码问题。上一轮的问题已修复。
 
 ## 上一轮问题的核对结果
 
-已修复：`autoFeedAnimal` 在确认小鸡在家之后、判断饥饿之前，加了 SLEEPY 判断，只记一条“正在睡觉，起床后再检查投喂”就返回，不进入 30 秒重查。
-
-- **主流程：** 小鸡睡觉时，每轮只查一次状态，不建立 `UPDATE|FA|...` 子任务，不补领，也不投喂。
-- **重查和蹲点到点：** 已有的 30 秒重查或蹲点投喂到点后，如果查到小鸡在睡觉，就直接结束，不再继续轮询。
-- **起床后：** 由 `animalWakeUpNow()` 立即重新检查并投喂，回归的 `wake` 场景也补了“睡觉时不建立重查、不发领奖请求”的断言。
-
-这次改动只在上一轮基础上加了这一段判断，其它喂鸡逻辑没有变化。
+已修复。现在 `queryFenceTool()` 的处理是：
+- 列表查询成功，但里面没有 FENCETOOL 这一项时，按库存 0 返回一个占位对象。之后照常交给 `reconcileFenceStock` 核对，用掉最后一张卡的情况也会设上 `spent`。
+- 列表中有无效条目时返回 null，不把它当作库存 0。
+- `useFenceTool()` 先核对库存、再判断 `stock == 0` 并返回，所以占位对象没有 `toolId` 也不会被拿去用卡。
