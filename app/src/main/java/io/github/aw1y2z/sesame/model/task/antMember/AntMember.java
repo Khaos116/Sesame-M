@@ -646,15 +646,34 @@ public class AntMember extends ModelTask {
     private Boolean doBrowseTask(JSONObject task, int left, int right) {
         boolean doubleCheck = false;
         try {
-            JSONObject taskConfigInfo = task.getJSONObject("taskConfigInfo");
-            String name = taskConfigInfo.getString("name");
+            // 旧结构用 taskConfigInfo(name/id/awardParam/targetBusiness)，新结构改用 simpleTaskConfig(title/configId/stageVOList) 且 targetBusiness 提到 task 顶层
+            JSONObject taskConfigInfo = task.optJSONObject("taskConfigInfo");
+            JSONObject simpleTaskConfig = task.optJSONObject("simpleTaskConfig");
+            JSONObject config = taskConfigInfo != null ? taskConfigInfo : simpleTaskConfig;
+            if (config == null) {
+                Log.other("会员任务⏭️跳过#缺少任务配置");
+                return false;
+            }
+            String name = config.optString("name", "");
+            if (name.isEmpty()) {
+                name = config.optString("title", "");
+            }
             //黑名单任务跳过
             if (AntMemberTaskList.getValue().contains(name)) {
                 return false;
             }
-            Long id = taskConfigInfo.getLong("id");
-            String awardParamPoint = taskConfigInfo.getJSONObject("awardParam").getString("awardParamPoint");
-            JSONArray targetBusinessArr = taskConfigInfo.optJSONArray("targetBusiness");
+            Long id = config.has("id") ? config.optLong("id") : config.optLong("configId");
+            String awardParamPoint = taskAwardPoint(config);
+            JSONArray targetBusinessArr = config.optJSONArray("targetBusiness");
+            if (targetBusinessArr == null || targetBusinessArr.length() == 0) {
+                targetBusinessArr = task.optJSONArray("targetBusiness");
+            }
+            if (targetBusinessArr == null || targetBusinessArr.length() == 0) {
+                String tb = task.optString("targetBusiness", "");
+                if (!tb.isEmpty()) {
+                    targetBusinessArr = new JSONArray().put(tb);
+                }
+            }
             if (targetBusinessArr == null || targetBusinessArr.length() == 0) {
                 Log.other("会员任务⏭️跳过[" + name + "]#无 targetBusiness 配置");
                 return false;
@@ -706,6 +725,25 @@ public class AntMember extends ModelTask {
             Log.err(TAG, "doBrowseTask err:", t);
         }
         return doubleCheck;
+    }
+
+    // 任务积分：旧结构 awardParam.awardParamPoint，新结构 stageVOList[0].awardParam.awardParamPoint
+    private String taskAwardPoint(JSONObject config) {
+        JSONObject awardParam = config.optJSONObject("awardParam");
+        if (awardParam != null) {
+            return awardParam.optString("awardParamPoint", "");
+        }
+        JSONArray stageVOList = config.optJSONArray("stageVOList");
+        if (stageVOList != null && stageVOList.length() > 0) {
+            JSONObject stage = stageVOList.optJSONObject(0);
+            if (stage != null) {
+                JSONObject stageAwardParam = stage.optJSONObject("awardParam");
+                if (stageAwardParam != null) {
+                    return stageAwardParam.optString("awardParamPoint", "");
+                }
+            }
+        }
+        return "";
     }
     
     private void goldTicket() {

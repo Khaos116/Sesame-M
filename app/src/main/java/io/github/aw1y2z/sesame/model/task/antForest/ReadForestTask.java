@@ -109,6 +109,8 @@ public final class ReadForestTask {
         } catch (Throwable t) {
             Log.i(TAG, "execute err:");
             Log.printStackTrace(TAG, t);
+            // 异常中断也向 forest 输出本轮累计能量汇总,避免异常轮次 forest 日志无记录
+            logSummary("执行异常中断");
         }
     }
 
@@ -152,6 +154,7 @@ public final class ReadForestTask {
         }
         int lastEnergy = -1;
         int noGainCount = 0;
+        int noDataCount = 0;
         while (chapterData != null) {
             String chapterId = chapterData.optString("id");
             String nextId = chapterData.optString("next_id");
@@ -162,33 +165,45 @@ public final class ReadForestTask {
             if (lastEnergy == -1) {
                 EnergyProgress firstProgress = readEnergyProgress(token, bookId, chapterId);
                 if (!firstProgress.hasData) {
-                    lastEnergy = 0;
-                } else {
-                    if (firstProgress.current >= firstProgress.total) {
-                        return Boolean.TRUE;
-                    }
-                    lastEnergy = firstProgress.current;
+                    Log.record(TAG + "[" + bookName + "]初始进度查询失败,跳过此书");
+                    return Boolean.FALSE;
                 }
+                if (firstProgress.current >= firstProgress.total) {
+                    return Boolean.TRUE;
+                }
+                lastEnergy = firstProgress.current;
             }
             ReadForestRpcCall.updateReadingTime(bookId, chapterId, RANDOM.nextInt(668) + 333, token, VERSION);
             ReadForestRpcCall.setReadRecently(bookId, chapterId, chapterName, token, VERSION);
             TimeUtil.sleep(1000);
             EnergyProgress progress = readEnergyProgress(token, bookId, chapterId);
-            int gain = progress.current - lastEnergy;
-            if (gain > 0) {
-                totalEnergy += gain;
-                Log.i(TAG, "[" + bookName + "]进度(" + progress.current + "/" + progress.total + ")获得能量" + gain + "g");
-                noGainCount = 0;
+            if (progress.hasData) {
+                noDataCount = 0;
+                int gain = progress.current - lastEnergy;
+                if (gain > 0) {
+                    totalEnergy += gain;
+                    Log.i(TAG, "[" + bookName + "]进度(" + progress.current + "/" + progress.total + ")获得能量" + gain + "g");
+                    noGainCount = 0;
+                } else {
+                    Log.record(TAG+"[" + bookName + "]进度同步: " + progress.current + "/" + progress.total);
+                    noGainCount++;
+                }
+                if (progress.current >= progress.total) {
+                    return Boolean.TRUE;
+                }
+                if (noGainCount >= 5) {
+                    Log.record(TAG + "[" + bookName + "]连续5章无能量增加，可能达到此书上限，跳过");
+                    return Boolean.FALSE;
+                }
             } else {
-                Log.record(TAG+"[" + bookName + "]进度同步: " + progress.current + "/" + progress.total);
-                noGainCount++;
-            }
-            if (progress.current >= progress.total) {
-                return Boolean.TRUE;
-            }
-            if (noGainCount >= 5) {
-                Log.record(TAG + "[" + bookName + "]连续5章无能量增加，可能达到此书上限，跳过");
-                return Boolean.FALSE;
+                // 查询进度失败(网络超时兜底):保持 lastEnergy 不变、不计无能量次数,继续读下一章;
+                // 下次成功查询时 gain=新进度-旧lastEnergy 会自然补记本次已上报时长的能量,避免记录丢失
+                noDataCount++;
+                Log.record(TAG + "[" + bookName + "]进度查询失败,继续阅读下一章(能量累计到下次记录)");
+                if (noDataCount >= 5) {
+                    Log.record(TAG + "[" + bookName + "]连续5章进度查询失败,网络异常,跳过");
+                    return Boolean.FALSE;
+                }
             }
             if (isEmpty(nextId) || "null".equals(nextId) || "0".equals(nextId)) {
                 markFinished(context, finishedBooks, bookId, bookName);
@@ -199,13 +214,24 @@ public final class ReadForestTask {
             if (chapterData == null) {
                 return Boolean.FALSE;
             }
-            lastEnergy = progress.current;
+            if (progress.hasData) {
+                lastEnergy = progress.current;
+            }
         }
         return Boolean.FALSE;
     }
 
     private static EnergyProgress readEnergyProgress(String token, String bookId, String chapterId) throws Exception {
-        String response = ReadForestRpcCall.checkEnergy(token, VERSION, bookId, chapterId);
+        // 查询进度接口偶发网络超时:本地重试一次消化偶发抖动,避免抛异常刷日志;持续超时则兜底返回
+        String response = null;
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                response = ReadForestRpcCall.checkEnergy(token, VERSION, bookId, chapterId);
+                break;
+            } catch (java.net.SocketTimeoutException e) {
+                TimeUtil.sleep(1000);
+            }
+        }
         if (isEmpty(response)) {
             return new EnergyProgress(false, 0, TOTAL_FALLBACK);
         }
