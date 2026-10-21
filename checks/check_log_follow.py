@@ -117,6 +117,20 @@ fun main() {
             check(displayed[1].body == "$category 旧记录")
         }
         println("PASS: four untagged categories display newest first and preserve continuation lines")
+
+        val mainStarts = listOf("[账号1]开始执行:C176", "开始执行:昵称", "[账号2]开始执行:名字:后缀",
+            "[账号1]开始执行", "开始执行", "[账号1]开始执行分组【森林】任务", "开始执行分组【庄园】任务",
+            "[账号1]开始执行全部任务", "开始执行全部任务")
+        file.writeText(mainStarts.mapIndexed { index, body -> "19:00:0$index.000 RUNTIME: $body" }.joinToString("\\n", postfix="\\n") +
+            "19:01:00.000 RUNTIME: [账号1]开始执行🚀游戏任务\\n" +
+            "19:01:01.000 RUNTIME: 开始执行游戏任务\\n" +
+            "19:01:02.000 FOREST: [账号1]开始执行:假的分界\\n" +
+            "19:01:03.000 RUNTIME: 森林阅读开始执行\\n")
+        val mainAnchors = readRuntimeAnchors(file)
+        check(mainAnchors == mainStarts.indices.map { "19:00:0$it.000" }) { "M named/unnamed scheduled or manual main run was lost: $mainAnchors" }
+        val scheduledRows = listOf(LogEntry(1, "19:00:00.500", "FOREST", "first"), LogEntry(2, "19:00:01.500", "FARM", "second"))
+        check(aggregateByRun(scheduledRows, mainAnchors).map { it.runIndex } == listOf(1, 2)) { "scheduled rounds were not separated" }
+
         file.writeText("20:00:00.000 RUNTIME: [账号1]开始执行\\n" +
             "20:00:01.000 RUNTIME: [账号1]开始执行游戏任务\\n" +
             "20:00:02.000 FARM: [账号1]开始执行\\n" +

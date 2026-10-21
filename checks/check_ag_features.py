@@ -27,7 +27,7 @@ def rpc_methods(path, names):
         "io.github.aw1y2z.sesame.util.MyUtils", "MyUtils")
 
 code = r'''
-import org.json.*; import java.util.*;
+import org.json.*; import java.util.*; import java.util.concurrent.TimeUnit; import java.util.function.Consumer;
 import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class AGCheck {
@@ -40,7 +40,7 @@ public class AGCheck {
     static class Log {
         static List<String> lines=new ArrayList<>();
         static void record(String s){lines.add(s);} static void farm(String s){lines.add(s);} static void forest(String s){lines.add(s);}
-        static void err(String a,String b,Throwable t){throw new AssertionError(b,t);}
+        static void err(String a,String b,Throwable t){if(t instanceof TaskCancelledException){lines.add("swallowed cancellation: "+b);return;}throw new AssertionError(b,t);}
     }
     static class RpcFailurePolicy {static String boundedMessage(String s){return s;}}
     static class RpcRequestGuard {@@GUARD@@}
@@ -60,13 +60,14 @@ public class AGCheck {
     static class Field<T> {T value;Field(T v){value=v;}T getValue(){return value;}}
     static class KVNode<A,B> {A a;B b;KVNode(A x,B y){a=x;b=y;}A getKey(){return a;}B getValue(){return b;}}
     static class ApplicationHook {
-        static boolean cancelUse;
+        static boolean cancelUse;static String cancelOperation="";static JSONArray filteredTasks;
         static Map<String,Deque<String>> responses=new HashMap<>();static List<JSONObject> calls=new ArrayList<>();
         static String requestString(String op,String raw,int... ignored){
             assert !TaskLifecycle.isIdle():"RPC outside lifecycle scope";
             JSONObject args=new JSONArray(raw).optJSONObject(0);assert args!=null;
             String name=op.substring(op.lastIndexOf('.')+1);calls.add(new JSONObject().put("op",name).put("body",args));
-            if(cancelUse&&name.equals("useFarmTool"))throw new TaskCancelledException();
+            if(cancelUse&&name.equals("useFarmTool")||name.equals(cancelOperation))throw new TaskCancelledException();
+            if(filteredTasks!=null&&name.equals("listTaskopengreen"))return ok().put("taskInfoList",args.optString("sceneCode").equals("ANTFOREST_MONOPOLY_TASK_HSDWY")?filteredTasks:new JSONArray()).toString();
             Deque<String> q=responses.get(name);return q==null?ok().toString():q.size()>1?q.removeFirst():q.peekFirst();
         }
     }
@@ -95,6 +96,106 @@ public class AGCheck {
         KVNode<Integer,Boolean> returnFriendWater(String uid,String biz,int count,int gram){grams.add(gram);return new KVNode<>(count,true);}
         @@FOREST@@
     }
+
+    static class TaskAttemptPolicy {
+        enum ProbeResult {UNKNOWN,TODO,FINISHED,RECEIVED,GONE}
+        interface StatusProbe {ProbeResult probe(String key);}
+        static boolean isReceived(ProbeResult result){return result==ProbeResult.RECEIVED||result==ProbeResult.GONE;}
+    }
+    static class TaskAward { @@AWARD@@ }
+    static class TaskAlternative {
+        static final String DEFAULT_VERSION="test";
+        static boolean isTransactionTask(String task){return false;}
+        static boolean hit(JSONObject result,String scene){return false;}
+        static void trigger(Object a,Object b,String title,String task,String scene,String version,String source,String type,String prefix,Consumer<String> log){}
+    }
+    static class ActualPatrol {
+        static final String TAG="Patrol",MONOPOLY_TASK_SCENE_HSDWY="ANTFOREST_MONOPOLY_TASK_HSDWY";
+        static final long MONOPOLY_MAX_TASK_SECONDS=300;
+        Field<Boolean> monopolyTasks=new Field<>(true);int awards,blacklists;
+        boolean isMonopolyClosed(JSONObject state){return false;}
+        boolean isMonopolyTaskBlacklisted(String title){return false;}
+        String monopolyTaskTitle(JSONObject task,String id){return task.optString("title",id);}
+        int queryCurrentEnergy(){return 100;}
+        void recordMonopolyAward(String title,int before){awards++;}
+        void markMonopolyTaskBlackList(String title,JSONObject reply){blacklists++;}
+        @@PATROL@@
+    }
+    static class ActualAnimal {
+        static final String TAG="Animal";
+        interface ConsumeAnimalPropType {int SEQUENCE=1;}
+        Field<Integer> consumeAnimalPropType=new Field<>(2);
+        @@ANIMAL@@
+    }
+    static JSONObject auditAnimal(String id,int energy){return new JSONObject().put("main",new JSONObject().put("propGroup","animal").put("propType",id)).put("partner",new JSONObject().put("name",id).put("robAbility",new JSONObject().put("robEnergyInDaily",energy)));}
+    static void auditEdges(String scenario) {
+        reset();ActualPatrol p=new ActualPatrol();ActualAnimal a=new ActualAnimal();
+        JSONObject entry=ok().put("regionInfo",new JSONObject().put("regionCode","rotated")).put("mapInfo",new JSONObject()).put("userInfo",new JSONObject()).put("totalDiceCount",0);
+        JSONObject task=new JSONObject().put("taskType","visit").put("sceneCode","REAL_SCENE").put("title","visit").put("taskMode","NORMAL").put("taskProdPlayType","VISIT_FLOAT_BALL").put("prodPlayParam","{timeCount:1}");
+        replies("queryMonopolyEntryInfo",entry);
+        if(scenario.equals("cancel_wait")||scenario.equals("cancel_award")) {
+            task.put("taskStatus",scenario.equals("cancel_wait")?"TODO":"FINISHED");
+            replies("listTaskopengreen",ok().put("taskInfoList",new JSONArray().put(new JSONObject().put("taskBaseInfo",task))));
+            if(scenario.equals("cancel_wait"))TimeUtil.cancel=true;else ApplicationHook.cancelOperation="receiveTaskAwardopengreen";
+            try{p.monopolyPatrol();throw new AssertionError("patrol swallowed cancellation");}catch(TaskCancelledException expected){}
+            assert calls("listTaskopengreen").size()==1&&calls("triggerHomePageProps").isEmpty()&&p.awards==0:"patrol continued after cancellation";
+
+        } else if(scenario.equals("task_stuck")||scenario.equals("task_progress")) {
+            JSONObject todo=new JSONObject(task.toString()).put("taskStatus","TODO").put("taskCurrentCount",0);
+            JSONObject done=new JSONObject(task.toString()).put("taskStatus","FINISHED");
+            JSONObject first=ok().put("taskInfoList",new JSONArray().put(new JSONObject().put("taskBaseInfo",todo)).put(new JSONObject().put("taskBaseInfo",new JSONObject(done.toString()).put("taskType","other_reward"))));
+            if(scenario.equals("task_stuck"))replies("listTaskopengreen",first);
+            else {
+                JSONObject progress=new JSONObject(todo.toString()).put("taskCurrentCount",1);
+                replies("listTaskopengreen",ok().put("taskInfoList",new JSONArray().put(new JSONObject().put("taskBaseInfo",todo))),ok().put("taskInfoList",new JSONArray().put(new JSONObject().put("taskBaseInfo",progress))),ok().put("taskInfoList",new JSONArray().put(new JSONObject().put("taskBaseInfo",done))),ok().put("taskInfoList",new JSONArray()));
+            }
+            assert p.monopolyTask("rotated");
+            assert calls("finishTaskopengreen").size()==(scenario.equals("task_stuck")?1:2)&&calls("receiveTaskAwardopengreen").size()==1:"unchanged task starved other rewards or repeated requests; valid numeric progress must continue";
+            assert calls("listTaskopengreen").size()==(scenario.equals("task_stuck")?3:4);
+
+        } else if(scenario.equals("invalid_region")) {
+            for(Object region:List.of("", "   ", 1, new JSONObject())) {
+                reset();entry.optJSONObject("regionInfo").put("regionCode",region);replies("queryMonopolyEntryInfo",entry);
+                p.monopolyPatrol();assert calls("listTaskopengreen").isEmpty()&&calls("triggerHomePageProps").isEmpty():"invalid region continued into tasks or dice collection";
+            }
+        } else if(scenario.equals("invalid_task_type")) {
+            task.put("taskStatus","TODO").put("taskType",1);replies("listTaskopengreen",ok().put("taskInfoList",new JSONArray().put(new JSONObject().put("taskBaseInfo",task))));
+            assert !p.monopolyTask("rotated")&&calls("finishTaskopengreen").isEmpty():"non-string task type was submitted";
+
+        } else if(scenario.equals("award_scene")||scenario.equals("award_other_scene")||scenario.equals("award_received")||scenario.equals("award_bad_row")) {
+            task.put("taskStatus",scenario.equals("award_received")?"RECEIVED":"FINISHED");
+            ApplicationHook.filteredTasks=new JSONArray();
+            if(scenario.equals("award_other_scene"))ApplicationHook.filteredTasks.put(new JSONObject().put("taskBaseInfo",new JSONObject(task.toString()).put("sceneCode","OTHER_SCENE").put("taskStatus","RECEIVED")));
+            if(scenario.equals("award_bad_row"))task.remove("sceneCode");
+            ApplicationHook.filteredTasks.put(new JSONObject().put("taskBaseInfo",task));
+            replies("receiveTaskAwardopengreen",new JSONObject().put("success",false).put("resultCode","FAILED"));
+            boolean received=p.monopolyReceiveTaskAward("rotated","visit","REAL_SCENE","visit");
+            assert received==scenario.equals("award_received")&&p.awards==(scenario.equals("award_received")?1:0):"failed award was reported received from wrong scene or malformed list";
+            assert calls("receiveTaskAwardopengreen").get(0).optString("sceneCode").equals("REAL_SCENE");
+            assert calls("listTaskopengreen").get(0).optString("sceneCode").equals("ANTFOREST_MONOPOLY_TASK_HSDWY"):"reward probe did not query the original task collection";
+        } else if(scenario.equals("cancel_probe")) {
+            ApplicationHook.cancelOperation="listTaskopengreen";
+            try{p.probeMonopolyStatus("rotated","visit","REAL_SCENE");throw new AssertionError("probe swallowed cancellation");}catch(TaskCancelledException expected){}
+        } else if(scenario.equals("cancel_animal")) {
+            replies("queryAnimalPropList",animalPage("",auditAnimal("one",1)));ApplicationHook.cancelOperation="consumeProp";
+            try{a.queryAnimalPropList();throw new AssertionError("animal consumption swallowed cancellation");}catch(TaskCancelledException expected){}
+            assert calls("consumeProp").size()==1;
+        } else if(scenario.equals("page_cap")||scenario.equals("page_20_terminal")) {
+            JSONObject[] pages=new JSONObject[20];for(int i=0;i<pages.length;i++)pages[i]=animalPage(scenario.equals("page_20_terminal")&&i==19?"":"cursor"+i,auditAnimal("p"+i,i));
+            replies("queryAnimalPropList",pages);boolean used=a.queryAnimalPropList();
+            assert calls("queryAnimalPropList").size()==20;
+            if(scenario.equals("page_cap"))assert !used&&calls("consumeProp").isEmpty():"partial 20-page snapshot was dispatched as the highest-energy animal";
+            else assert used&&calls("consumeProp").size()==1&&calls("consumeProp").get(0).optString("propType").equals("p19");
+        } else if(scenario.equals("cursor_cycle")) {
+            replies("queryAnimalPropList",animalPage("a",auditAnimal("one",1)),animalPage("b",auditAnimal("two",2)),animalPage("a",auditAnimal("three",3)));
+            assert !a.queryAnimalPropList()&&calls("consumeProp").isEmpty()&&calls("queryAnimalPropList").size()==3:"non-adjacent cursor cycle was queried again";
+        } else if(scenario.equals("invalid_more")) {
+            replies("queryAnimalPropList",animalPage("unused",auditAnimal("one",1)).put("hasMore","broken"));
+            assert !a.queryAnimalPropList()&&calls("consumeProp").isEmpty():"invalid pagination state was treated as a complete snapshot";
+        } else throw new AssertionError(scenario);
+        System.out.println("PASS audit edge "+scenario);
+    }
+
     static class Farm {
         static String TAG="Farm";String ownerFarmId="farm";
         Field<Integer> dollSupplementOrder=new Field<>(0),collectChickenDiary=new Field<>(1);
@@ -106,7 +207,7 @@ public class AGCheck {
         static String TAG="Orchard";Field<Set<String>> AntOrchardTaskList=new Field<>(new HashSet<>());
         @@ORCHARD@@
     }
-    static void reset(){ApplicationHook.responses.clear();ApplicationHook.calls.clear();ApplicationHook.cancelUse=false;UserIdMap.uid="self";Status.day=0;Status.flags.clear();Status.intFlags.clear();Status.watered.clear();Log.lines.clear();TimeUtil.waits.clear();TimeUtil.cancel=false;AntOrchardTaskListMap.values.clear();AntOrchardTaskListMap.saves=0;}
+    static void reset(){ApplicationHook.responses.clear();ApplicationHook.calls.clear();ApplicationHook.cancelUse=false;ApplicationHook.cancelOperation="";ApplicationHook.filteredTasks=null;UserIdMap.uid="self";Status.day=0;Status.flags.clear();Status.intFlags.clear();Status.watered.clear();Log.lines.clear();TimeUtil.waits.clear();TimeUtil.cancel=false;AntOrchardTaskListMap.values.clear();AntOrchardTaskListMap.saves=0;}
     static void replies(String op,JSONObject... values){Deque<String> q=new ArrayDeque<>();for(JSONObject v:values)q.add(v.toString());ApplicationHook.responses.put(op,q);}
     static List<JSONObject> calls(String op){List<JSONObject> list=new ArrayList<>();for(JSONObject c:ApplicationHook.calls)if(op.equals(c.optString("op")))list.add(c.optJSONObject("body"));return list;}
     static boolean logged(String part){return Log.lines.stream().anyMatch(s->s.contains(part));}
@@ -358,18 +459,22 @@ public class AGCheck {
         System.out.println("PASS fence receipt: confirmed debit, unchanged stock retry, missing readback, delayed effect, last card, instance/account/day isolation");
     }
     public static void main(String[] args) throws Exception {
-        try(TaskLifecycle.Work w=TaskLifecycle.enter()){assert w!=null;forestChecks();upstreamForestChecks();fenceConsumptionChecks();fenceRuleChecks();farmChecks();orchardChecks();}
+        if(args.length>0){try(TaskLifecycle.Work w=TaskLifecycle.enter()){assert w!=null;auditEdges(args[0]);}return;}
+        try(TaskLifecycle.Work w=TaskLifecycle.enter()){assert w!=null;for(String edge:List.of("cancel_wait","cancel_award","task_stuck","task_progress","invalid_region","invalid_task_type","award_scene","award_other_scene","award_received","award_bad_row","cancel_probe","cancel_animal","page_cap","page_20_terminal","cursor_cycle","invalid_more"))auditEdges(edge);forestChecks();upstreamForestChecks();fenceConsumptionChecks();fenceRuleChecks();farmChecks();orchardChecks();}
         assert TaskLifecycle.isIdle();
     }
 }
 '''
 tokens = {
+    "@@AWARD@@": method("data/task/TaskAward.java", "    public static boolean confirmReceivedOrBlackList("),
+    "@@PATROL@@": methods(forest,["    private JSONObject monopolyResponse(","    private void monopolyPatrol()","    private boolean monopolyTask(","    private boolean monopolyFinishTask(","    private boolean monopolyReceiveTaskAward(","    private TaskAttemptPolicy.ProbeResult probeMonopolyStatus("]),
+    "@@ANIMAL@@": methods(forest,["    private boolean queryAnimalPropList()","    private int animalPropEnergy(","    private boolean consumeAnimalProp("]),
     "@@GUARD@@": methods("rpc/intervallimit/RpcRequestGuard.java", ["    public static boolean isFailure(JSONObject result)", "    public static String errorMessage(JSONObject result)"]),
     "@@FOREST@@": methods(forest, ["    private String getMonopolyRegionCode(", "    private JSONObject monopolyResponse(", "    private boolean monopolyTask(", "    private boolean queryAnimalPropList()", "    private int animalPropEnergy(", "    private int friendWaterEnergy(", "    private void waterFriendEnergy()", "    private boolean dispatchMonopolyAnimal(", "    private boolean isMonopolyCreatureExpired(", "    private boolean isMonopolyCreatureIdle(", "    static long forestFeatureLong(", "    private void waterMemberPlant()", "    private void exchangeMonopolyCertificate()"]),
     "@@FARM@@": methods(farm, ["    private static boolean farmFeatureOk(", "    private JSONObject findFeatureTool(", re.search(r"    private (?:synchronized )?void useFenceTool\(\)",farm_source).group(0), "    private static int rankingInt(", "    private void step(", "    private void supplementDolls()", "    private void supplementDolls(int", "    private boolean likeChickenDiary(", "    private void likeChickenDiaries()"]) + methods(farm, [sig for sig in ["    private JSONObject queryFenceTool(", "    private boolean reconcileFenceStock("] if sig in farm_source]),
     "@@FENCESTEP@@": next(line.strip() for line in (SOURCE / farm).read_text(encoding="utf-8").splitlines() if line.strip().startswith('step("篱笆卡",')),
     "@@ORCHARD@@": methods(orchard, ["    private static JSONObject orchardExtraDisplay(", "    private static String orchardUrlParam(", "    private static String orchardTaskSource(", "    private static boolean orchardExtraOk(", "    private static JSONObject orchardUnwrapExtra(", "    private static boolean isExtraOrchardBrowse(", "    private void orchardStarTasks()", "    private static int extraOrchardCount(", "    private static String extraOrchardSnapshot(", "    private static int extraOrchardStage(", "    private static boolean extraOrchardAdvanced(", "    private JSONObject refreshExtraOrchardTask(", "    private void runExtraOrchardTask(", "    private boolean reportOrchardStarGame(", "    private JSONObject performOrchardBrowse("]),
-    "@@FORESTRPC@@": rpc_methods("model/task/antForest/AntForestRpcCall.java", ["queryAnimalPropList", "listMonopolyTasks", "queryMonopolyEntryInfo", "assignMonopolyCreature", "queryUsingCreatureInfo", "queryMonopolyCertificate", "exchangeMonopolyCertificate", "memberForestSignin", "plantAward", "queryFriendHomePage"]) + methods("model/task/antForest/AntForestRpcCall.java", ["    private static String monopolyPayload("]) + 'static final String MONOPOLY_SOURCE="monopoly_home_board";',
+    "@@FORESTRPC@@": rpc_methods("model/task/antForest/AntForestRpcCall.java", ["triggerMonopolyHomeProps", "rollMonopolyDice", "confirmMonopolyEvent", "finishMonopolyTask", "receiveMonopolyTask", "queryAnimalPropList", "listMonopolyTasks", "queryMonopolyEntryInfo", "assignMonopolyCreature", "queryUsingCreatureInfo", "queryMonopolyCertificate", "exchangeMonopolyCertificate", "memberForestSignin", "plantAward", "queryFriendHomePage"]) + methods("model/task/antForest/AntForestRpcCall.java", ["    private static String monopolyPayload("]) + method("model/task/antForest/AntForestRpcCall.java", "    public static String consumeProp(String propGroup, String propType, Boolean replace)") + 'static final String MONOPOLY_SOURCE="monopoly_home_board";',
     "@@FARMRPC@@": rpc_methods("model/task/antFarm/AntFarmRpcCall.java", ["listFarmTool", "useFarmTool", "useDollTool", "queryAntfarmDoll", "queryLoveCabin", "syncAnimalStatus", "queryChickenDiary", "queryChickenDiaryList", "collectChickenDiary"]),
     "@@ORCHARDRPC@@": rpc_methods("model/task/antOrchard/AntOrchardRpcCall.java", ["orchardVisit", "listStarTasks", "finishStarTask", "orchardXlight", "finishOrchardBrowse", "submitUserPlayDurationAction", "triggerTbTask", "orchardListTask"]),
 }
@@ -393,4 +498,4 @@ with tempfile.TemporaryDirectory(prefix="sesame-ag-features-") as tmp:
     java = root / "AGCheck.java"
     java.write_text(code, encoding="utf-8")
     subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(jar), "-d", tmp, str(java), str(uri), str(cancel), str(SOURCE / "data/task/TaskLifecycle.java")], check=True)
-    subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + str(jar), "AGCheck"], check=True)
+    subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + str(jar), "AGCheck", *sys.argv[1:]], check=True)

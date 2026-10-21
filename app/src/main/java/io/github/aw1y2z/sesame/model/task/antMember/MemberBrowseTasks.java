@@ -210,16 +210,20 @@ final class MemberBrowseTasks {
     }
 
     private static String[] target(JSONObject task) {
-        Object raw = task.opt("targetBusiness");
-        if (!(raw instanceof JSONArray) && !(raw instanceof String)) raw = config(task).opt("targetBusiness");
-        JSONArray targets = raw instanceof JSONArray ? (JSONArray) raw
-                : raw instanceof String ? new JSONArray().put(raw) : null;
-        for (int i = 0; targets != null && i < targets.length(); i++) {
-            if (!(targets.opt(i) instanceof String)) continue;
-            String[] parts = targets.optString(i).split("#", -1);
-            if (parts.length == 3 && "BROWSE".equals(parts[0]) && !parts[1].isEmpty() && !parts[2].isEmpty()) return parts;
-            if (parts.length == 2 && !parts[0].isEmpty() && !parts[1].isEmpty()
-                    && !Set.of("CALL_APP", "BROWSE").contains(parts[0])) return new String[]{"BROWSE", parts[0], parts[1]};
+        for (Object raw : new Object[]{task.opt("targetBusiness"), config(task).opt("targetBusiness")}) {
+            JSONArray targets = raw instanceof JSONArray ? (JSONArray) raw
+                    : raw instanceof String ? new JSONArray().put(raw) : null;
+            for (int i = 0; targets != null && i < targets.length(); i++) {
+                if (!(targets.opt(i) instanceof String)) continue;
+                String[] parts = targets.optString(i).split("#", -1);
+                if (parts.length == 3 && "BROWSE".equals(parts[0]) && !parts[1].isEmpty() && !parts[2].isEmpty()) return parts;
+                if (parts.length == 2 && !parts[0].isEmpty() && !parts[1].isEmpty()
+                        && !Set.of("CALL_APP", "BROWSE").contains(parts[0])) return new String[]{"BROWSE", parts[0], parts[1]};
+                // 明确非浏览的顶层合同不能靠回退改成浏览任务。
+                if (raw instanceof String && ("CALL_APP".equals(parts[0])
+                        || parts.length >= 3 && !"BROWSE".equals(parts[0]))) return null;
+            }
+            if (raw instanceof JSONArray) return null;
         }
         return null;
     }

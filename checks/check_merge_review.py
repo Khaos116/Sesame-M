@@ -12,13 +12,13 @@ from run import SOURCE, method
 
 code = r'''
 import org.json.*;import java.util.*;import java.util.concurrent.TimeUnit;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class MergeReviewCheck {
  static final String TAG="review";
  static class MyUtils {static JSONObject newJSONObject(){return new JSONObject();}
   static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}static boolean closeUnRpc(){return false;}}
  static class TimeUtil {static long slept,max;static boolean cancelled;static void sleep(long ms){
   if(cancelled)throw new TaskCancelledException();slept+=ms;max=Math.max(max,ms);}}
- static class TaskCancelledException extends RuntimeException {}
  static class Log {static List<String> lines=new ArrayList<>();static void record(String s){lines.add(s);}
   static void forest(String s){lines.add(s);}
   static void other(String s){lines.add(s);}static void err(String a,String b,Throwable t){throw new AssertionError(t);}}
@@ -291,7 +291,7 @@ code = code[:start] + '\n' + daily_body + '\n' + code[start:]
 with tempfile.TemporaryDirectory(prefix="sesame-review-") as tmp:
     java = Path(tmp) / "MergeReviewCheck.java"
     java.write_text(code, encoding="utf-8")
-    subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(jar), "-d", tmp, str(java)], check=True)
+    subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(jar), "-d", tmp, str(java), str(SOURCE / "util/TaskCancelledException.java")], check=True)
     subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + str(jar), "MergeReviewCheck"], check=True)
 
 # Restored M exclusions must precede every dispatch, including floatBall.

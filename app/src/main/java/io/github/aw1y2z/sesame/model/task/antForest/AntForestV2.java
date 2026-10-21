@@ -5929,7 +5929,12 @@ public class AntForestV2 extends ModelTask {
                 Log.forest("新版保护地🌲当前区域或地图不在开放期，停止本轮");
                 return;
             }
-            String regionCode = regionInfo.optString("regionCode");
+            Object region = regionInfo.opt("regionCode");
+            if (!(region instanceof String) || ((String) region).trim().isEmpty()) {
+                Log.record("新版保护地：入口区域码缺失或无效，停止本轮");
+                return;
+            }
+            String regionCode = ((String) region).trim();
             boolean tasksEnabled = monopolyTasks.getValue();
             // 掷骰会解锁新任务，所以骰子用完后需要再补跑一次任务
             boolean tasksMayHaveChanged = false;
@@ -6030,6 +6035,7 @@ public class AntForestV2 extends ModelTask {
                     pendingEvent = state.optJSONObject("eventInfo");
                 }
             }
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "monopolyPatrol err:", t);
         }
@@ -6089,8 +6095,9 @@ public class AntForestV2 extends ModelTask {
         // 服务端按 regionCode 返回该区域任务,请求带固定 sceneCode 即可,拿不到任务时按空列表跳过。
         String sceneCode = MONOPOLY_TASK_SCENE_HSDWY;
         boolean changed = false;
+        Set<String> attempted = new HashSet<>();
         try {
-            // 每轮只处理一个任务，最多 20 轮：服务端状态不变时靠轮次上限收敛
+            // 同一任务快照本轮只尝试一次；状态或计数推进后仍可继续，最多20轮。
             for (int round = 0; round < 20; round++) {
                 JSONObject jo = monopolyResponse(AntForestRpcCall.listMonopolyTasks(regionCode, sceneCode));
                 if (!MessageUtil.checkSuccess(TAG, jo)) {
@@ -6101,7 +6108,7 @@ public class AntForestV2 extends ModelTask {
                     Log.record("新版保护地🌲任务列表为空，跳过");
                     return changed;
                 }
-                boolean acted = false;
+                boolean acted = false, repeated = false;
                 for (int i = 0; i < taskInfoList.length() && !acted; i++) {
                     JSONObject task = taskInfoList.optJSONObject(i);
                     JSONObject base = task == null ? null : task.optJSONObject("taskBaseInfo");
@@ -6111,14 +6118,21 @@ public class AntForestV2 extends ModelTask {
                         continue;
                     }
                     String taskSceneCode = (String) scene;
-                    String taskType = base.optString("taskType");
-                    if (taskType.isEmpty()) {
-                        continue;
-                    }
+                    Object type = base.opt("taskType");
+                    if (!(type instanceof String) || ((String) type).trim().isEmpty()) continue;
+                    String taskType = (String) type;
                     String title = monopolyTaskTitle(base, taskType);
                     String status = base.optString("taskStatus");
                     // 黑名单任务静默跳过；已完成待领奖的仍把奖励领掉（与森林任务一致）
                     if (isMonopolyTaskBlacklisted(title) && !"FINISHED".equals(status)) {
+                        continue;
+                    }
+                    boolean actionable = "FINISHED".equals(status) || "TODO".equals(status)
+                            && "NORMAL".equals(base.optString("taskMode"))
+                            && "VISIT_FLOAT_BALL".equals(base.optString("taskProdPlayType"));
+                    if (!actionable) continue;
+                    if (!attempted.add(base.toString())) {
+                        repeated = true;
                         continue;
                     }
                     if ("FINISHED".equals(status)) {
@@ -6132,6 +6146,7 @@ public class AntForestV2 extends ModelTask {
                     }
                 }
                 if (!acted) {
+                    if (repeated) Log.record("新版保护地：本轮已尝试的任务状态未推进，后续轮次回查");
                     return changed;
                 }
             }
@@ -6211,6 +6226,7 @@ public class AntForestV2 extends ModelTask {
                 Log.forest("新版保护地🌲任务完成[" + title + "]");
                 return true;
             }
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "monopolyFinishTask err:", t);
         }
@@ -6238,6 +6254,7 @@ public class AntForestV2 extends ModelTask {
                 recordMonopolyAward(title, energyBefore);
                 return true;
             }
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "monopolyReceiveTaskAward err:", t);
         }
@@ -6293,10 +6310,10 @@ public class AntForestV2 extends ModelTask {
         }
     }
 
-    /* 列表状态探针：重拉新版保护地任务列表，按 taskType 匹配该任务当前状态 */
+    /* 从原任务列表按 taskType 与任务场景共同回查，避免跨场景误判消失或已领。 */
     private TaskAttemptPolicy.ProbeResult probeMonopolyStatus(String regionCode, String taskType, String sceneCode) {
         try {
-            JSONObject jo = monopolyResponse(AntForestRpcCall.listMonopolyTasks(regionCode, sceneCode));
+            JSONObject jo = monopolyResponse(AntForestRpcCall.listMonopolyTasks(regionCode, MONOPOLY_TASK_SCENE_HSDWY));
             if (!MessageUtil.checkSuccess(TAG, jo)) {
                 return TaskAttemptPolicy.ProbeResult.UNKNOWN;
             }
@@ -6308,7 +6325,13 @@ public class AntForestV2 extends ModelTask {
                 JSONObject task = taskInfoList.optJSONObject(i);
                 JSONObject base = task == null ? null : task.optJSONObject("taskBaseInfo");
                 if (base == null) return TaskAttemptPolicy.ProbeResult.UNKNOWN;
-                if (!taskType.equals(base.optString("taskType"))) {
+                Object returnedType = base.opt("taskType");
+                Object returnedScene = base.opt("sceneCode");
+                if (!(returnedType instanceof String) || ((String) returnedType).trim().isEmpty()
+                        || !(returnedScene instanceof String) || ((String) returnedScene).trim().isEmpty()) {
+                    return TaskAttemptPolicy.ProbeResult.UNKNOWN;
+                }
+                if (!taskType.equals(returnedType) || !sceneCode.equals(returnedScene)) {
                     continue;
                 }
                 String status = base.optString("taskStatus");
@@ -6322,6 +6345,7 @@ public class AntForestV2 extends ModelTask {
             }
             // 任务已从列表消失：视为已完成且已领
             return TaskAttemptPolicy.ProbeResult.GONE;
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "probeMonopolyStatus err:", t);
             return TaskAttemptPolicy.ProbeResult.UNKNOWN;
@@ -6620,6 +6644,7 @@ public class AntForestV2 extends ModelTask {
             boolean sequence = consumeAnimalPropType.getValue() == ConsumeAnimalPropType.SEQUENCE;
             JSONObject animalProp = null;
             String nextCursor = null;
+            Set<String> cursors = new HashSet<>();
             for (int page = 0; page < 20; page++) {
                 JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryAnimalPropList(nextCursor));
                 if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -6644,8 +6669,12 @@ public class AntForestV2 extends ModelTask {
                         }
                     }
                 }
+                if (jo.has("hasMore") && !(jo.opt("hasMore") instanceof Boolean)) {
+                    Log.record("巡护派遣：第" + (page + 1) + "页分页状态无效，暂不派遣");
+                    return false;
+                }
                 if (sequence && animalProp != null || !jo.optBoolean("hasMore")) {
-                    break;
+                    return consumeAnimalProp(animalProp);
                 }
                 Object rawCursor = jo.opt("nextCursor");
                 if (!(rawCursor instanceof String)) {
@@ -6653,13 +6682,13 @@ public class AntForestV2 extends ModelTask {
                     return false;
                 }
                 String cursor = (String) rawCursor;
-                if (cursor.trim().isEmpty() || cursor.equals(nextCursor)) {
+                if (cursor.trim().isEmpty() || !cursors.add(cursor)) {
                     Log.record("巡护派遣：后续分页游标为空或重复，暂不派遣");
                     return false;
                 }
                 nextCursor = cursor;
             }
-            return consumeAnimalProp(animalProp);
+            Log.record("巡护派遣：达到20页查询上限但列表尚未结束，暂不派遣，下轮重查");
         } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "queryAnimalPropList err:", t);
@@ -6696,6 +6725,7 @@ public class AntForestV2 extends ModelTask {
                 Log.forest("巡护派遣🐆[" + name + "]");
                 return true;
             }
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "consumeAnimalProp err:", t);
         }
