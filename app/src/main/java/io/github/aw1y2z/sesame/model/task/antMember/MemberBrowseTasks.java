@@ -210,8 +210,10 @@ final class MemberBrowseTasks {
     }
 
     private static String[] target(JSONObject task) {
-        JSONArray targets = task.optJSONArray("targetBusiness");
-        if (targets == null) targets = config(task).optJSONArray("targetBusiness");
+        Object raw = task.opt("targetBusiness");
+        if (!(raw instanceof JSONArray) && !(raw instanceof String)) raw = config(task).opt("targetBusiness");
+        JSONArray targets = raw instanceof JSONArray ? (JSONArray) raw
+                : raw instanceof String ? new JSONArray().put(raw) : null;
         for (int i = 0; targets != null && i < targets.length(); i++) {
             if (!(targets.opt(i) instanceof String)) continue;
             String[] parts = targets.optString(i).split("#", -1);

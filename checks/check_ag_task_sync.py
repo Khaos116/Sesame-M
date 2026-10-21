@@ -80,6 +80,17 @@ public class AgTaskSyncCheck {
  static JSONObject member(String id,boolean applied){return new JSONObject().put("taskConfigId",id).put("processId",applied?"p"+id:"").put("status","TODO").put("currentCount",0).put("targetCount",1).put("simpleTaskConfig",new JSONObject().put("configId",id).put("title","task"+id).put("sourceBusiness","signInAd").put("browseSeconds",15).put("targetBusiness",new JSONArray().put("BROWSE#sub#"+id)));}
  static void resetMember(){reset();AntMemberRpcCall.tasks.clear();AntMemberRpcCall.pages.clear();AntMemberRpcCall.sessions.clear();AntMemberRpcCall.apply=AntMemberRpcCall.execute=0;AntMemberRpcCall.advance=true;AntMemberRpcCall.emptyMap=AntMemberRpcCall.repeatPage=AntMemberRpcCall.brokenDetail=AntMemberRpcCall.omitConfig=AntMemberRpcCall.statusOnly=AntMemberRpcCall.splitPages=false;AntMemberRpcCall.applyReply=null;AntMemberRpcCall.pageOverride=null;AntMemberRpcCall.executeReply="{success:true}";}
  static void members()throws Exception{
+  for(String key:List.of("simpleTaskConfig","taskConfigInfo")) {
+   resetMember();JSONObject row=member("one",false);JSONObject cfg=row.optJSONObject("simpleTaskConfig");cfg.remove("targetBusiness");
+   if(key.equals("taskConfigInfo")){row.remove("simpleTaskConfig");row.put(key,cfg);cfg.put("id","one").put("name","taskone");}
+   row.put("targetBusiness","BROWSE#sub#one");AntMemberRpcCall.tasks.put("one",row);MemberBrowseTasks.run(Set.of());
+   assert AntMemberRpcCall.apply==1&&AntMemberRpcCall.execute==1:"string top-level target must use the existing verified browse flow";
+  }
+  resetMember();JSONObject stringConfig=member("one",true);stringConfig.optJSONObject("simpleTaskConfig").put("targetBusiness","BROWSE#sub#one");AntMemberRpcCall.tasks.put("one",stringConfig);MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.execute==1;
+  for(String bad:List.of("CALL_APP#scene","CALL_APP#sub#one","OTHER#sub#one","BROWSE##one","BROWSE#sub#")) {
+   resetMember();JSONObject row=member("one",false).put("targetBusiness",bad);AntMemberRpcCall.tasks.put("one",row);MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.apply==0&&AntMemberRpcCall.execute==0:"invalid string target sent a write";
+  }
+
   resetMember();AntMemberRpcCall.tasks.put("one",member("one",false));MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.apply==1&&AntMemberRpcCall.execute==1;assert AntMemberRpcCall.pages.contains(2);assert TimeUtil.waits.stream().mapToLong(Long::longValue).sum()>=15000;
   resetMember();JSONObject ordinary=member("one",false);ordinary.optJSONObject("simpleTaskConfig").put("sourceBusiness","antmember");AntMemberRpcCall.tasks.put("one",ordinary);MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.apply==1&&AntMemberRpcCall.execute==1:"ordinary apply process must continue only once";
   resetMember();AntMemberRpcCall.repeatPage=true;AntMemberRpcCall.tasks.put("one",member("one",true));MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.execute==1&&Collections.max(AntMemberRpcCall.pages)==2;

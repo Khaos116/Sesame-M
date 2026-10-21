@@ -120,9 +120,10 @@ public class AntForestV2 extends ModelTask {
     private static final String FLAG_TEAM_WATER_DAILY_COUNT = "FLAG_TEAM_WATER_DAILY_COUNT";
 
     /**
-     * 新版保护地任务：只有洪山动物园区域下发了任务场景，其余区域没有任务列表。
+     * 新版保护地任务场景码：跨保护地区域固定的场景标识。
+     * 保护地区域会轮换（洪山动物园→玉树东仲→…），但 regionCode 由 entryInfo 动态下发、
+     * sceneCode 始终复用此值；服务端按 regionCode 返回该区域任务，故区域轮换无需改代码。
      */
-    private static final String MONOPOLY_REGION_HSDWY = "hongshandongwuyuan";
     private static final String MONOPOLY_TASK_SCENE_HSDWY = "ANTFOREST_MONOPOLY_TASK_HSDWY";
 
     /**
@@ -2666,27 +2667,32 @@ public class AntForestV2 extends ModelTask {
     public void initMonopolyTaskListMap() {
         try {
             MonopolyTaskListMap.load();
-            JSONObject jo = monopolyResponse(AntForestRpcCall.listMonopolyTasks(MONOPOLY_REGION_HSDWY, MONOPOLY_TASK_SCENE_HSDWY));
-            if (MessageUtil.checkSuccess(TAG, jo)) {
-                JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
-                if (taskInfoList != null) {
-                    for (int i = 0; i < taskInfoList.length(); i++) {
-                        JSONObject task = taskInfoList.optJSONObject(i);
-                        JSONObject base = task == null ? null : task.optJSONObject("taskBaseInfo");
-                        if (base == null || !MONOPOLY_TASK_SCENE_HSDWY.equals(base.optString("sceneCode"))) {
-                            continue;
+            // regionCode 由 entryInfo 动态下发(区域轮换无需改代码),只拉当前区域任务作为黑名单候选项
+            String regionCode = getMonopolyRegionCode();
+            if (!regionCode.isEmpty()) {
+                JSONObject jo = monopolyResponse(AntForestRpcCall.listMonopolyTasks(regionCode, MONOPOLY_TASK_SCENE_HSDWY));
+                if (MessageUtil.checkSuccess(TAG, jo)) {
+                    JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
+                    if (taskInfoList != null) {
+                        for (int i = 0; i < taskInfoList.length(); i++) {
+                            JSONObject task = taskInfoList.optJSONObject(i);
+                            JSONObject base = task == null ? null : task.optJSONObject("taskBaseInfo");
+                            if (base == null) {
+                                continue;
+                            }
+                            String taskType = base.optString("taskType");
+                            if (taskType.isEmpty()) {
+                                continue;
+                            }
+                            String title = blackTaskKey(monopolyTaskTitle(base, taskType));
+                            MonopolyTaskListMap.add(title, title);
                         }
-                        String taskType = base.optString("taskType");
-                        if (taskType.isEmpty()) {
-                            continue;
-                        }
-                        String title = blackTaskKey(monopolyTaskTitle(base, taskType));
-                        MonopolyTaskListMap.add(title, title);
                     }
                 }
             }
             MonopolyTaskListMap.save();
             Log.record("同步任务🉑新版保护地任务列表");
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "initMonopolyTaskListMap err:", t);
         }
@@ -5234,11 +5240,9 @@ public class AntForestV2 extends ModelTask {
                         case "stealthCard":
                             return -1;
                         case "shield":
-                            if (duringTime / (1000 * 60) < 60 * continuousUseShieldHour.getValue()) {
-                                return duringTime;
-                            } else {
-                                return -1;
-                            }
+                            // 在保护中且剩余<阈值：返回 >0 表示"需续用延长"；充足则返回 -1 不处理
+                            return duringTime / (1000 * 60) < 60 * continuousUseShieldHour.getValue()
+                                    ? duringTime : -1;
                         /*case "energyBombCard":
                             if (duringTime / (1000 * 60) < 3*60 * 24) {
                                 Log.forest("duringTime");
@@ -6062,15 +6066,28 @@ public class AntForestV2 extends ModelTask {
         return resData == null ? jo : resData;
     }
 
+    /** 当前保护地区域码：由 entryInfo 动态下发，区域轮换无需改代码；取不到返回空串 */
+    private String getMonopolyRegionCode() {
+        try {
+            JSONObject state = MyUtils.newJSONObject(AntForestRpcCall.queryMonopolyEntryInfo());
+            if (!MessageUtil.checkResultCode(TAG, state)) {
+                return "";
+            }
+            JSONObject regionInfo = state.optJSONObject("regionInfo");
+            Object region = regionInfo == null ? null : regionInfo.opt("regionCode");
+            return region instanceof String ? ((String) region).trim() : "";
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
+        } catch (Throwable t) {
+            Log.err(TAG, "getMonopolyRegionCode err:", t);
+            return "";
+        }
+    }
+
     /* 新版保护地：完成可自动执行的任务并领取奖励 */
     private boolean monopolyTask(String regionCode) {
-        String sceneCode;
-        if (MONOPOLY_REGION_HSDWY.equals(regionCode)) {
-            sceneCode = MONOPOLY_TASK_SCENE_HSDWY;
-        } else {
-            Log.forest("新版保护地🌲当前区域[" + regionCode + "]没有任务场景，继续地图巡护");
-            return false;
-        }
+        // sceneCode 为跨保护地区域固定的任务场景标识；regionCode 由 entryInfo 动态下发(区域轮换无需改代码)。
+        // 服务端按 regionCode 返回该区域任务,请求带固定 sceneCode 即可,拿不到任务时按空列表跳过。
+        String sceneCode = MONOPOLY_TASK_SCENE_HSDWY;
         boolean changed = false;
         try {
             // 每轮只处理一个任务，最多 20 轮：服务端状态不变时靠轮次上限收敛
@@ -6088,9 +6105,12 @@ public class AntForestV2 extends ModelTask {
                 for (int i = 0; i < taskInfoList.length() && !acted; i++) {
                     JSONObject task = taskInfoList.optJSONObject(i);
                     JSONObject base = task == null ? null : task.optJSONObject("taskBaseInfo");
-                    if (base == null || !sceneCode.equals(base.optString("sceneCode"))) {
+                    // 用任务自带的真实 sceneCode 做完成/领奖(服务端按 regionCode 返回,sceneCode 以任务为准)
+                    Object scene = base == null ? null : base.opt("sceneCode");
+                    if (!(scene instanceof String) || ((String) scene).trim().isEmpty()) {
                         continue;
                     }
+                    String taskSceneCode = (String) scene;
                     String taskType = base.optString("taskType");
                     if (taskType.isEmpty()) {
                         continue;
@@ -6103,18 +6123,19 @@ public class AntForestV2 extends ModelTask {
                     }
                     if ("FINISHED".equals(status)) {
                         acted = true;
-                        changed |= monopolyReceiveTaskAward(regionCode, taskType, sceneCode, title);
+                        changed |= monopolyReceiveTaskAward(regionCode, taskType, taskSceneCode, title);
                     } else if ("TODO".equals(status) && "NORMAL".equals(base.optString("taskMode"))
                             && "VISIT_FLOAT_BALL".equals(base.optString("taskProdPlayType"))) {
                         // 只自动做"浏览浮球"这类纯等待任务，其余需要真实业务动作的任务不碰
                         acted = true;
-                        changed |= monopolyFinishTask(base, taskType, sceneCode, title);
+                        changed |= monopolyFinishTask(base, taskType, taskSceneCode, title);
                     }
                 }
                 if (!acted) {
                     return changed;
                 }
             }
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "monopolyTask err:", t);
         }
@@ -6474,6 +6495,11 @@ public class AntForestV2 extends ModelTask {
             if (!canConsumeAnimalProp) {
                 return false;
             }
+            int consumePropType = consumeAnimalPropType.getValue();
+            if (consumePropType == ConsumeAnimalPropType.NONE) {
+                Log.record("新版动物伙伴🦩未开启派遣动物伙伴，跳过");
+                return false;
+            }
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryMonopolyEntryInfo());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
@@ -6513,9 +6539,9 @@ public class AntForestV2 extends ModelTask {
                 Log.record("新版动物伙伴🦩当前没有可派遣的动物");
                 return replacing;
             }
-            // 都能给出预计产出时选最高的，否则按服务端顺序取第一个
+            // 按"派遣动物伙伴"配置选人：默认顺序取第一个；按最多能量派遣时新版按预计产出最高选
             JSONObject selected = candidates.get(0);
-            if (allHasInitialRobEnergy) {
+            if (consumePropType == ConsumeAnimalPropType.QUANTITY && allHasInitialRobEnergy) {
                 for (JSONObject candidate : candidates) {
                     if (candidate.optInt("initialRobEnergy") > selected.optInt("initialRobEnergy")) {
                         selected = candidate;
@@ -6588,40 +6614,67 @@ public class AntForestV2 extends ModelTask {
         return maxWorkDays <= 0 || energy.optInt("alreadyWorkDays", 0) < maxWorkDays;
     }
 
-    // 查询可派遣伙伴，返回是否派遣成功
+    // 查询可派遣伙伴（分页取全，返回是否派遣成功）
     private boolean queryAnimalPropList() {
         try {
-            JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryAnimalPropList());
-            if (!MessageUtil.checkResultCode(TAG, jo)) {
-                return false;
-            }
-            JSONArray animalProps = jo.optJSONArray("animalProps");
+            boolean sequence = consumeAnimalPropType.getValue() == ConsumeAnimalPropType.SEQUENCE;
             JSONObject animalProp = null;
-            for (int i = 0; animalProps != null && i < animalProps.length(); i++) {
-                jo = animalProps.optJSONObject(i);
-                if (jo == null) {
-                    continue;
+            String nextCursor = null;
+            for (int page = 0; page < 20; page++) {
+                JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryAnimalPropList(nextCursor));
+                if (!MessageUtil.checkResultCode(TAG, jo)) {
+                    Log.record("巡护派遣：第" + (page + 1) + "页查询未确认，暂不派遣");
+                    return false;
                 }
-                if (animalProp == null) {
-                    animalProp = jo;
-                    if (consumeAnimalPropType.getValue() == ConsumeAnimalPropType.SEQUENCE) {
-                        break;
-                    }
-                } else {
-                    JSONObject joMain = jo.optJSONObject("main");
-                    JSONObject animalPropMain = animalProp.optJSONObject("main");
-                    int joHolds = joMain != null ? joMain.optInt("holdsNum") : 0;
-                    int animalPropHolds = animalPropMain != null ? animalPropMain.optInt("holdsNum") : 0;
-                    if (joHolds > animalPropHolds) {
-                        animalProp = jo;
+                JSONArray animalProps = jo.optJSONArray("animalProps");
+                if (animalProps == null) {
+                    Log.record("巡护派遣：第" + (page + 1) + "页缺少动物列表，暂不派遣");
+                    return false;
+                }
+                if (animalProps != null) {
+                    for (int i = 0; i < animalProps.length(); i++) {
+                        JSONObject prop = animalProps.optJSONObject(i);
+                        if (prop == null) {
+                            continue;
+                        }
+                        if (animalProp == null) {
+                            animalProp = prop;
+                        } else if (!sequence && animalPropEnergy(prop) > animalPropEnergy(animalProp)) {
+                            animalProp = prop;
+                        }
                     }
                 }
+                if (sequence && animalProp != null || !jo.optBoolean("hasMore")) {
+                    break;
+                }
+                Object rawCursor = jo.opt("nextCursor");
+                if (!(rawCursor instanceof String)) {
+                    Log.record("巡护派遣：后续分页游标无效，暂不派遣");
+                    return false;
+                }
+                String cursor = (String) rawCursor;
+                if (cursor.trim().isEmpty() || cursor.equals(nextCursor)) {
+                    Log.record("巡护派遣：后续分页游标为空或重复，暂不派遣");
+                    return false;
+                }
+                nextCursor = cursor;
             }
             return consumeAnimalProp(animalProp);
+        } catch (io.github.aw1y2z.sesame.util.TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "queryAnimalPropList err:", t);
         }
         return false;
+    }
+
+    // 动物道具每日可获能量（"按最多能量派遣"按此最高选择，字段取自 partner.robAbility.robEnergyInDaily）
+    private int animalPropEnergy(JSONObject animalProp) {
+        JSONObject partner = animalProp.optJSONObject("partner");
+        if (partner == null) {
+            return 0;
+        }
+        JSONObject robAbility = partner.optJSONObject("robAbility");
+        return robAbility == null ? 0 : robAbility.optInt("robEnergyInDaily", 0);
     }
 
     // 派遣伙伴，返回是否派遣成功
@@ -7700,7 +7753,7 @@ public class AntForestV2 extends ModelTask {
         int SEQUENCE = 1;
         int QUANTITY = 2;
 
-        String[] nickNames = {"不派遣动物", "按默认顺序派遣", "按最大数量派遣"};
+        String[] nickNames = {"不派遣动物", "按默认顺序派遣", "按最多能量派遣"};
     }
 
     public interface UsePropType {

@@ -370,9 +370,16 @@ public class AntForestRpcCall {
         return ApplicationHook.requestString("alipay.antforest.forest.h5.queryPropList", "[{\"onlyGive\":\"" + (onlyGive ? "Y" : "") + "\",\"source\":\"chInfo_ch_appcenter__chsub_9patch\"," + "\"version\":\"" + VERSION + "\"}]");
     }
     
-    // 查询可派遣伙伴
-    public static String queryAnimalPropList() {
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryAnimalPropList", "[{\"source" + "\":\"chInfo_ch_appcenter__chsub_9patch\"}]");
+    // 查询可派遣伙伴（分页，nextCursor 为空查第一页）
+    public static String queryAnimalPropList() throws JSONException {
+        return queryAnimalPropList(null);
+    }
+
+    public static String queryAnimalPropList(String nextCursor) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject().put("pageQuery", true)
+                .put("source", "chInfo_ch_appcenter__chsub_9patch");
+        if (!StringUtil.isEmpty(nextCursor)) args.put("excludePropTypes", new JSONArray()).put("nextCursor", nextCursor);
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryAnimalPropList", new JSONArray().put(args).toString());
     }
     
     // 派遣动物伙伴

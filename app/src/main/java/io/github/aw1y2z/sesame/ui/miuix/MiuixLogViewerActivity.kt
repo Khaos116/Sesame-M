@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.aw1y2z.sesame.data.AppConfig
 import io.github.aw1y2z.sesame.util.FileUtil
 import io.github.aw1y2z.sesame.util.ToastUtil
 import top.yukonga.miuix.kmp.basic.Icon
@@ -118,6 +119,77 @@ data class LogEntry(
     val body: String
 )
 
+enum class LogViewMode { BY_ENTRY, BY_RUN }
+
+/** 一轮执行聚合:从"开始执行"到下一轮之前的所有单条日志 */
+data class LogRunEntry(
+    val runIndex: Int,
+    val startTime: String?,
+    val startLineNumber: Int,
+    val entries: List<LogEntry>
+)
+
+/**
+ * 运行日志的轮次开始行正则。覆盖三种形态:
+ * "[账号N]开始执行"、"[账号N]开始执行分组【xx】任务"、"[账号N]开始执行全部任务"。
+ * 用前缀+tag 双重限定,避免"森林阅读📖开始执行..."、"黄金票[开始执行]"等任务日志被误判为轮次边界。
+ */
+private val RUN_START_REGEX = Regex("""^\[账号\d+\]开始执行(?:\s*$|分组【[^】]*】任务\s*$|全部任务\s*$)""")
+
+/**
+ * 读取运行日志全文,提取所有轮次开始行("[账号N]开始执行...")的时间戳作为全局锚点。
+ * 读取全文而非受 [MAX_LOG_ENTRIES]/[MAX_TAIL_BYTES] 约束的尾部片段,确保全天各轮次的
+ * 开始标记都能作为锚点,使森林/庄园/金豆/其他记录也能按统一执行周期正确划分轮次。
+ */
+private fun readRuntimeAnchors(file: File): List<String> {
+    if (!file.exists()) return emptyList()
+    val anchors = mutableListOf<String>()
+    try {
+        file.forEachLine(Charsets.UTF_8) { line ->
+            val m = TIME_REGEX.find(line) ?: return@forEachLine
+            val tag = m.groupValues[2].takeIf { it.isNotEmpty() }
+            val body = m.groupValues[3]
+            if (tag == "RUNTIME" && RUN_START_REGEX.containsMatchIn(body)) {
+                m.groupValues[1].takeIf { it.isNotEmpty() }?.let { anchors.add(it) }
+            }
+        }
+    } catch (_: Throwable) {
+        // 读取失败时退化为无锚点(各页按单条显示)
+    }
+    return anchors.distinct().sorted()
+}
+
+/**
+ * 将单条日志按"执行轮次"聚合。轮次边界取自运行日志的"开始执行"时间(全局锚点),
+ * 每条日志按其时间戳归入"最近一次开始执行之后、下一次之前"的轮次。
+ * 这样森林/庄园/金豆/其他记录等没有自身轮次标记的类目,也能按统一的执行周期聚合显示。
+ * 返回顺序:最早轮在前(runIndex=1 为最早一轮,与时间顺序一致)。时间基于 "HH:mm:ss.SSS" 字典序比较(同日有效)。
+ */
+private fun aggregateByRun(source: List<LogEntry>, anchors: List<String>): List<LogRunEntry> {
+    if (anchors.isEmpty()) {
+        // 无锚点(从未运行过):退化为单轮,全部日志归一轮
+        if (source.isEmpty()) return emptyList()
+        return listOf(LogRunEntry(1, source.first().time, source.first().lineNumber, source))
+    }
+    val buckets = MutableList(anchors.size) { mutableListOf<LogEntry>() }
+    for (e in source) {
+        val t = e.time
+        // 找到 <= t 的最大锚点索引;早于所有锚点的散落日志归入第 1 轮(最早)
+        val k = if (t == null) -1 else anchors.indexOfLast { it <= t }
+        val b = if (k < 0) 0 else k
+        buckets[b].add(e)
+    }
+    return buckets.mapIndexedNotNull { index, list ->
+        if (list.isEmpty()) null
+        else LogRunEntry(
+            runIndex = index + 1,
+            startTime = list.first().time,
+            startLineNumber = list.first().lineNumber,
+            entries = list.toList()
+        )
+    }
+}
+
 class MiuixLogViewerActivity : MiuixBaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -152,6 +224,31 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     val logReader = remember(logType) { LogTailReader() }
     var entries by remember(logType) { mutableStateOf(emptyList<LogEntry>()) }
     val listState = rememberLazyListState()
+    val viewMode = remember(logType) {
+        if (AppConfig.INSTANCE.logViewByRun == true) LogViewMode.BY_RUN else LogViewMode.BY_ENTRY
+    }
+    var runAnchors by remember(file) { mutableStateOf(emptyList<String>()) }
+    LaunchedEffect(file, viewMode) {
+        if (viewMode != LogViewMode.BY_RUN) return@LaunchedEffect
+        val runtimeFile = File(file.parentFile, "runtime." + file.name.substringAfter('.'))
+        var length = -1L
+        var modified = -1L
+        while (true) {
+            // shortcut: 按轮模式文件变化时后台重扫锚点；超大日志刷新变慢时改增量扫描。
+            val updated = withContext(Dispatchers.IO) {
+                val size = runtimeFile.length()
+                val stamp = runtimeFile.lastModified()
+                if (size == length && stamp == modified) null else {
+                    val anchors = readRuntimeAnchors(runtimeFile)
+                    length = size
+                    modified = stamp
+                    anchors
+                }
+            }
+            if (updated != null) runAnchors = updated
+            delay(1000)
+        }
+    }
     // 搜索文本
     var searchQuery by remember { mutableStateOf("") }
     // Runtime 页面额外支持 tag 过滤
@@ -201,6 +298,8 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
         val matchTag = selectedTag == null || e.tag == selectedTag
         matchSearch && matchTag
     }
+
+    val filteredRuns = remember(filteredEntries, runAnchors) { aggregateByRun(filteredEntries, runAnchors) }
 
     // Runtime 页面:统计各 tag 出现次数,用于 Chip 显示
     val tagCounts = remember(entries) {
@@ -363,11 +462,17 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
-                    itemsIndexed(
-                        filteredEntries.asReversed(),
-                        key = { _, e -> "${e.lineNumber}-${e.hashCode()}" }
-                    ) { _, entry ->
-                        LogEntryCard(entry)
+                    if (viewMode == LogViewMode.BY_RUN) {
+                        itemsIndexed(filteredRuns.asReversed(), key = { _, run -> "r-${run.runIndex}-${run.startLineNumber}" }) { _, run ->
+                            RunEntryCard(run)
+                        }
+                    } else {
+                        itemsIndexed(
+                            filteredEntries.asReversed(),
+                            key = { _, e -> "${e.lineNumber}-${e.hashCode()}" }
+                        ) { _, entry ->
+                            LogEntryCard(entry)
+                        }
                     }
                 }
             }
@@ -434,6 +539,59 @@ fun LogEntryCard(entry: LogEntry) {
                 Text(
                     text = entry.body,
                     fontSize = 13.sp,
+                    color = MiuixTheme.colorScheme.onBackground
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RunEntryCard(run: LogRunEntry) {
+    val shown = run.entries
+    var expanded by remember { mutableStateOf(true) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MiuixTheme.colorScheme.surfaceContainer)
+            .padding(12.dp)
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { expanded = !expanded },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "第 ${run.runIndex} 轮" + (run.startTime?.let { "  $it" } ?: ""),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MiuixTheme.colorScheme.primary
+            )
+            Text(
+                text = shown.size.toString() + " 条" + if (expanded) " ▾" else " ▸",
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+            )
+        }
+        if (expanded) {
+            Spacer(Modifier.height(6.dp))
+            val text = shown.joinToString("\n") { e ->
+                buildString {
+                    if (e.time != null) append(e.time).append(" ")
+                    if (e.tag != null) append(e.tag).append(": ")
+                    append(e.body)
+                }
+            }
+            SelectionContainer {
+                Text(
+                    text = text,
+                    fontSize = 12.sp,
                     color = MiuixTheme.colorScheme.onBackground
                 )
             }

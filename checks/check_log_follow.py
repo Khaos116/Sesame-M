@@ -34,6 +34,11 @@ code += method(source_path, "private fun readTailText(") + "\n"
 code += re.search(r"^private val TIME_REGEX = .+$", source, re.MULTILINE)[0] + "\n"
 code += method(source_path, "private class LogTailReader") + "\n"
 code += "fun loadLogEntries(file: File): List<LogEntry> = LogTailReader().poll(file)\n"
+code += re.search(r"data class LogRunEntry\([\s\S]*?\n\)", source)[0] + "\n"
+code += re.search(r"^private val RUN_START_REGEX = .+$", source, re.MULTILINE)[0] + "\n"
+code += method(source_path, "private fun readRuntimeAnchors(") + "\n"
+code += method(source_path, "private fun aggregateByRun(") + "\n"
+
 code += method("ui/miuix/MiuixMainActivity.kt", "private fun accountDisplayName(") + "\n"
 code += '''
 // Account I/O and JSON boundary doubles; run the production label/fallback logic.
@@ -112,6 +117,30 @@ fun main() {
             check(displayed[1].body == "$category 旧记录")
         }
         println("PASS: four untagged categories display newest first and preserve continuation lines")
+        file.writeText("20:00:00.000 RUNTIME: [账号1]开始执行\\n" +
+            "20:00:01.000 RUNTIME: [账号1]开始执行游戏任务\\n" +
+            "20:00:02.000 FARM: [账号1]开始执行\\n" +
+            "20:00:03.000 FOREST: 森林阅读开始执行\\n" +
+            "20:10:00.000 RUNTIME: [账号1]开始执行分组【森林】任务\\n")
+        var anchors = readRuntimeAnchors(file)
+        check(anchors == listOf("20:00:00.000", "20:10:00.000")) { "game task was treated as a run boundary" }
+        val rows = listOf(LogEntry(1, "20:00:05.000", "FOREST", "old"),
+            LogEntry(2, "20:10:05.000", "FARM", "claim"), LogEntry(3, "20:10:06.000", "FOREST", "claim"))
+        check(aggregateByRun(rows, anchors).map { it.entries.size } == listOf(1,2))
+        val selected = rows.filter { it.tag == "FOREST" && it.body.contains("claim") }
+        check(aggregateByRun(selected, anchors).single().runIndex == 2)
+        check(aggregateByRun(selected, anchors).single().entries == selected)
+        file.appendText("20:20:00.000 RUNTIME: [账号1]开始执行全部任务\\n")
+        check(readRuntimeAnchors(file).size == 3) { "new run did not refresh anchors" }
+        file.appendText("旧记录\\n".repeat(500000))
+        check(file.length() > MAX_TAIL_BYTES && readRuntimeAnchors(file).first() == "20:00:00.000") { "anchors outside the tail limit were lost" }
+        file.writeText("21:00:00.000 RUNTIME: [账号2]开始执行\\n")
+        anchors = readRuntimeAnchors(file)
+        check(anchors == listOf("21:00:00.000")) { "clearing or account change retained old anchors" }
+        check(aggregateByRun(emptyList(), anchors).isEmpty())
+        check(aggregateByRun(rows, emptyList()).single().entries == rows)
+        println("PASS: strict run boundaries, full-file anchors, live refresh/reset, category grouping and combined filters")
+
         check(MAX_LOG_ENTRIES == 5000 && MAX_TAIL_BYTES == 4 * 1024 * 1024L)
         val padding = " 好家任务已完成✅".repeat(15)
         file.writeText((0..5099).joinToString("\\n", postfix="\\n") { "12:00:00.000 I: entry $it$padding" })

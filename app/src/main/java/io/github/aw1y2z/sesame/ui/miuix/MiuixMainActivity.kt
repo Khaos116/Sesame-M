@@ -959,6 +959,12 @@ fun SettingsTab(activity: MiuixMainActivity, currentAccount: String) {
             activity.toggleHideIcon()
             iconHidden = activity.isIconHidden()
         }
+        var logViewByRun by remember { mutableStateOf(AppConfig.INSTANCE.logViewByRun ?: false) }
+        BooleanSwitch("日志查看方式切换", logViewByRun) {
+            AppConfig.INSTANCE.logViewByRun = it
+            AppConfig.save()
+            logViewByRun = it
+        }
         var darkMode by remember { mutableStateOf(AppConfig.INSTANCE.darkMode ?: false) }
         var followSystem by remember { mutableStateOf(AppConfig.INSTANCE.followSystem ?: true) }
         val systemDark = isSystemInDarkTheme()

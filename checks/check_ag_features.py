@@ -45,7 +45,7 @@ public class AGCheck {
     static class RpcFailurePolicy {static String boundedMessage(String s){return s;}}
     static class RpcRequestGuard {@@GUARD@@}
     static class StringUtil {static boolean isEmpty(String s){return s==null||s.isEmpty();}}
-    static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}
+    static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}static boolean checkSuccess(String t,JSONObject j){return Boolean.TRUE.equals(j.opt("success"));}}
     static class RandomUtil {static String getRandomString(int n){return "token";}}
     static class UserIdMap {static String uid="self";static String getCurrentUid(){return uid;}static String getMaskName(String s){return "friend";}}
     static class TimeUtil {static boolean cancel;static List<Long> waits=new ArrayList<>();static void sleep(long ms){if(cancel)throw new TaskCancelledException();waits.add(ms);}}
@@ -81,7 +81,15 @@ public class AGCheck {
     static class WaterFriendType {static int[] waterEnergy={0,10,18,33,66};}
     static class Forest {
         static String TAG="Forest";String selfId="self";
-        Field<Integer> waterFriendType=new Field<>(1);
+        Field<Integer> waterFriendType=new Field<>(1),consumeAnimalPropType=new Field<>(2);
+        interface ConsumeAnimalPropType {int NONE=0,SEQUENCE=1,QUANTITY=2;}
+        static final String MONOPOLY_TASK_SCENE_HSDWY="ANTFOREST_MONOPOLY_TASK_HSDWY";
+        JSONObject selectedAnimal;List<String> taskActions=new ArrayList<>();
+        boolean consumeAnimalProp(JSONObject prop){selectedAnimal=prop;return prop!=null;}
+        String monopolyTaskTitle(JSONObject task,String id){return task.optString("title",id);}
+        boolean isMonopolyTaskBlacklisted(String title){return title.equals("blocked");}
+        boolean monopolyFinishTask(JSONObject task,String type,String scene,String title){taskActions.add("finish:"+scene);return true;}
+        boolean monopolyReceiveTaskAward(String region,String type,String scene,String title){taskActions.add("award:"+region+":"+scene);return true;}
         Field<Map<String,Integer>> waterFriendGramList=new Field<>(new HashMap<>()),waterFriendList=new Field<>(new HashMap<>());
         List<Integer> grams=new ArrayList<>();
         KVNode<Integer,Boolean> returnFriendWater(String uid,String biz,int count,int gram){grams.add(gram);return new KVNode<>(count,true);}
@@ -109,6 +117,47 @@ public class AGCheck {
         .put("WATER",new JSONObject().put("value",water)).put("WATERING_POT",new JSONObject().put("extInfo",new JSONObject().put("costPerWater",10).put("availablePots","[\"one\",\"five\"]")))
         .put("PLANT_PROGRESS_V2",new JSONObject().put("extInfo",new JSONObject().put("totalWaterG",total))))));}
     static JSONObject cert(int n){return ok().put("applyAction","AVAILABLE").put("currentEnergy",100).put("exchangeableTree",new JSONObject().put("projectId",7).put("certCount",n).put("energy",20));}
+
+    static JSONObject animal(String name,int energy){return new JSONObject().put("id",name).put("partner",new JSONObject().put("robAbility",new JSONObject().put("robEnergyInDaily",energy)));}
+    static JSONObject animalPage(String cursor,JSONObject... animals){return ok().put("animalProps",new JSONArray(List.of(animals))).put("hasMore",!cursor.isEmpty()).put("nextCursor",cursor);}
+    static void upstreamForestChecks(){
+        Forest f=new Forest();
+        for(int mode:new int[]{0,1,2}) {
+            reset();f.consumeAnimalPropType.value=mode;
+            JSONObject first=creature("first","idle",5).put("initialRobEnergy",1),best=creature("best","idle",5).put("initialRobEnergy",99);
+            replies("queryMonopolyEntryInfo",ok().put("usingMonopolyCreature",false).put("creatureList",new JSONArray().put(first).put(best)));
+            replies("queryUsingCreatureInfo",ok().put("usingMonopolyCreature",true).put("userCreatureVO",new JSONObject().put("creatureCode",mode==1?"first":"best")));
+            f.dispatchMonopolyAnimal(true);
+            if(mode==0)assert ApplicationHook.calls.isEmpty():"disabled animal mode queried or dispatched";
+            else assert calls("assignMonopolyCreature").get(0).optString("creatureCode").equals(mode==1?"first":"best"):"new animal selection ignored mode";
+        }
+        for(int mode:new int[]{1,2}) {
+            reset();f.consumeAnimalPropType.value=mode;
+            replies("queryAnimalPropList",animalPage("next\"\\cursor",animal("first",1),animal("second",4)),animalPage("",animal("highest",99)));
+            assert f.queryAnimalPropList();assert f.selectedAnimal.optString("id").equals(mode==1?"first":"highest");
+            assert calls("queryAnimalPropList").size()==mode;
+            assert calls("queryAnimalPropList").get(0).optBoolean("pageQuery");
+            if(mode==2)assert calls("queryAnimalPropList").get(1).optString("nextCursor").equals("next\"\\cursor"):"cursor was not escaped";
+        }
+
+        reset();f.consumeAnimalPropType.value=1;replies("queryAnimalPropList",animalPage("page2"),animalPage("",animal("first-on-next",1)));assert f.queryAnimalPropList()&&f.selectedAnimal.optString("id").equals("first-on-next")&&calls("queryAnimalPropList").size()==2:"empty first page must not hide the first available animal";
+        reset();f.consumeAnimalPropType.value=2;replies("queryAnimalPropList",animalPage("unused").put("nextCursor",new JSONObject()));assert !f.queryAnimalPropList()&&calls("queryAnimalPropList").size()==1:"invalid cursor must not issue a second request";
+        reset();f.consumeAnimalPropType.value=2;replies("queryAnimalPropList",animalPage("repeat",animal("first",1)));assert !f.queryAnimalPropList()&&calls("queryAnimalPropList").size()==2:"repeated cursor must stop paging";
+
+        for(JSONObject badPage:List.of(new JSONObject(),ok(),ok().put("animalProps","bad"))) {
+            reset();f.consumeAnimalPropType.value=2;f.selectedAnimal=null;replies("queryAnimalPropList",animalPage("second",animal("valid",1)),badPage);
+            assert !f.queryAnimalPropList()&&f.selectedAnimal==null:"incomplete or failed page was treated as complete before dispatch";
+        }
+        reset();replies("queryMonopolyEntryInfo",ok().put("regionInfo",new JSONObject().put("regionCode","yushudongzhong")));assert f.getMonopolyRegionCode().equals("yushudongzhong");
+        for(Object bad:List.of(7,new JSONObject(),true)){replies("queryMonopolyEntryInfo",ok().put("regionInfo",new JSONObject().put("regionCode",bad)));assert f.getMonopolyRegionCode().isEmpty();}
+        reset();JSONObject task=new JSONObject().put("taskType","visit").put("sceneCode","ROTATED_REAL_SCENE").put("title","blocked").put("taskStatus","FINISHED");
+        replies("listTaskopengreen",ok().put("taskInfoList",new JSONArray().put(new JSONObject().put("taskBaseInfo",task))),ok().put("taskInfoList",new JSONArray()));
+        assert f.monopolyTask("yushudongzhong")&&f.taskActions.equals(List.of("award:yushudongzhong:ROTATED_REAL_SCENE")):"rotated region must use task scene and claim finished blacklisted task";
+        assert calls("listTaskopengreen").get(0).optString("regionCode").equals("yushudongzhong");
+        f.taskActions.clear();task.put("sceneCode",new JSONObject());replies("listTaskopengreen",ok().put("taskInfoList",new JSONArray().put(new JSONObject().put("taskBaseInfo",task))));assert !f.monopolyTask("yushudongzhong")&&f.taskActions.isEmpty():"invalid task scene triggered a write";
+
+        System.out.println("PASS upstream forest: dispatch mode, energy paging/escaped cursor, region rotation and task-owned scene");
+    }
     static void forestChecks(){
         Forest f=new Forest();reset();assert f.isMonopolyCreatureExpired(creature("a","using",0));
         assert !f.isMonopolyCreatureExpired(new JSONObject());assert !f.isMonopolyCreatureExpired(null);
@@ -309,18 +358,18 @@ public class AGCheck {
         System.out.println("PASS fence receipt: confirmed debit, unchanged stock retry, missing readback, delayed effect, last card, instance/account/day isolation");
     }
     public static void main(String[] args) throws Exception {
-        try(TaskLifecycle.Work w=TaskLifecycle.enter()){assert w!=null;forestChecks();fenceConsumptionChecks();fenceRuleChecks();farmChecks();orchardChecks();}
+        try(TaskLifecycle.Work w=TaskLifecycle.enter()){assert w!=null;forestChecks();upstreamForestChecks();fenceConsumptionChecks();fenceRuleChecks();farmChecks();orchardChecks();}
         assert TaskLifecycle.isIdle();
     }
 }
 '''
 tokens = {
     "@@GUARD@@": methods("rpc/intervallimit/RpcRequestGuard.java", ["    public static boolean isFailure(JSONObject result)", "    public static String errorMessage(JSONObject result)"]),
-    "@@FOREST@@": methods(forest, ["    private int friendWaterEnergy(", "    private void waterFriendEnergy()", "    private boolean dispatchMonopolyAnimal(", "    private boolean isMonopolyCreatureExpired(", "    private boolean isMonopolyCreatureIdle(", "    static long forestFeatureLong(", "    private void waterMemberPlant()", "    private void exchangeMonopolyCertificate()"]),
+    "@@FOREST@@": methods(forest, ["    private String getMonopolyRegionCode(", "    private JSONObject monopolyResponse(", "    private boolean monopolyTask(", "    private boolean queryAnimalPropList()", "    private int animalPropEnergy(", "    private int friendWaterEnergy(", "    private void waterFriendEnergy()", "    private boolean dispatchMonopolyAnimal(", "    private boolean isMonopolyCreatureExpired(", "    private boolean isMonopolyCreatureIdle(", "    static long forestFeatureLong(", "    private void waterMemberPlant()", "    private void exchangeMonopolyCertificate()"]),
     "@@FARM@@": methods(farm, ["    private static boolean farmFeatureOk(", "    private JSONObject findFeatureTool(", re.search(r"    private (?:synchronized )?void useFenceTool\(\)",farm_source).group(0), "    private static int rankingInt(", "    private void step(", "    private void supplementDolls()", "    private void supplementDolls(int", "    private boolean likeChickenDiary(", "    private void likeChickenDiaries()"]) + methods(farm, [sig for sig in ["    private JSONObject queryFenceTool(", "    private boolean reconcileFenceStock("] if sig in farm_source]),
     "@@FENCESTEP@@": next(line.strip() for line in (SOURCE / farm).read_text(encoding="utf-8").splitlines() if line.strip().startswith('step("篱笆卡",')),
     "@@ORCHARD@@": methods(orchard, ["    private static JSONObject orchardExtraDisplay(", "    private static String orchardUrlParam(", "    private static String orchardTaskSource(", "    private static boolean orchardExtraOk(", "    private static JSONObject orchardUnwrapExtra(", "    private static boolean isExtraOrchardBrowse(", "    private void orchardStarTasks()", "    private static int extraOrchardCount(", "    private static String extraOrchardSnapshot(", "    private static int extraOrchardStage(", "    private static boolean extraOrchardAdvanced(", "    private JSONObject refreshExtraOrchardTask(", "    private void runExtraOrchardTask(", "    private boolean reportOrchardStarGame(", "    private JSONObject performOrchardBrowse("]),
-    "@@FORESTRPC@@": rpc_methods("model/task/antForest/AntForestRpcCall.java", ["queryMonopolyEntryInfo", "assignMonopolyCreature", "queryUsingCreatureInfo", "queryMonopolyCertificate", "exchangeMonopolyCertificate", "memberForestSignin", "plantAward", "queryFriendHomePage"]) + methods("model/task/antForest/AntForestRpcCall.java", ["    private static String monopolyPayload("]) + 'static final String MONOPOLY_SOURCE="monopoly_home_board";',
+    "@@FORESTRPC@@": rpc_methods("model/task/antForest/AntForestRpcCall.java", ["queryAnimalPropList", "listMonopolyTasks", "queryMonopolyEntryInfo", "assignMonopolyCreature", "queryUsingCreatureInfo", "queryMonopolyCertificate", "exchangeMonopolyCertificate", "memberForestSignin", "plantAward", "queryFriendHomePage"]) + methods("model/task/antForest/AntForestRpcCall.java", ["    private static String monopolyPayload("]) + 'static final String MONOPOLY_SOURCE="monopoly_home_board";',
     "@@FARMRPC@@": rpc_methods("model/task/antFarm/AntFarmRpcCall.java", ["listFarmTool", "useFarmTool", "useDollTool", "queryAntfarmDoll", "queryLoveCabin", "syncAnimalStatus", "queryChickenDiary", "queryChickenDiaryList", "collectChickenDiary"]),
     "@@ORCHARDRPC@@": rpc_methods("model/task/antOrchard/AntOrchardRpcCall.java", ["orchardVisit", "listStarTasks", "finishStarTask", "orchardXlight", "finishOrchardBrowse", "submitUserPlayDurationAction", "triggerTbTask", "orchardListTask"]),
 }

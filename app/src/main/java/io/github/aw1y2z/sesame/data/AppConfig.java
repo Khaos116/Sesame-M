@@ -40,6 +40,7 @@ public class AppConfig {
     private Boolean enableDebugLog = false;
     private Boolean enableViewErrorLog = true;
     private Boolean enableViewRuntimeLog = true;
+    private Boolean logViewByRun = false;
     // null 表示尚未选择全局开关，沿用当前账号的旧设置。
     private Boolean batteryPerm;
 
@@ -98,6 +99,14 @@ public class AppConfig {
 
     public void setCloseCaptchaDialog(Boolean value) {
         closeCaptchaDialog = value;
+    }
+
+    public Boolean getLogViewByRun() {
+        return logViewByRun;
+    }
+
+    public void setLogViewByRun(Boolean value) {
+        logViewByRun = value;
     }
 
     public Boolean getAutoPuzzleSlider() {
