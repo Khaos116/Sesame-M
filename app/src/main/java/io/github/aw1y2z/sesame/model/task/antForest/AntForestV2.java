@@ -4811,6 +4811,11 @@ public class AntForestV2 extends ModelTask {
             if (!canConsumeAnimalProp) {
                 return false;
             }
+            int consumePropType = consumeAnimalPropType.getValue();
+            if (consumePropType == ConsumeAnimalPropType.NONE) {
+                Log.record("新版动物伙伴🦩未开启派遣动物伙伴，跳过");
+                return false;
+            }
             JSONObject jo = new JSONObject(AntForestRpcCall.queryMonopolyEntryInfo());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
@@ -4840,9 +4845,9 @@ public class AntForestV2 extends ModelTask {
                 Log.record("新版动物伙伴🦩当前没有可派遣的动物");
                 return false;
             }
-            // 都能给出预计产出时选最高的，否则按服务端顺序取第一个
+            // 按"派遣动物伙伴"配置选人：默认顺序取第一个；按最多能量派遣时新版按预计产出最高选
             JSONObject selected = candidates.get(0);
-            if (allHasInitialRobEnergy) {
+            if (consumePropType == ConsumeAnimalPropType.QUANTITY && allHasInitialRobEnergy) {
                 for (JSONObject candidate : candidates) {
                     if (candidate.optInt("initialRobEnergy") > selected.optInt("initialRobEnergy")) {
                         selected = candidate;
@@ -4880,31 +4885,55 @@ public class AntForestV2 extends ModelTask {
         return maxWorkDays <= 0 || energy.optInt("alreadyWorkDays", 0) < maxWorkDays;
     }
 
-    // 查询可派遣伙伴，返回是否派遣成功
+    // 查询可派遣伙伴（分页取全，返回是否派遣成功）
     private boolean queryAnimalPropList() {
         try {
-            JSONObject jo = new JSONObject(AntForestRpcCall.queryAnimalPropList());
-            if (!MessageUtil.checkResultCode(TAG, jo)) {
-                return false;
-            }
-            JSONArray animalProps = jo.getJSONArray("animalProps");
+            boolean sequence = consumeAnimalPropType.getValue() == ConsumeAnimalPropType.SEQUENCE;
             JSONObject animalProp = null;
-            for (int i = 0; i < animalProps.length(); i++) {
-                jo = animalProps.getJSONObject(i);
-                if (animalProp == null) {
-                    animalProp = jo;
-                    if (consumeAnimalPropType.getValue() == ConsumeAnimalPropType.SEQUENCE) {
-                        break;
-                    }
-                } else if (jo.getJSONObject("main").getInt("holdsNum") > animalProp.getJSONObject("main").getInt("holdsNum")) {
-                    animalProp = jo;
+            String nextCursor = null;
+            for (int page = 0; page < 20; page++) {
+                JSONObject jo = new JSONObject(AntForestRpcCall.queryAnimalPropList(nextCursor));
+                if (!MessageUtil.checkResultCode(TAG, jo)) {
+                    break;
                 }
+                JSONArray animalProps = jo.optJSONArray("animalProps");
+                if (animalProps != null) {
+                    for (int i = 0; i < animalProps.length(); i++) {
+                        JSONObject prop = animalProps.optJSONObject(i);
+                        if (prop == null) {
+                            continue;
+                        }
+                        if (animalProp == null) {
+                            animalProp = prop;
+                        } else if (!sequence && animalPropEnergy(prop) > animalPropEnergy(animalProp)) {
+                            animalProp = prop;
+                        }
+                    }
+                }
+                if (sequence || !jo.optBoolean("hasMore")) {
+                    break;
+                }
+                String cursor = jo.optString("nextCursor");
+                if (StringUtil.isEmpty(cursor) || cursor.equals(nextCursor)) {
+                    break;
+                }
+                nextCursor = cursor;
             }
             return consumeAnimalProp(animalProp);
         } catch (Throwable t) {
             Log.err(TAG, "queryAnimalPropList err:", t);
         }
         return false;
+    }
+
+    // 动物道具每日可获能量（"按最多能量派遣"按此最高选择，字段取自 partner.robAbility.robEnergyInDaily）
+    private int animalPropEnergy(JSONObject animalProp) {
+        JSONObject partner = animalProp.optJSONObject("partner");
+        if (partner == null) {
+            return 0;
+        }
+        JSONObject robAbility = partner.optJSONObject("robAbility");
+        return robAbility == null ? 0 : robAbility.optInt("robEnergyInDaily", 0);
     }
 
     // 派遣伙伴，返回是否派遣成功
@@ -5940,7 +5969,7 @@ public class AntForestV2 extends ModelTask {
         int SEQUENCE = 1;
         int QUANTITY = 2;
 
-        String[] nickNames = {"不派遣动物", "按默认顺序派遣", "按最大数量派遣"};
+        String[] nickNames = {"不派遣动物", "按默认顺序派遣", "按最多能量派遣"};
     }
 
     public interface UsePropType {

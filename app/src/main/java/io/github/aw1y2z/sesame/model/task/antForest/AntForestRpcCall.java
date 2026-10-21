@@ -318,9 +318,19 @@ public class AntForestRpcCall {
         return ApplicationHook.requestString("alipay.antforest.forest.h5.queryPropList", "[{\"onlyGive\":\"" + (onlyGive ? "Y" : "") + "\",\"source\":\"chInfo_ch_appcenter__chsub_9patch\"," + "\"version\":\"" + VERSION + "\"}]");
     }
     
-    // 查询可派遣伙伴
+    // 查询可派遣伙伴（分页，nextCursor 为空查第一页）
     public static String queryAnimalPropList() {
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryAnimalPropList", "[{\"source" + "\":\"chInfo_ch_appcenter__chsub_9patch\"}]");
+        return queryAnimalPropList(null);
+    }
+
+    public static String queryAnimalPropList(String nextCursor) {
+        String requestData;
+        if (StringUtil.isEmpty(nextCursor)) {
+            requestData = "[{\"pageQuery\":true,\"source\":\"chInfo_ch_appcenter__chsub_9patch\"}]";
+        } else {
+            requestData = "[{\"excludePropTypes\":[],\"nextCursor\":\"" + nextCursor + "\",\"pageQuery\":true,\"source\":\"chInfo_ch_appcenter__chsub_9patch\"}]";
+        }
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryAnimalPropList", requestData);
     }
     
     // 派遣动物伙伴
