@@ -53,6 +53,39 @@ public class AntMemberRpcCall {
         return ApplicationHook.requestString("alipay.antmember.biz.rpc.membertask.h5.queryAllStatusTaskList", args);
     }
 
+    /* 广告任务(adTask=true): 申请, extMap 为任务自带的 lightsAdExtMap; scene/sourcePassMap/spaceCode 等字段抓包确认必传 */
+    public static String applyAdTask(String adBizId, String adId, int awardNum, JSONObject extMap) {
+        JSONObject body = new JSONObject();
+        try {
+            body.put("adBizId", adBizId);
+            body.put("adId", adId);
+            body.put("awardNum", awardNum);
+            body.put("bizNo", adBizId);
+            body.put("extMap", extMap == null ? new JSONObject() : extMap);
+            body.put("scene", "TASK_WALL");
+            JSONObject sourcePassMap = new JSONObject();
+            sourcePassMap.put("innerSource", "");
+            sourcePassMap.put("source", "mytab");
+            sourcePassMap.put("unid", "");
+            body.put("sourcePassMap", sourcePassMap);
+            body.put("spaceCode", "ant_member_xlight_task");
+            body.put("subScene", "");
+            body.put("userId", "");
+        } catch (Throwable ignored) {
+        }
+        return ApplicationHook.requestString("com.alipay.amic.memtask.h5.MemTaskAdFacade.applyAdTask", "[" + body + "]");
+    }
+
+    /* 广告任务: 查询状态(ORDER) */
+    public static String queryAdTask(String bizId) {
+        return ApplicationHook.requestString("com.alipay.adtask.biz.mobilegw.service.task.query", "[{\"bizId\":\"" + StringUtil.escapeJson(bizId) + "\",\"eventType\":\"ORDER\"}]");
+    }
+
+    /* 广告任务: 完成 */
+    public static String finishAdTask(String bizId) {
+        return ApplicationHook.requestString("com.alipay.adtask.biz.mobilegw.service.task.finish", "[{\"bizId\":\"" + StringUtil.escapeJson(bizId) + "\",\"extendInfo\":{}}]");
+    }
+
     /**
      * 黄金票收取
      *

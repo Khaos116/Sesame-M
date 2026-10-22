@@ -10,7 +10,6 @@ import java.util.HashSet;
 import java.util.Random;
 import java.util.Set;
 
-import io.github.aw1y2z.sesame.hook.AlipayMiniMarkHelper;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.AuthCodeHelper;
 import io.github.aw1y2z.sesame.util.Log;
@@ -25,6 +24,7 @@ public final class ReadForestTask {
     private static final String APP_ID = "2021003114652763";
     private static final String PREF_NAME = "sesame_forest_read";
     private static final String FINISHED_KEY = "finished_books";
+    private static final String TOKEN_KEY = "token";
     private static final String DONE_FLAG = "Forest::readForest";
     private static final Random RANDOM = new Random();
     private static final String TAG = "森林阅读📖";
@@ -49,34 +49,38 @@ public final class ReadForestTask {
             }
             Log.record(TAG + "开始执行自动阅读任务(多本连读模式)");
             totalEnergy = 0;
-            String authCode = AuthCodeHelper.getAuthCode(APP_ID);
-            String miniMark = AlipayMiniMarkHelper.getAlipayMiniMark(APP_ID, VERSION);
-            if (isEmpty(authCode)) {
-                Log.record(TAG + "authCode为空，自动阅读任务失败");
-                return;
-            }
-            if (isEmpty(miniMark)) {
-                Log.i(TAG, "miniMark为空，继续尝试登录");
-            }
-            String loginResponse = ReadForestRpcCall.login(authCode, miniMark, VERSION);
-            if (isEmpty(loginResponse)) {
-                Log.record(TAG + "登录失败: 返回为空");
-                return;
-            }
-            JSONObject loginJo = new JSONObject(loginResponse);
-            if (loginJo.optInt("code") != 2000) {
-                Log.record(TAG + "登录失败: " + loginJo.optString("msg"));
-                return;
-            }
-            JSONObject loginData = loginJo.optJSONObject("data");
-            if (loginData == null) {
-                Log.record(TAG + "登录失败: 缺少token");
-                return;
-            }
-            String token = loginData.optString("token");
-            if (isEmpty(token)) {
-                Log.record(TAG + "登录失败: token为空");
-                return;
+            // 优先复用缓存token(带token校验有效), 失效再用authCode重新登录
+            String token = loadCachedToken(context);
+            if (!isEmpty(token) && isTokenValid(token)) {
+                // token 有效直接复用
+            } else {
+                token = "";
+                String authCode = AuthCodeHelper.getAuthCode(APP_ID);
+                if (isEmpty(authCode)) {
+                    Log.record(TAG + "authCode为空，自动阅读任务失败");
+                    return;
+                }
+                String loginResponse = ReadForestRpcCall.login(authCode, VERSION);
+                if (isEmpty(loginResponse)) {
+                    Log.record(TAG + "登录失败: 返回为空");
+                    return;
+                }
+                JSONObject loginJo = new JSONObject(loginResponse);
+                if (loginJo.optInt("code") != 2000) {
+                    Log.record(TAG + "登录失败: " + loginJo.optString("msg"));
+                    return;
+                }
+                JSONObject loginData = loginJo.optJSONObject("data");
+                if (loginData == null) {
+                    Log.record(TAG + "登录失败: 缺少token");
+                    return;
+                }
+                token = loginData.optString("token");
+                if (isEmpty(token)) {
+                    Log.record(TAG + "登录失败: token为空");
+                    return;
+                }
+                saveCachedToken(context, token);
             }
             JSONObject finishedBooks = loadFinishedBooks(context, userScope());
             Set<String> triedBooks = new HashSet<>();
@@ -279,6 +283,30 @@ public final class ReadForestTask {
                     .putString(FINISHED_KEY + "_" + userScope(), finishedBooks.toString())
                     .apply();
         } catch (Exception unused) {
+        }
+    }
+
+    private static boolean isTokenValid(String token) {
+        try {
+            String response = ReadForestRpcCall.checkToken(token, VERSION);
+            return !isEmpty(response) && new JSONObject(response).optInt("code") == 2000;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static String loadCachedToken(Context context) {
+        try {
+            return context.getSharedPreferences(PREF_NAME, 0).getString(TOKEN_KEY + "_" + userScope(), "");
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    private static void saveCachedToken(Context context, String token) {
+        try {
+            context.getSharedPreferences(PREF_NAME, 0).edit().putString(TOKEN_KEY + "_" + userScope(), token).apply();
+        } catch (Throwable ignored) {
         }
     }
 
