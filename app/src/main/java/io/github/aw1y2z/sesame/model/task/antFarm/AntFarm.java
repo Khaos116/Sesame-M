@@ -187,12 +187,13 @@ public class AntFarm extends ModelTask {
     private ChoiceModelField hireAnimalType;
     private SelectModelField hireAnimalList;
     private ChoiceModelField farmNpcType;
-    private static final String[] FARM_NPC_NAMES = {"关闭", "黄金鸡", "农场小鸡", "芝麻大表鸽"};
-    private static final String[] FARM_NPC_IDS = {"", "20250725105101013088000000000004", "20250613105101013088000000000002", "20250901105101013088000000000006"};
-    private static final String[] FARM_NPC_SOURCES = {"", "licaixiaoji_2025_1", "feiliaoji_202507", "zhimaxiaoji_lianjin"};
+    private static final String[] FARM_NPC_NAMES = {"关闭", "黄金鸡", "农场小鸡", "芝麻大表鸽", "淘金币小鸡"};
+    private static final String[] FARM_NPC_IDS = {"", "20250725105101013088000000000004", "20250613105101013088000000000002", "20250901105101013088000000000006", "202609201051013088000000000018"};
+    private static final String[] FARM_NPC_SOURCES = {"", "licaixiaoji_2025_1", "feiliaoji_202507", "zhimaxiaoji_lianjin", "H5"};
     private static final String PIGEON_TEMPLATE = "hjwf_myzy_gyxj_erfang";
     private static final String PIGEON_CATEGORY = "ZMZY#FEED_ZM_CHICKEN";
     private static final String PIGEON_RECEIPT_KEY = "farmNpcPigeonReceipt";
+    private static final String TAOJINBI_TASK_SCENE = "ANTFARM_TAOJINBI_NPC_TASK";
     private BooleanModelField drawGameCenterAward;
     private BooleanModelField competition;                    // 爱心鸡结号(S2) | 开启
     private BooleanModelField competitionReceiveTask;          // 爱心鸡结号 | 领取奖励
@@ -701,6 +702,8 @@ public class AntFarm extends ModelTask {
                     listFarmTask(TaskStatus.FINISHED);
                 }
             });
+
+            step("淘金币小鸡任务", this::runTaojinbiNpcTasks);
 
             // 小鸡睡觉&起床
             step("小鸡睡觉&起床", () -> {
@@ -5691,8 +5694,21 @@ public class AntFarm extends ModelTask {
             String previousDay = RuntimeInfo.getInstance().getString("farm::npcFirstRunDay");
             boolean sentBack = false;
             boolean firstRun = beginFarmNpcDay(true);
+            if (current != null && !canRenewFarmNpc(current, firstRun)) return;
+            if (current == null && npcOccupiedSlots(list) >= 2) { Log.record("NPC小鸡：雇佣名额已满，保留好友工人"); return; }
+            if (type == 4) {
+                boolean prepared = false;
+                try {
+                    prepared = prepareTaojinbiHire(targetId);
+                } finally {
+                    if (!prepared && firstRun && !RuntimeInfo.getInstance().putVerified(
+                            "farm::npcFirstRunDay", previousDay.isEmpty() ? null : previousDay)) {
+                        Log.record("淘金币小鸡：准备未完成且首次记录恢复写盘失败，本日保留续雇保护");
+                    }
+                }
+                if (!prepared) return;
+            }
             if (current != null) {
-                if (!canRenewFarmNpc(current, firstRun)) return;
                 String currentId = current.optString("animalId");
                 TimeUtil.sleep(0);
                 Status.flagToday(pending);
@@ -5723,9 +5739,119 @@ public class AntFarm extends ModelTask {
             if (farmFeatureOk(hired) && after != null && findFarmNpc(after.optJSONArray("animals"), targetId) != null) {
                 Status.clearFlag(pending);
                 Log.farm("NPC小鸡🤖[成功雇佣" + name + "，已回查到场]");
+                if (type == 4) {
+                    JSONObject report = MyUtils.newJSONObject(AntFarmRpcCall.npcVisitAnimalReport(targetId, "HIRE"));
+                    if (farmFeatureOk(report)) Log.record("淘金币小鸡：雇佣到场及HIRE上报已确认");
+                    else Log.record("淘金币小鸡：雇佣到场已确认，HIRE上报未确认，保留小鸡；" + RpcRequestGuard.errorMessage(report));
+                }
             } else Log.record("NPC小鸡：雇佣到场未确认，保留当日保护标记，" + RpcRequestGuard.errorMessage(hired));
         } catch (TaskCancelledException e) { throw e;
         } catch (Throwable t) { Log.err(TAG, "manageFarmNpc", t); }
+    }
+
+    private boolean prepareTaojinbiHire(String targetId) throws JSONException {
+        TimeUtil.sleep(0);
+        JSONObject visit = MyUtils.newJSONObject(AntFarmRpcCall.npcVisitAnimal());
+        if ("RPC_SKIPPED".equals(visit.optString("error"))) return false;
+        if (!farmFeatureOk(visit)) {
+            Log.record("淘金币小鸡：到访查询未确认，未发送遣返/雇佣请求；" + RpcRequestGuard.errorMessage(visit));
+            return false;
+        }
+        JSONObject candidate = visit.optJSONObject("npcVisitAnimal");
+        if (candidate != null && targetId.equals(candidate.opt("animalId"))) {
+            JSONObject report = MyUtils.newJSONObject(AntFarmRpcCall.npcVisitAnimalReport(targetId, "IMPRESSION"));
+            if ("RPC_SKIPPED".equals(report.optString("error"))) return false;
+            if (!farmFeatureOk(report)) {
+                Log.record("淘金币小鸡：曝光上报未确认，未发送遣返/雇佣请求；" + RpcRequestGuard.errorMessage(report));
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private JSONArray queryTaojinbiNpcTasks() throws JSONException {
+        JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.listNpcFarmTasks("H5", TAOJINBI_TASK_SCENE));
+        JSONArray tasks = response.optJSONArray("farmTaskList");
+        if (!farmFeatureOk(response) || tasks == null) {
+            Log.record("淘金币小鸡：listFarmTask查询失败或缺少任务列表；" + RpcRequestGuard.errorMessage(response));
+            return null;
+        }
+        Set<String> ids = new HashSet<>();
+        for (int i = 0; i < tasks.length(); i++) {
+            JSONObject task = tasks.optJSONObject(i);
+            if (task == null || !(task.opt("taskId") instanceof String) || task.optString("taskId").trim().isEmpty()
+                    || !(task.opt("taskStatus") instanceof String) || task.optString("taskStatus").trim().isEmpty()
+                    || task.has("taskSceneCode") && !TAOJINBI_TASK_SCENE.equals(task.opt("taskSceneCode"))
+                    || !ids.add(task.optString("taskId"))) {
+                Log.record("淘金币小鸡：任务身份/状态/场景无效或重复，停止本轮，保留下轮回查");
+                return null;
+            }
+        }
+        return tasks;
+    }
+
+    private void runTaojinbiNpcTasks() {
+        try {
+            if (ownerFarmId == null || ownerFarmId.isEmpty()) return;
+            String animalId = FARM_NPC_IDS[4];
+            if (farmNpcType.getValue() != 4 && animals != null && Arrays.stream(animals).noneMatch(
+                    a -> a != null && "NPC".equals(a.subAnimalType) && animalId.equals(a.animalId))) return;
+            JSONObject farm = queryNpcFarm();
+            if (farm == null) { Log.record("淘金币小鸡：任务前未确认庄园状态，未查询专属任务"); return; }
+            if (findFarmNpc(farm.optJSONArray("animals"), animalId) == null) return;
+            JSONArray tasks = queryTaojinbiNpcTasks();
+            Set<String> attempted = new HashSet<>();
+            for (int round = 0; tasks != null && round < 20; round++) {
+                TimeUtil.sleep(0);
+                JSONObject target = null;
+                for (int i = 0; i < tasks.length(); i++) {
+                    JSONObject task = tasks.optJSONObject(i);
+                    String id = task.optString("taskId"), status = task.optString("taskStatus");
+                    boolean award = "FINISHED".equals(status);
+                    if (award) {
+                        if (!(task.opt("awardType") instanceof String) || task.optString("awardType").trim().isEmpty()) {
+                            if (attempted.add("invalid:" + task)) Log.record("淘金币小鸡：待领奖任务缺少有效awardType，未发送领奖请求");
+                            continue;
+                        }
+                    } else {
+                        if (!"TODO".equals(status) || !Set.of("TAOJINBI_NPC_GONGGE_TASK", "TAOJINBI_VIEW_TASK").contains(id)
+                                || AntFarmDoFarmTaskList.getValue().contains(task.optString("title"))
+                                || AntFarmDoFarmTaskList.getValue().contains(id)) continue;
+                        Object biz = task.opt("bizKey");
+                        if (!(biz instanceof String) || ((String) biz).trim().isEmpty()) {
+                            if (attempted.add("invalid:" + task)) Log.record("淘金币小鸡：浏览任务缺少有效bizKey，未发送完成请求");
+                            continue;
+                        }
+                        if (TaskAlternative.isTransactionTask((String) biz)) continue;
+                    }
+                    if (attempted.add(task.toString())) { target = task; break; }
+                }
+                if (target == null) return;
+                String id = target.optString("taskId");
+                boolean award = "FINISHED".equals(target.optString("taskStatus"));
+                JSONObject response = MyUtils.newJSONObject(award
+                        ? AntFarmRpcCall.receiveNpcFarmAward(id, target.optString("awardType"), "H5", TAOJINBI_TASK_SCENE)
+                        : AntFarmRpcCall.doNpcFarmTask(target.optString("bizKey"), TAOJINBI_TASK_SCENE));
+                if ("RPC_SKIPPED".equals(response.optString("error"))) return;
+                tasks = queryTaojinbiNpcTasks();
+                if (tasks == null) return;
+                JSONObject latest = null;
+                for (int i = 0; i < tasks.length(); i++) {
+                    JSONObject item = tasks.optJSONObject(i);
+                    if (id.equals(item.optString("taskId"))) { latest = item; break; }
+                }
+                String status = latest == null ? "未找到同一任务" : latest.optString("taskStatus");
+                if (award && "RECEIVED".equals(status)) {
+                    Log.record("淘金币小鸡：任务奖励已回查领取[" + target.optString("title", id) + "]");
+                } else if (award || !("FINISHED".equals(status) || "RECEIVED".equals(status)
+                        || latest != null && !latest.toString().equals(target.toString()))) {
+                    Log.record("淘金币小鸡：" + (award ? "领奖" : "完成任务") + "结果未确认，回查状态=" + status
+                            + "；" + RpcRequestGuard.errorMessage(response));
+                }
+            }
+            if (tasks != null) Log.record("淘金币小鸡：达到20次任务动作上限，保留下轮回查");
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.err(TAG, "runTaojinbiNpcTasks", t); }
     }
 
     private static long npcTaskNumber(JSONObject task, String key) {

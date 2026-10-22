@@ -21,7 +21,7 @@ public class PigeonCheck {
     @@CONFIG@@
     String ownerFarmId="self";
     static class Field {int value=3;int getValue(){return value;}}Field farmNpcType=new Field();
-    static class MyUtils { static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.setTimeInMillis(System.now);return c;} static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}} }
+    static class MyUtils { static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.setTimeInMillis(System.now);return c;} static JSONObject newJSONObject(){return new JSONObject();} static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}} }
     static class TimeUtil { static boolean cancel; static void sleep(long n){if(cancel)throw new TaskCancelledException();} }
     static class Log { static List<String> success=new ArrayList<>(); static List<String> records=new ArrayList<>(); static void record(String s){records.add(s);} static void farm(String s){success.add(s);} static void err(String tag,String msg,Throwable t){throw new AssertionError(t);} }
     static class RpcRequestGuard { static boolean isFailure(JSONObject j){return Boolean.FALSE.equals(j.opt("success"));} static String errorMessage(JSONObject j){return j.optString("resultCode");} }
@@ -199,19 +199,19 @@ public class PigeonCheck {
     }
 }
 '''
-config="\n".join(line.strip().replace("private ","") for line in source.splitlines() if "private static final String[] FARM_NPC_" in line or "private static final String PIGEON_" in line)
+config="\n".join(line.strip().replace("private ","") for line in source.splitlines() if "private static final String[] FARM_NPC_" in line or "private static final String PIGEON_" in line or "private static final String TAOJINBI_" in line)
 code=code.replace("@@CONFIG@@",config)
 code=code.replace("@@SAVE@@",method("data/RuntimeInfo.java","public synchronized boolean putVerified("))
 code=code.replace("@@METHODS@@","\n".join(method(farm,s) for s in (
     "private static boolean farmFeatureOk(","private JSONObject queryNpcFarm(","private static double npcRewardValue(","private static JSONObject findFarmNpc(","private static int npcOccupiedSlots(",
     "private static long npcTaskNumber(","private static boolean canRenewFarmNpc(","private static boolean beginFarmNpcDay(","private JSONObject queryPigeonAlchemyTask(","private boolean authorizePigeonHire(","private static void logPigeonOnce(","private static void expireUnboundPigeonReceipt(","private static boolean restoreSkippedNpcAction(",
     "public static boolean isUnrelatedPigeonFeedback(","public static boolean bindPigeonFeedback(","private JSONArray queryPigeonFeedback(","private boolean collectPigeonReceipt(",
-    "private JSONArray queryPigeonFarmTasks(","private void runPigeonFarmTasks(","private void manageFarmNpc(","private void manageZhimaPigeon(")))
+    "private JSONArray queryPigeonFarmTasks(","private void runPigeonFarmTasks(","private void manageFarmNpc(","private boolean prepareTaojinbiHire(","private void manageZhimaPigeon(")))
 code=code.replace("@@FARMRPC@@","\n".join(method(rpc,s) for s in (
     "public static String queryNpcFarm(","public static String hireNpcAnimal(",
     "public static String sendBackNpcAnimal(String animalId, String currentFarmId, String masterFarmId, String source)",
     "public static String sendBackNpcAnimal(String animalId, String currentFarmId, String masterFarmId)",
-    "public static String listPigeonFarmTasks(","public static String receivePigeonFarmAward(","public static String doFarmTask(String bizKey, String taskSceneCode)")))
+    "public static String npcVisitAnimal(","public static String npcVisitAnimalReport(","public static String listNpcFarmTasks(","public static String receiveNpcFarmAward(","public static String listPigeonFarmTasks(","public static String receivePigeonFarmAward(","public static String doFarmTask(String bizKey, String taskSceneCode)")))
 code=code.replace("@@MEMBERRPC@@","\n".join(method(member,s) for s in (
     "public static String alchemyQueryTasks(","public static String queryCreditFeedback(","public static String collectCreditFeedback(",
     "public static String joinPigeonAlchemyTask(","public static String feedbackPigeonAlchemyTask(")))

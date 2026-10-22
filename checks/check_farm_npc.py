@@ -16,6 +16,8 @@ assert 'new ChoiceModelField("farmNpcType"' in source, "NPC type option/entry is
 assert 'step("NPC小鸡"' in source and source.index('step("NPC小鸡"') < source.index('step("雇佣小鸡"')
 assert 'SubAnimalType.NPC.name()' in method(farm, "private void sendBackAnimal()"), "ordinary send-back must preserve NPC rewards"
 assert "catch (TaskCancelledException e) { throw e;" in method(farm, "public void run()"), "farm run must pass cancellation to ModelTask"
+assert 'step("淘金币小鸡任务", this::runTaojinbiNpcTasks);' in source
+assert "淘金币小鸡" in source and "202609201051013088000000000018" in source, "Taojinbi NPC choice is missing"
 code = r'''
 import org.json.*;
 import java.util.*;
@@ -25,6 +27,12 @@ public class NpcCheck {
     static final String TAG="check", VERSION="1.8.2302070202.46";
     @@CONFIG@@
     String ownerFarmId="self";
+    static class Animal {String animalId,subAnimalType;Animal(String id,String type){animalId=id;subAnimalType=type;}}
+    Animal[] animals;
+    static class SetField {Set<String> value=new HashSet<>();Set<String> getValue(){return value;}}
+    SetField AntFarmDoFarmTaskList=new SetField();
+    static class TaskAlternative {static boolean isTransactionTask(String key){return key.contains("PAY");}}
+
     static class Field { int n; Field(int n) {this.n=n;} int getValue(){return n;} }
     Field farmNpcType=new Field(1);
     static class RuntimeInfo {
@@ -37,6 +45,7 @@ public class NpcCheck {
     private boolean collectPigeonReceipt(){return false;}
     private void manageZhimaPigeon(){throw new AssertionError("ordinary NPC tests entered pigeon flow");}
     static class MyUtils { static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.setTimeInMillis(System.now);return c;}
+        static JSONObject newJSONObject(){return new JSONObject();}
         static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}
     }
     static class TimeUtil {
@@ -53,18 +62,22 @@ public class NpcCheck {
         static boolean isFailure(JSONObject j){return Boolean.FALSE.equals(j.opt("success"));}
         static String errorMessage(JSONObject j){return j.optString("resultCode");}
     }
+    static class ExpectedRpcError extends RuntimeException {}
     static class Log {
         static List<String> successes=new ArrayList<>(), records=new ArrayList<>();
         static void record(String s){records.add(s);}
         static void farm(String s){successes.add(s);}
-        static void err(String tag,String msg,Throwable t){throw new AssertionError(t);}
+        static void err(String tag,String msg,Throwable t){if(t instanceof ExpectedRpcError){records.add(msg);return;}throw new AssertionError(t);}
     }
     static class ApplicationHook {
-        static Queue<String> queries=new ArrayDeque<>(), actions=new ArrayDeque<>();
+        static Queue<String> queries=new ArrayDeque<>(), actions=new ArrayDeque<>(), tasks=new ArrayDeque<>(); static String cancelRpc="";static boolean blockRestore,throwVisit;
         static List<JSONObject> calls=new ArrayList<>();
         static String requestString(String name,String args){
             JSONObject body=new JSONArray(args).optJSONObject(0); body.put("rpc",name); calls.add(body);
-            return name.endsWith("syncAnimalStatus")?queries.remove():actions.remove();
+            if(name.endsWith(cancelRpc)&&!cancelRpc.isEmpty())throw new TaskCancelledException();
+            if(throwVisit&&name.endsWith("npcVisitAnimal")){throwVisit=false;throw new ExpectedRpcError();}
+            if(blockRestore&&name.endsWith("npcVisitAnimal"))RuntimeInfo.writable=false;
+            return name.endsWith("syncAnimalStatus")?queries.remove():name.endsWith("listFarmTask")?tasks.remove():actions.remove();
         }
     }
     static class AntFarmRpcCall {
@@ -105,13 +118,85 @@ public class NpcCheck {
     }
     static long mutations(){return ApplicationHook.calls.stream().filter(j->!j.optString("rpc").endsWith("syncAnimalStatus")).count();}
     static void reset(NpcCheck f,String... states){
-        f.farmNpcType.n=1; RuntimeInfo.disk.clear(); RuntimeInfo.uid="A";RuntimeInfo.writable=true;System.now=1791676800000L;Status.flags.clear(); Log.successes.clear(); Log.records.clear();
+        f.farmNpcType.n=1; f.animals=null;f.AntFarmDoFarmTaskList.value.clear();ApplicationHook.tasks.clear();ApplicationHook.cancelRpc="";ApplicationHook.blockRestore=false;ApplicationHook.throwVisit=false; RuntimeInfo.disk.clear(); RuntimeInfo.uid="A";RuntimeInfo.writable=true;System.now=1791676800000L;Status.flags.clear(); Log.successes.clear(); Log.records.clear();
         ApplicationHook.calls.clear(); ApplicationHook.queries.clear(); ApplicationHook.actions.clear();
         ApplicationHook.queries.addAll(Arrays.asList(states)); TimeUtil.waits=0; TimeUtil.cancelAt=-1;
     }
     static void ack(int n){for(int i=0;i<n;i++)ApplicationHook.actions.add("{\"memo\":\"SUCCESS\"}");}
+    static long calls(String name){return ApplicationHook.calls.stream().filter(j->j.optString("rpc").endsWith("."+name)).count();}
+    static JSONObject task(String id,String status){return new JSONObject().put("taskId",id).put("taskStatus",status).put("bizKey","server_key").put("title",id).put("awardType","TAOJINBI");}
+    static void taskPages(JSONObject[]... pages){for(JSONObject[] page:pages)ApplicationHook.tasks.add(new JSONObject().put("memo","SUCCESS").put("farmTaskList",new JSONArray(Arrays.asList(page))).toString());}
+    static void taoChecks(NpcCheck f) throws Exception {
+        assert FARM_NPC_NAMES.length==5&&FARM_NPC_NAMES[1].equals("黄金鸡")&&FARM_NPC_NAMES[3].equals("芝麻大表鸽")&&FARM_NPC_NAMES[4].equals("淘金币小鸡");
+        JSONObject tao=animal(FARM_NPC_IDS[4],"NPC",10,false);
+        String visit=new JSONObject().put("memo","SUCCESS").put("npcVisitAnimal",new JSONObject().put("animalId",FARM_NPC_IDS[4])).toString();
+        reset(f,state(),state(tao));f.farmNpcType.n=4;ApplicationHook.actions.add(visit);ack(3);f.manageFarmNpc();
+        assert ApplicationHook.calls.stream().map(j->j.optString("rpc").replace("com.alipay.antfarm.","")).toList().equals(List.of("syncAnimalStatus","npcVisitAnimal","npcVisitAnimalReport","hireAnimal","syncAnimalStatus","npcVisitAnimalReport"));
+        assert ApplicationHook.calls.get(2).optString("actionType").equals("IMPRESSION")&&ApplicationHook.calls.get(5).optString("actionType").equals("HIRE");
+        assert ApplicationHook.calls.get(2).optLong("reportTime")==System.now&&ApplicationHook.calls.get(3).optString("hireAnimalId").equals(FARM_NPC_IDS[4]);
+        assert Status.flags.isEmpty();
+        reset(f,state(tao),state(),state(tao));f.farmNpcType.n=4;ApplicationHook.actions.add(visit);ack(4);f.manageFarmNpc();
+        assert calls("sendBackAnimal")==1&&calls("hireAnimal")==1&&Status.flags.isEmpty();
+        assert ApplicationHook.calls.indexOf(ApplicationHook.calls.stream().filter(j->j.optString("rpc").endsWith("npcVisitAnimal")).findFirst().orElseThrow())<ApplicationHook.calls.indexOf(ApplicationHook.calls.stream().filter(j->j.optString("rpc").endsWith("sendBackAnimal")).findFirst().orElseThrow());
+        ApplicationHook.queries.add(state(tao));f.manageFarmNpc();assert calls("sendBackAnimal")==1:"same-day Tao NPC renewed twice";
+        reset(f,state(tao));f.farmNpcType.n=4;ApplicationHook.actions.add("{memo:FAIL}");f.manageFarmNpc();assert calls("sendBackAnimal")==0&&calls("hireAnimal")==0:"preflight failure evicted NPC";
+        reset(f,state());f.farmNpcType.n=4;ApplicationHook.actions.add(visit);ApplicationHook.actions.add("{memo:FAIL}");f.manageFarmNpc();assert calls("hireAnimal")==0;
+        for(boolean fullNpc:List.of(false,true))for(boolean exposure:List.of(false,true))for(String failure:List.of("{memo:FAIL}","{}","invalid JSON")) {
+            JSONObject expiring=new JSONObject(tao.toString()).put("reachNpcBizRewardLimit",fullNpc);
+            reset(f,state(expiring),state(expiring),state(),state(tao));f.farmNpcType.n=4;
+            if(exposure)ApplicationHook.actions.add(visit);
+            ApplicationHook.actions.add(failure);f.manageFarmNpc();
+            assert calls("sendBackAnimal")==0&&calls("hireAnimal")==0;
+            assert RuntimeInfo.getInstance().getString("farm::npcFirstRunDay").isEmpty():"failed visit/exposure consumed first renewal opportunity";
+            ApplicationHook.actions.add(visit);ack(4);f.manageFarmNpc();
+            assert calls("sendBackAnimal")==1&&calls("hireAnimal")==1&&Status.flags.isEmpty():"temporary preflight failure blocked next-round renewal";
+        }
+
+        reset(f,state(),state(tao));f.farmNpcType.n=4;ApplicationHook.actions.add(visit);ack(2);ApplicationHook.actions.add("{memo:FAIL}");f.manageFarmNpc();assert calls("hireAnimal")==1&&Status.flags.isEmpty():"report failure must preserve confirmed hire";
+        assert !RuntimeInfo.getInstance().getString("farm::npcFirstRunDay").isEmpty():"post-hire report failure restored consumed renewal opportunity";
+        reset(f,state(tao),state(tao),state(),state(tao));f.farmNpcType.n=4;ApplicationHook.throwVisit=true;f.manageFarmNpc();
+        assert RuntimeInfo.getInstance().getString("farm::npcFirstRunDay").isEmpty():"transport exception consumed renewal opportunity";
+        ApplicationHook.actions.add(visit);ack(4);f.manageFarmNpc();assert calls("sendBackAnimal")==1&&calls("hireAnimal")==1;
+        reset(f,state(new JSONObject(tao.toString()).put("beHiredEndTime",System.now+86400000L)),state(tao));f.farmNpcType.n=4;f.manageFarmNpc();f.manageFarmNpc();
+        assert calls("npcVisitAnimal")==0&&calls("sendBackAnimal")==0:"later same-day expiry became a new first check";
+        reset(f,state(tao),state(tao));f.farmNpcType.n=4;ApplicationHook.blockRestore=true;ApplicationHook.actions.add("{memo:FAIL}");f.manageFarmNpc();
+        assert !RuntimeInfo.getInstance().getString("farm::npcFirstRunDay").isEmpty()&&Log.records.stream().anyMatch(x->x.contains("恢复写盘失败")):"failed rollback removed renewal protection";
+        RuntimeInfo.writable=true;ApplicationHook.blockRestore=false;f.manageFarmNpc();assert calls("npcVisitAnimal")==1&&calls("sendBackAnimal")==0;
+        reset(f,state(tao),state(tao));f.farmNpcType.n=4;ApplicationHook.actions.add(visit);ack(2);f.manageFarmNpc();f.manageFarmNpc();
+        assert calls("sendBackAnimal")==1&&calls("hireAnimal")==0&&Status.hasFlagToday("farm::npcActionUnconfirmed")&&!RuntimeInfo.getInstance().getString("farm::npcFirstRunDay").isEmpty():"departure uncertainty lost protection";
+
+        reset(f,state(),state());f.farmNpcType.n=4;ApplicationHook.actions.add(visit);ack(2);f.manageFarmNpc();assert calls("npcVisitAnimalReport")==1&&calls("hireAnimal")==1&&!Status.flags.isEmpty():"HIRE reported before arrival";
+        reset(f,state(animal(FARM_NPC_IDS[1],"NPC",0,false)));f.farmNpcType.n=4;f.manageFarmNpc();assert calls("sendBackAnimal")==0&&calls("hireAnimal")==0;
+        reset(f,state(new JSONObject(tao.toString()).put("reachNpcBizRewardLimit",true).put("beHiredEndTime",System.now+3*86400000L)));f.farmNpcType.n=4;f.manageFarmNpc();assert calls("npcVisitAnimal")==0&&calls("sendBackAnimal")==0:"full Tao NPC must stay protected";
+        reset(f,state());f.farmNpcType.n=4;ApplicationHook.actions.add("{error:RPC_SKIPPED}");f.manageFarmNpc();assert RuntimeInfo.getInstance().getString("farm::npcFirstRunDay").isEmpty();
+        reset(f,state());f.farmNpcType.n=4;ApplicationHook.cancelRpc="com.alipay.antfarm.npcVisitAnimal";try{f.manageFarmNpc();throw new AssertionError("preflight cancellation swallowed");}catch(TaskCancelledException expected){}assert calls("hireAnimal")==0;assert RuntimeInfo.getInstance().getString("farm::npcFirstRunDay").isEmpty():"cancelled preparation consumed first renewal opportunity";
+
+        JSONObject todo=task("TAOJINBI_NPC_GONGGE_TASK","TODO"),done=task("TAOJINBI_NPC_GONGGE_TASK","FINISHED"),received=task("TAOJINBI_NPC_GONGGE_TASK","RECEIVED");
+        reset(f,state(tao));f.farmNpcType.n=0;taskPages(new JSONObject[]{todo},new JSONObject[]{done},new JSONObject[]{received});ack(2);f.runTaojinbiNpcTasks();
+        assert calls("doFarmTask")==1&&calls("receiveFarmTaskAward")==1&&calls("hireAnimal")==0&&calls("sendBackAnimal")==0:"disabled hiring must still process actual NPC tasks";
+        for(JSONObject call:ApplicationHook.calls)if(!call.optString("rpc").endsWith("syncAnimalStatus")){assert call.optString("taskSceneCode").equals("ANTFARM_TAOJINBI_NPC_TASK")&&call.optString("requestType").equals("NORMAL")&&call.optString("source").equals("H5");}
+        assert ApplicationHook.calls.stream().filter(j->j.optString("rpc").endsWith("doFarmTask")).findFirst().orElseThrow().optString("bizKey").equals("server_key");
+        assert Log.records.stream().anyMatch(x->x.contains("奖励已回查领取"));
+        JSONObject view=task("TAOJINBI_VIEW_TASK","TODO"),viewDone=task("TAOJINBI_VIEW_TASK","FINISHED"),viewReceived=task("TAOJINBI_VIEW_TASK","RECEIVED");
+        reset(f,state(tao));taskPages(new JSONObject[]{view.put("currentCount",0)},new JSONObject[]{new JSONObject(view.toString()).put("currentCount",1)},new JSONObject[]{viewDone},new JSONObject[]{viewReceived});ack(3);f.runTaojinbiNpcTasks();assert calls("doFarmTask")==2&&calls("receiveFarmTaskAward")==1:"valid task progress did not continue";
+        reset(f,state(tao));taskPages(new JSONObject[]{done,done});f.runTaojinbiNpcTasks();assert calls("receiveFarmTaskAward")==0:"duplicate task identity was accepted";
+        reset(f,state(tao));taskPages(new JSONObject[]{new JSONObject(done.toString()).put("taskSceneCode","OTHER_SCENE")});f.runTaojinbiNpcTasks();assert calls("receiveFarmTaskAward")==0:"foreign task scene was accepted";
+        JSONObject other=task("kitchen","FINISHED"),otherReceived=task("kitchen","RECEIVED");
+        reset(f,state(tao));taskPages(new JSONObject[]{todo,other},new JSONObject[]{todo,other},new JSONObject[]{todo,otherReceived});ack(2);f.runTaojinbiNpcTasks();assert calls("doFarmTask")==1&&calls("receiveFarmTaskAward")==1:"stuck task starved other reward";
+        reset(f,state(tao));taskPages(new JSONObject[]{done},new JSONObject[]{done});ack(1);f.runTaojinbiNpcTasks();assert calls("receiveFarmTaskAward")==1&&Log.records.stream().noneMatch(x->x.contains("奖励已回查领取")):"ACK alone reported claim success";
+        ApplicationHook.queries.add(state(tao));taskPages(new JSONObject[]{done},new JSONObject[]{received});ack(1);new NpcCheck().runTaojinbiNpcTasks();assert calls("receiveFarmTaskAward")==2:"unconfirmed claim blocked a later fresh run";
+        reset(f,state(tao));f.AntFarmDoFarmTaskList.value.add(todo.optString("title"));taskPages(new JSONObject[]{todo,other},new JSONObject[]{todo,otherReceived});ack(1);f.runTaojinbiNpcTasks();assert calls("doFarmTask")==0&&calls("receiveFarmTaskAward")==1;
+        for(JSONObject invalid:List.of(new JSONObject(todo.toString()).put("taskId",1),new JSONObject(todo.toString()).put("bizKey",1),new JSONObject(todo.toString()).put("bizKey","PAY_order"),task("UNKNOWN","TODO"),new JSONObject(done.toString()).put("awardType",1))){
+            reset(f,state(tao));taskPages(new JSONObject[]{invalid});f.runTaojinbiNpcTasks();assert calls("doFarmTask")==0&&calls("receiveFarmTaskAward")==0:"invalid or unsupported contract wrote RPC";
+        }
+        reset(f,state(tao));ApplicationHook.tasks.add("{memo:SUCCESS}");f.runTaojinbiNpcTasks();assert calls("doFarmTask")==0;
+        reset(f,state(tao));taskPages(new JSONObject[]{done});ApplicationHook.cancelRpc="com.alipay.antfarm.receiveFarmTaskAward";try{f.runTaojinbiNpcTasks();throw new AssertionError("task cancellation swallowed");}catch(TaskCancelledException expected){}
+        reset(f,state());f.runTaojinbiNpcTasks();assert calls("listFarmTask")==0;
+        reset(f);f.farmNpcType.n=0;f.animals=new Animal[]{new Animal("friend","WORK")};f.runTaojinbiNpcTasks();assert ApplicationHook.calls.isEmpty();
+        System.out.println("PASS Taojinbi NPC hire/preflight/reports, protected renewal, actual-NPC tasks, NORMAL contract, fresh reward confirmation, retry and cancellation");
+    }
     public static void main(String[] args) throws Exception {
-        NpcCheck f=new NpcCheck(); JSONObject gold=animal(FARM_NPC_IDS[1],"NPC",0,false);
+        NpcCheck f=new NpcCheck(); taoChecks(f); JSONObject gold=animal(FARM_NPC_IDS[1],"NPC",0,false);
         JSONObject field=animal(FARM_NPC_IDS[2],"NPC",0,false), full=animal(FARM_NPC_IDS[1],"NPC",120,true);
         JSONObject worker=animal("worker","WORK",0,false);
         for(Object end:new Object[]{System.currentTimeMillis()+86400000L,System.currentTimeMillis()+259200000L,
@@ -190,15 +275,15 @@ public class NpcCheck {
     }
 }
 '''
-config = "\n".join(line.strip() for line in source.splitlines() if "private static final String[] FARM_NPC_" in line or "private static final String PIGEON_" in line)
-assert len(config.splitlines()) == 6
+config = "\n".join(line.strip() for line in source.splitlines() if "private static final String[] FARM_NPC_" in line or "private static final String PIGEON_" in line or "private static final String TAOJINBI_" in line)
+assert len(config.splitlines()) == 7
 code = code.replace("@@CONFIG@@", config.replace("private ", ""))
 code = code.replace("@@METHODS@@", "\n".join(method(farm, name) for name in (
     "private static boolean farmFeatureOk(", "private static void expireUnboundPigeonReceipt(","private static void logPigeonOnce(","private static boolean restoreSkippedNpcAction(", "private JSONObject queryNpcFarm(",
     "private static double npcRewardValue(", "private static JSONObject findFarmNpc(",
-    "private static int npcOccupiedSlots(", "private static long npcTaskNumber(", "private static boolean canRenewFarmNpc(","private static boolean beginFarmNpcDay(", "private void manageFarmNpc(")))
+    "private static int npcOccupiedSlots(", "private static long npcTaskNumber(", "private static boolean canRenewFarmNpc(","private static boolean beginFarmNpcDay(", "private void manageFarmNpc(","private boolean prepareTaojinbiHire(","private JSONArray queryTaojinbiNpcTasks(","private void runTaojinbiNpcTasks(")))
 code = code.replace("@@RPC@@", "\n".join(method(rpc, "public static String " + name + "(") for name in (
-    "queryNpcFarm", "hireNpcAnimal", "sendBackNpcAnimal")))
+    "queryNpcFarm", "hireNpcAnimal", "sendBackNpcAnimal", "npcVisitAnimal", "npcVisitAnimalReport", "listNpcFarmTasks", "receiveNpcFarmAward", "doNpcFarmTask")))
 code = code.replace("static int normalSends;", method(rpc, "public static String sendBackNpcAnimal(String animalId, String currentFarmId, String masterFarmId, String source)") + "\nstatic int normalSends;")
 code = code.replace("@@NORMAL@@", method(farm, "private void sendBackAnimal()"))
 code = code.replace("@@STEP@@", method(farm, "private void step("))

@@ -1,18 +1,17 @@
 # 检查问题 AI 反馈
 
-检查对象：`15b39d84` 之后的未提交修复，重点是 `AntForestV2.probeMonopolyStatus()`。
+检查对象：基于 `41e6d68e` 的未提交修改，即淘金币小鸡（`AntFarm.manageFarmNpc()`、`prepareTaojinbiHire()`）。
 检查方式：只读审查，没有改代码。
 
-验证结果：`check_ag_features`、`check_forest_task_policy`、`check_merge_review`、`check_upstream_merge` 全部通过。
+验证结果：`check_farm_npc` 和 `check_zhima_pigeon` 都通过，包括新增的“准备失败后恢复首次记录”样例。
 
 当前没有需要修改的代码问题。上一轮的问题已修复。
 
 ## 上一轮问题的核对结果
 
-已修复。现在 `probeMonopolyStatus` 的做法是：
-- **查列表：** 固定用 `MONOPOLY_TASK_SCENE_HSDWY`，和 `monopolyTask()` 查列表时一致。
-- **找任务：** `taskType` 和任务自带的 `sceneCode` 都对上，才算找到这个任务。所以场景码不同时，列表找不到这个任务，不会再被误判为已领。
-- **结果不确定时：** 下面这些情况返回 `UNKNOWN`，不当作已领：
-  - 列表查询失败或缺失；
-  - 列表里有条目缺少 `taskType` 或 `sceneCode`，或者这两个值的类型不对。
-- **只有一个调用方：** `probeMonopolyStatus` 只被领奖回查调用，不影响别的流程。
+已修复。淘金币小鸡在雇佣前要先查到访、上报曝光，这一步叫“准备”。现在 `prepareTaojinbiHire` 放在 `try/finally` 里执行，准备没有成功时，在 `finally` 中把 `farm::npcFirstRunDay` 恢复成 `previousDay`。具体覆盖以下情况：
+- **准备失败：** 到访查询失败、曝光上报失败、`RPC_SKIPPED`、出现异常、任务被取消，都会恢复首次记录。这时还没有发送遣返或雇佣请求，恢复不会造成重复遣返。
+- **只在需要时恢复：** 只有本轮确实占用了首次记录（`firstRun`）才会恢复。
+- **写盘失败：** 恢复首次记录写盘失败时会记日志，并继续保留首次保护。
+- **雇佣已确认后：** HIRE 上报失败不会恢复首次记录，所以不会对已经雇到的小鸡再次遣返。
+- **离场未确认时：** 遣返后没确认离场，仍保留当日保护标记。
