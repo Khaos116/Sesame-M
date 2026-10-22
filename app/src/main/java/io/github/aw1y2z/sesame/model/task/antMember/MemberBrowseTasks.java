@@ -3,6 +3,7 @@ package io.github.aw1y2z.sesame.model.task.antMember;
 import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
 import io.github.aw1y2z.sesame.model.common.GameTaskAction;
+import io.github.aw1y2z.sesame.model.base.TaskAlternative;
 import io.github.aw1y2z.sesame.util.*;
 import io.github.aw1y2z.sesame.util.idMap.AntMemberTaskListMap;
 import org.json.JSONArray;
@@ -23,8 +24,8 @@ final class MemberBrowseTasks {
                 boolean changed = false;
                 for (JSONObject task : tasks.values()) {
                     TimeUtil.sleep(0);
-                    JSONObject config = config(task);
-                    String id = configId(task), title = config.optString("title", config.optString("name", id));
+                    String id = configId(task), title = title(task);
+                    if (title.isEmpty()) title = id;
                     if (id.isEmpty() || blacklist.contains(id) || blacklist.contains(title) || finished(task)) continue;
                     String snapshot = id + ":" + processId(task) + ":" + progress(task);
                     if (!attempted.add(snapshot)) continue;
@@ -76,9 +77,18 @@ final class MemberBrowseTasks {
         result.values().removeIf(row -> processId(row).isEmpty() && active.contains(configId(row)));
         boolean newTitles = false;
         for (JSONObject row : result.values()) {
-            String title = config(row).optString("title", config(row).optString("name"));
+            String title = title(row);
             if (!title.isEmpty() && !AntMemberTaskListMap.getMap().containsKey(title)) {
                 AntMemberTaskListMap.add(title, title); newTitles = true;
+            }
+            RuntimeInfo adStore = RuntimeInfo.getInstance();
+            String adKey = "memberAd::" + configId(row);
+            JSONObject adState = MyUtils.newJSONObject(adStore.getString(adKey));
+            JSONObject contract = adContract(row);
+            if (contract != null && contract.toString().equals(adState.optString("contract"))
+                    && !"EXPIRED".equals(row.optString("status"))
+                    && (finished(row) || advanced(adState.optJSONObject("before"), row))) {
+                logConfirmed(title, row); adStore.put(adKey, null);
             }
             String key = "memberBrowse::" + processId(row);
             RuntimeInfo store = RuntimeInfo.getInstance();
@@ -93,6 +103,9 @@ final class MemberBrowseTasks {
             Calendar now = MyUtils.getInstance();
             String day = now.get(Calendar.YEAR) + ":" + now.get(Calendar.DAY_OF_YEAR);
             RuntimeInfo store = RuntimeInfo.getInstance();
+            for (String key : store.keysStartingWith("memberAd::")) {
+                if (!day.equals(MyUtils.newJSONObject(store.getString(key)).optString("day"))) store.put(key, null);
+            }
             for (String key : store.keysStartingWith("memberBrowse::")) {
                 // 完整列表已无此流程才清旧日记录；活跃流程的未知提交仍须回查。
                 if (!live.contains(key.substring("memberBrowse::".length()))
@@ -127,7 +140,7 @@ final class MemberBrowseTasks {
                 if (categories == null) return null;
                 for (int i = 0; i < categories.length(); i++) {
                     JSONObject category = categories.optJSONObject(i);
-                    if (category == null || !append(rows, category.optJSONArray("taskProcessVOList"))) return null;
+                    if (category == null || !append(rows, category.has("taskProcessVOList") ? category.optJSONArray("taskProcessVOList") : category.optJSONArray("taskList"))) return null;
                 }
             }
         }
@@ -150,6 +163,11 @@ final class MemberBrowseTasks {
             if (config != null) return config;
         }
         return MyUtils.newJSONObject();
+    }
+
+    private static String title(JSONObject task) {
+        String title = config(task).optString("title");
+        return title.isEmpty() ? config(task).optString("name") : title;
     }
 
     private static String configId(JSONObject task) {
@@ -229,6 +247,7 @@ final class MemberBrowseTasks {
     }
 
     private static boolean perform(JSONObject listed, String title) throws Exception {
+        if (target(listed) == null && Boolean.TRUE.equals(listed.opt("adTask"))) return performAd(listed, title);
         String label = TAG + "[" + title + "]", id = configId(listed), process = processId(listed);
         RuntimeInfo store = RuntimeInfo.getInstance();
         if (process.isEmpty()) {
@@ -336,6 +355,116 @@ final class MemberBrowseTasks {
             markRejected(title, response);
         }
         Log.record(label + "：执行后结果未确认，code=" + response.optString("resultCode", "缺失") + "，后续轮次继续回查");
+        return false;
+    }
+
+    private static JSONObject adContract(JSONObject task) throws org.json.JSONException {
+        if (!Boolean.TRUE.equals(task.opt("adTask"))) return null;
+        if (TaskAlternative.isTransactionTask(task.optString("bizKey"))
+                || TaskAlternative.isTransactionTask(config(task).optString("bizKey"))) return null;
+        for (Object target : new Object[]{task.opt("targetBusiness"), config(task).opt("targetBusiness")}) {
+            if (target == null || target == JSONObject.NULL || target instanceof String && ((String) target).trim().isEmpty()
+                    || target instanceof JSONArray && ((JSONArray) target).length() == 0) continue;
+            return null;
+        }
+        JSONObject ext = task.optJSONObject("lightsAdExtMap"), cfg = config(task);
+        if (ext == null || !(ext.opt("bizId") instanceof String) || ext.optString("bizId").trim().isEmpty()
+                || !(ext.opt("adId") instanceof String) || ext.optString("adId").trim().isEmpty()) return null;
+        int seconds = cfg.has("browseSeconds") ? GameTaskAction.duration(cfg.opt("browseSeconds")) : 15;
+        if (seconds < 0 || GameTaskAction.parse(task).kind != GameTaskAction.Kind.NONE) return null;
+        JSONObject award = cfg.optJSONObject("awardParam");
+        JSONArray stages = cfg.optJSONArray("stageVOList");
+        JSONObject stage = stages == null ? null : stages.optJSONObject(0);
+        if (award == null && stage != null) award = stage.optJSONObject("awardParam");
+        Object points = award == null ? null : award.opt("awardParamPoint");
+        int count = 0;
+        if (points != null && points != JSONObject.NULL) {
+            if (!(points instanceof String || points instanceof Number)) return null;
+            try { count = new java.math.BigDecimal(points.toString()).intValueExact(); }
+            catch (NumberFormatException | ArithmeticException e) { return null; }
+            if (count < 0) return null;
+        }
+        return MyUtils.newJSONObject().put("bizId", ext.optString("bizId")).put("adId", ext.optString("adId"))
+                .put("seconds", Math.max(15, seconds)).put("awardNum", count);
+    }
+
+    private static JSONObject adSnapshot(String id, JSONObject contract) throws Exception {
+        for (JSONObject row : load().values()) {
+            JSONObject actual = adContract(row);
+            if (id.equals(configId(row)) && actual != null && contract.toString().equals(actual.toString())) return row;
+        }
+        return null;
+    }
+
+    private static boolean performAd(JSONObject listed, String title) throws Exception {
+        String label = TAG + "[" + title + "]", id = configId(listed);
+        JSONObject contract = adContract(listed);
+        if (contract == null) { Log.record(label + "：广告参数无效或非纯浏览合同，未发送申请请求"); return false; }
+        Calendar now = MyUtils.getInstance();
+        String day = now.get(Calendar.YEAR) + ":" + now.get(Calendar.DAY_OF_YEAR), stage = progress(listed);
+        String key = "memberAd::" + id;
+        RuntimeInfo store = RuntimeInfo.getInstance();
+        JSONObject state = MyUtils.newJSONObject(store.getString(key));
+        if (day.equals(state.optString("day")) && state.has("stage") && !stage.equals(state.optString("stage"))
+                && !advanced(state.optJSONObject("before"), listed)) {
+            Log.record(label + "：广告进度变化未确认推进，保留原提交记录"); return false;
+        }
+        if (!day.equals(state.optString("day")) || !stage.equals(state.optString("stage"))) {
+            JSONObject before = MyUtils.newJSONObject().put("currentCount", listed.opt("currentCount"));
+            JSONObject ext = listed.optJSONObject("extInfo");
+            if (ext != null) before.put("extInfo", MyUtils.newJSONObject().put("PERIOD_CURRENT_COUNT", ext.opt("PERIOD_CURRENT_COUNT")));
+            state = MyUtils.newJSONObject().put("day", day).put("stage", stage).put("contract", contract.toString()).put("before", before);
+        }
+        if (!contract.toString().equals(state.optString("contract"))) {
+            Log.record(label + "：广告合同变化，等待后续列表确认"); return false;
+        }
+        if (state.optBoolean("submitted")) { Log.record(label + "：广告完成请求已提交，列表尚未确认，不重复提交"); return false; }
+        if (GameTaskAction.skipRejected(key + ":" + stage, label)) return false;
+        if (!state.optBoolean("applied")) {
+            TimeUtil.sleep(0);
+            state.put("applied", true);
+            if (!store.putVerified(key, state.toString())) { Log.record(label + "：广告申请预留写盘失败，未发送申请请求"); return false; }
+            JSONObject response = MyUtils.newJSONObject(AntMemberRpcCall.applyAdTask(contract.optString("bizId"), contract.optString("adId"),
+                    contract.optInt("awardNum"), listed.optJSONObject("lightsAdExtMap")));
+            if (!GameTaskAction.accepted(response)) {
+                if (Boolean.FALSE.equals(response.opt("success")) || "RPC_SKIPPED".equals(response.optString("error"))
+                        || "RPC_SKIPPED".equals(response.optString("resultCode"))) state.put("applied", false);
+                store.putVerified(key, state.toString()); markRejected(title, response);
+                if (GameTaskAction.isBusinessRejection(response)) Status.flagToday("agReject::" + key + ":" + stage);
+                Log.record(label + "：广告申请未确认，保留后续回查"); return false;
+            }
+            state.put("accepted", true).put("readyAt", System.currentTimeMillis() + contract.optInt("seconds") * 1000L);
+            if (!store.putVerified(key, state.toString())) { Log.record(label + "：广告计时写盘失败，未请求完成"); return false; }
+        }
+        if (!state.optBoolean("accepted")) { Log.record(label + "：广告申请结果未知，等待列表回查，不重复申请"); return false; }
+        long readyAt = state.optLong("readyAt");
+        if (!(state.opt("readyAt") instanceof Number) || readyAt <= 0) {
+            Log.record(label + "：广告计时记录无效，未请求完成"); return false;
+        }
+        long wait = readyAt - System.currentTimeMillis();
+        if (wait > contract.optInt("seconds") * 1000L) { Log.record(label + "：广告计时超出合同范围，未请求完成"); return false; }
+        Log.record(label + "：广告浏览计时，剩余" + Math.max(0, (wait + 999) / 1000) + "秒");
+        TimeUtil.sleep(Math.max(0, wait));
+        JSONObject fresh = adSnapshot(id, contract);
+        if (fresh == null) { Log.record(label + "：广告计时后未查到相同任务合同，未请求完成"); return false; }
+        if (finished(fresh) || advanced(listed, fresh)) return true;
+        Calendar end = MyUtils.getInstance();
+        if (!day.equals(end.get(Calendar.YEAR) + ":" + end.get(Calendar.DAY_OF_YEAR)) || !stage.equals(progress(fresh))) return false;
+        TimeUtil.sleep(0);
+        state.put("submitted", true);
+        if (!store.putVerified(key, state.toString())) { Log.record(label + "：广告完成预留写盘失败，未发送完成请求"); return false; }
+        JSONObject response = MyUtils.newJSONObject(AntMemberRpcCall.finishAdTask(contract.optString("bizId")));
+        if (Boolean.FALSE.equals(response.opt("success")) || "RPC_SKIPPED".equals(response.optString("error"))
+                || "RPC_SKIPPED".equals(response.optString("resultCode"))) {
+            state.put("submitted", false); store.putVerified(key, state.toString());
+        }
+        JSONObject after = adSnapshot(id, contract);
+        if (after != null && (finished(after) || advanced(listed, after))) return true;
+        if (after != null) {
+            markRejected(title, response);
+            if (GameTaskAction.isBusinessRejection(response)) Status.flagToday("agReject::" + key + ":" + stage);
+        }
+        Log.record(label + "：广告完成请求结果未确认，后续继续按列表回查，不预记配置积分");
         return false;
     }
 

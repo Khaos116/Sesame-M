@@ -1,5 +1,11 @@
 package io.github.aw1y2z.sesame.model.task.forestRead;
 
+import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
+import android.os.Build;
+import android.telephony.TelephonyManager;
+import android.util.DisplayMetrics;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -19,19 +25,17 @@ import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.util.RunGeneration;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 
-/** 阅读服务 HTTP 协议；凭据只保留在本轮实例，不跨账号缓存。 */
+/** 阅读服务HTTP协议；Token按账号校验复用，客户端实例不跨账号。 */
 public final class ReadForestRpcCall {
     public static final String APP_ID = "2021003114652763";
     public static final String VERSION = "0.2.2410251510.53";
     private static final String HOST = "https://m.zhangwenwh.com/api";
-    private final String miniMark;
     private String token;
 
-    public ReadForestRpcCall(String miniMark) {
-        this.miniMark = miniMark == null ? "" : miniMark;
-    }
+    public ReadForestRpcCall() { }
 
     public void login(String authCode) throws Exception {
+        token = null;
         JSONObject body = MyUtils.newJSONObject().put("auth_code", authCode)
                 .put("app_id", APP_ID).put("cid", "7001");
         JSONObject data = request("/authorization", body, "", "").optJSONObject("data");
@@ -42,13 +46,27 @@ public final class ReadForestRpcCall {
         token = (String) value;
     }
 
+    public boolean useCachedToken(String cached) throws Exception {
+        if (cached == null || cached.trim().isEmpty()) return false;
+        token = cached;
+        try {
+            if ("success".equals(request("/authorization", MyUtils.newJSONObject(), "", "").opt("data"))) return true;
+        } catch (ReadFailure e) {
+            if (!e.needsLogin) throw e;
+        }
+        token = null;
+        return false;
+    }
+
+    String token() { return token; }
+
     public JSONObject index() throws Exception {
         return request("/index/index?type=1", null, "", "");
     }
 
     public JSONObject chapter(String book, String chapter) throws Exception {
         String path = "/book/chapter?book_id=" + encode(book);
-        if (!chapter.isEmpty()) path += "&chapter_id=" + encode(chapter);
+        if (!chapter.isEmpty()) path += "&chapter_id=" + encode(chapter) + "&chapter_num=&source=";
         return request(path, null, book, chapter);
     }
 
@@ -89,8 +107,66 @@ public final class ReadForestRpcCall {
         return "执行异常（" + error.getClass().getSimpleName() + "）";
     }
 
+    private static String getBaseUserAgent() {
+        String systemUa = System.getProperty("http.agent");
+        if (systemUa == null || systemUa.isEmpty()) {
+            systemUa = "Mozilla/5.0 (Linux; Android " + Build.VERSION.RELEASE + ")";
+        }
+        // 真实 UA 里 Mobile Safari/537.36 位于 UCBS 之后，系统 UA 末尾自带的那份要去掉
+        String base = systemUa.replace(" Mobile Safari/537.36", "").trim();
+        String alipayVer = String.valueOf(ApplicationHook.getAlipayVersion());
+        return base
+                + " MYWeb/1.11.126.260911211123 UWS/3.22.2.9999 UCBS/3.22.2.9999_220000000000"
+                + " Mobile Safari/537.36 NebulaSDK/1.8.100112 Nebula"
+                + " AlipayDefined(nt:" + networkType() + ",ws:" + screenSpec() + ")"
+                + " AliApp(AP/" + alipayVer + ") AlipayClient/" + alipayVer
+                + " Language/zh-Hans isConcaveScreen/true"
+                + " Region/CNAriver/" + alipayVer + " DTN/2.0";
+    }
+
+    private static String networkType() {
+        try {
+            Context context = ApplicationHook.getContext();
+            if (context != null) {
+                ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+                NetworkCapabilities caps = cm == null ? null : cm.getNetworkCapabilities(cm.getActiveNetwork());
+                if (caps != null) {
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                        return "WIFI";
+                    }
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                TelephonyManager tm = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+                                if (tm != null && tm.getDataNetworkType() == TelephonyManager.NETWORK_TYPE_NR) return "5G";
+                            }
+                        } catch (SecurityException ignored) { }
+                        return "4G";
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return "WIFI";
+    }
+
+    private static String screenSpec() {
+        try {
+            Context context = ApplicationHook.getContext();
+            if (context != null) {
+                DisplayMetrics dm = context.getResources().getDisplayMetrics();
+                if (dm == null || !Float.isFinite(dm.density) || dm.density <= 0 || dm.widthPixels <= 0) return "393|0|2.75";
+                int width = Math.round(dm.widthPixels / dm.density);
+                float density = Math.round(dm.density * 100) / 100f;
+                return width + "|0|" + density;
+            }
+        } catch (Throwable ignored) {
+        }
+        return "393|0|2.75";
+    }
+
     private String safeMessage(String message, JSONObject body) {
-        for (String secret : new String[]{token, miniMark, body == null ? null : body.optString("auth_code")}) {
+        for (String secret : new String[]{token, body == null ? null : body.optString("auth_code")}) {
             if (secret != null && !secret.isEmpty()) message = message.replace(secret, "[已隐藏]");
         }
         message = message.replaceAll("(?i)Bearer\\s+[^\\s,;\"'}]+", "Bearer [已隐藏]")
@@ -109,15 +185,15 @@ public final class ReadForestRpcCall {
             conn.setUseCaches(false);
             conn.setRequestMethod(body == null ? "GET" : "POST");
             conn.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
-            conn.setRequestProperty("alipayminimark", miniMark);
             conn.setRequestProperty("x-release-type", "ONLINE");
+            conn.setRequestProperty("x-requested-with", "com.eg.android.AlipayGphone");
+            conn.setRequestProperty("x-mass-tappid", APP_ID);
+            conn.setRequestProperty("accept-language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
             String referer = "https://" + APP_ID + ".hybrid.alipay-eco.com/" + APP_ID + "/" + VERSION + "/index.html";
             referer += book.isEmpty() ? "#pages/index/index"
                     : "#moduleA/pages/chapter/index?__appxPageId=1&bid=" + encode(book) + "&cid=" + encode(chapter);
             conn.setRequestProperty("Referer", referer);
-            String version = String.valueOf(ApplicationHook.getAlipayVersion());
-            conn.setRequestProperty("User-Agent", System.getProperty("http.agent", "Mozilla/5.0")
-                    + " NebulaSDK/1.8.100112 Nebula AliApp(AP/" + version + ") AlipayClient/" + version);
+            conn.setRequestProperty("User-Agent", getBaseUserAgent());
             if (token != null) conn.setRequestProperty("Authorization", "Bearer " + token);
             if (body != null) {
                 byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);

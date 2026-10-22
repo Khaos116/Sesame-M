@@ -10,7 +10,6 @@ import java.util.Set;
 import io.github.aw1y2z.sesame.data.RuntimeInfo;
 import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
 import io.github.aw1y2z.sesame.hook.AuthCodeHelper;
-import io.github.aw1y2z.sesame.hook.AlipayMiniMarkHelper;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.RandomUtil;
@@ -24,6 +23,7 @@ import io.github.aw1y2z.sesame.model.task.forestRead.ReadForestRpcCall.ReadFailu
 public final class ReadForestTask {
     private static final String DONE = "forest::readForest::full";
     private static final String FINISHED = "readForest.finishedBooks";
+    private static final String TOKEN = "readForest.token";
     // ponytail: 单轮最多 15 分钟，避免异常限额一直占用森林线程；有更长阅读需求再调整。
     private static final long MAX_RUN_MS = 15 * 60_000L;
 
@@ -46,18 +46,27 @@ public final class ReadForestTask {
                 return;
             }
             long started = SystemClock.elapsedRealtime();
-            log("无纸阅读：开始，获取授权码并自动换取 Token");
-            String code = AuthCodeHelper.getAuthCode(ReadForestRpcCall.APP_ID);
-            if (code == null || code.trim().isEmpty()) {
-                log("无纸阅读：授权失败，未取得授权码；原因=" + AuthCodeHelper.getFailureReason());
-                tokenHelp();
-                return;
+            RuntimeInfo runtime = RuntimeInfo.getInstance();
+            ReadForestRpcCall client = new ReadForestRpcCall();
+            stage = "凭据校验";
+            String cached = runtime.getString(TOKEN);
+            if (!cached.isEmpty() && client.useCachedToken(cached)) {
+                log("无纸阅读：已验证并复用当前账号登录凭据");
+            } else {
+                if (!cached.isEmpty()) runtime.putVerified(TOKEN, null);
+                stage = "授权";
+                log("无纸阅读：获取授权码并自动换取 Token");
+                String code = AuthCodeHelper.getAuthCode(ReadForestRpcCall.APP_ID);
+                if (code == null || code.trim().isEmpty()) {
+                    log("无纸阅读：授权失败，未取得授权码；原因=" + AuthCodeHelper.getFailureReason());
+                    tokenHelp();
+                    return;
+                }
+                stage = "登录";
+                client.login(code);
+                log(runtime.putVerified(TOKEN, client.token()) ? "无纸阅读：登录成功，已自动获取 Token"
+                        : "无纸阅读：登录成功，凭据缓存写盘失败，本轮继续");
             }
-            ReadForestRpcCall client = new ReadForestRpcCall(AlipayMiniMarkHelper.getAlipayMiniMark(
-                    ReadForestRpcCall.APP_ID, ReadForestRpcCall.VERSION));
-            stage = "登录";
-            client.login(code);
-            log("无纸阅读：登录成功，已自动获取 Token（仅供本轮使用）");
             stage = "查询能量进度";
             JSONObject progress = progress(client);
             if (full(progress, uid)) return;
@@ -65,7 +74,6 @@ public final class ReadForestTask {
             int current = progress.optInt("current");
             int initial = current;
             log("无纸阅读：当前能量进度 " + current + "/" + progress.optInt("total"));
-            RuntimeInfo runtime = RuntimeInfo.getInstance();
             JSONObject finished = MyUtils.newJSONObject(runtime.getString(FINISHED));
             stage = "查询书籍";
             JSONArray blocks = client.index().optJSONArray("data");

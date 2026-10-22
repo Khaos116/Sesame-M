@@ -43,13 +43,13 @@ stubs = {
         public Map<String,String> data=new HashMap<>();
         public static RuntimeInfo getInstance(){return accounts.computeIfAbsent(UserIdMap.uid,k->new RuntimeInfo());}
         public String getString(String k){return data.getOrDefault(k,"");}
-        public void put(String k,Object v){data.put(k,v.toString());}}
+        public void put(String k,Object v){if(v==null)data.remove(k);else data.put(k,v.toString());} public boolean putVerified(String k,String v){put(k,v);return true;}}
     ''',
     pkg + ".hook.AlipayMiniMarkHelper": '''public class AlipayMiniMarkHelper {
         public static String getAlipayMiniMark(String a,String v){return "mini-mark";}}
     ''',
     pkg + ".hook.ApplicationHook": '''public class ApplicationHook {
-        public static String getAlipayVersion(){return "10.6.58.8000";}}
+        public static String getAlipayVersion(){return "10.6.58.8000";} public static android.content.Context getContext(){return new android.content.Context();}}
     ''',
     pkg + ".util.XHelpers": '''import java.lang.reflect.*; public class XHelpers {
         public static Class<?> findClass(String n,ClassLoader l)throws Exception{return Class.forName(n,true,l);}
@@ -73,6 +73,16 @@ stubs = {
         public void setFromSystem(String s){} public void setState(String s){} public void setIsvAppId(String s){}}
     ''',
 }
+stubs.update({
+    "android.content.Context": 'public class Context {public static final String CONNECTIVITY_SERVICE="connectivity",TELEPHONY_SERVICE="phone";public Object getSystemService(String key){return key.equals(CONNECTIVITY_SERVICE)?new android.net.ConnectivityManager():new android.telephony.TelephonyManager();}public android.content.res.Resources getResources(){return new android.content.res.Resources();}}',
+    "android.content.res.Resources": 'public class Resources {public android.util.DisplayMetrics getDisplayMetrics(){return new android.util.DisplayMetrics();}}',
+    "android.util.DisplayMetrics": 'public class DisplayMetrics {public static int widthPixels=800;public static float density=2;}',
+    "android.net.ConnectivityManager": 'public class ConnectivityManager {public Object getActiveNetwork(){return new Object();}public NetworkCapabilities getNetworkCapabilities(Object n){return new NetworkCapabilities();}}',
+    "android.net.NetworkCapabilities": 'public class NetworkCapabilities {public static final int TRANSPORT_WIFI=1,TRANSPORT_CELLULAR=0;public static int transport=TRANSPORT_WIFI;public boolean hasTransport(int t){return t==transport;}}',
+    "android.telephony.TelephonyManager": 'public class TelephonyManager {public static final int NETWORK_TYPE_NR=20;public static boolean denied;public int getDataNetworkType(){if(denied)throw new SecurityException();return 20;}}',
+    "android.os.Build": 'public class Build {public static class VERSION {public static int SDK_INT=35;public static String RELEASE="14";}public static class VERSION_CODES {public static final int Q=29;}}',
+})
+
 test = r'''
 import java.io.*; import java.net.*; import java.nio.charset.StandardCharsets; import java.util.*; import java.util.concurrent.atomic.AtomicLong;
 import org.json.*;
@@ -110,7 +120,10 @@ public class ForestReadCheck {
             android.os.SystemClock.now+=reply.elapsed;
             assert !getInstanceFollowRedirects(); assert getConnectTimeout()==10000 && getReadTimeout()==20000;
             assert !TaskLifecycle.isIdle(); assert TaskLifecycle.freezeIfIdle()==null;
-            assert getRequestProperty("alipayminimark").equals("mini-mark");
+            assert getRequestProperty("alipayminimark")==null;
+            assert getRequestProperty("x-requested-with").equals("com.eg.android.AlipayGphone");
+            assert getRequestProperty("x-mass-tappid").equals(ReadForestRpcCall.APP_ID);
+            String ua=getRequestProperty("User-Agent");assert ua.contains("MYWeb/1.11.126.260911211123")&&ua.contains("nt:WIFI,ws:400|0|2.0")&&!ua.contains("ChannelId(");
             switch(networkFailure){
                 case "timeout":throw new SocketTimeoutException("secret-token-A");
                 case "DNS":throw new UnknownHostException("secret-code-A");
@@ -118,11 +131,13 @@ public class ForestReadCheck {
                 case "connect":throw new ConnectException("secret-token-A");
             }
             if(reply.path.equals("/authorization")){
-                assert method.equals("POST"); assert getRequestProperty("Authorization")==null;
+                assert method.equals("POST");
                 JSONObject b=new JSONObject(sent.toString(StandardCharsets.UTF_8));
+                if(getRequestProperty("Authorization")!=null){assert b.length()==0&&getRequestProperty("Authorization").equals("Bearer secret-token-"+UserIdMap.uid);return reply.status;}
                 assert b.optString("auth_code").equals("secret-code-"+UserIdMap.uid);
                 assert b.optString("app_id").equals(ReadForestRpcCall.APP_ID) && b.optString("cid").equals("7001");
             }else assert getRequestProperty("Authorization").equals("Bearer secret-token-"+UserIdMap.uid);
+            if(reply.path.equals("/book/chapter")&&url.getQuery().contains("chapter_id="))assert url.getQuery().endsWith("&chapter_num=&source="):url;
             if(reply.path.equals("/user/updateWel")){
                 JSONObject b=new JSONObject(sent.toString(StandardCharsets.UTF_8)); reads++;
                 assert b.optInt("time")>=333 && b.optInt("time")<=1000;
@@ -150,6 +165,14 @@ public class ForestReadCheck {
         for(MockConnection c:connections)assert c.disconnected;
         for(String m:Log.messages)assert !m.contains("secret-code") && !m.contains("secret-token");}
     public static void main(String[] args)throws Exception{
+        java.lang.reflect.Method uaMethod=ReadForestRpcCall.class.getDeclaredMethod("getBaseUserAgent");uaMethod.setAccessible(true);
+        android.net.NetworkCapabilities.transport=android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
+        assert uaMethod.invoke(null).toString().contains("nt:5G");
+        android.telephony.TelephonyManager.denied=true;assert uaMethod.invoke(null).toString().contains("nt:4G");
+        android.telephony.TelephonyManager.denied=false;android.net.NetworkCapabilities.transport=android.net.NetworkCapabilities.TRANSPORT_WIFI;
+        android.util.DisplayMetrics.density=Float.NaN;assert uaMethod.invoke(null).toString().contains("ws:393|0|2.75");android.util.DisplayMetrics.density=2;
+        System.out.println("PASS dynamic cellular UA, permission fallback and invalid screen metrics");
+
         URL.setURLStreamHandlerFactory(protocol->protocol.equals("https") ? new URLStreamHandler(){
             protected URLConnection openConnection(URL u){return new MockConnection(u);}} : null);
         AuthCodeHelper.init(ForestReadCheck.class.getClassLoader());
@@ -162,8 +185,17 @@ public class ForestReadCheck {
         assert new JSONObject(RuntimeInfo.getInstance().getString("readForest.finishedBooks")).has("one");
         int calls=authCalls; run(); assert authCalls==calls;
         UserIdMap.uid="B"; login(); energy(10,10); run(); assert Status.flags.size()==2;
-        UserIdMap.uid="A"; Status.flags.clear(); login(); energy(10,10); run(); assert authCalls==calls+2;
+        UserIdMap.uid="A"; Status.flags.clear(); add("/authorization","success"); energy(10,10); run(); assert authCalls==calls+1;
         System.out.println("PASS host proxy auth_base, free-book dedup, completion, account/day state and secret isolation");
+        reset();RuntimeInfo.getInstance().put("readForest.token","secret-token-A");int previousAuth=authCalls;add("/authorization","success");energy(10,10);run();assert authCalls==previousAuth:"valid cached token requested authorization again";
+        for(boolean http:List.of(false,true)){
+            reset();RuntimeInfo.getInstance().put("readForest.token","secret-token-A");previousAuth=authCalls;
+            if(http)raw("/authorization","{}",401);else add("/authorization","invalid");
+            login();energy(10,10);run();assert authCalls==previousAuth+1&&RuntimeInfo.getInstance().getString("readForest.token").equals("secret-token-A");
+        }
+        reset();RuntimeInfo.getInstance().put("readForest.token","secret-token-A");previousAuth=authCalls;add("/authorization","success");networkFailure="timeout";run();assert authCalls==previousAuth&&!RuntimeInfo.getInstance().getString("readForest.token").isEmpty();
+        System.out.println("PASS account-scoped token reuse/validation/refresh and transient cache validation failure");
+
         for(Object[] pair:List.of(new Object[]{"10","10"},new Object[]{10,"10"},new Object[]{"10",10},new Object[]{10.0,10.0},
                 new Object[]{" 0010 "," 0010 "},new Object[]{"2147483647","2147483647"})){
             reset();login();add("/user/forestPro",new JSONObject().put("current",pair[0]).put("total",pair[1]));
@@ -233,9 +265,9 @@ public class ForestReadCheck {
         for(String endpoint:List.of("/user/updateWel","/book/set_read_recently")){
             reset(); login(); energy(0,10); index(book("one","0.00")); chapter(1,0);
             if(endpoint.endsWith("set_read_recently"))add("/user/updateWel",new JSONObject());
-            raw(endpoint,"{\"code\":4000}",200);run();assert Status.flags.isEmpty() && RuntimeInfo.getInstance().data.isEmpty();}
+            raw(endpoint,"{\"code\":4000}",200);run();assert Status.flags.isEmpty() && RuntimeInfo.getInstance().getString("readForest.finishedBooks").isEmpty();}
         reset(); login(); energy(0,10); index(book("one","0.00")); add("/book/chapter",new JSONObject().put("id",1));
-        run(); assert reads==0 && RuntimeInfo.getInstance().data.isEmpty();
+        run(); assert reads==0 && RuntimeInfo.getInstance().getString("readForest.finishedBooks").isEmpty();
         System.out.println("PASS malformed/status/type failures, 0/0, token validation, POST failures and no false daily completion");
         reset(); noCode=true; run(); assert opened==0;
         assert Log.runtime.stream().anyMatch(s->s.contains("授权失败") && s.contains("宿主未返回授权结果"));

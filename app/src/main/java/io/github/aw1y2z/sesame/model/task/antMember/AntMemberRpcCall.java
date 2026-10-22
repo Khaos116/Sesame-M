@@ -209,7 +209,7 @@ public class AntMemberRpcCall {
     /* 会员任务 */
     private static String currentMemberRequest(String method, JSONObject body) throws org.json.JSONException {
         body.put("sourcePassMap", MyUtils.newJSONObject().put("innerSource", "").put("source", "mytab").put("unid", ""));
-        if (method.startsWith("MemTaskManagerFacade."))
+        if (method.startsWith("MemTaskManagerFacade.") || method.startsWith("MemTaskAdFacade."))
             return ApplicationHook.requestString("com.alipay.amic.memtask.h5." + method, new JSONArray().put(body).toString(), 1, 0);
         return ApplicationHook.requestString("com.alipay.amic.memtask.h5." + method, new JSONArray().put(body).toString());
     }
@@ -253,6 +253,20 @@ public class AntMemberRpcCall {
     public static String queryAllStatusTaskList() {
         String args = "[{\"sourceBusiness\":\"signInAd\"}]";
         return ApplicationHook.requestString("alipay.antmember.biz.rpc.membertask.h5.queryAllStatusTaskList", args);
+    }
+
+    public static String applyAdTask(String adBizId, String adId, int awardNum, JSONObject extMap) throws org.json.JSONException {
+        if (adBizId == null || adBizId.trim().isEmpty() || adId == null || adId.trim().isEmpty() || awardNum < 0 || extMap == null)
+            throw new IllegalArgumentException("advertising task missing contract");
+        JSONObject body = MyUtils.newJSONObject().put("adBizId", adBizId).put("adId", adId).put("awardNum", awardNum)
+                .put("bizNo", adBizId).put("extMap", extMap).put("scene", "TASK_WALL")
+                .put("spaceCode", "ant_member_xlight_task").put("subScene", "").put("userId", "");
+        return currentMemberRequest("MemTaskAdFacade.applyAdTask", body);
+    }
+
+    public static String finishAdTask(String bizId) throws org.json.JSONException {
+        JSONObject body = MyUtils.newJSONObject().put("bizId", bizId).put("extendInfo", MyUtils.newJSONObject());
+        return ApplicationHook.requestString("com.alipay.adtask.biz.mobilegw.service.task.finish", new JSONArray().put(body).toString(), 1, 0);
     }
 
     /**

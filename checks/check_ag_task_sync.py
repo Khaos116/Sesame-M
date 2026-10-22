@@ -11,7 +11,7 @@ def nested(path, name):
     return raw.replace('public final class '+name, 'static final class '+name).replace('final class '+name, 'static final class '+name).replace('static static ', 'static ')
 
 code = r'''
-import java.util.*;import org.json.*;
+import java.util.*;import java.util.regex.Pattern;import org.json.*;
 public class AgTaskSyncCheck {
  static class MyUtils {static int day;static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.add(Calendar.DATE,day);return c;}
   static JSONObject newJSONObject(){return new JSONObject();}static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
@@ -36,6 +36,9 @@ public class AgTaskSyncCheck {
   static String requestString(String rpc,String raw){JSONObject j=new JSONArray(raw).optJSONObject(0);calls.add(j.put("rpc",rpc));if(transport)throw new IllegalStateException();return reply;}}
  @@GAME@@
  static class AntMemberRpcCall {
+  static int adApply,adFinish;static boolean adAdvance=true;static String adApplyReply="{success:true}",adFinishReply="{success:true}";
+  static String applyAdTask(String biz,String ad,int award,JSONObject ext){adApply++;assert biz.equals("biz")&&ad.equals("ad")&&award==10&&ext.optString("adId").equals("ad");return adApplyReply;}
+  static String finishAdTask(String biz){adFinish++;assert biz.equals("biz");if(adAdvance)for(JSONObject row:tasks.values())if(row.optBoolean("adTask"))row.put("status","FINISHED").put("extInfo",new JSONObject().put("awardCurrentPoint",5));return adFinishReply;}
   static Map<String,JSONObject> tasks=new LinkedHashMap<>();static List<Integer> pages=new ArrayList<>();static Set<String> sessions=new HashSet<>();static int apply,execute;static boolean advance=true,emptyMap,repeatPage,brokenDetail,omitConfig,statusOnly,splitPages;static String applyReply,pageOverride,executeReply="{success:true}";
   static String response(JSONArray rows){return new JSONObject().put("success",true).put("resultData",new JSONObject().put("taskProcessVOList",rows)).toString();}
   static String signPageTaskList(int page,String session){pages.add(page);sessions.add(session);if(pageOverride!=null)return pageOverride;if(splitPages)return response(page<=tasks.size()?new JSONArray().put(new ArrayList<>(tasks.values()).get(page-1)):new JSONArray());return response(page==1||repeatPage?new JSONArray(tasks.values()):new JSONArray());}
@@ -45,6 +48,7 @@ public class AgTaskSyncCheck {
   static String executeCurrentMemberTask(String type,String param){execute++;if(statusOnly)tasks.get(param).put("status","PROCESSING");else if(advance){JSONObject row=tasks.get(param);int n=row.optInt("currentCount")+1;row.put("currentCount",n);if(n>=row.optInt("targetCount"))row.put("status","FINISHED");}return executeReply;}
  }
  static class AntMemberTaskListMap {static Map<String,String> names=new HashMap<>();static Map<String,String> getMap(){return names;}static void add(String k,String v){names.put(k,v);}static void save(){}}
+ static class TaskAlternative { @@TRANSACTION@@ }
  static class RpcContract { @@RPC@@ }
  @@MEMBER@@
  static void reset(){RuntimeInfo.accounts.clear();RuntimeInfo.uid="A";RuntimeInfo.fail=false;ApplicationHook.calls.clear();ApplicationHook.reply="{success:true}";ApplicationHook.transport=false;MyUtils.day=0;TimeUtil.cancel=TimeUtil.cancelWait=TimeUtil.rollDay=false;TimeUtil.waits.clear();GameTask.writes=0;GameTask.result=2;DailyTask.manual=false;Status.flags.clear();MessageUtil.rejected=0;Log.category.clear();}
@@ -78,7 +82,36 @@ public class AgTaskSyncCheck {
   assert GameTaskAction.parse(nested).kind==GameTaskAction.Kind.DURATION;
  }
  static JSONObject member(String id,boolean applied){return new JSONObject().put("taskConfigId",id).put("processId",applied?"p"+id:"").put("status","TODO").put("currentCount",0).put("targetCount",1).put("simpleTaskConfig",new JSONObject().put("configId",id).put("title","task"+id).put("sourceBusiness","signInAd").put("browseSeconds",15).put("targetBusiness",new JSONArray().put("BROWSE#sub#"+id)));}
- static void resetMember(){reset();AntMemberRpcCall.tasks.clear();AntMemberRpcCall.pages.clear();AntMemberRpcCall.sessions.clear();AntMemberRpcCall.apply=AntMemberRpcCall.execute=0;AntMemberRpcCall.advance=true;AntMemberRpcCall.emptyMap=AntMemberRpcCall.repeatPage=AntMemberRpcCall.brokenDetail=AntMemberRpcCall.omitConfig=AntMemberRpcCall.statusOnly=AntMemberRpcCall.splitPages=false;AntMemberRpcCall.applyReply=null;AntMemberRpcCall.pageOverride=null;AntMemberRpcCall.executeReply="{success:true}";}
+ static void resetMember(){reset();AntMemberRpcCall.adApply=AntMemberRpcCall.adFinish=0;AntMemberRpcCall.adAdvance=true;AntMemberRpcCall.adApplyReply=AntMemberRpcCall.adFinishReply="{success:true}";AntMemberRpcCall.tasks.clear();AntMemberRpcCall.pages.clear();AntMemberRpcCall.sessions.clear();AntMemberRpcCall.apply=AntMemberRpcCall.execute=0;AntMemberRpcCall.advance=true;AntMemberRpcCall.emptyMap=AntMemberRpcCall.repeatPage=AntMemberRpcCall.brokenDetail=AntMemberRpcCall.omitConfig=AntMemberRpcCall.statusOnly=AntMemberRpcCall.splitPages=false;AntMemberRpcCall.applyReply=null;AntMemberRpcCall.pageOverride=null;AntMemberRpcCall.executeReply="{success:true}";}
+ static JSONObject adTask(){JSONObject row=member("ad",false).put("adTask",true).put("lightsAdExtMap",new JSONObject().put("bizId","biz").put("adId","ad"));row.optJSONObject("simpleTaskConfig").remove("targetBusiness");row.optJSONObject("simpleTaskConfig").put("awardParam",new JSONObject().put("awardParamPoint","10"));return row;}
+ static void adChecks()throws Exception{
+  resetMember();AntMemberRpcCall.tasks.put("ad",adTask());MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.adApply==1&&AntMemberRpcCall.adFinish==1&&AntMemberRpcCall.apply==0&&AntMemberRpcCall.execute==0:"ad task did not use dedicated apply/finish flow";
+  assert TimeUtil.waits.stream().anyMatch(n->n>=14900)&&Log.category.stream().anyMatch(x->x.contains("#详情奖励积分[5]"))&&Log.category.stream().noneMatch(x->x.contains("#详情奖励积分[10]"));
+  resetMember();AntMemberRpcCall.tasks.put("ad",adTask());MemberBrowseTasks.run(Set.of("taskad"));assert AntMemberRpcCall.adApply==0;assert AntMemberTaskListMap.names.containsKey("taskad");
+  for(Object bad:List.of("bad",new JSONObject().put("bizId",1).put("adId","ad"),new JSONObject().put("bizId","biz"))){resetMember();AntMemberRpcCall.tasks.put("ad",adTask().put("lightsAdExtMap",bad));MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.adApply==0;}
+  resetMember();JSONObject explicit=adTask().put("targetBusiness","CALL_APP#sub#one");AntMemberRpcCall.tasks.put("ad",explicit);MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.adApply==0;
+  resetMember();AntMemberRpcCall.tasks.put("ad",adTask());AntMemberRpcCall.adAdvance=false;MemberBrowseTasks.run(Set.of());MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.adApply==1&&AntMemberRpcCall.adFinish==1&&Log.category.isEmpty():"ACK was treated as confirmed points or unknown finish repeated";
+  AntMemberRpcCall.tasks.get("ad").put("status","FINISHED");MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.adApply==1;
+  resetMember();AntMemberRpcCall.tasks.put("ad",adTask());TimeUtil.cancelWait=true;try{MemberBrowseTasks.run(Set.of());throw new AssertionError("ad cancellation swallowed");}catch(TaskCancelledException expected){}assert AntMemberRpcCall.adApply==1&&AntMemberRpcCall.adFinish==0;
+  TimeUtil.cancelWait=false;MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.adApply==1&&AntMemberRpcCall.adFinish==1:"cancelled ad wait reapplied task";
+  resetMember();AntMemberRpcCall.tasks.put("ad",adTask());RuntimeInfo.fail=true;MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.adApply==0;
+  resetMember();JSONObject regressed=adTask().put("targetCount",2);AntMemberRpcCall.tasks.put("ad",regressed);Calendar oldNow=MyUtils.getInstance();JSONObject oldRow=new JSONObject(regressed.toString()).put("currentCount",1);
+  RuntimeInfo.getInstance().put("memberAd::ad",new JSONObject().put("day",oldNow.get(Calendar.YEAR)+":"+oldNow.get(Calendar.DAY_OF_YEAR)).put("stage",MemberBrowseTasks.progress(oldRow)).put("before",oldRow).put("contract",MemberBrowseTasks.adContract(oldRow).toString()).put("applied",true).put("accepted",true).put("submitted",true).toString());
+  MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.adApply==0&&AntMemberRpcCall.adFinish==0:"regressed counter discarded unknown ad submission and applied again";
+  resetMember();JSONObject badTimer=adTask();AntMemberRpcCall.tasks.put("ad",badTimer);Calendar adNow=MyUtils.getInstance();
+  RuntimeInfo.getInstance().put("memberAd::ad",new JSONObject().put("day",adNow.get(Calendar.YEAR)+":"+adNow.get(Calendar.DAY_OF_YEAR)).put("stage",MemberBrowseTasks.progress(badTimer)).put("contract",MemberBrowseTasks.adContract(badTimer).toString()).put("applied",true).put("accepted",true).put("readyAt",0).toString());
+  MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.adApply==0&&AntMemberRpcCall.adFinish==0:"invalid saved timer finished advertisement without waiting";
+  resetMember();AntMemberRpcCall.tasks.put("ad",adTask().put("bizKey","OFFLINE_PAY"));MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.adApply==0;
+  resetMember();AntMemberRpcCall.tasks.put("ad",adTask());AntMemberRpcCall.adApplyReply="{}";MemberBrowseTasks.run(Set.of());MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.adApply==1&&AntMemberRpcCall.adFinish==0;
+  resetMember();AntMemberRpcCall.tasks.put("ad",adTask());TimeUtil.rollDay=true;MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.adFinish==0;
+  TimeUtil.rollDay=false;MemberBrowseTasks.run(Set.of());assert AntMemberRpcCall.adFinish==1;
+  resetMember();JSONObject ext=new JSONObject().put("bizId","biz\\quoted").put("adId","ad\"quoted");RpcContract.applyAdTask("biz\\quoted","ad\"quoted",10,ext);RpcContract.finishAdTask("biz\\quoted");
+  JSONObject apply=ApplicationHook.calls.get(0);assert apply.optString("adBizId").equals("biz\\quoted")&&apply.optString("adId").equals("ad\"quoted")&&apply.optInt("awardNum")==10&&apply.optString("scene").equals("TASK_WALL")&&apply.optString("spaceCode").equals("ant_member_xlight_task")&&apply.optJSONObject("sourcePassMap").optString("source").equals("mytab");
+  assert ApplicationHook.calls.get(1).optString("bizId").equals("biz\\quoted")&&ApplicationHook.calls.get(1).optJSONObject("extendInfo").length()==0;
+  List<JSONObject> legacy=MemberBrowseTasks.rows("{success:true,categoryTaskList:[{type:'BROWSE',taskList:[{taskConfigInfo:{id:'legacy',name:'legacyAd'},adTask:true}]}]}");assert legacy!=null&&legacy.size()==1;
+  resetMember();JSONObject nameOnly=adTask();nameOnly.optJSONObject("simpleTaskConfig").put("title","").put("name","nameOnly");AntMemberRpcCall.tasks.put("ad",nameOnly);MemberBrowseTasks.run(Set.of("nameOnly"));assert AntMemberRpcCall.adApply==0&&AntMemberTaskListMap.names.containsKey("nameOnly");
+  System.out.println("PASS upstream member ad apply/wait/finish, blacklist candidates, unknown ACK, resume, malformed contracts and legacy categories");
+ }
  static void members()throws Exception{
   for(String invalid:List.of("", "not-a-contract", "BROWSE##one", "BROWSE#sub#")) {
    resetMember();JSONObject row=member("one",false).put("targetBusiness",invalid);AntMemberRpcCall.tasks.put("one",row);MemberBrowseTasks.run(Set.of());
@@ -167,7 +200,7 @@ public class AgTaskSyncCheck {
   MemberBrowseTasks.load();assert !a.data.containsKey("memberBrowse::gone")&&a.data.containsKey("memberBrowse::pone"):"active pending process must survive cleanup";
   AntMemberRpcCall.tasks.get("one").put("status","FINISHED");MemberBrowseTasks.load();assert !a.data.containsKey("memberBrowse::pone")&&Log.category.size()==1;MemberBrowseTasks.load();assert Log.category.size()==1:"late confirmation should log once";
  }
- public static void main(String[] args)throws Exception{games();members();cleanup();reviewRegressions();System.out.println("PASS AG task contracts/duration/checkpoints/unknown ACK/accounts/cancellation");}
+ public static void main(String[] args)throws Exception{games();members();adChecks();cleanup();reviewRegressions();System.out.println("PASS AG task contracts/duration/checkpoints/unknown ACK/accounts/cancellation");}
 }
 '''
 legacy_source = (SOURCE/'model/task/antGame/GameTask.java').read_text(encoding='utf-8')
@@ -175,7 +208,9 @@ legacy_counts = re.findall(r'^    (?:Orchard|Farm|Forest)_.*?, (\d+)\)[,;]', leg
 assert legacy_counts == ['2', '2', '3', '3']
 code = code.replace('@@LEGACY_COUNTS@@', ','.join(legacy_counts))
 code = code.replace('@@MEMBER@@', nested('model/task/antMember/MemberBrowseTasks.java', 'MemberBrowseTasks'))
-code = code.replace('@@RPC@@', '\n'.join(method('model/task/antMember/AntMemberRpcCall.java', sig) for sig in ('private static String currentMemberRequest(', 'public static String signPageTaskList(int', 'public static String currentMemberProcesses(', 'public static String currentMemberAdTasks(', 'public static String applyCurrentMemberTask(', 'public static String executeCurrentMemberTask(', 'public static String currentMemberTaskDetail(')))
+code = code.replace('@@RPC@@', '\n'.join(method('model/task/antMember/AntMemberRpcCall.java', sig) for sig in ('private static String currentMemberRequest(', 'public static String signPageTaskList(int', 'public static String currentMemberProcesses(', 'public static String currentMemberAdTasks(', 'public static String applyCurrentMemberTask(', 'public static String executeCurrentMemberTask(', 'public static String currentMemberTaskDetail(', 'public static String applyAdTask(', 'public static String finishAdTask(')))
+policy=(SOURCE/'model/base/TaskAlternative.java').read_text(encoding='utf-8')
+code=code.replace('@@TRANSACTION@@',re.search(r'private static final String\[\] TRANSACTION_KEYWORDS = \{[\s\S]*?\};',policy).group(0)+'\n'+method('model/base/TaskAlternative.java','    public static boolean isTransactionTask('))
 code = code.replace('@@GAME@@', nested('model/common/GameTaskAction.java', 'GameTaskAction'))
 cache = Path(os.environ.get('GRADLE_USER_HOME', Path.home()/'.gradle'))/'caches/modules-2/files-2.1/org.json/json'
 jar = next(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar','-javadoc.jar')))
