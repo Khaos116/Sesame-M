@@ -8,7 +8,6 @@ import androidx.lifecycle.Lifecycle
 import java.io.RandomAccessFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -47,7 +46,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -131,36 +129,63 @@ data class LogRunEntry(
 private val RUN_START_REGEX = Regex("""^\[账号\d+\]开始执行(?:\s*$|分组【[^】]*】任务\s*$|全部任务\s*$)""")
 
 /**
- * 读取运行日志全文,提取所有轮次开始行("[账号N]开始执行...")的时间戳作为全局锚点。
+ * 模块加载起点行正则:"模块初始化开始"。
+ * 由 ApplicationHook.onModuleLoaded 在主进程、AppConfig.load 之前打印,
+ * 是主进程一次加载周期的最早日志。旧版模块无此行,天然不影响历史日志的轮次划分。
+ */
+private val INIT_START_REGEX = Regex("""^模块初始化开始\s*$""")
+
+/** 运行日志轮次锚点:执行起点("开始执行") + 模块加载起点("模块初始化开始"),均按时间升序 */
+private data class RuntimeAnchors(
+    val runStarts: List<String>,
+    val initStarts: List<String>
+)
+
+/**
+ * 读取运行日志全文,提取轮次锚点:
+ * - 执行起点("[账号N]开始执行...")的时间戳;
+ * - 模块加载起点("模块初始化开始")的时间戳。
  * 读取全文而非受 [MAX_LOG_ENTRIES]/[MAX_TAIL_BYTES] 约束的尾部片段,确保全天各轮次的
  * 开始标记都能作为锚点,使森林/庄园/金豆/其他记录也能按统一执行周期正确划分轮次。
  */
-private fun readRuntimeAnchors(): List<String> {
+private fun readRuntimeAnchors(): RuntimeAnchors {
     val file = LogType.RUNTIME.file
-    if (!file.exists()) return emptyList()
-    val anchors = mutableListOf<String>()
+    if (!file.exists()) return RuntimeAnchors(emptyList(), emptyList())
+    val runStarts = mutableListOf<String>()
+    val initStarts = mutableListOf<String>()
     try {
         file.forEachLine(Charsets.UTF_8) { line ->
             val m = TIME_REGEX.find(line) ?: return@forEachLine
             val tag = m.groupValues[2].takeIf { it.isNotEmpty() }
             val body = m.groupValues[3]
-            if (tag == "RUNTIME" && RUN_START_REGEX.containsMatchIn(body)) {
-                m.groupValues[1].takeIf { it.isNotEmpty() }?.let { anchors.add(it) }
+            val time = m.groupValues[1].takeIf { it.isNotEmpty() } ?: return@forEachLine
+            if (tag == "RUNTIME") {
+                when {
+                    RUN_START_REGEX.containsMatchIn(body) -> runStarts.add(time)
+                    INIT_START_REGEX.containsMatchIn(body) -> initStarts.add(time)
+                }
             }
         }
     } catch (_: Throwable) {
         // 读取失败时退化为无锚点(各页按单条显示)
     }
-    return anchors.sorted()
+    return RuntimeAnchors(runStarts.sorted(), initStarts.sorted())
 }
 
 /**
  * 将单条日志按"执行轮次"聚合。轮次边界取自运行日志的"开始执行"时间(全局锚点),
  * 每条日志按其时间戳归入"最近一次开始执行之后、下一次之前"的轮次。
+ * 若两轮"开始执行"之间存在模块加载起点(进程重启后的加载阶段),该轮边界提前到加载起点,
+ * 使加载阶段日志归于其后一轮执行,而非上一轮末尾。
  * 这样森林/庄园/金豆/其他记录等没有自身轮次标记的类目,也能按统一的执行周期聚合显示。
  * 返回顺序:最早轮在前(runIndex=1 为最早一轮,与时间顺序一致)。时间基于 "HH:mm:ss.SSS" 字典序比较(同日有效)。
  */
-private fun aggregateByRun(source: List<LogEntry>, anchors: List<String>): List<LogRunEntry> {
+private fun aggregateByRun(
+    source: List<LogEntry>,
+    runStarts: List<String>,
+    initStarts: List<String>
+): List<LogRunEntry> {
+    val anchors = effectiveRunStarts(runStarts, initStarts)
     if (anchors.isEmpty()) {
         // 无锚点(从未运行过):退化为单轮,全部日志归一轮
         if (source.isEmpty()) return emptyList()
@@ -182,6 +207,48 @@ private fun aggregateByRun(source: List<LogEntry>, anchors: List<String>): List<
             startLineNumber = list.first().lineNumber,
             entries = list.toList()
         )
+    }
+}
+
+/**
+ * 加载起点与"开始执行"的最大时间差。只接受紧邻轮次开始前的加载标记,
+ * 避免执行中途其他子进程的偶发标记把下一轮边界拖到本轮中间(轮次卡片错位/消失)。
+ * 正常冷启动加载到开始执行通常不足 1 秒,10 秒上限足够覆盖慢设备。
+ */
+private const val INIT_BOUNDARY_WINDOW_MS = 10_000L
+
+/** "HH:mm:ss.SSS" → 当天毫秒数(同日有效);格式异常返回 null */
+private fun timeToMillis(t: String): Long? {
+    return try {
+        val parts = t.split(':', '.')
+        if (parts.size != 4) return null
+        (((parts[0].toLong() * 60 + parts[1].toLong()) * 60 + parts[2].toLong()) * 1000) + parts[3].toLong()
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+/**
+ * 每轮有效起点:默认取该轮"开始执行"时间;若开始执行前 [INIT_BOUNDARY_WINDOW_MS] 内存在
+ * 模块加载起点(取离开始执行最近的一条),则提前到该加载起点,使加载阶段日志归于本轮开头。
+ * 第 1 轮不调整——早于所有锚点的散落日志本就归入第 1 轮。
+ * 旧版模块不打印"模块初始化开始",initStarts 为空时行为与原来完全一致。
+ */
+private fun effectiveRunStarts(runStarts: List<String>, initStarts: List<String>): List<String> {
+    if (runStarts.isEmpty() || initStarts.isEmpty()) return runStarts
+    return runStarts.mapIndexed { index, start ->
+        if (index == 0) {
+            start
+        } else {
+            val prev = runStarts[index - 1]
+            val startMs = timeToMillis(start) ?: return@mapIndexed start
+            // initStarts 已升序:区间内最后一条即离开始执行最近的标记
+            val marker = initStarts.lastOrNull { it > prev && it < start }?.takeIf { m ->
+                val mMs = timeToMillis(m)
+                mMs != null && startMs - mMs in 0..INIT_BOUNDARY_WINDOW_MS
+            }
+            marker ?: start
+        }
     }
 }
 
@@ -211,7 +278,6 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     val logReader = remember(logType) { LogTailReader() }
     var entries by remember(logType) { mutableStateOf(logReader.poll(logType.file)) }
     var revision by remember(logType) { mutableStateOf(0) }
-    var browsingHistory by remember(logType) { mutableStateOf(false) }
     // 搜索文本
     var searchQuery by remember { mutableStateOf("") }
     // Runtime 页面额外支持 tag 过滤
@@ -223,13 +289,21 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
             if (AppConfig.INSTANCE.logViewByRun ?: false) LogViewMode.BY_RUN else LogViewMode.BY_ENTRY
         )
     }
+    // 按轮模式的一键收拢/展开:把所有轮次卡片折叠成标题行
+    var collapseAll by remember(logType) { mutableStateOf(false) }
+    // 展开某一轮后需要定位的列表下标:展开时把该轮第一条顶到视口顶部
+    var revealIndex by remember(logType) { mutableStateOf<Int?>(null) }
+    // 点击展开前该卡片的收起高度:用于判断"展开后的高度是否已测量完成"
+    var revealBaseline by remember(logType) { mutableStateOf(-1) }
 
-    // 全局轮次锚点:从运行日志全文提取所有"开始执行"行的时间戳(升序)。
-    // 读取全文(不受单页 500 条/尾部字节上限约束),确保全天各轮次的开始标记都能作为锚点,
-    // 使森林/庄园/金豆/其他记录也能按统一执行周期正确划分轮次。
-    val runAnchors = remember { readRuntimeAnchors() }
+    // 全局轮次锚点:从运行日志全文提取"开始执行"(执行起点)与"模块初始化开始"(加载起点)
+    // 行的时间戳(升序)。读取全文(不受单页 500 条/尾部字节上限约束),确保全天各轮次的
+    // 开始标记都能作为锚点,使森林/庄园/金豆/其他记录也能按统一执行周期正确划分轮次。
+    val runtimeAnchors = remember { readRuntimeAnchors() }
     // 按轮聚合;搜索在聚合后的轮次内逐条匹配
-    val runEntries = remember(entries, runAnchors) { aggregateByRun(entries, runAnchors) }
+    val runEntries = remember(entries, runtimeAnchors) {
+        aggregateByRun(entries, runtimeAnchors.runStarts, runtimeAnchors.initStarts)
+    }
     val filteredRuns = remember(runEntries, searchQuery) {
         if (searchQuery.isBlank()) runEntries
         else runEntries.filter { run ->
@@ -242,13 +316,6 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
 
     val listState = rememberLazyListState()
 
-    // 列表停下时按位置判断是否停在最新(索引 0):还能往回滚就说明用户翻到上面看历史了
-    LaunchedEffect(listState, logType) {
-        snapshotFlow { listState.isScrollInProgress }
-            .filter { !it }
-            .collect { browsingHistory = listState.canScrollBackward }
-    }
-
     // 定时刷新:只读新增的字节并增量解析;有新条目才更新列表与滚动标记
     LaunchedEffect(logType) {
         while (true) {
@@ -260,17 +327,47 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
             val updated = withContext(Dispatchers.IO) { logReader.poll(file) }
             // 无新增时读取器返回原实例:据此跳过重组(否则每秒都要重建整份列表)
             if (updated !== entries) {
+                // 手动滑动/翻看历史期间冻结列表:按轮卡片高度随新增日志变化,reverseLayout 下
+                // 任何内容变化都会把当前视图顶跑;用户回到底部后下一轮刷新自动补上
+                if (listState.isScrollInProgress || listState.canScrollBackward) {
+                    continue
+                }
                 entries = updated
                 revision++
             }
         }
     }
 
-    // 有新日志时把视角钉回最新一条
+    // 有新日志时仅在「人就在最新处、且没有手动滑动」时跟随:
+    // 手动翻看历史期间绝不改动滚动位置,否则每秒新增的日志会把你反复顶跑
     LaunchedEffect(revision) {
-        if (!browsingHistory && entries.isNotEmpty()) {
-            listState.animateScrollToItem(0)
+        if (entries.isNotEmpty() && !listState.isScrollInProgress && !listState.canScrollBackward) {
+            listState.scrollToItem(0)
         }
+    }
+
+    // 点开某一轮后定位到该轮开头(第一条):reverseLayout 展开时默认停在末尾,
+    // 这里按"条目高度 - 视口高度"把卡片顶部(标题+第一条)对齐到视口顶部。
+    // 逐帧检查,一旦测到展开后的高度立即定位,把中间"停在末尾"的闪烁帧压到最少
+    LaunchedEffect(revealIndex) {
+        val index = revealIndex ?: return@LaunchedEffect
+        val baseline = revealBaseline
+        var attempts = 0
+        while (attempts < 8) {
+            delay(16)
+            attempts++
+            val info = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+                ?: continue
+            if (baseline > 0 && info.size <= baseline) continue // 展开后的高度还没测出来
+            val viewport = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
+            if (viewport > 0) {
+                listState.scrollToItem(index, (info.size - viewport).coerceAtLeast(0))
+            }
+            break
+        }
+        // 必须放在滚动之后:提前清空会改变 LaunchedEffect 的 key,
+        // 协程在 delay 处被取消,定位根本不会执行
+        revealIndex = null
     }
 
     // 计算可见条目:根据搜索文本和 tag 过滤
@@ -291,6 +388,20 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
         topBar = {
             LogTopBar(
                 title = logType.displayName,
+                actions = {
+                    // 按轮查看时提供一键收拢/展开:折叠后只剩各轮标题行,便于快速定位轮次
+                    if (viewMode == LogViewMode.BY_RUN) {
+                        Text(
+                            text = if (collapseAll) "展开" else "收拢",
+                            fontSize = 14.sp,
+                            color = MiuixTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { collapseAll = !collapseAll }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                },
                 onBack = { activity.finish() },
                 onExport = {
                     val exported = FileUtil.exportFile(logType.file)
@@ -417,17 +528,31 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                 ) {
                     itemsIndexed(
                         displayList,
+                        // key 与内容解耦:按轮卡片若把 startLineNumber 纳入 key,500 条滑动窗口
+                        // 丢弃旧条目时 key 会变化,锚点失效、卡片被重建,手动翻看时视图会自己跳
                         key = { _, item ->
                             when (item) {
-                                is LogEntry -> "e-${item.lineNumber}-${item.hashCode()}"
-                                is LogRunEntry -> "r-${item.runIndex}-${item.startLineNumber}"
+                                is LogEntry -> "e-${item.lineNumber}"
+                                is LogRunEntry -> "r-${item.runIndex}"
                                 else -> item.hashCode().toString()
                             }
                         }
-                    ) { _, item ->
+                    ) { index, item ->
                         when (item) {
                             is LogEntry -> LogEntryCard(item)
-                            is LogRunEntry -> RunEntryCard(item, selectedTag, searchQuery)
+                            is LogRunEntry -> RunEntryCard(
+                                run = item,
+                                selectedTag = selectedTag,
+                                searchQuery = searchQuery,
+                                collapseAll = collapseAll,
+                                itemIndex = index,
+                                onExpand = { idx ->
+                                    // 记录展开前的收起高度,供定位时判断"高度已测量完成"
+                                    revealBaseline = listState.layoutInfo.visibleItemsInfo
+                                        .firstOrNull { it.index == idx }?.size ?: -1
+                                    revealIndex = idx
+                                }
+                            )
                             else -> Unit
                         }
                     }
@@ -506,7 +631,14 @@ fun LogEntryCard(entry: LogEntry) {
  * 默认展开;搜索时仅渲染匹配行(精确定位);选中 tag 时仅显示本轮内该 tag 的日志。
  */
 @Composable
-fun RunEntryCard(run: LogRunEntry, selectedTag: String? = null, searchQuery: String = "") {
+fun RunEntryCard(
+    run: LogRunEntry,
+    selectedTag: String? = null,
+    searchQuery: String = "",
+    collapseAll: Boolean = false,
+    itemIndex: Int = -1,
+    onExpand: (Int) -> Unit = {}
+) {
     val shown = when {
         searchQuery.isNotBlank() -> run.entries.filter {
             (it.tag?.contains(searchQuery, ignoreCase = true) == true) ||
@@ -515,7 +647,9 @@ fun RunEntryCard(run: LogRunEntry, selectedTag: String? = null, searchQuery: Str
         selectedTag != null -> run.entries.filter { it.tag == selectedTag }
         else -> run.entries
     }
-    var expanded by remember { mutableStateOf(true) }
+    // 单卡手动展开与全局收拢互不干扰:全局切换时统一重置,之后仍可单独点开某一轮
+    var expanded by remember { mutableStateOf(!collapseAll) }
+    LaunchedEffect(collapseAll) { expanded = !collapseAll }
     Column(
         Modifier
             .fillMaxWidth()
@@ -529,7 +663,10 @@ fun RunEntryCard(run: LogRunEntry, selectedTag: String? = null, searchQuery: Str
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
-                ) { expanded = !expanded },
+                ) {
+                    expanded = !expanded
+                    if (expanded && itemIndex >= 0) onExpand(itemIndex)
+                },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {

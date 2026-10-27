@@ -85,17 +85,30 @@ public class ForestChouChouLe {
                 doublecheck = false;
                 JSONObject listTaskopengreen = new JSONObject(AntForestRpcCall.listTaskopengreen(sceneCode + "_TASK", "task_entry"));
                 if (MessageUtil.checkSuccess(TAG, listTaskopengreen)) {
-                    JSONArray taskList = listTaskopengreen.getJSONArray("taskInfoList");
+                    JSONArray taskList = listTaskopengreen.optJSONArray("taskInfoList");
+                    if (taskList == null) {
+                        break;
+                    }
                     for (int i = 0; i < taskList.length(); i++) {
-                        JSONObject taskInfo = taskList.getJSONObject(i);
-                        JSONObject taskBaseInfo = taskInfo.getJSONObject("taskBaseInfo");
-                        JSONObject bizInfo = new JSONObject(taskBaseInfo.getString("bizInfo"));
-                        String taskName = bizInfo.getString("title");
-                        String desc = bizInfo.getString("desc");
+                        JSONObject taskInfo = taskList.optJSONObject(i);
+                        if (taskInfo == null) {
+                            continue;
+                        }
+                        JSONObject taskBaseInfo = taskInfo.optJSONObject("taskBaseInfo");
+                        if (taskBaseInfo == null) {
+                            continue;
+                        }
+                        String bizInfoStr = taskBaseInfo.optString("bizInfo", "");
+                        if (bizInfoStr.isEmpty()) {
+                            continue;
+                        }
+                        JSONObject bizInfo = new JSONObject(bizInfoStr);
+                        String taskName = bizInfo.optString("title", "");
+                        String desc = bizInfo.optString("desc", "");
 
-                        String taskSceneCode = taskBaseInfo.getString("sceneCode");
-                        String taskStatus = taskBaseInfo.getString("taskStatus");
-                        String taskType = taskBaseInfo.getString("taskType");
+                        String taskSceneCode = taskBaseInfo.optString("sceneCode", "");
+                        String taskStatus = taskBaseInfo.optString("taskStatus", "");
+                        String taskType = taskBaseInfo.optString("taskType", "");
 
                         JSONObject taskRights = taskInfo.getJSONObject("taskRights");
                         int rightsTimes = taskRights.getInt("rightsTimes");
@@ -235,12 +248,11 @@ public class ForestChouChouLe {
                         }
 
                         if (taskType.contains("_DRAW_SHARE") && ForestHuntHelp) {
-                            // if (!Status.hasFlagToday("Forest::" + sceneCode)) {
                             int forestHuntHelpTodayCount = Status.getforestHuntHelpToday(taskType);
                             if (forestHuntHelpTodayCount < shareIds.size()) {
                                 JSONObject prodPlayParam = new JSONObject(taskBaseInfo.getString("prodPlayParam"));
                                 String p2pSceneCode = prodPlayParam.getString("p2pSceneCode");
-                                Log.forest("森林寻宝🎰️执行[" + drawScenename + "]助力好友");
+                                Log.record("森林寻宝🎰️执行[" + drawScenename + "]助力好友");
                                 DoForestHuntHelp(shareIds, activityId, p2pSceneCode, taskType);
                             }
                         }
@@ -249,16 +261,14 @@ public class ForestChouChouLe {
                             if (NORMALForestHuntHelp && sceneCode.equals("ANTFOREST_NORMAL_DRAW")) {
                                 int forestHuntHelpTodayCount = Status.getforestHuntHelpToday("FOREST_NORMAL_DRAW_SHARE");
                                 if (forestHuntHelpTodayCount < shareIds.size()) {
-                                    // if (!Status.hasFlagToday("Forest::" + sceneCode)) {
-                                    Log.forest("森林寻宝🎰️执行[普通场景]助力好友(薅羊毛，如果助力结果不返回成功请关闭配置项)");
+                                    Log.record("森林寻宝🎰️执行[普通场景]助力好友(薅羊毛，如果助力结果不返回成功请关闭配置项)");
                                     DoForestHuntHelp(shareIds, activityId, "FOREST_NORMAL_20250829_SHARE", "FOREST_NORMAL_DRAW_SHARE");
                                 }
                             }
                             if (ACTIVITYForestHuntHelp && sceneCode.equals("ANTFOREST_ACTIVITY_DRAW")) {
                                 int forestHuntHelpTodayCount = Status.getforestHuntHelpToday("FOREST_ACTIVITY_DRAW_SHARE");
                                 if (forestHuntHelpTodayCount < shareIds.size()) {
-                                    // if (!Status.hasFlagToday("Forest::" + sceneCode)) {
-                                    Log.forest("森林寻宝🎰️执行[活动场景]助力好友(薅羊毛，如果助力结果不返回成功请关闭配置项)");
+                                    Log.record("森林寻宝🎰️执行[活动场景]助力好友(薅羊毛，如果助力结果不返回成功请关闭配置项)");
                                     DoForestHuntHelp(shareIds, activityId, "FOREST_NORMAL_20251024_SHARE", "FOREST_ACTIVITY_DRAW_SHARE");
                                 }
                             }
@@ -325,7 +335,7 @@ public class ForestChouChouLe {
                             Log.forest("森林寻宝🎁领取[" + prizeName + "*" + prizeNum + "]" + "");
                             Toast.show("森林寻宝🎁领取[" + prizeName + "*" + prizeNum + "]");
                             if (prizeName.contains("g能量")) {
-                                // 记能量值而非份数，否则寻宝奖励会按"个数"入账（实测每天少记数百克）
+                                // 记能量值而非份数，否则寻宝奖励会按"个数"入账
                                 Matcher energyMatcher = ENERGY_PRIZE_PATTERN.matcher(prizeName);
                                 if (energyMatcher.find()) {
                                     Statistics.addData(Statistics.DataType.COLLECTED, Integer.parseInt(energyMatcher.group(1)) * prizeNum);
@@ -356,8 +366,6 @@ public class ForestChouChouLe {
 
             for (String shareUserId : shareIds) {
                 forestHuntHelpTodayCount = Status.getforestHuntHelpToday(taskType);
-                // if (!Status.canForestHuntHelpToday(taskType + "::" + shareUserId)) {
-                // 判断当天是否助力过
                 if (Status.hasFlagToday(taskType + "::" + shareUserId)) {
                     continue;
                 }

@@ -353,14 +353,12 @@ public class AntForestRpcCall {
         return ApplicationHook.requestString("alipay.antforest.forest.h5.consumeProp", "[{\"propGroup\":\"" + propGroup + "\",\"propId\":\"" + propId + "\",\"propType\":\"" + propType + "\",\"sToken\":\"" + sToken + "\",\"secondConfirm\":" + secondConfirm + ",\"source" +
                                                                                        "\":\"chInfo_ch_appcenter__chsub_9patch\",\"timezoneId\":\"Asia/Shanghai\",\"version\":\"" + VERSION + "\"}]");
         
-        //return ApplicationHook.requestString("alipay.antforest.forest.h5.consumeProp", "[{\"propId\":\"" + propId + "\",\"propType\":\"" + propType + "\",\"source\":\"chInfo_ch_appcenter__chsub_9patch\"," + "\"timezoneId\":\"Asia/Shanghai\",\"version\":\"" + VERSION + "\"}]");
     }
     public static String consumeProp(String propGroup, String propId, String propType) {
         String sToken = System.currentTimeMillis() + "_" + getRandomString(8);
         return ApplicationHook.requestString("alipay.antforest.forest.h5.consumeProp",
                 "[{\"propGroup\":\"" + propGroup + "\",\"propId\":\"" + propId + "\",\"propType\":\"" + propType + "\",\"sToken\":\"" + sToken + "\",\"source\":\"chInfo_ch_appcenter__chsub_9patch\"," + "\"timezoneId\":\"Asia" + "/Shanghai\",\"version\":\"" + VERSION + "\"}]");
         
-        //return ApplicationHook.requestString("alipay.antforest.forest.h5.consumeProp", "[{\"propId\":\"" + propId + "\",\"propType\":\"" + propType + "\",\"source\":\"chInfo_ch_appcenter__chsub_9patch\"," + "\"timezoneId\":\"Asia/Shanghai\",\"version\":\"" + VERSION + "\"}]");
     }
     
     //{"queryBizType":"usingProp","source":"SELF_HOME","version":"20240201"}]}
@@ -446,7 +444,33 @@ public class AntForestRpcCall {
     public static String queryMonopolyEntryInfo() {
         return ApplicationHook.requestString("alipay.antisle.monopoly.h5.queryMonopolyEntryInfo", monopolyPayload(""));
     }
-    
+
+    /* 新版保护地：地图页（含全部保护地列表 regionList 与当前保护地全部展区 currentRegionMapList） */
+    public static String queryMonopolyMapPage() {
+        return ApplicationHook.requestString("alipay.antisle.monopoly.h5.queryMonopolyMapPage",
+                "[{\"source\":\"monopoly_home_animal\",\"uniqueId\":\"" + RandomUtil.getRandomString(16) + "\"}]");
+    }
+
+    /* 新版保护地：切换当前巡护的保护地（regionCode 为查询地图页得到的区域码） */
+    public static String switchMonopolyRegion(String regionCode) {
+        return ApplicationHook.requestString("alipay.antisle.monopoly.h5.switchMonopolyRegion",
+                "[{\"regionCode\":\"" + regionCode + "\",\"source\":\"monopoly_home_animal\",\"uniqueId\":\""
+                        + RandomUtil.getRandomString(16) + "\"}]");
+    }
+
+    /* 新版保护地：查询证书兑换项目（响应含 currentEnergy 当前能量与 energy 所需能量） */
+    public static String queryMonopolyExchangeTree(String projectId) {
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.queryTreeForExchange",
+                "[{\"projectId\":\"" + projectId + "\",\"source\":\"monopoly_exchange_mappage\",\"version\":\"20240704\"}]");
+    }
+
+    /* 新版保护地：兑换解锁证书，消耗能量；projectId 按数字下发，sToken 为 13 位毫秒时间戳 */
+    public static String exchangeMonopolyTree(String projectId) {
+        return ApplicationHook.requestString("alipay.antmember.forest.h5.exchangeTree",
+                "[{\"projectId\":" + projectId + ",\"sToken\":\"" + System.currentTimeMillis()
+                        + "\",\"source\":\"monopoly_exchange_mappage\",\"version\":\"20230501\"}]");
+    }
+
     /* 领取新版保护地首页道具（当日巡护机会） */
     public static String triggerMonopolyHomeProps() {
         return ApplicationHook.requestString("alipay.antisle.monopoly.h5.triggerHomePageProps", monopolyPayload(""));
@@ -469,8 +493,9 @@ public class AntForestRpcCall {
     
     /* 新版保护地任务列表 */
     public static String listMonopolyTasks(String regionCode, String sceneCode) {
+        // regionCode 必须放在 extend 内，服务端才按区域返回完整任务列表
         return ApplicationHook.requestString("com.alipay.antieptask.listTaskopengreen",
-                "[{\"regionCode\":\"" + regionCode + "\",\"sceneCode\":\"" + sceneCode + "\",\"source\":\"ANTFOREST\","
+                "[{\"extend\":{\"regionCode\":\"" + regionCode + "\"},\"sceneCode\":\"" + sceneCode + "\",\"source\":\"ANTFOREST\","
                         + "\"requestType\":\"RPC\",\"zoneId\":\"Asia/Shanghai\",\"uniqueId\":\"" + RandomUtil.getRandomString(16) + "\"}]");
     }
     
@@ -609,29 +634,6 @@ public class AntForestRpcCall {
                                                                                  "\":\"HEALTH_CHANNEL\"," + "\"schemeParams\":{},\"scope\":\"PARTIAL\",\"selectedTabCode\":\"\",\"sourceType\":\"miniApp\"," + "\"specialItemId\":\"\",\"specialItemType\":\"\"," + "\"tenantCode" +
                                                                                  "\":\"2021003141652419\"," + "\"underTakeContentId\":\"\"},\"version\":\"2.0\"}]");
     }
-    
-    /*
-     * public static String medical_health_feeds_query() {
-     * return ApplicationHook.requestString("alipay.iblib.channel.build.query",
-     * "[{\"activityCode\":\"medical_health_feeds_query\",\"activityId\":\"2023072600001207\",
-     * \"body\":{\"apiVersion\":\"3.1.0\",\"bizId\":\"B213\",\"businessCode\":\"JKhealth\",
-     * \"businessId\":\"O2023071900061804\",\"cityCode\":\"330100\",\"cityName\":\"杭州\",
-     * \"exclContentIds\":[\"20240611OB020010036515121805\",\"20240618OB020010036519694606\",
-     * \"20240531OB020010039908594289\",\"20240618OB020010031219943466\",\"20240130OB020010034821821452\",
-     * \"20240531OB020010039908610960\",\"20240520OB020010035100844933\",\"20230926OB020010033829802408\",
-     * \"20240612OB020010039916083635\",\"20240510OB020010031294655966\",\"20240520OB020010030300850750\",
-     * \"20230928OB020010030332233578\",\"20220519OB020010035308350001\",\"20240104OB020010032288343993\",
-     * \"20220517OB020010038708340106\",\"20240606OB020010039912316758\",\"20240529OB020010033806968404\",
-     * \"20240614OB020010039917386188\",\"20230830OB020010039920939091\",\"20231124OB020010036561478030\"],
-     * \"filterItems\":[],\"latitude\":\"\",\"longitude\":\"\",
-     * \"moduleParam\":{\"COMMON_FEEDS_BLOCK_2024041200243259\":{}},\"pageCode\":\"YM2024041200137150\",\"pageNo\":1,
-     * \"pageSize\":10,\"pid\":\"BC_PD_20230713000008526\",\"queryQuizActivityFeed\":1,
-     * \"scenceCode\":\"HEALTH_CHANNEL\",\"schemeParams\":{},\"scope\":\"PARTIAL\",
-     * \"selectedTabCode\":\"MD2024042300000013\",\"sourceType\":\"miniApp\",\"specialItemId\":\"\",
-     * \"specialItemType\":\"\",\"tenantCode\":\"2021003141652419\",\"underTakeContentId\":\"\"},\"version\":\"2.0\"}]"
-     * );
-     * }
-     */
     
     public static String query_forest_energy() {
         return ApplicationHook.requestString("alipay.iblib.channel.data", "[{\"activityCode\":\"query_forest_energy" + "\",\"activityId\":\"2024052300762675\"," + "\"appId\":\"2021003141652419\"," + "\"body\":{\"scene\":\"FEEDS\"},\"version\":\"2.0\"}]");
@@ -839,26 +841,7 @@ public class AntForestRpcCall {
         return ApplicationHook.requestString("com.alipay.antieptask.finishTaskopengreen", requestData);
     }
     
-    /**
-     * 更新用户配置（是否处于队伍中）
-     * <p>
-     * 示例请求体：
-     * [
-     * {
-     * "configMap": {
-     * "inTeam": "Y"
-     * },
-     * "source": "chInfo_ch_appcenter__chsub_9patch"
-     * }
-     * ]
-     * <p>
-     * 说明：
-     * - inTeam = "Y" 表示用户在队伍中
-     * - inTeam = "N" 表示用户不在队伍中
-     *
-     * @param inTeam 是否在队伍中（true = Y，false = N）
-     * @return 返回 RPC 响应字符串
-     */
+    /** 更新用户配置：inTeam=Y 表示在队伍中，N 表示不在队伍中 */
     public static String updateUserConfiginTeam(boolean inTeam) {
         String inTeamValue = inTeam ? "Y" : "N";
         String args = "[{" + "\"configMap\":{\"inTeam\":\"" + inTeamValue + "\"}," + "\"source\":\"chInfo_ch_appcenter__chsub_9patch\"" + "}]";
@@ -868,47 +851,22 @@ public class AntForestRpcCall {
     
     /**
      * 组队版浇水
-     * 修复了 sToken 生成逻辑，必须是 时间戳_8位
+     * sToken 必须为「毫秒时间戳_8位随机串」
      *
      * @param teamId      队伍ID
      * @param energyCount 浇水克数
      * @return 响应字符串
      */
     public static String teamWater(String teamId, int energyCount) {
-        // 1. 生成毫秒级时间戳
         long ts = System.currentTimeMillis();
-        
-        // 2. 生成 8 位随机数字字符
         String rand = RandomUtil.getRandomString(8);
-        
-        // 3. 拼接 sToken：时间戳_8位数字字符
         String sToken = ts + "_" + rand;
-        
-        // 4. 构造参数 JSON 字符串
         String args = "[{" + "\"energyCount\":" + energyCount + "," + "\"sToken\":\"" + sToken + "\"," + "\"source\":\"chInfo_ch_appcenter__chsub_9patch\"," + "\"teamId\":\"" + teamId + "\"" + "}]";
-        
-        // 5. RPC 调用
         return ApplicationHook.requestString("alipay.antforest.forest.h5.teamWater", args);
     }
     
-    /**
-     * 查询 MiscInfo（teamFlagTreeCount 等）
-     * <p>
-     * 示例请求体：
-     * {
-     * "configVersionMap": {},
-     * "extInfo": {},
-     * "queryBizType": "teamFlagTreeCount",
-     * "source": "SELF_HOME",
-     * "version": "20240201"
-     * }
-     *
-     * @param queryBizType 查询的业务类型，例如 "teamFlagTreeCount"
-     * @param teamId       队伍ID
-     * @return 返回 RPC 响应字符串
-     */
+    /** 查询 MiscInfo（组队额度等）；teamId 实际按 {@code targetUserId} 字段传给服务端 */
     public static String queryMiscInfo(String queryBizType, String teamId) {
-        // 构造 H5 RPC 参数
         String args = "[{\"queryBizType\":\"" + queryBizType + "\",\"source\":\"SELF_HOME\",\"targetUserId\":\"" + teamId + "\",\"version\":\"" + VERSION + "\"}]";
         return ApplicationHook.requestString("alipay.antforest.forest.h5.queryMiscInfo", args);
     }

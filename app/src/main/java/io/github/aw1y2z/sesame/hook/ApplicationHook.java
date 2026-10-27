@@ -149,6 +149,9 @@ public class ApplicationHook extends XposedModule {
 
     private static volatile boolean broadcastReceiverRegistered = false;
 
+    /** 主进程"模块初始化开始"标记是否已打印（供日志查看器按轮分组，每个主进程加载周期只打一次） */
+    private static volatile boolean initStartLogged = false;
+
     public static void setOffline(boolean offline) {
         ApplicationHook.offline = offline;
     }
@@ -159,6 +162,13 @@ public class ApplicationHook extends XposedModule {
         log(4, TAG, "event=module_loaded api=" + getApiVersion()
                 + " framework=" + getFrameworkName() + " version=" + getFrameworkVersion());
         try {
+            // 主进程模块加载起点标记：置于 AppConfig.load 之前，供 App 日志查看器把整个
+            // 加载阶段（hook/CaptchaHook/加载完成等）归到其后一轮执行的开头，而非上一轮末尾。
+            // 仅主进程打印，避免各子进程刷噪声；与 handleLoadPackage 内的兜底打印共用去重标志
+            if (ClassUtil.PACKAGE_NAME.equals(getCurrentProcessName(ClassUtil.PACKAGE_NAME)) && !initStartLogged) {
+                initStartLogged = true;
+                Log.i("模块初始化开始");
+            }
             // 读取与 App 共享的日志开关配置，使各分项开关在本进程真正生效
             AppConfig.load();
             // 模块已在 LSPosed 中启用：onModuleLoaded 被调用即代表已启用，
@@ -179,21 +189,73 @@ public class ApplicationHook extends XposedModule {
 
     @Override
     public void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
+        // 用真实进程名：支付宝每个子进程都会回调 onPackageReady，若直接拿包名当进程名，
+        // 会绕过主进程判断，导致每个子进程都重复执行一遍 hook 与初始化（日志刷屏）
         XC_LoadPackage.LoadPackageParam lpparam = new XC_LoadPackage.LoadPackageParam();
         lpparam.packageName = param.getPackageName();
-        lpparam.processName = param.getPackageName();
+        lpparam.processName = getCurrentProcessName(param.getPackageName());
         lpparam.classLoader = param.getClassLoader();
         handleLoadPackage(lpparam);
+    }
+
+    /** 当前进程名；取不到时回退包名（行为同旧版） */
+    private static String getCurrentProcessName(String fallback) {
+        // 首选 /proc/self/cmdline：不依赖 ActivityThread 是否已完成 attach。
+        // onModuleLoaded 等早期阶段 currentProcessName() 仍为空，会误回退包名，
+        // 导致各子进程被当成主进程（重复初始化 / 加载标记刷屏）
+        try {
+            byte[] buf = new byte[256];
+            int n;
+            try (java.io.FileInputStream in = new java.io.FileInputStream("/proc/self/cmdline")) {
+                n = in.read(buf);
+            }
+            if (n > 0) {
+                int end = 0;
+                while (end < n && buf[end] != 0) {
+                    end++;
+                }
+                if (end > 0) {
+                    String name = new String(buf, 0, end, java.nio.charset.StandardCharsets.UTF_8).trim();
+                    if (!name.isEmpty()) {
+                        return name;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // 读取失败时落到 ActivityThread 反射
+        }
+        try {
+            Object processName = Class.forName("android.app.ActivityThread")
+                    .getMethod("currentProcessName").invoke(null);
+            if (processName instanceof String && !((String) processName).isEmpty()) {
+                return (String) processName;
+            }
+            Log.i(TAG, "getCurrentProcessName empty, fallback=" + fallback);
+        } catch (Throwable t) {
+            Log.i(TAG, "getCurrentProcessName failed, fallback=" + fallback);
+        }
+        return fallback;
     }
 
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
         // 先提取进程名并赋值给全局变量
         processName = lpparam.processName; // 新增：将 Xposed 提供的进程名赋值给全局变量
         if (ClassUtil.PACKAGE_NAME.equals(lpparam.packageName) && ClassUtil.PACKAGE_NAME.equals(lpparam.processName)) {
-            if (hooked) {
-                return;
+            // 提前在锁内落标志：onPackageReady 与旧回调 handleLoadPackage 可能并发/重复触发，
+            // 旧写法在方法末尾才置位，竞态下会重复执行整套 hook 与初始化
+            synchronized (ApplicationHook.class) {
+                if (hooked) {
+                    return;
+                }
+                hooked = true;
             }
             classLoader = lpparam.classLoader;
+            // 兜底：若 onModuleLoaded 未先行打印（理论上不会），这里补上加载起点标记，
+            // 保证每个主进程加载周期有且仅有一条"模块初始化开始"
+            if (!initStartLogged) {
+                initStartLogged = true;
+                Log.i("模块初始化开始");
+            }
 
             XHelpers.findAndHookMethod(Application.class, "attach", Context.class, new XC_MethodHook() {
                 @Override
@@ -475,8 +537,7 @@ public class ApplicationHook extends XposedModule {
             } catch (Throwable t) {
                 Log.err(TAG, "hook MiscUtils err:", t);
             }
-            hooked = true;
-            Log.i(TAG, "load success: " + lpparam.packageName);
+            Log.i(TAG, "load success: " + lpparam.packageName + " proc=" + lpparam.processName + " hooked=" + hooked);
         }
     }
 
@@ -656,7 +717,7 @@ public class ApplicationHook extends XposedModule {
 
                 UserIdMap.initUser(userId);
                 Model.initAllModel();
-                Log.record("模块版本：" + modelVersion);
+                // 模块版本只在执行阶段打一次，加载阶段不重复打印（否则启动段同一条出现两次）
                 Log.record("开始加载");
                 ConfigV2.load(userId);
 

@@ -256,12 +256,23 @@ public class AntStall extends ModelTask {
                 }
                 JSONObject jo = new JSONObject(jostr);
                 if (MessageUtil.checkResultCode(TAG, jo)) {
-                    JSONArray taskModels = jo.getJSONArray("taskModels");
-                    for (int i = 0; i < taskModels.length(); i++) {
-                        JSONObject task = taskModels.getJSONObject(i);
-                        JSONObject bizInfo = new JSONObject(task.getString("bizInfo"));
-                        String title = bizInfo.getString("title");
-                        AntStallTaskListMap.add(title, title);
+                    JSONArray taskModels = jo.optJSONArray("taskModels");
+                    if (taskModels != null) {
+                        for (int i = 0; i < taskModels.length(); i++) {
+                            JSONObject task = taskModels.optJSONObject(i);
+                            if (task == null) {
+                                continue;
+                            }
+                            String bizInfoStr = task.optString("bizInfo", "");
+                            if (bizInfoStr.isEmpty()) {
+                                continue;
+                            }
+                            JSONObject bizInfo = new JSONObject(bizInfoStr);
+                            String title = bizInfo.optString("title", "");
+                            if (!title.isEmpty()) {
+                                AntStallTaskListMap.add(title, title);
+                            }
+                        }
                     }
                 }
                 //保存任务到配置文件
@@ -782,19 +793,24 @@ public class AntStall extends ModelTask {
             JSONObject jo = new JSONObject(AntStallRpcCall.signToday());
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 StringBuilder signReward = new StringBuilder();
-                JSONArray signRewardModelList = jo.getJSONArray("signRewardModelList");
-                for (int i = 0; i < signRewardModelList.length(); i++) {
-                    jo = signRewardModelList.getJSONObject(i);
-                    if (i > 0) {
-                        signReward.append(";");
-                    }
-                    int count = jo.getInt("count");
-                    String type = jo.getString("type");
-                    if (Objects.equals("ANTSTALL_HOT", type)) {
-                        signReward.append("产速增加").append(count).append("/小时");
-                    }
-                    else {
-                        signReward.append(type).append("*").append(count);
+                JSONArray signRewardModelList = jo.optJSONArray("signRewardModelList");
+                if (signRewardModelList != null) {
+                    for (int i = 0; i < signRewardModelList.length(); i++) {
+                        jo = signRewardModelList.optJSONObject(i);
+                        if (jo == null) {
+                            continue;
+                        }
+                        if (i > 0) {
+                            signReward.append(";");
+                        }
+                        int count = jo.optInt("count", 0);
+                        String type = jo.optString("type", "");
+                        if (Objects.equals("ANTSTALL_HOT", type)) {
+                            signReward.append("产速增加").append(count).append("/小时");
+                        }
+                        else {
+                            signReward.append(type).append("*").append(count);
+                        }
                     }
                 }
                 Log.farm("新村任务📅签到#获得[" + signReward + "]");

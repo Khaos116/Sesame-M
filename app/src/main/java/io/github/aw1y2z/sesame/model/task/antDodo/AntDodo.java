@@ -247,18 +247,23 @@ public class AntDodo extends ModelTask {
         try {
             JSONObject jo = new JSONObject(AntDodoRpcCall.homePage());
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                JSONObject data = jo.getJSONObject("data");
-                JSONArray ja = data.getJSONArray("limit");
+                JSONObject data = jo.optJSONObject("data");
+                JSONArray ja = data == null ? null : data.optJSONArray("limit");
                 int index = -1;
-                for (int i = 0; i < ja.length(); i++) {
-                    jo = ja.getJSONObject(i);
-                    if ("DAILY_COLLECT".equals(jo.getString("actionCode"))) {
-                        index = i;
-                        break;
+                if (ja != null) {
+                    for (int i = 0; i < ja.length(); i++) {
+                        jo = ja.optJSONObject(i);
+                        if (jo == null) {
+                            continue;
+                        }
+                        if ("DAILY_COLLECT".equals(jo.optString("actionCode", ""))) {
+                            index = i;
+                            break;
+                        }
                     }
                 }
-                if (index >= 0) {
-                    int leftFreeQuota = jo.getInt("leftFreeQuota");
+                if (index >= 0 && jo != null) {
+                    int leftFreeQuota = jo.optInt("leftFreeQuota", 0);
                     for (int j = 0; j < leftFreeQuota; j++) {
                         jo = new JSONObject(AntDodoRpcCall.collect());
                         if (MessageUtil.checkResultCode(TAG, jo)) {
@@ -603,25 +608,41 @@ public class AntDodo extends ModelTask {
             JSONObject jo = new JSONObject(AntDodoRpcCall.queryFriend());
             if (MessageUtil.checkResultCode(TAG, jo)) {
                 int count = 0;
-                JSONArray limitList = jo.getJSONObject("data").getJSONObject("extend").getJSONArray("limit");
-                for (int i = 0; i < limitList.length(); i++) {
-                    JSONObject limit = limitList.getJSONObject(i);
-                    if (limit.getString("actionCode").equals("COLLECT_TO_FRIEND")) {
-                        if (limit.getLong("startTime") > System.currentTimeMillis()) {
-                            return;
+                JSONObject dodoData = jo.optJSONObject("data");
+                JSONObject extend = dodoData == null ? null : dodoData.optJSONObject("extend");
+                JSONArray limitList = extend == null ? null : extend.optJSONArray("limit");
+                if (limitList != null) {
+                    for (int i = 0; i < limitList.length(); i++) {
+                        JSONObject limit = limitList.optJSONObject(i);
+                        if (limit == null) {
+                            continue;
                         }
-                        count = limit.getInt("leftLimit");
-                        break;
-                    }
+                        if ("COLLECT_TO_FRIEND".equals(limit.optString("actionCode", ""))) {
+                            if (limit.optLong("startTime", 0L) > System.currentTimeMillis()) {
+                                return;
+                            }
+                            count = limit.optInt("leftLimit", 0);
+                            break;
+                        }
 
+                    }
                 }
-                JSONArray friendList = jo.getJSONObject("data").getJSONArray("friends");
+                JSONArray friendList = dodoData == null ? null : dodoData.optJSONArray("friends");
+                if (friendList == null) {
+                    return;
+                }
                 for (int i = 0; i < friendList.length() && count > 0; i++) {
-                    JSONObject friend = friendList.getJSONObject(i);
-                    if (friend.getBoolean("dailyCollect")) {
+                    JSONObject friend = friendList.optJSONObject(i);
+                    if (friend == null) {
                         continue;
                     }
-                    String useId = friend.getString("userId");
+                    if (friend.optBoolean("dailyCollect", false)) {
+                        continue;
+                    }
+                    String useId = friend.optString("userId", "");
+                    if (useId.isEmpty()) {
+                        continue;
+                    }
                     boolean isCollectToFriend = collectToFriendList.getValue().contains(useId);
                     if (collectToFriendType.getValue() != CollectToFriendType.COLLECT) {
                         isCollectToFriend = !isCollectToFriend;

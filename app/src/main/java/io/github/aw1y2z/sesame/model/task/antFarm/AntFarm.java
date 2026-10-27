@@ -520,11 +520,18 @@ public class AntFarm extends ModelTask {
 
             JSONObject jo = new JSONObject(AntFarmRpcCall.listFarmTask());
             if (MessageUtil.checkMemo(TAG, jo)) {
-                JSONArray ja = jo.getJSONArray("farmTaskList");
-                for (int i = 0; i < ja.length(); i++) {
-                    jo = ja.getJSONObject(i);
-                    String title = jo.getString("title");
-                    AntFarmDoFarmTaskListMap.add(title, title);
+                JSONArray ja = jo.optJSONArray("farmTaskList");
+                if (ja != null) {
+                    for (int i = 0; i < ja.length(); i++) {
+                        jo = ja.optJSONObject(i);
+                        if (jo == null) {
+                            continue;
+                        }
+                        String title = jo.optString("title", "");
+                        if (!title.isEmpty()) {
+                            AntFarmDoFarmTaskListMap.add(title, title);
+                        }
+                    }
                 }
             }
             //保存任务到配置文件
@@ -561,11 +568,18 @@ public class AntFarm extends ModelTask {
                 if (MessageUtil.checkMemo(TAG, jo)) {
                     jo = new JSONObject(AntFarmRpcCall.listFarmDrawTask("ANTFARM_DAILY_DRAW_TASK"));
                     if (MessageUtil.checkMemo(TAG, jo)) {
-                        JSONArray farmTaskList = jo.getJSONArray("farmTaskList");
-                        for (int i = 0; i < farmTaskList.length(); i++) {
-                            jo = farmTaskList.getJSONObject(i);
-                            String title = jo.getString("title");
-                            AntFarmDrawMachineTaskListMap.add(title, title);
+                        JSONArray farmTaskList = jo.optJSONArray("farmTaskList");
+                        if (farmTaskList != null) {
+                            for (int i = 0; i < farmTaskList.length(); i++) {
+                                jo = farmTaskList.optJSONObject(i);
+                                if (jo == null) {
+                                    continue;
+                                }
+                                String title = jo.optString("title", "");
+                                if (!title.isEmpty()) {
+                                    AntFarmDrawMachineTaskListMap.add(title, title);
+                                }
+                            }
                         }
                         JSONObject queryDrawMachineActivityjo = new JSONObject(AntFarmRpcCall.queryDrawMachineActivity("ipDrawMachine", "dailyDrawMachine"));
                         if (MessageUtil.checkMemo(TAG, queryDrawMachineActivityjo)) {
@@ -573,11 +587,18 @@ public class AntFarm extends ModelTask {
                                 if (queryDrawMachineActivityjo.getJSONArray("otherDrawMachineActivityIds").length() > 0) {
                                     jo = new JSONObject(AntFarmRpcCall.listFarmDrawTask("ANTFARM_IP_DRAW_TASK"));
                                     if (MessageUtil.checkMemo(TAG, jo)) {
-                                        farmTaskList = jo.getJSONArray("farmTaskList");
-                                        for (int i = 0; i < farmTaskList.length(); i++) {
-                                            jo = farmTaskList.getJSONObject(i);
-                                            String title = jo.getString("title");
-                                            AntFarmDrawMachineTaskListMap.add(title, title);
+                                        farmTaskList = jo.optJSONArray("farmTaskList");
+                                        if (farmTaskList != null) {
+                                            for (int i = 0; i < farmTaskList.length(); i++) {
+                                                jo = farmTaskList.optJSONObject(i);
+                                                if (jo == null) {
+                                                    continue;
+                                                }
+                                                String title = jo.optString("title", "");
+                                                if (!title.isEmpty()) {
+                                                    AntFarmDrawMachineTaskListMap.add(title, title);
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -2479,9 +2500,12 @@ public class AntFarm extends ModelTask {
             if (!MessageUtil.checkMemo(TAG, jo)) {
                 return;
             }
-            boolean canCollectDailyLimitedFoodMaterial = jo.getBoolean("canCollectDailyLimitedFoodMaterial");
+            boolean canCollectDailyLimitedFoodMaterial = jo.optBoolean("canCollectDailyLimitedFoodMaterial", false);
             if (canCollectDailyLimitedFoodMaterial) {
-                int dailyLimitedFoodMaterialAmount = jo.getInt("dailyLimitedFoodMaterialAmount");
+                int dailyLimitedFoodMaterialAmount = jo.optInt("dailyLimitedFoodMaterialAmount", 0);
+                if (dailyLimitedFoodMaterialAmount <= 0) {
+                    return;
+                }
                 jo = new JSONObject(AntFarmRpcCall.collectDailyLimitedFoodMaterial(dailyLimitedFoodMaterialAmount));
                 if (MessageUtil.checkMemo(TAG, jo)) {
                     Log.farm("小鸡厨房👨🏻‍🍳领取[爱心食材店食材]#" + dailyLimitedFoodMaterialAmount + "g");
@@ -3834,15 +3858,22 @@ public class AntFarm extends ModelTask {
                         jo = new JSONObject(AntFarmRpcCall.drawGameCenterAward());
                         if (jo.optBoolean("success")) {
                             canUseTimes = jo.getInt("drawRightsTimes");
-                            JSONArray gameCenterDrawAwardList = jo.getJSONArray("gameCenterDrawAwardList");
-                            ArrayList<String> awards = new ArrayList<String>();
-                            for (int i = 0; i < gameCenterDrawAwardList.length(); i++) {
-                                JSONObject gameCenterDrawAward = gameCenterDrawAwardList.getJSONObject(i);
-                                int awardCount = gameCenterDrawAward.getInt("awardCount");
-                                String awardName = gameCenterDrawAward.getString("awardName");
-                                awards.add(awardName + "*" + awardCount);
+                            JSONArray gameCenterDrawAwardList = jo.optJSONArray("gameCenterDrawAwardList");
+                            if (gameCenterDrawAwardList != null) {
+                                ArrayList<String> awards = new ArrayList<String>();
+                                for (int i = 0; i < gameCenterDrawAwardList.length(); i++) {
+                                    JSONObject gameCenterDrawAward = gameCenterDrawAwardList.optJSONObject(i);
+                                    if (gameCenterDrawAward == null) {
+                                        continue;
+                                    }
+                                    int awardCount = gameCenterDrawAward.optInt("awardCount", 0);
+                                    String awardName = gameCenterDrawAward.optString("awardName", "");
+                                    if (!awardName.isEmpty()) {
+                                        awards.add(awardName + "*" + awardCount);
+                                    }
+                                }
+                                Log.farm("小鸡乐园🎮开宝箱得[" + StringUtil.collectionJoinString(",", awards) + "]");
                             }
-                            Log.farm("小鸡乐园🎮开宝箱得[" + StringUtil.collectionJoinString(",", awards) + "]");
                         }
                         else {
                             Log.i(TAG, "drawGameCenterAward falsed result: " + jo.toString());
@@ -3940,9 +3971,15 @@ public class AntFarm extends ModelTask {
                 int hasInvitedCount = 0;
                 List<String> userIdList = new ArrayList<>(); // 保存 userId
                 for (int i = 0; i < p2pCanInvitePersonDetailList.length(); i++) {
-                    JSONObject personDetail = p2pCanInvitePersonDetailList.getJSONObject(i);
-                    String inviteStatus = personDetail.getString("inviteStatus");
-                    String userId = personDetail.getString("userId");
+                    JSONObject personDetail = p2pCanInvitePersonDetailList.optJSONObject(i);
+                    if (personDetail == null) {
+                        continue;
+                    }
+                    String inviteStatus = personDetail.optString("inviteStatus", "");
+                    String userId = personDetail.optString("userId", "");
+                    if (userId.isEmpty()) {
+                        continue;
+                    }
                     
                     if (inviteStatus.equals("CAN_INVITE")) {
                         userIdList.add(userId);

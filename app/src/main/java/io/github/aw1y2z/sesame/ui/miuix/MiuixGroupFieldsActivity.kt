@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -331,14 +332,16 @@ fun GroupFieldsContent(activity: MiuixGroupFieldsActivity, userId: String?, grou
                     title?.let { SmallTitle(text = it) }
                     CardColumn {
                         fields.forEach { fieldRow ->
-                            GroupFieldRow(
-                                activity = activity,
-                                userId = userId,
-                                groupCode = groupCode,
-                                row = fieldRow,
-                                onDependencyChanged =
-                                    if (dependencyCodes.contains(fieldRow.field.code)) bumpDependency else null
-                            )
+                            key(fieldRow.key) {
+                                GroupFieldRow(
+                                    activity = activity,
+                                    userId = userId,
+                                    groupCode = groupCode,
+                                    row = fieldRow,
+                                    onDependencyChanged =
+                                        if (dependencyCodes.contains(fieldRow.field.code)) bumpDependency else null
+                                )
+                            }
                         }
                     }
                 }

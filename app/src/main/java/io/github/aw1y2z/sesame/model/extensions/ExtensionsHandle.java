@@ -112,10 +112,13 @@ public class ExtensionsHandle {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
             }
-            JSONObject exchangeableTree = jo.getJSONObject("exchangeableTree");
-            int currentBudget = exchangeableTree.getInt("currentBudget");
-            String region = exchangeableTree.getString("region");
-            String treeName = exchangeableTree.getString("treeName");
+            JSONObject exchangeableTree = jo.optJSONObject("exchangeableTree");
+            if (exchangeableTree == null) {
+                return;
+            }
+            int currentBudget = exchangeableTree.optInt("currentBudget", 0);
+            String region = exchangeableTree.optString("region", "");
+            String treeName = exchangeableTree.optString("treeName", "");
             String tips = "不可合种";
             if (exchangeableTree.optBoolean("canCoexchange", false)) {
                 JSONObject extendInfo = exchangeableTree.optJSONObject("extendInfo");
@@ -153,9 +156,12 @@ public class ExtensionsHandle {
         try {
             JSONObject jo = new JSONObject(ProtectTreeRpcCall.queryTreeForExchange(projectId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                JSONObject exchangeableTree = jo.getJSONObject("exchangeableTree");
-                int currentBudget = exchangeableTree.getInt("currentBudget");
-                String region = exchangeableTree.getString("region");
+                JSONObject exchangeableTree = jo.optJSONObject("exchangeableTree");
+                if (exchangeableTree == null) {
+                    return;
+                }
+                int currentBudget = exchangeableTree.optInt("currentBudget", 0);
+                String region = exchangeableTree.optString("region", "");
                 Log.forest("树苗查询🌱[" + region + "-" + treeName + "]#剩余:" + currentBudget);
             }
         } catch (Throwable t) {

@@ -943,8 +943,15 @@ public class AntSports extends ModelTask {
         try {
             JSONObject jo = new JSONObject(AntSportsRpcCall.receiveEvent(eventBillNo));
             if (MessageUtil.checkSuccess(TAG, jo)) {
-                jo = jo.getJSONObject("data");
-                parseRewardsByJSONArrayRewards(jo.getJSONArray("rewards"), 0);
+                JSONObject data = jo.optJSONObject("data");
+                if (data == null) {
+                    return;
+                }
+                JSONArray rewards = data.optJSONArray("rewards");
+                if (rewards == null) {
+                    return;
+                }
+                parseRewardsByJSONArrayRewards(rewards, 0);
             }
         } catch (Throwable t) {
             Log.err(TAG, "receiveEvent err:", t);
@@ -1179,7 +1186,10 @@ public class AntSports extends ModelTask {
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return false;
             }
-            JSONArray userExchangeRecords = jo.getJSONArray("userExchangeRecords");
+            JSONArray userExchangeRecords = jo.optJSONArray("userExchangeRecords");
+            if (userExchangeRecords == null) {
+                return false;
+            }
             if (userExchangeRecords.length() == 0) {
                 return true;
             }
@@ -1253,16 +1263,31 @@ public class AntSports extends ModelTask {
             String s = AntSportsRpcCall.userTaskGroupQuery(groupId);
             JSONObject jo = new JSONObject(s);
             if (jo.optBoolean("success")) {
-                jo = jo.getJSONObject("group");
-                JSONArray userTaskList = jo.getJSONArray("userTaskList");
+                JSONObject group = jo.optJSONObject("group");
+                if (group == null) {
+                    return;
+                }
+                JSONArray userTaskList = group.optJSONArray("userTaskList");
+                if (userTaskList == null) {
+                    return;
+                }
                 for (int i = 0; i < userTaskList.length(); i++) {
-                    jo = userTaskList.getJSONObject(i);
-                    if (!"TODO".equals(jo.getString("status"))) {
+                    jo = userTaskList.optJSONObject(i);
+                    if (jo == null) {
                         continue;
                     }
-                    JSONObject taskInfo = jo.getJSONObject("taskInfo");
-                    String bizType = taskInfo.getString("bizType");
-                    String taskId = taskInfo.getString("taskId");
+                    if (!"TODO".equals(jo.optString("status", ""))) {
+                        continue;
+                    }
+                    JSONObject taskInfo = jo.optJSONObject("taskInfo");
+                    if (taskInfo == null) {
+                        continue;
+                    }
+                    String bizType = taskInfo.optString("bizType", "");
+                    String taskId = taskInfo.optString("taskId", "");
+                    if (bizType.isEmpty() || taskId.isEmpty()) {
+                        continue;
+                    }
                     jo = new JSONObject(AntSportsRpcCall.userTaskComplete(bizType, taskId));
                     if (jo.optBoolean("success")) {
                         String taskName = taskInfo.optString("taskName", taskId);
@@ -1290,10 +1315,16 @@ public class AntSports extends ModelTask {
                 }
                 jo = new JSONObject(AntSportsRpcCall.queryRoundList());
                 if (jo.optBoolean("success")) {
-                    JSONArray dataList = jo.getJSONArray("dataList");
+                    JSONArray dataList = jo.optJSONArray("dataList");
+                    if (dataList == null) {
+                        return;
+                    }
                     for (int i = 0; i < dataList.length(); i++) {
-                        jo = dataList.getJSONObject(i);
-                        if (!"P".equals(jo.getString("status"))) {
+                        jo = dataList.optJSONObject(i);
+                        if (jo == null) {
+                            continue;
+                        }
+                        if (!"P".equals(jo.optString("status", ""))) {
                             continue;
                         }
                         if (jo.has("userRecord")) {
@@ -1337,24 +1368,47 @@ public class AntSports extends ModelTask {
             String s = AntSportsRpcCall.userTaskGroupQuery("SPORTS_DAILY_GROUP");
             JSONObject jo = new JSONObject(s);
             if (jo.optBoolean("success")) {
-                jo = jo.getJSONObject("group");
-                JSONArray userTaskList = jo.getJSONArray("userTaskList");
+                JSONObject group = jo.optJSONObject("group");
+                if (group == null) {
+                    return;
+                }
+                JSONArray userTaskList = group.optJSONArray("userTaskList");
+                if (userTaskList == null) {
+                    return;
+                }
                 for (int i = 0; i < userTaskList.length(); i++) {
-                    jo = userTaskList.getJSONObject(i);
-                    if (!"COMPLETED".equals(jo.getString("status"))) {
+                    jo = userTaskList.optJSONObject(i);
+                    if (jo == null) {
                         continue;
                     }
-                    String userTaskId = jo.getString("userTaskId");
-                    JSONObject taskInfo = jo.getJSONObject("taskInfo");
-                    String taskId = taskInfo.getString("taskId");
+                    if (!"COMPLETED".equals(jo.optString("status", ""))) {
+                        continue;
+                    }
+                    String userTaskId = jo.optString("userTaskId", "");
+                    if (userTaskId.isEmpty()) {
+                        continue;
+                    }
+                    JSONObject taskInfo = jo.optJSONObject("taskInfo");
+                    if (taskInfo == null) {
+                        continue;
+                    }
+                    String taskId = taskInfo.optString("taskId", "");
+                    if (taskId.isEmpty()) {
+                        continue;
+                    }
                     jo = new JSONObject(AntSportsRpcCall.userTaskRightsReceive(taskId, userTaskId));
                     if (jo.optBoolean("success")) {
                         String taskName = taskInfo.optString("taskName", taskId);
-                        JSONArray rightsRuleList = taskInfo.getJSONArray("rightsRuleList");
+                        JSONArray rightsRuleList = taskInfo.optJSONArray("rightsRuleList");
                         StringBuilder award = new StringBuilder();
-                        for (int j = 0; j < rightsRuleList.length(); j++) {
-                            jo = rightsRuleList.getJSONObject(j);
-                            award.append(jo.getString("rightsName")).append("*").append(jo.getInt("baseAwardCount"));
+                        if (rightsRuleList != null) {
+                            for (int j = 0; j < rightsRuleList.length(); j++) {
+                                JSONObject rule = rightsRuleList.optJSONObject(j);
+                                if (rule == null) {
+                                    continue;
+                                }
+                                award.append(rule.optString("rightsName", "")).append("*").append(rule.optInt("baseAwardCount", 0));
+                            }
                         }
                         Log.other("领取奖励🎖️[" + taskName + "]#" + award);
                     } else {
@@ -1376,10 +1430,13 @@ public class AntSports extends ModelTask {
             String s = AntSportsRpcCall.pathFeatureQuery();
             JSONObject jo = new JSONObject(s);
             if (jo.optBoolean("success")) {
-                JSONObject path = jo.getJSONObject("path");
-                String pathId = path.getString("pathId");
-                String title = path.getString("title");
-                int minGoStepCount = path.getInt("minGoStepCount");
+                JSONObject path = jo.optJSONObject("path");
+                if (path == null) {
+                    return;
+                }
+                String pathId = path.optString("pathId", "");
+                String title = path.optString("title", "");
+                int minGoStepCount = path.optInt("minGoStepCount", 0);
                 if (jo.has("userPath")) {
                     JSONObject userPath = jo.getJSONObject("userPath");
                     String userPathRecordStatus = userPath.getString("userPathRecordStatus");
@@ -1852,7 +1909,10 @@ public class AntSports extends ModelTask {
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
                 String taskName = task.getString("title");
                 JSONObject data = jsonResult.getJSONObject("data");
-                JSONArray rewards = data.getJSONArray("userItems");
+                JSONArray rewards = data.optJSONArray("userItems");
+                if (rewards == null) {
+                    return false;
+                }
                 ArrayList<String> rewardList = parseRewards(rewards);
                 Log.other("悦动健康🧾领取奖励[" + taskName + "]#获得" + rewardList);
                 return true;
@@ -1899,18 +1959,21 @@ public class AntSports extends ModelTask {
             JSONObject jsonResult = new JSONObject(AntSportsRpcCall.neverlandwalkGrid(branchId, mapId));
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
                 JSONObject data = jsonResult.getJSONObject("data");
-                int step = data.getJSONArray("mapAwards").getJSONObject(0).getInt("step");
-                int leftCount = data.getInt("leftCount");
+                JSONArray mapAwards = data.optJSONArray("mapAwards");
+                int step = mapAwards == null || mapAwards.length() == 0
+                        ? 0 : mapAwards.optJSONObject(0).optInt("step", 0);
+                int leftCount = data.optInt("leftCount", 0);
                 Log.i("悦动健康🧾能量泵[" + mapName + "]#前进[" + step + "步]");
 
-                JSONArray rewards = data.getJSONArray("userItems");
-                ArrayList<String> rewardList = parseRewards(rewards);
+                JSONArray rewards = data.optJSONArray("userItems");
+                ArrayList<String> rewardList = rewards == null ? new ArrayList<>() : parseRewards(rewards);
                 if (!rewardList.isEmpty()) {
                     Log.other("悦动健康🧾能量泵[" + mapName + "]#获得" + rewardList);
                 }
 
-                int currentStar = data.getJSONObject("starData").getInt("curr");
-                int totalStar = data.getJSONObject("starData").getInt("count");
+                JSONObject starData = data.optJSONObject("starData");
+                int currentStar = starData == null ? 0 : starData.optInt("curr", 0);
+                int totalStar = starData == null ? 0 : starData.optInt("count", 0);
                 return leftCount >= 5 && currentStar < totalStar;
             }
         } catch (Exception e) {
@@ -1984,11 +2047,13 @@ public class AntSports extends ModelTask {
             JSONObject jsonResult = new JSONObject(AntSportsRpcCall.offlineAward());
             if (MessageUtil.checkSuccess(TAG, jsonResult)) {
                 JSONObject data = jsonResult.getJSONObject("data");
-                JSONArray rewards = data.getJSONArray("userItems");
-                ArrayList<String> rewardList = parseRewards(rewards);
+                JSONArray rewards = data.optJSONArray("userItems");
+                if (rewards != null) {
+                    ArrayList<String> rewardList = parseRewards(rewards);
 
-                if (!rewardList.isEmpty()) {
-                    Log.other("悦动健康🧾领取奖励[离线奖励]#获得" + rewardList);
+                    if (!rewardList.isEmpty()) {
+                        Log.other("悦动健康🧾领取奖励[离线奖励]#获得" + rewardList);
+                    }
                 }
             }
         } catch (Exception e) {

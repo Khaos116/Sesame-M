@@ -1,6 +1,8 @@
 
 package io.github.aw1y2z.sesame.hook;
 
+import java.net.BindException;
+
 import io.github.aw1y2z.sesame.util.Log;
 import fi.iki.elonen.NanoHTTPD;
 
@@ -15,6 +17,8 @@ public class ModuleHttpServerManager {
     private static final ModuleHttpServerManager INSTANCE = new ModuleHttpServerManager();
     // 持有HTTP服务器实例（对应Kotlin的var server: ModuleHttpServer?）
     private ModuleHttpServer server;
+    /** 端口占用是否已在运行日志提示（避免每次 hook 初始化都重复记录） */
+    private static volatile boolean bindFailedLogged = false;
     
     /**
      * 私有构造方法（禁止外部实例化，保证单例）
@@ -63,6 +67,12 @@ public class ModuleHttpServerManager {
             // 注：不打印鉴权令牌，避免运行日志（查看器支持分享/导出）泄露令牌
             Log.record("服务启动🚀HTTP: http://127.0.0.1:" + port);
             
+        } catch (BindException e) {
+            // 端口被其它应用/残留实例占用：异常日志不刷栈，运行日志只提示一次
+            if (!bindFailedLogged) {
+                bindFailedLogged = true;
+                Log.record("HTTP 服务启动失败：端口 " + port + " 已被占用，本地调试功能不可用（可检查其它应用是否占用该端口）");
+            }
         } catch (Exception e) {
             Log.printStackTrace("HTTP 服务启动失败", e);
         }

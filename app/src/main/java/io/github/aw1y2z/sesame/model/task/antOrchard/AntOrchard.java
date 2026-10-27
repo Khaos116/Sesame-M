@@ -784,13 +784,20 @@ public class AntOrchard extends ModelTask {
                 String result = AntOrchardRpcCall.orchardListTask();
                 JSONObject jo = new JSONObject(result);
                 if (MessageUtil.checkResultCode(TAG, jo)) {
-                    JSONArray taskArray = jo.getJSONArray("taskList");
-                    for (int i = 0; i < taskArray.length(); i++) {
-                        jo = taskArray.getJSONObject(i);
-                        JSONObject displayConfig = jo.optJSONObject("taskDisplayConfig");
-                        if (displayConfig.has("title")) {
-                            String title = displayConfig.optString("title");
-                            AntOrchardTaskListMap.add(title, title);
+                    JSONArray taskArray = jo.optJSONArray("taskList");
+                    if (taskArray != null) {
+                        for (int i = 0; i < taskArray.length(); i++) {
+                            jo = taskArray.optJSONObject(i);
+                            if (jo == null) {
+                                continue;
+                            }
+                            JSONObject displayConfig = jo.optJSONObject("taskDisplayConfig");
+                            if (displayConfig != null && displayConfig.has("title")) {
+                                String title = displayConfig.optString("title", "");
+                                if (!title.isEmpty()) {
+                                    AntOrchardTaskListMap.add(title, title);
+                                }
+                            }
                         }
                     }
                 }
@@ -1607,10 +1614,16 @@ public class AntOrchard extends ModelTask {
             JSONObject jo = new JSONObject(response);
 
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                JSONArray taskList = jo.getJSONArray("taskList");
+                JSONArray taskList = jo.optJSONArray("taskList");
+                if (taskList == null) {
+                    return;
+                }
                 for (int i = 0; i < taskList.length(); i++) {
-                    JSONObject task = taskList.getJSONObject(i);
-                    if (!"FINISHED".equals(task.getString("taskStatus"))) {
+                    JSONObject task = taskList.optJSONObject(i);
+                    if (task == null) {
+                        continue;
+                    }
+                    if (!"FINISHED".equals(task.optString("taskStatus", ""))) {
                         continue;
                     }
 
@@ -1678,15 +1691,24 @@ public class AntOrchard extends ModelTask {
             String result = AntOrchardRpcCall.drawLottery();
             JSONObject drawJo = new JSONObject(result);
             if (MessageUtil.checkResultCode(TAG, drawJo)) {
-                JSONArray awardArray = drawJo.getJSONObject("lotteryPlusInfo").getJSONObject("userSevenDaysGiftsItem").getJSONArray("userEverydayGiftItems");
+                JSONObject lotteryPlusInfo = drawJo.optJSONObject("lotteryPlusInfo");
+                JSONObject sevenDaysGiftsItem = lotteryPlusInfo == null
+                        ? null : lotteryPlusInfo.optJSONObject("userSevenDaysGiftsItem");
+                JSONArray awardArray = sevenDaysGiftsItem == null
+                        ? null : sevenDaysGiftsItem.optJSONArray("userEverydayGiftItems");
 
-                for (int i = 0; i < awardArray.length(); i++) {
-                    JSONObject award = awardArray.getJSONObject(i);
-                    if (award.getString("itemId").equals(itemId)) {
-                        int count = award.optInt("awardCount", 1);
-                        Log.farm("芭芭农场🎁七日礼包#获得[" + count + "g肥料]");
-                        Status.flagToday("orchardLotteryPlus", userId);
-                        return;
+                if (awardArray != null) {
+                    for (int i = 0; i < awardArray.length(); i++) {
+                        JSONObject award = awardArray.optJSONObject(i);
+                        if (award == null) {
+                            continue;
+                        }
+                        if (award.optString("itemId", "").equals(itemId)) {
+                            int count = award.optInt("awardCount", 1);
+                            Log.farm("芭芭农场🎁七日礼包#获得[" + count + "g肥料]");
+                            Status.flagToday("orchardLotteryPlus", userId);
+                            return;
+                        }
                     }
                 }
             }
@@ -1826,12 +1848,22 @@ public class AntOrchard extends ModelTask {
                 int targetCount = mainCount != null && mainCount >= 10 ? 10 : (mainCount != null && mainCount >= 3 ? 3 : 0);
 
                 if (targetCount > 0) {
-                    JSONObject extend = new JSONObject(activity.getString("extend"));
-                    JSONArray options = extend.getJSONArray("wishActivityOptionList");
+                    String extendStr = activity.optString("extend", "");
+                    if (extendStr.isEmpty()) {
+                        return;
+                    }
+                    JSONObject extend = new JSONObject(extendStr);
+                    JSONArray options = extend.optJSONArray("wishActivityOptionList");
+                    if (options == null) {
+                        return;
+                    }
 
                     for (int i = 0; i < options.length(); i++) {
-                        JSONObject option = options.getJSONObject(i);
-                        if (option.getInt("taskRequire") == targetCount) {
+                        JSONObject option = options.optJSONObject(i);
+                        if (option == null) {
+                            continue;
+                        }
+                        if (option.optInt("taskRequire", -1) == targetCount) {
                             String result = AntOrchardRpcCall.triggerSubplotsActivity(activityId, "WISH", option.getString("optionKey"));
                             if (MessageUtil.checkResultCode(TAG, new JSONObject(result))) {
                                 Log.farm("农场许愿✨许下承诺[每日施肥" + targetCount + "次]");

@@ -131,7 +131,8 @@ public class GreenFinance extends ModelTask {
         try {
             JSONObject joSelfCollect = new JSONObject(s);
             if (joSelfCollect.optBoolean("success")) {
-                int totalCollectPoint = joSelfCollect.getJSONObject("result").getInt("totalCollectPoint");
+                JSONObject collectResult = joSelfCollect.optJSONObject("result");
+                int totalCollectPoint = collectResult == null ? 0 : collectResult.optInt("totalCollectPoint", 0);
                 Log.other("绿色经营📊[收集]#获得" + totalCollectPoint);
             } else {
                 Log.i(TAG + ".batchSelfCollect", joSelfCollect.optString("resultDesc"));
@@ -158,8 +159,8 @@ public class GreenFinance extends ModelTask {
                 Log.i(TAG + ".signIn.signInQuery", jo.optString("resultDesc"));
                 return;
             }
-            JSONObject result = jo.getJSONObject("result");
-            if (result.getBoolean("isTodaySignin")) {
+            JSONObject result = jo.optJSONObject("result");
+            if (result != null && result.optBoolean("isTodaySignin", false)) {
                 // 服务端回读确认今日已签：落当日标记，之后不再查询/提交
                 Status.flagToday(signFlag);
                 return;
@@ -171,8 +172,9 @@ public class GreenFinance extends ModelTask {
                 Log.other("绿色经营📊签到成功");
                 // 只认回读结果，不认「我发过 trigger」
                 JSONObject verify = new JSONObject(GreenFinanceRpcCall.signInQuery(sceneId));
+                JSONObject verifyResult = verify.optJSONObject("result");
                 if (verify.optBoolean("success")
-                        && verify.getJSONObject("result").optBoolean("isTodaySignin")) {
+                        && verifyResult != null && verifyResult.optBoolean("isTodaySignin", false)) {
                     Status.flagToday(signFlag);
                 }
             } else {

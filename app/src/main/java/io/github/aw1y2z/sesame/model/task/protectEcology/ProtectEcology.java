@@ -274,11 +274,16 @@ public class ProtectEcology extends ModelTask {
         try {
             JSONObject jo = new JSONObject(CooperateRpcCall.queryCooperateRank(bizType, cooperationId));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                JSONArray cooperateRankInfos = jo.getJSONArray("cooperateRankInfos");
-                for (int i = 0; i < cooperateRankInfos.length(); i++) {
-                    jo = cooperateRankInfos.getJSONObject(i);
-                    if (Objects.equals(userId, jo.getString("userId"))) {
-                        return jo.optInt("energySummation");
+                JSONArray cooperateRankInfos = jo.optJSONArray("cooperateRankInfos");
+                if (cooperateRankInfos != null) {
+                    for (int i = 0; i < cooperateRankInfos.length(); i++) {
+                        jo = cooperateRankInfos.optJSONObject(i);
+                        if (jo == null) {
+                            continue;
+                        }
+                        if (Objects.equals(userId, jo.optString("userId", ""))) {
+                            return jo.optInt("energySummation", 0);
+                        }
                     }
                 }
             }
@@ -356,7 +361,7 @@ public class ProtectEcology extends ModelTask {
         try {
             JSONObject jo = new JSONObject(ProtectTreeRpcCall.queryTreeItemsForExchange(applyActions, itemTypes));
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                return jo.getJSONArray("treeItems");
+                return jo.optJSONArray("treeItems");
             }
         }
         catch (Throwable t) {
@@ -585,7 +590,7 @@ public class ProtectEcology extends ModelTask {
         try {
             JSONObject jo = new JSONObject(ProtectOceanRpcCall.queryCultivationList());
             if (MessageUtil.checkResultCode(TAG, jo)) {
-                return jo.getJSONArray("cultivationItemVOList");
+                return jo.optJSONArray("cultivationItemVOList");
             }
         }
         catch (Throwable t) {

@@ -35,17 +35,22 @@ public class ReadingDada {
             String outBizId = StringUtil.getSubString(taskJumpUrl, "outBizId%3D", "%26");
             String s = ReadingDadaRpcCall.getQuestion(activityId);
             JSONObject jo = new JSONObject(s);
-            if ("200".equals(jo.getString("resultCode"))) {
-                JSONArray jsonArray = jo.getJSONArray("options");
-                if (jsonArray.length() == 0) {
+            if ("200".equals(jo.optString("resultCode", ""))) {
+                JSONArray jsonArray = jo.optJSONArray("options");
+                if (jsonArray == null || jsonArray.length() == 0) {
                     Log.record("答题跳过：选项为空");
+                    return false;
+                }
+                String questionId = jo.optString("questionId", "");
+                if (questionId.isEmpty()) {
+                    Log.record("答题跳过：缺少questionId");
                     return false;
                 }
                 // title 用 optString：缺该字段时不应让整条答题失败（AI 仍可凭选项作答）
                 String answer = AnswerAI.getAnswer(jo.optString("title"), JsonUtil.jsonArrayToList(jsonArray));
-                s = ReadingDadaRpcCall.submitAnswer(activityId, outBizId, jo.getString("questionId"), answer);
+                s = ReadingDadaRpcCall.submitAnswer(activityId, outBizId, questionId, answer);
                 jo = new JSONObject(s);
-                if ("200".equals(jo.getString("resultCode"))) {
+                if ("200".equals(jo.optString("resultCode", ""))) {
                     Log.other("新村答题🧾[完成]");
                     return true;
                 } else {

@@ -83,15 +83,21 @@ public class AncientTree extends ModelTask {
             JSONObject jo = new JSONObject(AncientTreeRpcCall.homePage(cityCode));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
-            } JSONObject data = jo.getJSONObject("data"); if (!data.has("districtBriefInfoList")) {
+            } JSONObject data = jo.optJSONObject("data"); JSONArray districtBriefInfoList = data == null ? null : data.optJSONArray("districtBriefInfoList"); if (districtBriefInfoList == null) {
                 return;
-            } JSONArray districtBriefInfoList = data.getJSONArray("districtBriefInfoList");
+            }
             for (int i = 0; i < districtBriefInfoList.length(); i++) {
-                JSONObject districtBriefInfo = districtBriefInfoList.getJSONObject(i);
+                JSONObject districtBriefInfo = districtBriefInfoList.optJSONObject(i);
+                if (districtBriefInfo == null)
+                    continue;
                 int userCanProtectTreeNum = districtBriefInfo.optInt("userCanProtectTreeNum", 0);
                 if (userCanProtectTreeNum < 1)
-                    continue; JSONObject districtInfo = districtBriefInfo.getJSONObject("districtInfo");
-                String districtCode = districtInfo.getString("districtCode"); districtDetail(districtCode);
+                    continue; JSONObject districtInfo = districtBriefInfo.optJSONObject("districtInfo");
+                if (districtInfo == null)
+                    continue;
+                String districtCode = districtInfo.optString("districtCode", ""); if (districtCode.isEmpty())
+                    continue;
+                districtDetail(districtCode);
                 TimeUtil.sleep(1000L);
             } Status.ancientTreeToday(cityCode);
         } catch (Throwable th) {
@@ -104,32 +110,43 @@ public class AncientTree extends ModelTask {
             JSONObject jo = new JSONObject(AncientTreeRpcCall.districtDetail(districtCode));
             if (!MessageUtil.checkResultCode(TAG, jo)) {
                 return;
-            } JSONObject data = jo.getJSONObject("data"); if (!data.has("ancientTreeList")) {
+            } JSONObject data = jo.optJSONObject("data"); JSONArray ancientTreeList = data == null ? null : data.optJSONArray("ancientTreeList"); if (ancientTreeList == null) {
                 return;
-            } JSONObject districtInfo = data.getJSONObject("districtInfo");
-            String cityCode = districtInfo.getString("cityCode"); String cityName = districtInfo.getString("cityName");
-            String districtName = districtInfo.getString("districtName");
-            JSONArray ancientTreeList = data.getJSONArray("ancientTreeList");
+            } JSONObject districtInfo = data.optJSONObject("districtInfo");
+            if (districtInfo == null) {
+                return;
+            }
+            String cityCode = districtInfo.optString("cityCode", ""); String cityName = districtInfo.optString("cityName", "");
+            String districtName = districtInfo.optString("districtName", "");
             for (int i = 0; i < ancientTreeList.length(); i++) {
-                JSONObject ancientTreeItem = ancientTreeList.getJSONObject(i);
-                if (ancientTreeItem.getBoolean("hasProtected"))
+                JSONObject ancientTreeItem = ancientTreeList.optJSONObject(i);
+                if (ancientTreeItem == null)
                     continue;
-                JSONObject ancientTreeControlInfo = ancientTreeItem.getJSONObject("ancientTreeControlInfo");
+                if (ancientTreeItem.optBoolean("hasProtected", false))
+                    continue;
+                JSONObject ancientTreeControlInfo = ancientTreeItem.optJSONObject("ancientTreeControlInfo");
+                if (ancientTreeControlInfo == null)
+                    continue;
                 int quota = ancientTreeControlInfo.optInt("quota", 0);
                 int useQuota = ancientTreeControlInfo.optInt("useQuota", 0); if (quota <= useQuota)
-                    continue; String itemId = ancientTreeItem.getString("projectId");
+                    continue; String itemId = ancientTreeItem.optString("projectId", ""); if (itemId.isEmpty())
+                    continue;
                 JSONObject ancientTreeDetail = new JSONObject(AncientTreeRpcCall.projectDetail(itemId, cityCode));
                 if (!MessageUtil.checkResultCode(TAG, ancientTreeDetail)) {
                     continue;
-                } data = ancientTreeDetail.getJSONObject("data"); if (data.getBoolean("canProtect")) {
-                    int currentEnergy = data.getInt("currentEnergy");
-                    JSONObject ancientTree = data.getJSONObject("ancientTree");
-                    String activityId = ancientTree.getString("activityId");
-                    String projectId = ancientTree.getString("projectId");
-                    JSONObject ancientTreeInfo = ancientTree.getJSONObject("ancientTreeInfo");
-                    String name = ancientTreeInfo.getString("name"); int age = ancientTreeInfo.getInt("age");
-                    int protectExpense = ancientTreeInfo.getInt("protectExpense");
-                    cityCode = ancientTreeInfo.getString("cityCode"); if (currentEnergy < protectExpense)
+                } data = ancientTreeDetail.optJSONObject("data"); if (data != null && data.optBoolean("canProtect", false)) {
+                    int currentEnergy = data.optInt("currentEnergy", 0);
+                    JSONObject ancientTree = data.optJSONObject("ancientTree");
+                    if (ancientTree == null)
+                        continue;
+                    String activityId = ancientTree.optString("activityId", "");
+                    String projectId = ancientTree.optString("projectId", "");
+                    JSONObject ancientTreeInfo = ancientTree.optJSONObject("ancientTreeInfo");
+                    if (ancientTreeInfo == null)
+                        continue;
+                    String name = ancientTreeInfo.optString("name", ""); int age = ancientTreeInfo.optInt("age", 0);
+                    int protectExpense = ancientTreeInfo.optInt("protectExpense", 0);
+                    cityCode = ancientTreeInfo.optString("cityCode", cityCode); if (currentEnergy < protectExpense)
                         break; TimeUtil.sleep(200);
                     jo = new JSONObject(AncientTreeRpcCall.protect(activityId, projectId, cityCode));
                     if (MessageUtil.checkResultCode(TAG, jo)) {

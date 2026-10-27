@@ -392,7 +392,8 @@ private fun FieldItemBody(field: ModelField<*>, onFieldChanged: (() -> Unit)? = 
     var expandedFieldKey by remember { mutableStateOf<String?>(null) }
     when {
         field.type == "BOOLEAN" -> {
-            var checked by remember { mutableStateOf(field.value as? Boolean ?: false) }
+            // 以字段编码为 key：行被复用/重排时不要沿用上一个字段的勾选状态
+            var checked by remember(field.code) { mutableStateOf(field.value as? Boolean ?: false) }
             SwitchPreference(
                 title = field.name ?: "",
                 summary = field.description,
