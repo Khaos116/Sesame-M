@@ -821,11 +821,11 @@ public class AntForestV2 extends ModelTask {
         }
     }
 
-    /** 每页条数：200 条/页在今天量级下 1~2 页即可拉完，兼顾请求数与翻页次数。 */
+    /** 每页条数：200 条/页；普通账号当日明细 1~2 页即可翻完，翻页在 reachedOlder 处提前结束。 */
     private static final int ENERGY_RECORD_PAGE_SIZE = 200;
 
-    /** 明细翻页上限：防服务端异常恒回 hasMore 时死循环。 */
-    private static final int ENERGY_RECORD_MAX_PAGES = 20;
+    /** 明细翻页上限：防服务端异常恒回 hasMore 时死循环；好友多的账号单日明细可超旧上限，故放宽到 100 页（=20000 条）以覆盖整天记录。 */
+    private static final int ENERGY_RECORD_MAX_PAGES = 100;
 
     /**
      * 用服务端能量明细**覆盖**今日收取能量，取代逐点累加的口径。

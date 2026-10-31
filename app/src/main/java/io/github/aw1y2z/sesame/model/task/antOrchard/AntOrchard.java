@@ -437,7 +437,7 @@ public class AntOrchard extends ModelTask {
                 }
                 queryOptionalPlay();
             }
-            // 处理回访/浏览奖励：官方每次进农场都会调一次（2026-09-22 抓包实证）；
+            // 处理回访/浏览奖励：官方每次进农场都会调一次；
             // 不再加"每日一次"标记——首调可能在奖励还没产生时就把当天标记掉，反而漏领
             receiveOrchardVisitAward();
 
@@ -1395,7 +1395,7 @@ public class AntOrchard extends ModelTask {
 
                 if (TaskStatus.TODO.name().equals(taskStatus)) {
                     // 底线：交易/支付类任务一律不申报、一次即**永久**拉黑。
-                    // taskId 与 groupId 都查（服务端两处键名不统一，实测 ORCHARD_NORMAL_CHONGZHI9 /
+                    // taskId 与 groupId 都查（服务端两处键名不统一：ORCHARD_NORMAL_CHONGZHI9 /
                     // ORCHARD_NCLY_CHARGE1_XDDQ 这类"充值"任务正是靠这两个键识别的）。
                     if (TaskAlternative.isTransactionTask(jo.optString("taskId"))
                             || TaskAlternative.isTransactionTask(groupId)) {
@@ -1474,7 +1474,7 @@ public class AntOrchard extends ModelTask {
                     // taskId 当作 taskType 传给 finishTask（该 RPC 的参数名就叫 taskType）
                     String via = finishTaskTwice(sceneCode, title, taskId);
                     if (via != null) {
-                        // 响应成功 ≠ 服务端已推进：实测"逛一逛快手/逛一逛淘宝拍照"等回成功但任务仍 0/N。
+                        // 响应成功 ≠ 服务端已推进：部分任务回成功但任务仍 0/N（如"逛一逛快手/逛一逛淘宝拍照"）
                         // 故不再按响应打「完成」，交 verifyPendingTasksByList 用任务列表定论
                         // （做成→打当日标记；没做成→交自动拉黑），避免假完成与每轮重刷。
                         Log.farm("肥料任务🕓已触发[" + title + "]第" + (rightsTimes + cnt + 1) + "次#" + via
@@ -1491,7 +1491,7 @@ public class AntOrchard extends ModelTask {
             // 处理触发型任务
             if ("TRIGGER".equals(actionType) || "ADD_HOME".equals(actionType) || "PUSH_SUBSCRIBE".equals(actionType)) {
                 // taskId 当作 taskType 传递。同 VISIT：响应成功 ≠ 服务端已推进
-                // （实测"试玩农场爆款游戏"回成功但任务仍 0/1），故不按响应打「完成」，
+                // （"试玩农场爆款游戏"回成功但任务仍 0/1），故不按响应打「完成」，
                 // 交 verifyPendingTasksByList 用任务列表定论。
                 String via = finishTaskTwice(sceneCode, title, taskId);
                 if (via != null) {
@@ -1503,19 +1503,40 @@ public class AntOrchard extends ModelTask {
 
             // 兜底：actionType 未知（SYSTEM_SWITCH / ANTFARM_COLLECT_MANURE / ANTFOREST_DEFOLIATION /
             // JUMP / P2P_NEW / GAME_CENTER 等）。这类任务多为"外跳打开淘宝/Tmall 页"或需真人操作，
-            // finishTask/doFarmTask 的**响应会撒谎**——实测回成功但任务仍 0/N（如"去淘宝农场得肥料"
+            // finishTask/doFarmTask 的**响应会撒谎**——回成功但任务仍 0/N（如"去淘宝农场得肥料"
             // 需真打开淘宝页，Alipay 侧根本没有完成 RPC）。
             // 故不再按响应打「完成」：触发后统一交 verifyPendingTasksByList 用任务列表定论
             // （做成→打当日标记；没做成→交自动拉黑），并打当日标记避免同一天每轮重发、刷屏。
+            // 多阶段任务（如玩一玩小游戏，访问即得、最多 3500 肥）按 rightsTimesLimit - rightsTimes 循环推满；
+            // 单阶段任务循环 1 次，行为不变。上限 100：当 rightsTimesLimit 以肥料额编码时避免循环爆量。
             if (Status.hasFlagToday("orchard::fallback::" + taskId)) {
                 return true;
             }
             Status.flagToday("orchard::fallback::" + taskId);
-            String via = finishTaskTwice(sceneCode, title, taskId);
-            if (via != null) {
-                Log.farm("肥料任务🕓已触发[" + title + "]#" + via + "，结果以任务列表为准");
+            int fbRights = task.optInt("rightsTimes", 0);
+            int fbLimit = task.optInt("rightsTimesLimit", 0);
+            JSONObject fbExtend = task.optJSONObject("extend");
+            if (fbExtend != null && fbLimit <= 0) {
+                String fbLimitStr = fbExtend.optString("rightsTimesLimit", "");
+                if (!fbLimitStr.isEmpty()) {
+                    try {
+                        fbLimit = Integer.parseInt(fbLimitStr);
+                    } catch (Exception ignored) {
+                        Log.i(TAG, "rightsTimesLimit 非法，按单档处理: " + fbLimitStr);
+                    }
+                }
             }
-            pendingVerifyTasks.put(taskId, title);
+            int fbTimes = (fbLimit > 0) ? Math.min(100, Math.max(1, fbLimit - fbRights)) : 1;
+            for (int cnt = 0; cnt < fbTimes; cnt++) {
+                String via = finishTaskTwice(sceneCode, title, taskId);
+                if (via != null) {
+                    Log.farm("肥料任务🕓已触发[" + title + "]第" + (fbRights + cnt + 1) + "次#" + via + "，结果以任务列表为准");
+                    pendingVerifyTasks.put(taskId, title);
+                } else {
+                    break;
+                }
+                TimeUtil.sleep(500);
+            }
             return true;
         } catch (Throwable t) {
             Log.err(TAG, "finishOrchardTask err:", t);
@@ -1561,7 +1582,7 @@ public class AntOrchard extends ModelTask {
             if (!MessageUtil.isUnsupportedRpc(finishResponse)) {
                 MessageUtil.checkResultCodeAndMarkTaskBlackList("AntOrchardTaskList", taskTitle, finishResponse);
             } else {
-                // doFarmTask 的响应对这类任务**不可信**：实测回 102「服务器正在开小差」但任务其实被做成了
+                // doFarmTask 的响应对这类任务**不可信**：回 102「服务器正在开小差」但任务其实被做成了
                 // （rightsTimes 0→1、状态转 RECEIVED）；也有同样回 102 而真没做成的。
                 // 所以既不能据响应判失败（会把做成的任务拉黑），也不能判成功（真做不了的会每轮白试）：
                 // 记下来，由 handleTaskList 在列表处理完后**按任务列表状态核对**
@@ -2018,7 +2039,7 @@ public class AntOrchard extends ModelTask {
 
     /**
      * 领取小组件回访/浏览奖励。
-     * <p>实测（2026-09-22 抓包 logs/chk_orchard 14:20:10，官方每次进入农场都会调）服务端返回
+     * <p>官方每次进入农场都会调，服务端返回
      * {@code {"canCollect":false,"manureCount":0,"needManualReceive":false,"success":true}}——
      * **没有 `orchardVisitAwardList` 结构**。原先按该字段解析，永远走"无奖励"分支并打误导性日志，
      * 调用点也因此被注释掉，导致这块奖励一直没领过。现按真实字段解析。
