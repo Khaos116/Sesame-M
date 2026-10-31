@@ -102,7 +102,7 @@ public static void main(String[] args) throws Exception {
     assert Status.flags == 0; // Unconfirmed submit must remain retryable.
     assert teamState(new JSONObject()) == -1;
     assert teamState(new JSONObject().put("nextAction", "Team")) == 0;
-    assert teamState(new JSONObject().put("nextAction", "Cultivate")) == 1;
+    assert teamState(new JSONObject().put("nextAction", "Cultivate")) == 0;
     assert teamState(new JSONObject().put("nextAction", "Team").put("teamHomeResult", new JSONObject().put("mainMember", new JSONObject()))) == 1;
     Locale.setDefault(Locale.forLanguageTag("tr-TR"));
     assert isTransactionTask("XIADAN") && !isTransactionTask("BROWSE");
@@ -214,7 +214,7 @@ public class FlowCheck {
             return new JSONObject().put("success", true).put("resData", data).toString();
         }
         static String queryHomePage() { if(teamHome!=null)return teamHome;return ok().put("nextAction", "Cultivate")
-            .put("teamHomeResult", new JSONObject().put("teamBaseInfo", new JSONObject().put("teamId", "team")))
+            .put("teamHomeResult", new JSONObject().put("mainMember",new JSONObject()).put("teamBaseInfo", new JSONObject().put("teamId", "team")))
             .put("userBaseInfo", new JSONObject().put("currentEnergy", 100)).toString(); }
         static String queryMiscInfo(String type, String id) { return ok().put("combineHandlerVOMap",
             new JSONObject().put("teamCanWaterCount", new JSONObject().put("waterCount", 100))).toString(); }
@@ -483,7 +483,7 @@ for placeholder, path, signatures in (
     ("@@FOREST@@", "model/task/antForest/AntForestV2.java", ("private boolean getAllSkuInfo(", "private void accountVitalitySkuRetry(", "private static JSONArray optItemInfoVOList(",
         "private static boolean hasMore(", "private boolean getSkuInfoByItemInfoVO(", "private void teamCooperateWater(",
         "private static JSONObject queryTeamHomePage(", "private static String getTeamId(", "private static int getTeamCanWaterCount(",
-        "private static boolean updateUserConfiginTeam(", "private static int teamState(", "private static void loveteam(",
+        "private static boolean updateUserConfiginTeam(", "private static int teamState(", "private static boolean isTeam(", "private static void loveteam(",
         "private static String getLoveteamName(", "private static boolean hasWaterResult(", "private static void loveteamWater(")),
     ("@@MALL@@", "model/task/antFarm/AntFarm.java", ("private boolean getAllSkuInfo(", "private boolean getSkuInfoByItemInfoVO(")),
     ("@@GAME_METHODS@@", "model/task/antGame/GameTask.java", ("GameTask(String title,",)),

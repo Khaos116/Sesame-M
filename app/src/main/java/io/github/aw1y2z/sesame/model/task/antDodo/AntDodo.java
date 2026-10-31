@@ -707,6 +707,8 @@ public class AntDodo extends ModelTask {
                         continue;
                     }
                     String useId = friend.optString("userId");
+                    if (!(friend.opt("userId") instanceof String || friend.opt("userId") instanceof Number)
+                            || useId.trim().isEmpty()) continue;
                     boolean isCollectToFriend = collectToFriendList.getValue().contains(useId);
                     if (collectToFriendType.getValue() != CollectToFriendType.COLLECT) {
                         isCollectToFriend = !isCollectToFriend;

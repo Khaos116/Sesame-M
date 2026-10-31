@@ -41,6 +41,11 @@ def block(text, start):
 
 rows, _ = block((UI / "MiuixGroupFieldsActivity.kt").read_text(encoding="utf-8"), "fields.forEach {")
 _, switch = block((UI / "MiuixSettingsActivity.kt").read_text(encoding="utf-8"), 'field.type == "BOOLEAN" -> {')
+log_source = (UI / "MiuixLogViewerActivity.kt").read_text(encoding="utf-8")
+card_state = re.search(r"    var expanded by remember\(collapseAll\) \{ mutableStateOf\(!collapseAll\) }", log_source)[0]
+card_click = re.search(r"expanded = !expanded\n\s*if \(expanded\) onExpand\(\)", log_source)[0]
+assert '"${file.path}:r-${run.runIndex}"' in log_source
+assert 'RunEntryCard(run, collapseAll) { listState.requestScrollToItem(index) }' in log_source
 code = '''
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.Snapshot
@@ -74,6 +79,16 @@ val displayed = linkedMapOf<String, Display>()
     val bumpDependency: () -> Unit = remember { { depVersion++ } }
     val dependencyCodes = setOf("monopolyPatrol")
     @@ROWS@@
+}
+@Composable fun RenderSingle(field: Field) {
+    val onFieldChanged: (() -> Unit)? = null
+    @@SWITCH@@
+}
+data class CardState(val expanded: Boolean, val click: () -> Unit)
+var cardState: CardState? = null
+@Composable fun RenderCard(collapseAll: Boolean, onExpand: () -> Unit) {
+    @@CARD_STATE@@
+    SideEffect { cardState = CardState(expanded) { @@CARD_CLICK@@ } }
 }
 class NoNodes : AbstractApplier<Unit>(Unit) {
     override fun insertTopDown(index: Int, instance: Unit) {}
@@ -124,12 +139,49 @@ fun main() = runBlocking {
     check(patrol.value == true && tasks.value == true && other.value == true)
     show(all)
     check(displayed.getValue("monopolyTasks").checked)
+    suspend fun settle() {
+        Snapshot.sendApplyNotifications()
+        yield()
+        clock.sendFrame(1L)
+        yield()
+        recomposer.awaitIdle()
+    }
+    suspend fun single(field: Field) {
+        composition.setContent { RenderSingle(field) }
+        settle()
+    }
+    val first = Field("first", true)
+    val second = Field("second", false)
+    single(first)
+    check(displayed.getValue("first").checked)
+    single(second)
+    check(!displayed.getValue("second").checked) { "reused Boolean body kept another field's remembered value" }
+    var revealed = 0
+    suspend fun card(collapse: Boolean, identity: String = "A:round1") {
+        composition.setContent { key(identity) { RenderCard(collapse) { revealed++ } } }
+        settle()
+    }
+    card(false)
+    check(cardState!!.expanded)
+    cardState!!.click(); card(false)
+    check(!cardState!!.expanded && revealed == 0)
+    card(true)
+    check(!cardState!!.expanded)
+    cardState!!.click(); card(true)
+    check(cardState!!.expanded && revealed == 1)
+    card(false)
+    check(cardState!!.expanded)
+    cardState!!.click(); card(false)
+    check(!cardState!!.expanded && revealed == 1)
+    card(false, "B:round1")
+    check(cardState!!.expanded) { "another account inherited a collapsed card" }
     composition.dispose()
     recomposer.close()
     runner.join()
     println("PASS real Compose search/clear/reorder/empty results and isolated config writes")
+    println("PASS standalone Boolean slot identity and run-card collapse/expand/reset with production state and click logic")
 }
-'''.replace("@@SWITCH@@", switch).replace("@@ROWS@@", rows)
+'''.replace("@@SWITCH@@", switch).replace("@@ROWS@@", rows).replace("@@CARD_STATE@@", card_state).replace("@@CARD_CLICK@@", card_click)
 
 with tempfile.TemporaryDirectory(prefix="sesame-config-search-") as temporary:
     work = Path(temporary)

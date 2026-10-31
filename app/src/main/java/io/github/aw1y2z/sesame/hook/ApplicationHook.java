@@ -150,6 +150,9 @@ public class ApplicationHook extends XposedModule {
 
     private static volatile boolean broadcastReceiverRegistered = false;
 
+    /** 主进程"模块初始化开始"标记是否已打印（供日志查看器按轮分组，每个主进程加载周期只打一次） */
+    private static volatile boolean initStartLogged = false;
+
     public static void setOffline(boolean offline) {
         ApplicationHook.offline = offline;
     }
@@ -162,6 +165,9 @@ public class ApplicationHook extends XposedModule {
         try {
             // 读取与 App 共享的日志开关配置，使各分项开关在本进程真正生效
             AppConfig.load();
+            if (ClassUtil.PACKAGE_NAME.equals(getRealProcessName(ClassUtil.PACKAGE_NAME))) {
+                logInitializationStart();
+            }
             // 模块已在 LSPosed 中启用：onModuleLoaded 被调用即代表已启用，
             // 直接标记为已激活（与是否打开 / hook 支付宝无关）
             ViewAppInfo.setRunTypeByCode(RunType.MODEL.getCode());
@@ -217,14 +223,30 @@ public class ApplicationHook extends XposedModule {
         return fallbackPackageName;
     }
 
+    private static synchronized void logInitializationStart() {
+        if (initStartLogged) return;
+        initStartLogged = true;
+        Log.i("模块初始化开始");
+    }
+
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
         // 先提取进程名并赋值给全局变量
         processName = lpparam.processName; // 新增：将 Xposed 提供的进程名赋值给全局变量
         if (ClassUtil.PACKAGE_NAME.equals(lpparam.packageName) && ClassUtil.PACKAGE_NAME.equals(lpparam.processName)) {
-            if (hooked) {
-                return;
+            // 提前在锁内落标志：onPackageReady 与旧回调 handleLoadPackage 可能并发/重复触发，
+            // 旧写法在方法末尾才置位，竞态下会重复执行整套 hook 与初始化
+            synchronized (ApplicationHook.class) {
+                if (hooked) {
+                    return;
+                }
+                hooked = true;
             }
             classLoader = lpparam.classLoader;
+            if (!initStartLogged) {
+                // 兼容旧回调入口；先加载日志开关，再补加载锚点。
+                AppConfig.load();
+                logInitializationStart();
+            }
 
             XHelpers.findAndHookMethod(Application.class, "attach", Context.class, new XC_MethodHook() {
                 @Override
@@ -544,8 +566,7 @@ public class ApplicationHook extends XposedModule {
             } catch (Throwable t) {
                 Log.err(TAG, "hook MiscUtils err:", t);
             }
-            hooked = true;
-            Log.i(TAG, "load success: " + lpparam.packageName);
+            Log.i(TAG, "load success: " + lpparam.packageName + " proc=" + lpparam.processName + " hooked=" + hooked);
         }
     }
 
@@ -762,7 +783,6 @@ public class ApplicationHook extends XposedModule {
                 Statistics.load();
                 FriendWatch.load();
                 Model.initAllModel();
-                Log.record("模块版本：" + modelVersion);
                 Log.record("开始加载" + MyUtils.recordUserName(userId));
                 ConfigV2.load(userId);
 

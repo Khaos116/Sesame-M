@@ -76,6 +76,9 @@ public class AntMember extends ModelTask {
     private BooleanModelField AntMemberTask;
     private BooleanModelField AutoAntMemberTaskList;
     private SelectModelField AntMemberTaskList;
+    private BooleanModelField enableAdTask;
+    private BooleanModelField AutoAntMemberAdTaskList;
+    private SelectModelField AntMemberAdTaskList;
     private BooleanModelField memberSign;
     private BooleanModelField memberPointExchangeBenefit;
     private SelectModelField memberPointExchangeBenefitList;
@@ -145,6 +148,9 @@ public class AntMember extends ModelTask {
         modelFields.addField(AntMemberTask = new BooleanModelField("AntMemberTask", "会员任务", false));
         modelFields.addField(AutoAntMemberTaskList = new BooleanModelField("AutoAntMemberTaskList", "会员任务 | 自动黑名单", true).setDependsOn("AntMemberTask"));
         modelFields.addField(AntMemberTaskList = new SelectModelField("AntMemberTaskList", "会员任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntMemberTaskList::getList).setDependsOn("AutoAntMemberTaskList"));
+        modelFields.addField(enableAdTask = new BooleanModelField("AntMemberAdTask", "会员广告任务", false));
+        modelFields.addField(AutoAntMemberAdTaskList = new BooleanModelField("AutoAntMemberAdTaskList", "会员广告任务 | 自动黑名单", true).setDependsOn("AntMemberAdTask"));
+        modelFields.addField(AntMemberAdTaskList = new SelectModelField("AntMemberAdTaskList", "会员广告任务 | 黑名单列表", new LinkedHashSet<>(), AlipayAntMemberTaskList::getList).setDependsOn("AutoAntMemberAdTaskList"));
         modelFields.addField(memberSign = new BooleanModelField("memberSign", "会员签到", false));
         modelFields.addField(memberPointExchangeBenefit = new BooleanModelField("memberPointExchangeBenefit", "会员积分 | 兑换权益", false));
         modelFields.addField(memberPointExchangeBenefitList = new SelectModelField("memberPointExchangeBenefitList", "会员积分 | 权益列表", new LinkedHashSet<>(), MemberBenefit::getList).setDependsOn("memberPointExchangeBenefit"));
@@ -239,8 +245,15 @@ public class AntMember extends ModelTask {
             
             if (AntMemberTask.getValue()) {
                 queryPointCert(1, 8);
-                MemberBrowseTasks.run(AntMemberTaskList.getValue());
             }
+            if (enableAdTask.getValue() && AutoAntMemberAdTaskList.getValue()) {
+                Set<String> blackList = MessageUtil.presetBlackList("AntMember", "AntMemberAdTaskList");
+                Set<String> whiteList = new LinkedHashSet<>(java.util.Arrays.asList(
+                        "会员签到", "会员积分", "游戏中心", "黄金票", "福利金", "网商银行", "蚂蚁积分", "攒积分"));
+                MessageUtil.syncTaskBlackList("会员广告任务", "AntMemberAdTaskList", blackList, whiteList, AntMemberAdTaskList);
+            }
+            MemberBrowseTasks.run(AntMemberTask.getValue(), AntMemberTaskList.getValue(),
+                    enableAdTask.getValue(), AntMemberAdTaskList.getValue());
             
             memberPointExchangeBenefit();
             scheduleMemberExchange();

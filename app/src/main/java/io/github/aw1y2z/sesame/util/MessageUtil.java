@@ -79,28 +79,26 @@ public class MessageUtil {
 
     /**
      * 打印失败应答。两类降噪：**服务端繁忙（102）**按 tag 限次打印；**400000040「不支持rpc调用」**
-     * 服务端应答只写运行日志、不记模块错误，本地拦截静默；调用方仍可转另一种实现方案。
+     * 本地拦截静默；服务端失败原始回执写错误日志，运行日志只保留脱敏摘要。
      * <p>注意：这里不拦截、不退避、不跳过——请求该发照发，只是少写几行日志。
      */
     public static void printErrorMessage(String tag, JSONObject jo, String errorMessageField) {
         try {
             if ("RPC_SKIPPED".equals(jo.optString("error")) && jo.optBoolean("localRuleSkip")) return;
-            String memo = jo.optString(errorMessageField);
             if (isUnsupportedRpc(jo)) {
                 if ("RPC_SKIPPED".equals(jo.optString("error"))) return;
-                Log.i(tag, "请求未受理：不支持RPC调用，后续由调用方处理");
+                Log.errorWithSummary(tag + ", " + jo,
+                        tag + ", 请求未受理：不支持RPC调用，后续由调用方处理");
                 return;
             }
+            String memo = RpcLog.errorSummary(jo);
             if (isServerBusy(jo)) {
-                if (!shouldLogServerBusy(tag)) {
-                    return;
-                }
-                // 102 高频错误：只打一行 JSON（去掉文案行，避免每次都刷两条）
-                Log.i(tag, jo.toString());
+                // 高频失败仅限制运行摘要，错误回执仍逐次保留。
+                Log.errorWithSummary(tag + ", " + jo, shouldLogServerBusy(tag) ? tag + ", " + memo : null);
                 return;
             }
             recordFailure(tag, memo);
-            Log.i(memo, jo.toString());
+            Log.errorWithSummary(tag + ", " + jo, tag + ", 接口返回失败 " + memo);
         } catch (Throwable t) {
             Log.err(TAG, "printErrorMessage err:", t);
         }
@@ -337,6 +335,7 @@ public class MessageUtil {
         BLACKLIST_LIST_TARGETS.put("AntStallTaskList", new String[]{"AntStall", "新村任务"});
         BLACKLIST_LIST_TARGETS.put("AntSportsTaskList", new String[]{"AntSports", "运动任务"});
         BLACKLIST_LIST_TARGETS.put("AntMemberTaskList", new String[]{"AntMember", "会员任务"});
+        BLACKLIST_LIST_TARGETS.put("AntMemberAdTaskList", new String[]{"AntMember", "会员广告任务"});
         BLACKLIST_LIST_TARGETS.put("MemberCreditSesameTaskList", new String[]{"AntMember", "会员芝麻信用任务芝麻粒"});
     }
 
@@ -937,6 +936,7 @@ public class MessageUtil {
             TASK_WHITE_LIST.put(listTitle, whiteList == null ? new HashSet<>() : new HashSet<>(whiteList));
         }
         Set<String> currentValues = field.getValue();
+        boolean added = false;
         if (currentValues != null) {
             for (String task : blackList) {
                 // 白名单优先：若预置黑名单与白名单冲突，以白名单为准，不自动添加
@@ -945,13 +945,18 @@ public class MessageUtil {
                 }
                 if (!currentValues.contains(task)) {
                     field.add(task, 0);
+                    added = true;
                 }
             }
             // 注意：不再遍历 whiteList 调用 remove。白名单只挡"自动拉黑去加它"，
             // 用户手动加入黑名单的条目（无论是否为白名单任务）一律保留。
         }
+        if (!added && !ConfigV2.hasFieldChanges()) {
+            // 已同步过的名单不重复保存；上次落盘失败的字段改动仍会重试。
+            return;
+        }
         if (ConfigV2.save(UserIdMap.getCurrentUid(), false)) {
-            Log.record("黑白名单🈲" + displayName + "自动设置: " + field.getValue());
+            if (added) Log.record("黑白名单🈲" + displayName + "自动设置: " + field.getValue());
         } else {
             Log.record(displayName + "黑白名单设置失败");
         }

@@ -915,7 +915,7 @@ public class AntOrchard extends ModelTask {
                         JSONObject displayConfig = jo.optJSONObject("taskDisplayConfig");
                         if (displayConfig != null && displayConfig.has("title")) {
                             String title = displayConfig.optString("title");
-                            AntOrchardTaskListMap.add(title, title);
+                            if (!title.isEmpty()) AntOrchardTaskListMap.add(title, title);
                         }
                     }
                 }
@@ -1885,15 +1885,32 @@ public class AntOrchard extends ModelTask {
                 return true;
             }
 
-            // 未知动作类型：成功触发后当日防重；失败或取消不消耗机会。
-            if (Status.hasFlagToday("orchard::fallback::" + taskId)) {
+            // 每档成功触发后当日防重；失败或取消保留未触发档位。
+            String fallbackFlag = "orchard::fallback::" + taskId;
+            if (Status.hasFlagToday(fallbackFlag)) {
                 return true;
             }
-            String via = finishTaskTwice(sceneCode, title, taskId);
-            if (via != null) {
-                Status.flagToday("orchard::fallback::" + taskId);
-                Log.farm("肥料任务🕓已触发[" + title + "]#" + via + "，结果以任务列表为准");
+            int rightsTimes = task.has("rightsTimes") ? extraOrchardCount(task, "rightsTimes") : 0;
+            int rightsTimesLimit = task.has("rightsTimesLimit") ? extraOrchardCount(task, "rightsTimesLimit") : 0;
+            JSONObject extend = task.optJSONObject("extend");
+            if (rightsTimesLimit == 0 && extend != null && extend.has("rightsTimesLimit")) {
+                rightsTimesLimit = extraOrchardCount(extend, "rightsTimesLimit");
+            }
+            if (rightsTimes < 0 || rightsTimesLimit < 0
+                    || rightsTimesLimit == 0 && task.has("extend") && extend == null) {
+                Log.record("肥料任务：跳过[" + title + "]#任务档位无效，未发送完成请求");
+                return false;
+            }
+            int timesToDo = rightsTimesLimit > 0 ? Math.min(100, Math.max(0, rightsTimesLimit - rightsTimes)) : 1;
+            for (int cnt = 0; cnt < timesToDo; cnt++) {
+                String stageFlag = rightsTimesLimit > 1 ? fallbackFlag + "::" + (rightsTimes + cnt) : fallbackFlag;
+                if (Status.hasFlagToday(stageFlag)) continue;
+                String via = finishTaskTwice(sceneCode, title, taskId);
+                if (via == null) break;
+                Status.flagToday(stageFlag);
+                Log.farm("肥料任务🕓已触发[" + title + "]第" + (rightsTimes + cnt + 1) + "次#" + via + "，结果以任务列表为准");
                 pendingVerifyTasks.put(taskId, title);
+                TimeUtil.sleep(500);
             }
             return true;
         } catch (Throwable t) {

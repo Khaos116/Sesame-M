@@ -1,13 +1,14 @@
 """Replay production market/rental gates and shared fertilizer balance; no live RPC."""
 from pathlib import Path
 import os
+import re
 import subprocess
 import sys
 import tempfile
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent / "audit_regressions"))
-from run import method
+from run import SOURCE, method
 
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle"))
 jar = next((cache / "caches/modules-2/files-2.1/org.json/json").glob("*/*/json-*.jar"))
@@ -16,7 +17,7 @@ import java.util.*;
 import org.json.*;
 public class EnergyManureCheck {
     static final String TAG="check";
-    static final int ENERGY_RECORD_PAGE_SIZE=200,ENERGY_RECORD_MAX_PAGES=20;
+    @@CONSTANTS@@
     static class TaskCancelledException extends RuntimeException {}
     static class UserIdMap {static String uid="A";static String getCurrentUid(){return uid;}}
     static class TaskAlternative {static String describe(JSONObject j){return "invalid";}}
@@ -25,11 +26,12 @@ public class EnergyManureCheck {
         static JSONObject newJSONObject(String s) { try { return new JSONObject(s); } catch(Exception e) { return new JSONObject(); } }
     }
     static class Log {
-        static List<String> lines=new ArrayList<>();
+        static List<String> lines=new ArrayList<>(),details=new ArrayList<>();
         static void i(String tag,String s) { lines.add(s); }
         static void record(String s) { lines.add(s); }
         static void forest(String s) { lines.add(s); }
         static void farm(String s) { lines.add(s); }
+        static void errorWithSummary(String detail,String summary){details.add(detail);if(summary!=null)lines.add(summary);}
         static void err(String t,String s,Throwable e) { throw new AssertionError(s,e); }
     }
     static class TimeUtil { static void sleep(long n) {} }
@@ -45,6 +47,7 @@ public class EnergyManureCheck {
         static boolean shouldLogServerBusy(String tag) { return true; }
         @@ERRORS@@
     }
+    static class RpcLog {static String errorSummary(JSONObject j){return j.optString("memo","unknown");}}
     static class Statistics {
         enum DataType { COLLECTED }
         static int total;
@@ -80,6 +83,7 @@ public class EnergyManureCheck {
         static String key(String uid,String s){return uid+"|"+MyUtils.getInstance().get(Calendar.DAY_OF_YEAR)+"|"+s;}
         static boolean hasFlagToday(String s) { return flags.contains(key(UserIdMap.uid,s)); }
         static void flagToday(String s,String uid) { flags.add(key(uid,s)); }
+        static void flagToday(String s) { flagToday(s,UserIdMap.uid); }
     }
     static class AntOrchardRpcCall {
         static String balance; static int queries,progress;
@@ -102,7 +106,7 @@ public class EnergyManureCheck {
             .put("receivedEnergyAmount",amount).put("token","PRIVATE_PAYLOAD")).toString();
     }
     static void resetMarket() { GreenLifeRpcCall.consult.clear(); GreenLifeRpcCall.send.clear();
-        GreenLifeRpcCall.sent=0; Statistics.total=0; totalCollected=0; Log.lines.clear(); }
+        GreenLifeRpcCall.sent=0; Statistics.total=0; totalCollected=0; Log.lines.clear();Status.flags.clear();UserIdMap.uid="A";MyUtils.dayOffset=0; }
     static void balance(int have,int cost,int left) {
         AntOrchardRpcCall.balance=new JSONObject().put("resultCode","SUCCESS").put("farmMainAccountInfo",
             new JSONObject().put("happyPoint",Integer.toString(have)).put("wateringCost",cost).put("wateringLeftTimes",left)).toString();
@@ -124,7 +128,9 @@ public class EnergyManureCheck {
         }
         records(page(false,0,record(today,Integer.MAX_VALUE),record(today,1)));work.syncTodayCollectedFromServer();assert Statistics.updates==0;
         records(page(false,0,record(today,1).put("energy",2147483648L)));work.syncTodayCollectedFromServer();assert Statistics.updates==0:"large income must not wrap to negative and be skipped";
-        records();for(int i=1;i<=20;i++)AntForestRpcCall.records.add(page(true,i,record(today,1)));
+        records();for(int i=1;i<=25;i++)AntForestRpcCall.records.add(page(i<25,i,record(today,1)));
+        work.syncTodayCollectedFromServer();assert Statistics.total==25&&Statistics.updates==1:"records beyond the former 20-page cap were lost";
+        records();for(int i=1;i<=ENERGY_RECORD_MAX_PAGES;i++)AntForestRpcCall.records.add(page(true,i,record(today,1)));
         work.syncTodayCollectedFromServer();assert Statistics.updates==0:"truncated pages overwrote totals";
         records(page(false,0,record(today,8)));AntForestRpcCall.switchAccount=true;work.syncTodayCollectedFromServer();assert Statistics.updates==0;
         Status.flags.clear();Log.lines.clear();
@@ -157,6 +163,15 @@ public class EnergyManureCheck {
         assert ErrorMessages.failures==1;
         resetMarket(); for(int i=0;i<3;i++) { GreenLifeRpcCall.consult.add(response(true,0)); GreenLifeRpcCall.send.add(response(true,10)); }
         sendEnergyByAction("GREEN_LIFE"); assert GreenLifeRpcCall.sent==1 && Statistics.total==10 && totalCollected==10;
+        sendEnergyByAction("GREEN_LIFE");assert GreenLifeRpcCall.sent==1&&GreenLifeRpcCall.consult.size()==2:"confirmed daily market sent again";
+        UserIdMap.uid="B";sendEnergyByAction("GREEN_LIFE");assert GreenLifeRpcCall.sent==2:"account cache leaked";
+        UserIdMap.uid="A";MyUtils.dayOffset=1;sendEnergyByAction("GREEN_LIFE");assert GreenLifeRpcCall.sent==3:"GMT+8 next day stayed blocked";
+        resetMarket();GreenLifeRpcCall.consult.add(new JSONObject(response(false,0)).put("data",new JSONObject().put("canSendEnergy",false).put("resultCode","USER_SEND_OVER_LIMIT")).toString());
+        sendEnergyByAction("GREEN_LIFE");sendEnergyByAction("GREEN_LIFE");assert GreenLifeRpcCall.sent==0&&GreenLifeRpcCall.consult.isEmpty();
+        for(String invalid:List.of("{success:true}",response("false",0),response(false,0),"{success:true,data:{resultCode:'USER_SEND_OVER_LIMIT'}}")){
+            resetMarket();GreenLifeRpcCall.consult.add(invalid);GreenLifeRpcCall.consult.add(response(true,0));GreenLifeRpcCall.send.add(response(true,3));
+            sendEnergyByAction("GREEN_LIFE");sendEnergyByAction("GREEN_LIFE");assert GreenLifeRpcCall.sent==1&&Statistics.total==3:"temporary/malformed consult stopped the whole day";
+        }
         resetMarket(); GreenLifeRpcCall.consult.add(response(true,0)); GreenLifeRpcCall.consult.add(response(false,0));
         GreenLifeRpcCall.send.add(response(true,8)); sendEnergyByAction("GREEN_LIFE"); assert GreenLifeRpcCall.sent==1 && totalCollected==8;
         for(String invalid : List.of("{}","invalid", "{\"success\":true}",response("true",0),response(JSONObject.NULL,0))) {
@@ -200,6 +215,8 @@ for key, path, signatures in (
         "private static void logSpreadShortage(", "private int targetSpreadTimes(", "private static boolean shouldBatchSpread(")),
 ):
     code = code.replace(key, "\n".join(method(path, signature) for signature in signatures))
+forest_source=(SOURCE/'model/task/antForest/AntForestV2.java').read_text(encoding='utf-8')
+code=code.replace('@@CONSTANTS@@','\n'.join(re.findall(r'    private static final int ENERGY_RECORD_(?:PAGE_SIZE|MAX_PAGES) = \d+;',forest_source)).replace('private ',''))
 with tempfile.TemporaryDirectory(prefix="sesame-energy-manure-") as tmp:
     source = Path(tmp) / "EnergyManureCheck.java"
     source.write_text(code, encoding="utf-8")

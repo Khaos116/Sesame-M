@@ -212,7 +212,7 @@ public class AntOcean extends ModelTask {
                         }
                         JSONObject bizInfo = MyUtils.newJSONObject(jo.optString("bizInfo"));
                         String taskTitle = bizInfo.optString("taskTitle");
-                        AntOceanAntiepTaskListMap.add(taskTitle, taskTitle);
+                        if (!taskTitle.isEmpty()) AntOceanAntiepTaskListMap.add(taskTitle, taskTitle);
                     }
                 }
                 //保存任务到配置文件
@@ -290,7 +290,12 @@ public class AntOcean extends ModelTask {
 
     private void queryHomePage() {
         try {
-            JSONObject joHomePage = MyUtils.newJSONObject(AntOceanRpcCall.queryHomePage());
+            String homePage = AntOceanRpcCall.queryHomePage();
+            if (homePage == null || homePage.trim().isEmpty()) {
+                Log.record("神奇海洋：首页响应为空，停止本轮清理与领奖");
+                return;
+            }
+            JSONObject joHomePage = MyUtils.newJSONObject(homePage);
             if (!MessageUtil.checkResultCode(TAG, joHomePage)) {
                 return;
             }
@@ -373,7 +378,12 @@ public class AntOcean extends ModelTask {
 
     private void autocleanOcean(String UserId) {
         try {
-            JSONObject joHomePage = MyUtils.newJSONObject(AntOceanRpcCall.queryHomePage());
+            String homePage = AntOceanRpcCall.queryHomePage();
+            if (homePage == null || homePage.trim().isEmpty()) {
+                Log.record("神奇海洋：清理回查响应为空，未添加延迟清理任务");
+                return;
+            }
+            JSONObject joHomePage = MyUtils.newJSONObject(homePage);
             if (!MessageUtil.checkResultCode(TAG, joHomePage)) {
                 return;
             }

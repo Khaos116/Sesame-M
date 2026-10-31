@@ -234,7 +234,7 @@ public class Log {
         if (toError) {
             errorLogger().i(withUser(details));
         }
-        if (toRuntime) {
+        if (toRuntime && summary != null) {
             runtimeLoggerOf(MODULE_TAG.get()).i(withUser(summary));
         }
     }
@@ -377,7 +377,7 @@ public class Log {
     }
 
     public static void errorWithSummary(String details, String summary) {
-        writeError(details, summary);
+        writeError(details, summary == null || summary.isEmpty() ? null : summary);
     }
 
     public static void error(String TAG, String msg) {

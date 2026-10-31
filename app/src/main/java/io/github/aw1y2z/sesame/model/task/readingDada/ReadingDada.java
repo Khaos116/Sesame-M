@@ -43,12 +43,18 @@ public class ReadingDada {
                     Log.record("答题跳过：选项为空");
                     return false;
                 }
+                String questionId = jo.optString("questionId");
+                if (!(jo.opt("questionId") instanceof String || jo.opt("questionId") instanceof Number)
+                        || questionId.trim().isEmpty()) {
+                    Log.record("答题跳过：questionId缺失或类型无效，未发送答案");
+                    return false;
+                }
                 // title 用 optString：缺该字段时不应让整条答题失败（AI 仍可凭选项作答）
                 String answer = AnswerAI.getAnswer(jo.optString("title"), JsonUtil.jsonArrayToList(jsonArray));
                 if (answer == null || answer.isEmpty()) {
                     answer = jsonArray.optString(0);
                 }
-                s = ReadingDadaRpcCall.submitAnswer(activityId, outBizId, jo.optString("questionId"), answer);
+                s = ReadingDadaRpcCall.submitAnswer(activityId, outBizId, questionId, answer);
                 jo = MyUtils.newJSONObject(s);
                 if ("200".equals(jo.optString("resultCode"))) {
                     Log.other("答题完成");

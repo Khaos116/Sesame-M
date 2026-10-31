@@ -279,7 +279,7 @@ public class AntStall extends ModelTask {
                         }
                         JSONObject bizInfo = MyUtils.newJSONObject(task.optString("bizInfo"));
                         String title = bizInfo.optString("title");
-                        AntStallTaskListMap.add(title, title);
+                        if (!title.isEmpty()) AntStallTaskListMap.add(title, title);
                     }
                 }
                 //保存任务到配置文件

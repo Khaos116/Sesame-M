@@ -88,7 +88,7 @@ public class MergeReviewCheck {
   static class Field<T> {T value;Field(T value){this.value=value;}T getValue(){return value;}}
   Field<Set<String>> AntOrchardTaskList=new Field<>(Set.of());Field<Boolean> orchardFloatBallTask=new Field<>(true);
   Field<Integer> orchardVisitDailyBudget=new Field<>(1);int finished,extras;boolean runReal;
-  static class Log {static void farm(String s){MergeReviewCheck.Log.lines.add(s);}static void i(String s){}static void i(String tag,String s){}static void err(String a,String b,Throwable t){if(!(t instanceof NetworkFailure))throw new AssertionError(t);}}
+  static class Log {static void farm(String s){MergeReviewCheck.Log.lines.add(s);}static void record(String s){MergeReviewCheck.Log.lines.add(s);}static void i(String s){}static void i(String tag,String s){}static void err(String a,String b,Throwable t){if(!(t instanceof NetworkFailure))throw new AssertionError(t);}}
   Map<String,String> pendingVerifyTasks=new LinkedHashMap<>();
   @@ORCHARD_VERIFY_CFG@@
   @@ORCHARD_BLACK@@
@@ -96,6 +96,7 @@ public class MergeReviewCheck {
   @@ORCHARD_HANDLE@@
   boolean finishOrchardTask(JSONObject task){if(runReal)return realFinishOrchardTask(task);finished++;return true;}void runExtraOrchardTask(JSONObject task,boolean star){extras++;}
   @@ORCHARD_FINISH@@
+  @@ORCHARD_COUNT@@
   @@ORCHARD_VERIFY@@
   @@ORCHARD_FINISH_TWICE@@
  }
@@ -197,7 +198,7 @@ public class MergeReviewCheck {
     assert orchard.realFinishOrchardTask(task);
     assert orchard.pendingVerifyTasks.containsKey("confirmed"):"Every successful response still requires a task-list probe";
     assert Log.lines.stream().noneMatch(s->s.contains("🧾完成")):"RPC success must never report task completion";
-    assert AntOrchardRpcCall.writes==(primary?1:2)*((action.equals("VISIT")||action.equals("XLIGHT"))?2:1);
+    assert AntOrchardRpcCall.writes==(primary?1:2)*((action.equals("VISIT")||action.equals("XLIGHT")||action.equals("JUMP"))?2:1);
     AntOrchardRpcCall.snapshot=new JSONArray().put(new JSONObject().put("taskId","confirmed").put("taskStatus","TODO"));
     orchard.verifyPendingTasksByList();assert MessageUtil.marks==1;
     assert Log.lines.stream().noneMatch(s->s.contains("🧾完成")):"Unchanged TODO must not be reported as complete";
@@ -210,6 +211,30 @@ public class MergeReviewCheck {
     orchard.verifyPendingTasksByList();assert Log.lines.stream().filter(s->s.contains("已按任务列表核对")).count()==1;
    }
   }
+  for(int limit:new int[]{0,1,3,200}) {
+   Status.flags.clear();AntOrchardRpcCall.writes=0;AntOrchardRpcCall.finishReply="{\"success\":true}";
+   JSONObject staged=new JSONObject().put("taskId","staged").put("actionType","JUMP").put("sceneCode","scene")
+    .put("taskDisplayConfig",new JSONObject().put("title","staged")).put("rightsTimes",1).put("rightsTimesLimit",limit);
+   orchard.realFinishOrchardTask(staged);
+   int expected=limit==0?1:Math.min(100,limit-1);
+   assert AntOrchardRpcCall.writes==expected:"fallback must process remaining stages within cap";
+   orchard.realFinishOrchardTask(staged);assert AntOrchardRpcCall.writes==expected:"same stages must not repeat today";
+  }
+  Status.flags.clear();AntOrchardRpcCall.writes=0;
+  JSONObject staged=new JSONObject().put("taskId","extend").put("actionType","JUMP").put("sceneCode","scene")
+   .put("taskDisplayConfig",new JSONObject().put("title","extend")).put("rightsTimes",0)
+   .put("extend",new JSONObject().put("rightsTimesLimit","3"));
+  orchard.realFinishOrchardTask(staged);assert AntOrchardRpcCall.writes==3:"extend stages ignored";
+  staged.put("rightsTimes",2).put("rightsTimesLimit",4);orchard.realFinishOrchardTask(staged);
+  assert AntOrchardRpcCall.writes==4:"new stage must remain eligible after earlier attempts";
+  for(Object bad:new Object[]{"bad",-1,1.5,true,new JSONObject(),JSONObject.NULL}) {
+   for(String key:List.of("rightsTimes","rightsTimesLimit")) {
+    Status.flags.clear();AntOrchardRpcCall.writes=0;
+    JSONObject invalid=new JSONObject(staged.toString()).put("rightsTimes",0).put("rightsTimesLimit",3).put(key,bad);
+    assert !orchard.realFinishOrchardTask(invalid)&&AntOrchardRpcCall.writes==0:"invalid stage count must not dispatch";
+   }
+  }
+  orchard.pendingVerifyTasks.clear();
   JSONObject fallback=new JSONObject().put("taskId","retry").put("actionType","JUMP").put("sceneCode","scene")
     .put("taskStatus","TODO").put("taskDisplayConfig",new JSONObject().put("title","retry"));
   orchard.runReal=true;AntOrchardRpcCall.snapshot=new JSONArray().put(fallback);
@@ -259,6 +284,7 @@ for token, path, signature in (
     ("@@ORCHARD_HANDLE@@", "model/task/antOrchard/AntOrchard.java", "private void handleTaskList("),
     ("@@ORCHARD_VERIFY@@", "model/task/antOrchard/AntOrchard.java", "private void verifyPendingTasksByList("),
     ("@@ORCHARD_FINISH_TWICE@@", "model/task/antOrchard/AntOrchard.java", "private String finishTaskTwice("),
+    ("@@ORCHARD_COUNT@@", "model/task/antOrchard/AntOrchard.java", "private static int extraOrchardCount("),
     ("@@VERIFY_CONFIG@@", "model/base/TaskAlternative.java", "public static final class VerifyConfig"),
     ("@@VERIFY_SNAPSHOT@@", "model/base/TaskAlternative.java", "public interface TaskListSnapshot"),
     ("@@VERIFY_METHOD@@", "model/base/TaskAlternative.java", "public static boolean verify("),

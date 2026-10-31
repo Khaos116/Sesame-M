@@ -744,7 +744,7 @@ public class AntFarm extends ModelTask {
                 for (int i = 0; ja != null && i < ja.length(); i++) {
                     JSONObject item = ja.optJSONObject(i);
                     String title = item == null ? null : item.optString("title", null);
-                    if (title != null) {
+                    if (title != null && !title.isEmpty()) {
                         AntFarmDoFarmTaskListMap.add(title, title);
                     }
                 }
@@ -787,7 +787,7 @@ public class AntFarm extends ModelTask {
                         for (int i = 0; farmTaskList != null && i < farmTaskList.length(); i++) {
                             JSONObject item = farmTaskList.optJSONObject(i);
                             String title = item == null ? null : item.optString("title", null);
-                            if (title != null) {
+                            if (title != null && !title.isEmpty()) {
                                 AntFarmDrawMachineTaskListMap.add(title, title);
                             }
                         }
@@ -801,7 +801,7 @@ public class AntFarm extends ModelTask {
                                     for (int i = 0; farmTaskList != null && i < farmTaskList.length(); i++) {
                                         JSONObject item = farmTaskList.optJSONObject(i);
                                         String title = item == null ? null : item.optString("title", null);
-                                        if (title != null) {
+                                        if (title != null && !title.isEmpty()) {
                                             AntFarmDrawMachineTaskListMap.add(title, title);
                                         }
                                     }
@@ -4187,6 +4187,11 @@ public class AntFarm extends ModelTask {
             boolean canCollectDailyLimitedFoodMaterial = jo.optBoolean("canCollectDailyLimitedFoodMaterial");
             if (canCollectDailyLimitedFoodMaterial) {
                 int dailyLimitedFoodMaterialAmount = jo.optInt("dailyLimitedFoodMaterialAmount");
+                if (dailyLimitedFoodMaterialAmount <= 0
+                        || jo.optDouble("dailyLimitedFoodMaterialAmount", Double.NaN) != dailyLimitedFoodMaterialAmount) {
+                    Log.record("小鸡厨房：可领食材数量无效，未发送领取请求");
+                    return;
+                }
                 jo = MyUtils.newJSONObject(AntFarmRpcCall.collectDailyLimitedFoodMaterial(dailyLimitedFoodMaterialAmount));
                 if (MessageUtil.checkMemo(TAG, jo)) {
                     Log.farm("小鸡厨房👨🏻‍🍳领取[爱心食材店食材]#" + dailyLimitedFoodMaterialAmount + "g");

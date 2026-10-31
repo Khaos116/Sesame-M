@@ -131,6 +131,8 @@ data class LogRunEntry(
 
 /** M 定时主轮带“:昵称”，账号标签可能尚未发布；只接受完整主轮/手动入口，避免游戏任务误分轮。 */
 private val RUN_START_REGEX = Regex("""^(?:\[账号\d+\])?开始执行(?::[^\r\n]*|分组【[^】]*】任务|全部任务)?\s*$""")
+private val INIT_START_REGEX = Regex("""^(?:\[账号\d+\])?模块初始化开始\s*$""")
+private const val INIT_BOUNDARY_WINDOW_MS = 10_000L
 
 /**
  * 读取运行日志全文,提取所有轮次开始行("[账号N]开始执行...")的时间戳作为全局锚点。
@@ -139,20 +141,45 @@ private val RUN_START_REGEX = Regex("""^(?:\[账号\d+\])?开始执行(?::[^\r\n
  */
 private fun readRuntimeAnchors(file: File): List<String> {
     if (!file.exists()) return emptyList()
-    val anchors = mutableListOf<String>()
+    val runStarts = mutableListOf<String>()
+    val initStarts = mutableListOf<String>()
     try {
         file.forEachLine(Charsets.UTF_8) { line ->
             val m = TIME_REGEX.find(line) ?: return@forEachLine
             val tag = m.groupValues[2].takeIf { it.isNotEmpty() }
             val body = m.groupValues[3]
-            if (tag == "RUNTIME" && RUN_START_REGEX.containsMatchIn(body)) {
-                m.groupValues[1].takeIf { it.isNotEmpty() }?.let { anchors.add(it) }
+            if (tag == "RUNTIME") {
+                when {
+                    RUN_START_REGEX.matches(body) -> runStarts.add(m.groupValues[1])
+                    INIT_START_REGEX.matches(body) -> initStarts.add(m.groupValues[1])
+                }
             }
         }
     } catch (_: Throwable) {
         // 读取失败时退化为无锚点(各页按单条显示)
     }
-    return anchors.distinct().sorted()
+    return effectiveRunStarts(runStarts.distinct().sorted(), initStarts.distinct().sorted())
+}
+
+private fun timeToMillis(time: String): Long? {
+    return try {
+        java.time.LocalTime.parse(time).toNanoOfDay() / 1_000_000
+    } catch (_: java.time.format.DateTimeParseException) {
+        null
+    }
+}
+
+/** 只提前到执行前10秒内的最近加载标记，避免中途重启标记拉偏下一轮。 */
+private fun effectiveRunStarts(runStarts: List<String>, initStarts: List<String>): List<String> {
+    if (runStarts.isEmpty() || initStarts.isEmpty()) return runStarts
+    return runStarts.mapIndexed { index, start ->
+        if (index == 0) return@mapIndexed start
+        val startMs = timeToMillis(start) ?: return@mapIndexed start
+        initStarts.lastOrNull { marker ->
+            marker > runStarts[index - 1] && marker < start &&
+                    timeToMillis(marker)?.let { startMs - it in 0..INIT_BOUNDARY_WINDOW_MS } == true
+        } ?: start
+    }
 }
 
 /**
@@ -220,6 +247,7 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     val logReader = remember(logType) { LogTailReader() }
     var entries by remember(logType) { mutableStateOf(emptyList<LogEntry>()) }
     val listState = rememberLazyListState()
+    var collapseAll by remember(file) { mutableStateOf(false) }
     val viewMode = remember(logType) {
         if (AppConfig.INSTANCE.logViewByRun == true) LogViewMode.BY_RUN else LogViewMode.BY_ENTRY
     }
@@ -306,6 +334,15 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
         topBar = {
             LogTopBar(
                 title = logType.displayName,
+                actions = {
+                    if (viewMode == LogViewMode.BY_RUN) {
+                        TextButton(
+                            text = if (collapseAll) "展开" else "收拢",
+                            minHeight = 48.dp,
+                            onClick = { collapseAll = !collapseAll }
+                        )
+                    }
+                },
                 onBack = { activity.finish() },
                 onExportSummary = if (logType == LogType.ERROR) ({
                     val report = RpcFailureJournal.fileFor(logType.file.parentFile, System.currentTimeMillis())
@@ -459,13 +496,13 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                     contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
                     if (viewMode == LogViewMode.BY_RUN) {
-                        itemsIndexed(filteredRuns.asReversed(), key = { _, run -> "r-${run.runIndex}-${run.startLineNumber}" }) { _, run ->
-                            RunEntryCard(run)
+                        itemsIndexed(filteredRuns.asReversed(), key = { _, run -> "${file.path}:r-${run.runIndex}" }) { index, run ->
+                            RunEntryCard(run, collapseAll) { listState.requestScrollToItem(index) }
                         }
                     } else {
                         itemsIndexed(
                             filteredEntries.asReversed(),
-                            key = { _, e -> "${e.lineNumber}-${e.hashCode()}" }
+                            key = { _, e -> "${file.path}:e-${e.lineNumber}" }
                         ) { _, entry ->
                             LogEntryCard(entry)
                         }
@@ -543,9 +580,9 @@ fun LogEntryCard(entry: LogEntry) {
 }
 
 @Composable
-private fun RunEntryCard(run: LogRunEntry) {
+private fun RunEntryCard(run: LogRunEntry, collapseAll: Boolean = false, onExpand: () -> Unit = {}) {
     val shown = run.entries
-    var expanded by remember { mutableStateOf(true) }
+    var expanded by remember(collapseAll) { mutableStateOf(!collapseAll) }
     Column(
         Modifier
             .fillMaxWidth()
@@ -559,7 +596,10 @@ private fun RunEntryCard(run: LogRunEntry) {
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
-                ) { expanded = !expanded },
+                ) {
+                    expanded = !expanded
+                    if (expanded) onExpand()
+                },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {

@@ -108,6 +108,70 @@ public class PreflightCheck {
     }
 }
 """)
+    load_module = method("hook/ApplicationHook.java", "public void onModuleLoaded(")
+    assert load_module.index("AppConfig.load();") < load_module.index("logInitializationStart();")
+    handle_prefix = method("hook/ApplicationHook.java", "public void handleLoadPackage(")
+    handle_prefix = handle_prefix[:handle_prefix.index("XHelpers.findAndHookMethod(Application.class")]
+    handle_prefix = handle_prefix.replace("ApplicationHook.class", "StartupCheck.class") + "hooks.incrementAndGet();\n}}"
+    write("hook/StartupCheck.java", """
+package io.github.aw1y2z.sesame.hook;
+import java.util.*;import java.util.concurrent.*;import java.util.concurrent.atomic.AtomicInteger;
+public class StartupCheck {
+    static boolean hooked;static volatile boolean initStartLogged;
+    static String processName;static Object classLoader;static AtomicInteger hooks=new AtomicInteger();
+    static class ClassUtil{static final String PACKAGE_NAME="main";}
+    static class XC_LoadPackage {static class LoadPackageParam {String packageName="main",processName;Object classLoader;}}
+    static class AppConfig {static boolean loaded;static void load(){loaded=true;}}
+    static class Log {static AtomicInteger lines=new AtomicInteger();static void i(String s){assert AppConfig.loaded;assert s.equals("模块初始化开始");lines.incrementAndGet();}}
+""" + method("hook/ApplicationHook.java", "private static synchronized void logInitializationStart(") + handle_prefix + """
+    public static void main(String[] args) throws Exception {
+        StartupCheck work=new StartupCheck();var child=new XC_LoadPackage.LoadPackageParam();child.processName="main:child";
+        work.handleLoadPackage(child);assert hooks.get()==0&&Log.lines.get()==0&&!AppConfig.loaded;
+        var main=new XC_LoadPackage.LoadPackageParam();main.processName="main";
+        var ready=new CountDownLatch(1);var threads=new ArrayList<Thread>();
+        for(int i=0;i<40;i++){var t=new Thread(()->{try{ready.await();work.handleLoadPackage(main);}catch(InterruptedException e){throw new AssertionError(e);}});threads.add(t);t.start();}
+        ready.countDown();for(var thread:threads)thread.join();
+        assert hooks.get()==1&&Log.lines.get()==1:"duplicate hook or initialization marker";
+        logInitializationStart();assert Log.lines.get()==1;
+        System.out.println("PASS production startup prefix: child exclusion, concurrent hook admission and one config-aware initialization marker");
+    }
+}
+""")
+    write("hook/ModuleHttpServerManager.java", (SOURCE / "hook/ModuleHttpServerManager.java").read_text(encoding="utf-8"))
+    write("hook/ModuleHttpServer.java", """
+package io.github.aw1y2z.sesame.hook;
+public class ModuleHttpServer {
+    static boolean fail=true;static int starts;boolean alive;
+    ModuleHttpServer(int port,String token){}
+    void start(int timeout,boolean daemon)throws java.net.BindException{starts++;if(fail)throw new java.net.BindException("occupied");alive=true;}
+    boolean isAlive(){return alive;}void stop(){alive=false;}
+}
+""")
+    for filename, contents in {
+        "fi/iki/elonen/NanoHTTPD.java": "package fi.iki.elonen; public class NanoHTTPD {public static final int SOCKET_READ_TIMEOUT=5000;}",
+        "android/util/Log.java": "package android.util; public class Log {public static String getStackTraceString(Throwable t){var s=new java.io.StringWriter();t.printStackTrace(new java.io.PrintWriter(s));return s.toString();}}",
+    }.items():
+        path = out / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents, encoding="utf-8")
+    write("hook/HttpStartupCheck.java", """
+package io.github.aw1y2z.sesame.hook;
+import io.github.aw1y2z.sesame.util.Log;
+public class HttpStartupCheck {
+    public static void main(String[] args){
+        var manager=ModuleHttpServerManager.getInstance();
+        manager.startIfNeeded(8080,"PRIVATE_TOKEN","child","main");assert ModuleHttpServer.starts==0;
+        manager.startIfNeeded(8080,"PRIVATE_TOKEN","main","main");
+        assert Log.errorWrites==1&&Log.runtimeWrites==1&&Log.lastError.contains("java.net.BindException")&&Log.lastError.contains("at ");
+        assert !Log.lastRuntime.contains("PRIVATE_TOKEN");Log.lastRuntime=null;
+        manager.startIfNeeded(8080,"PRIVATE_TOKEN","main","main");
+        assert Log.errorWrites==2&&Log.runtimeWrites==1&&Log.lastRuntime==null:"repeated bind error lost details or repeated runtime warning";
+        ModuleHttpServer.fail=false;manager.startIfNeeded(8080,"PRIVATE_TOKEN","main","main");
+        assert ModuleHttpServer.starts==3;manager.startIfNeeded(8080,"PRIVATE_TOKEN","main","main");assert ModuleHttpServer.starts==3;
+        manager.stop();System.out.println("PASS production HTTP startup: process gate, every error stack, one runtime warning and later recovery");
+    }
+}
+""")
     write("data/RuntimeInfo.java", """
 package io.github.aw1y2z.sesame.data;
 import java.util.*;
@@ -162,13 +226,14 @@ public class AppConfig {
 package io.github.aw1y2z.sesame.util;
 public class Log {
     public static String lastDebug, lastError, lastRuntime;
+    public static int errorWrites,runtimeWrites;
     private static final ThreadLocal<Integer> staleLogDropped = ThreadLocal.withInitial(() -> 0);
     private static final ThreadLocal<String> MODULE_TAG = new ThreadLocal<>();
     private static String withUser(String s) { return s; }
     private static class Sink {
         final boolean error;
         Sink(boolean error) { this.error = error; }
-        void i(String s) { if(error) lastError=s; else lastRuntime=s; }
+        void i(String s) { if(error){lastError=s;errorWrites++;}else{lastRuntime=s;runtimeWrites++;} }
     }
     private static Sink errorLogger() { return new Sink(true); }
     private static Sink runtimeLoggerOf(String tag) { return new Sink(false); }
@@ -191,8 +256,15 @@ public class Log {
             assert runtime ? "short reason".equals(lastRuntime) : lastRuntime==null;
         }
         config.error=config.runtime=true;
+        for (String summary : new String[]{null, ""}) {
+            lastError=lastRuntime=null;
+            errorWithSummary("error-only details", summary);
+            assert "error-only details".equals(lastError) && lastRuntime==null;
+        }
         error("ordinary exception stack");
         assert lastError.equals("ordinary exception stack") && lastRuntime.equals(lastError);
+        lastError=lastRuntime=null;error("");
+        assert "".equals(lastError)&&"".equals(lastRuntime):"ordinary empty error changed routing";
         lastError=lastRuntime=null;
         var previous=RunGeneration.bind(0,()->1L);
         try { errorWithSummary("old details", "old summary"); assert lastError==null&&lastRuntime==null&&staleLogDropped.get()==1; }
@@ -1019,6 +1091,9 @@ public class GuardCheck {
                     "io.github.aw1y2z.sesame.rpc.intervallimit.RpcFailureJournalCheck"], check=True, timeout=30)
     subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + cp,
                     "io.github.aw1y2z.sesame.hook.PreflightCheck"], check=True, timeout=15)
+    for check in ("StartupCheck", "HttpStartupCheck"):
+        subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + cp,
+                        "io.github.aw1y2z.sesame.hook." + check], check=True, timeout=15)
 
 # Verify every transport goes through the shared guard before invoking the host RPC.
 for path, calls in (("rpc/bridge/NewRpcBridge.java", 2), ("rpc/bridge/OldRpcBridge.java", 1)):

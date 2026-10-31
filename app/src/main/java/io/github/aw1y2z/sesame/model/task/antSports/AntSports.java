@@ -1695,7 +1695,11 @@ public class AntSports extends ModelTask {
                 return false;
             }
             JSONArray userExchangeRecords = jo.optJSONArray("userExchangeRecords");
-            if (userExchangeRecords == null || userExchangeRecords.length() == 0) {
+            if (userExchangeRecords == null) {
+                Log.record("行走捐：兑换记录响应缺少列表，未发送兑换请求");
+                return false;
+            }
+            if (userExchangeRecords.length() == 0) {
                 return true;
             }
             jo = userExchangeRecords.optJSONObject(0);
@@ -1795,6 +1799,12 @@ public class AntSports extends ModelTask {
                     }
                     String bizType = taskInfo.optString("bizType");
                     String taskId = taskInfo.optString("taskId");
+                    if (!(taskInfo.opt("bizType") instanceof String)
+                            || !(taskInfo.opt("taskId") instanceof String || taskInfo.opt("taskId") instanceof Number)
+                            || bizType.trim().isEmpty() || taskId.trim().isEmpty()) {
+                        Log.record("文体中心：任务缺少业务类型或编号，未发送完成请求");
+                        continue;
+                    }
                     jo = MyUtils.newJSONObject(AntSportsRpcCall.userTaskComplete(bizType, taskId));
                     if (jo.optBoolean("success")) {
                         String taskName = taskInfo.optString("taskName", taskId);
@@ -1885,6 +1895,12 @@ public class AntSports extends ModelTask {
                         continue;
                     }
                     String taskId = taskInfo.optString("taskId");
+                    if (!(taskInfo.opt("taskId") instanceof String || taskInfo.opt("taskId") instanceof Number)
+                            || !(jo.opt("userTaskId") instanceof String || jo.opt("userTaskId") instanceof Number)
+                            || taskId.trim().isEmpty() || userTaskId.trim().isEmpty()) {
+                        Log.record("文体中心：奖励缺少任务编号，未发送领奖请求");
+                        continue;
+                    }
                     jo = MyUtils.newJSONObject(AntSportsRpcCall.userTaskRightsReceive(taskId, userTaskId));
                     if (jo.optBoolean("success")) {
                         String taskName = taskInfo.optString("taskName", taskId);
@@ -2437,7 +2453,11 @@ public class AntSports extends ModelTask {
                 String taskName = task.optString("title");
                 JSONObject data = jsonResult.optJSONObject("data");
                 JSONArray rewards = data != null ? data.optJSONArray("userItems") : null;
-                ArrayList<String> rewardList = rewards != null ? parseRewards(rewards) : new ArrayList<>();
+                if (rewards == null) {
+                    Log.record("悦动健康：领奖响应缺少奖励列表，结果未确认");
+                    return false;
+                }
+                ArrayList<String> rewardList = parseRewards(rewards);
                 Log.other("悦动健康🚑️领取奖励[" + taskName + "]#获得" + rewardList);
                 return true;
             }

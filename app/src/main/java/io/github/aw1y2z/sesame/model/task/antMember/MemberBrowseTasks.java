@@ -14,7 +14,8 @@ import java.util.*;
 final class MemberBrowseTasks {
     private static final String TAG = "会员浏览任务";
 
-    static void run(Set<String> blacklist) {
+    static void run(boolean memberEnabled, Set<String> memberBlacklist, boolean adEnabled, Set<String> adBlacklist) {
+        if (!memberEnabled && !adEnabled) return;
         try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
             if (work == null) return;
             GameTaskAction.cleanupDailyRecords();
@@ -24,6 +25,9 @@ final class MemberBrowseTasks {
                 boolean changed = false;
                 for (JSONObject task : tasks.values()) {
                     TimeUtil.sleep(0);
+                    boolean ad = isAd(task);
+                    if (ad ? !adEnabled : !memberEnabled) continue;
+                    Set<String> blacklist = ad ? adBlacklist : memberBlacklist;
                     String id = configId(task), title = title(task);
                     if (title.isEmpty()) title = id;
                     if (id.isEmpty() || blacklist.contains(id) || blacklist.contains(title) || finished(task)) continue;
@@ -50,7 +54,7 @@ final class MemberBrowseTasks {
         for (int page = 1; page <= 64; page++) {
             TimeUtil.sleep(0);
             List<JSONObject> rows = rows(AntMemberRpcCall.signPageTaskList(page, session));
-            if (rows == null) { Log.record(TAG + "：签到页第" + page + "页查询失败或结构无效，未标记当天完成"); break; }
+            if (rows == null) { Log.record(TAG + "：签到页第" + page + "页查询失败或结构无效，停止本轮取数和执行"); return Collections.emptyMap(); }
             if (rows.isEmpty()) { complete = true; break; }
             boolean advanced = false;
             for (JSONObject row : rows) {
@@ -63,9 +67,10 @@ final class MemberBrowseTasks {
             TimeUtil.sleep(300);
         }
         if (!complete) Log.record(TAG + "：分页未完整，保留后续查询");
-        for (String raw : new String[]{AntMemberRpcCall.currentMemberAdTasks(), AntMemberRpcCall.currentMemberProcesses()}) {
+        for (int source = 0; source < 2; source++) {
+            String raw = source == 0 ? AntMemberRpcCall.currentMemberAdTasks() : AntMemberRpcCall.currentMemberProcesses();
             List<JSONObject> rows = rows(raw);
-            if (rows == null) { complete = false; Log.record(TAG + "：广告/进行中列表查询失败或结构无效"); continue; }
+            if (rows == null) { Log.record(TAG + "：" + (source == 0 ? "广告" : "进行中") + "列表查询失败或结构无效，停止本轮取数和执行"); return Collections.emptyMap(); }
             for (JSONObject row : rows) {
                 if (configId(row).isEmpty()) validIds = false;
                 add(result, row);
@@ -247,7 +252,7 @@ final class MemberBrowseTasks {
     }
 
     private static boolean perform(JSONObject listed, String title) throws Exception {
-        if (target(listed) == null && Boolean.TRUE.equals(listed.opt("adTask"))) return performAd(listed, title);
+        if (isAd(listed)) return performAd(listed, title);
         String label = TAG + "[" + title + "]", id = configId(listed), process = processId(listed);
         RuntimeInfo store = RuntimeInfo.getInstance();
         if (process.isEmpty()) {
@@ -265,7 +270,7 @@ final class MemberBrowseTasks {
             JSONObject data = response.optJSONObject("resultData");
             JSONObject resultMap = data == null ? null : data.optJSONObject("resultMap");
             boolean ok = GameTaskAction.accepted(response) && (!batch || resultMap != null && "SUCCESS".equals(resultMap.optString(id)));
-            if (!ok) markRejected(title, response);
+            if (!ok) markRejected(listed, title, response);
             if (GameTaskAction.isBusinessRejection(response)) Status.flagToday("agReject::" + key);
             if (Boolean.FALSE.equals(response.opt("success")) || "RPC_SKIPPED".equals(response.optString("resultCode"))) store.putVerified(key, "");
             Log.record(label + (ok ? "：报名已受理，重新查询任务阶段" : "：报名未确认，code=" + response.optString("resultCode", "缺失")));
@@ -352,21 +357,25 @@ final class MemberBrowseTasks {
         }
         if (after != null && !GameTaskAction.accepted(response)) {
             if (GameTaskAction.isBusinessRejection(response)) Status.flagToday("agReject::" + key + ":" + stage);
-            markRejected(title, response);
+            markRejected(task, title, response);
         }
         Log.record(label + "：执行后结果未确认，code=" + response.optString("resultCode", "缺失") + "，后续轮次继续回查");
         return false;
     }
 
-    private static JSONObject adContract(JSONObject task) throws org.json.JSONException {
-        if (!Boolean.TRUE.equals(task.opt("adTask"))) return null;
-        if (TaskAlternative.isTransactionTask(task.optString("bizKey"))
-                || TaskAlternative.isTransactionTask(config(task).optString("bizKey"))) return null;
+    private static boolean isAd(JSONObject task) {
+        if (!Boolean.TRUE.equals(task.opt("adTask"))) return false;
         for (Object target : new Object[]{task.opt("targetBusiness"), config(task).opt("targetBusiness")}) {
             if (target == null || target == JSONObject.NULL || target instanceof String && ((String) target).trim().isEmpty()
                     || target instanceof JSONArray && ((JSONArray) target).length() == 0) continue;
-            return null;
+            return false;
         }
+        return true;
+    }
+
+    private static JSONObject adContract(JSONObject task) throws org.json.JSONException {
+        if (!isAd(task) || TaskAlternative.isTransactionTask(task.optString("bizKey"))
+                || TaskAlternative.isTransactionTask(config(task).optString("bizKey"))) return null;
         JSONObject ext = task.optJSONObject("lightsAdExtMap"), cfg = config(task);
         if (ext == null || !(ext.opt("bizId") instanceof String) || ext.optString("bizId").trim().isEmpty()
                 || !(ext.opt("adId") instanceof String) || ext.optString("adId").trim().isEmpty()) return null;
@@ -429,7 +438,7 @@ final class MemberBrowseTasks {
             if (!GameTaskAction.accepted(response)) {
                 if (Boolean.FALSE.equals(response.opt("success")) || "RPC_SKIPPED".equals(response.optString("error"))
                         || "RPC_SKIPPED".equals(response.optString("resultCode"))) state.put("applied", false);
-                store.putVerified(key, state.toString()); markRejected(title, response);
+                store.putVerified(key, state.toString()); markRejected(listed, title, response);
                 if (GameTaskAction.isBusinessRejection(response)) Status.flagToday("agReject::" + key + ":" + stage);
                 Log.record(label + "：广告申请未确认，保留后续回查"); return false;
             }
@@ -461,17 +470,17 @@ final class MemberBrowseTasks {
         JSONObject after = adSnapshot(id, contract);
         if (after != null && (finished(after) || advanced(listed, after))) return true;
         if (after != null) {
-            markRejected(title, response);
+            markRejected(listed, title, response);
             if (GameTaskAction.isBusinessRejection(response)) Status.flagToday("agReject::" + key + ":" + stage);
         }
         Log.record(label + "：广告完成请求结果未确认，后续继续按列表回查，不预记配置积分");
         return false;
     }
 
-    private static void markRejected(String title, JSONObject response) {
+    private static void markRejected(JSONObject task, String title, JSONObject response) {
         if (!GameTaskAction.accepted(response) && !"RPC_SKIPPED".equals(response.optString("resultCode"))
                 && !"RPC_SKIPPED".equals(response.optString("error")))
-            MessageUtil.checkResultCodeAndMarkTaskBlackList("AntMemberTaskList", title, response);
+            MessageUtil.checkResultCodeAndMarkTaskBlackList(isAd(task) ? "AntMemberAdTaskList" : "AntMemberTaskList", title, response);
     }
 
     private static void logConfirmed(String title, JSONObject task) {

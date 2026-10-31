@@ -22,8 +22,9 @@ public class BlacklistSwitchCheck {
   void add(String s,int ignored){value.add(s);}}
  static class ModelFields extends HashMap<String,ModelField<?>>{}
  static class ConfigV2 {static ConfigV2 INSTANCE=new ConfigV2();Map<String,ModelFields> fields=new HashMap<>();
-  static int saves;Map<String,ModelFields> getModelFieldsMap(){return fields;}
-  static boolean save(String uid,boolean force){saves++;return true;}}
+  static int saves;static boolean saveOk=true,dirty;Map<String,ModelFields> getModelFieldsMap(){return fields;}
+  static boolean hasFieldChanges(){return dirty;}
+  static boolean save(String uid,boolean force){saves++;dirty=!saveOk;return saveOk;}}
  static class UserIdMap {static String getCurrentUid(){return "uid";}}
  static class Log {static void record(String s){}static void err(String a,String b,Throwable t){throw new AssertionError(t);}}
  static class AutoBlackRecord {long lastDay,blackDay;int hits;static AutoBlackRecord parse(String s){return null;}String format(){return "record";}}
@@ -51,7 +52,21 @@ public class BlacklistSwitchCheck {
   MarkTaskBlackListConfirm("module","TaskList","display","uncertain");
   assert AutoBlackListMap.saves==1&&AutoBlackListMap.puts==1&&!list.contains("uncertain");
   enabled.value=null;MarkTaskBlackList("module","TaskList","display","unknown");assert !list.contains("unknown");
+  ConfigV2.saves=0;ConfigV2.dirty=false;
+  syncTaskBlackList("display","TaskList",Set.of("manual"),Set.of("allowed"),list);
+  assert ConfigV2.saves==0&&TASK_WHITE_LIST.get("TaskList").contains("allowed");
+  ConfigV2.saveOk=false;
+  syncTaskBlackList("display","TaskList",Set.of("preset","allowed"),Set.of("allowed"),list);
+  assert ConfigV2.saves==1&&list.contains("preset")&&!list.contains("allowed")&&list.contains("manual");
+  syncTaskBlackList("display","TaskList",Set.of("preset"),Set.of("changedWhite"),list);
+  assert ConfigV2.saves==2&&list.contains("preset")&&TASK_WHITE_LIST.get("TaskList").equals(Set.of("changedWhite"));
+  ConfigV2.saveOk=true;
+  syncTaskBlackList("display","TaskList",Set.of("preset"),Set.of(),list);
+  assert ConfigV2.saves==3&&!ConfigV2.dirty;
+  syncTaskBlackList("display","TaskList",Set.of("preset"),Set.of(),list);
+  assert ConfigV2.saves==3&&TASK_WHITE_LIST.get("TaskList").isEmpty();
   System.out.println("PASS disabled auto blacklist prevents direct/permanent/deferred/observation writes; manual entries retained");
+  System.out.println("PASS preset sync avoids duplicate saves, refreshes whitelist and retries failed persistence without dropping active filters");
  }
 }
 '''
@@ -64,6 +79,7 @@ signatures = (
     "public static void beginDeferBlackList(",
     "public static void endDeferBlackList(",
     "private static boolean deferBlackList(",
+    "public static void syncTaskBlackList(",
 )
 code = code.replace("@@METHODS@@", "\n".join(method("util/MessageUtil.java", s) for s in signatures))
 with tempfile.TemporaryDirectory(prefix="sesame-blacklist-switch-") as tmp:

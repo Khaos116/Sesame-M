@@ -36,6 +36,10 @@ code += method(source_path, "private class LogTailReader") + "\n"
 code += "fun loadLogEntries(file: File): List<LogEntry> = LogTailReader().poll(file)\n"
 code += re.search(r"data class LogRunEntry\([\s\S]*?\n\)", source)[0] + "\n"
 code += re.search(r"^private val RUN_START_REGEX = .+$", source, re.MULTILINE)[0] + "\n"
+code += re.search(r"^private val INIT_START_REGEX = .+$", source, re.MULTILINE)[0] + "\n"
+code += re.search(r"^private const val INIT_BOUNDARY_WINDOW_MS = .+$", source, re.MULTILINE)[0] + "\n"
+code += method(source_path, "private fun timeToMillis(") + "\n"
+code += method(source_path, "private fun effectiveRunStarts(") + "\n"
 code += method(source_path, "private fun readRuntimeAnchors(") + "\n"
 code += method(source_path, "private fun aggregateByRun(") + "\n"
 
@@ -154,6 +158,30 @@ fun main() {
         check(aggregateByRun(emptyList(), anchors).isEmpty())
         check(aggregateByRun(rows, emptyList()).single().entries == rows)
         println("PASS: strict run boundaries, full-file anchors, live refresh/reset, category grouping and combined filters")
+
+        file.writeText("20:00:00.000 RUNTIME: 开始执行:旧轮\\n" +
+            "20:09:58.000 RUNTIME: [账号1]模块初始化开始\\n" +
+            "20:09:59.000 RUNTIME: 加载中\\n" +
+            "20:10:00.000 RUNTIME: 开始执行:新轮\\n" +
+            "20:15:00.000 RUNTIME: 模块初始化开始\\n" +
+            "20:20:00.000 RUNTIME: 开始执行:第三轮\\n")
+        val initAnchors = readRuntimeAnchors(file)
+        check(initAnchors == listOf("20:00:00.000", "20:09:58.000", "20:20:00.000"))
+        val loading = listOf(LogEntry(1, "20:09:57.000", null, "old"),
+            LogEntry(2, "20:09:59.000", null, "loading"), LogEntry(3, "20:10:01.000", null, "new"))
+        check(aggregateByRun(loading, initAnchors).map { it.entries.size } == listOf(1, 2))
+        check(effectiveRunStarts(listOf("20:00:00.000", "20:10:00.000"),
+            listOf("20:09:49.999", "20:09:50.000")) == listOf("20:00:00.000", "20:09:50.000"))
+        check(effectiveRunStarts(listOf("20:00:00.000", "20:10:00.000"),
+            listOf("20:09:49.999", "20:10:01.000")) == listOf("20:00:00.000", "20:10:00.000"))
+        check(effectiveRunStarts(listOf("20:00:00.000", "20:10:00.000"),
+            listOf("20:09:52.000", "20:09:59.000")) == listOf("20:00:00.000", "20:09:59.000"))
+        check(timeToMillis("25:00:00.000") == null && timeToMillis("20:99:00.000") == null)
+        file.writeText("20:30:00.000 RUNTIME: 模块初始化开始\\n")
+        check(readRuntimeAnchors(file).isEmpty()) { "initialization alone created a false execution round" }
+        file.writeText("21:00:00.000 RUNTIME: [账号2]开始执行\\n")
+        check(readRuntimeAnchors(file) == listOf("21:00:00.000")) { "old account initialization survived reset" }
+        println("PASS: initialization boundary window, account prefixes, nearest marker, invalid time and live reset")
 
         check(MAX_LOG_ENTRIES == 5000 && MAX_TAIL_BYTES == 4 * 1024 * 1024L)
         val padding = " 好家任务已完成✅".repeat(15)
