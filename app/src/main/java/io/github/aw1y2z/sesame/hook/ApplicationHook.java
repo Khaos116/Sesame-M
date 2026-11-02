@@ -165,9 +165,6 @@ public class ApplicationHook extends XposedModule {
         try {
             // 读取与 App 共享的日志开关配置，使各分项开关在本进程真正生效
             AppConfig.load();
-            if (ClassUtil.PACKAGE_NAME.equals(getRealProcessName(ClassUtil.PACKAGE_NAME))) {
-                logInitializationStart();
-            }
             // 模块已在 LSPosed 中启用：onModuleLoaded 被调用即代表已启用，
             // 直接标记为已激活（与是否打开 / hook 支付宝无关）
             ViewAppInfo.setRunTypeByCode(RunType.MODEL.getCode());
@@ -241,31 +238,36 @@ public class ApplicationHook extends XposedModule {
                 }
                 hooked = true;
             }
-            classLoader = lpparam.classLoader;
-            if (!initStartLogged) {
-                // 兼容旧回调入口；先加载日志开关，再补加载锚点。
+            try {
+                classLoader = lpparam.classLoader;
                 AppConfig.load();
-                logInitializationStart();
-            }
 
-            XHelpers.findAndHookMethod(Application.class, "attach", Context.class, new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    context = (Context) param.args[0];
-                    alipayVersion = new AlipayVersion(context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName);
-                    try {
-                        AlipayMiniMarkHelper.init(classLoader);
-                        AuthCodeHelper.init(classLoader);
-                        // 小程序抓包（游戏等小程序数据）：与日志页「抓包记录」共用开关
-                        MiniProgramHook.install(classLoader, processName);
-                        // 启动时不再调用 getAuthCode：返回值本就被丢弃，而它在当前支付宝版本上必然失败
-                        //（自建实例未走宿主依赖注入，内部 facade 为 null），只会在日志里留下噪音
-                    } catch (Exception e) {
-                        Log.printStackTrace(e);
+                XHelpers.findAndHookMethod(Application.class, "attach", Context.class, new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        context = (Context) param.args[0];
+                        alipayVersion = new AlipayVersion(context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName);
+                        try {
+                            AlipayMiniMarkHelper.init(classLoader);
+                            AuthCodeHelper.init(classLoader);
+                            // 小程序抓包（游戏等小程序数据）：与日志页「抓包记录」共用开关
+                            MiniProgramHook.install(classLoader, processName);
+                            // 启动时不再调用 getAuthCode：返回值本就被丢弃，而它在当前支付宝版本上必然失败
+                            //（自建实例未走宿主依赖注入，内部 facade 为 null），只会在日志里留下噪音
+                        } catch (Exception e) {
+                            Log.printStackTrace(e);
+                        }
+                        super.afterHookedMethod(param);
                     }
-                    super.afterHookedMethod(param);
+                });
+            } catch (Throwable t) {
+                // 首个 hook 尚未装成才释放准入；后续可选 hook 失败不重装已成功的回调。
+                synchronized (ApplicationHook.class) {
+                    hooked = false;
                 }
-            });
+                Log.err(TAG, "hook Application.attach 初始化失败，下次回调重试", t);
+                return;
+            }
             try {
                 XHelpers.findAndHookMethod("com.alipay.mobile.nebulaappproxy.api.rpc.H5AppRpcUpdate", classLoader, "matchVersion", classLoader.loadClass(ClassUtil.H5PAGE_NAME), Map.class, String.class, XC_MethodReplacement.returnConstant(false));
                 Log.i(TAG, "hook matchVersion successfully");
@@ -780,6 +782,7 @@ public class ApplicationHook extends XposedModule {
                     FriendWatch.save();
                 }
                 UserIdMap.initUser(userId);
+                logInitializationStart();
                 Statistics.load();
                 FriendWatch.load();
                 Model.initAllModel();

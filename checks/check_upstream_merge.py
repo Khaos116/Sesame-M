@@ -537,7 +537,7 @@ public class UpstreamFixCheck {
  }
 }
 """
-fixes=fixes.replace("@@STATUS@@","\n".join(method("util/Status.java",m) for m in ("public static synchronized void save()", "public static synchronized void save(Calendar", "private static void notifySaveFailure(", "public static synchronized Boolean updateDay(")))
+fixes=fixes.replace("@@STATUS@@","\n".join(method("util/Status.java",m) for m in ("public static synchronized void save()", "public static synchronized boolean save(Calendar", "private static void notifySaveFailure(", "public static synchronized Boolean updateDay(")))
 fixes=fixes.replace("@@CLAIM@@",method("model/task/antForest/ForestChouChouLe.java", 'if (prizeName.contains("g能量"))'))
 fixes=fixes.replace("@@CONSTRUCTOR@@",method("data/task/SystemChildTaskExecutor.java","public SystemChildTaskExecutor()"))
 fixes=fixes.replace("@@TARGET@@","\n".join(method("model/task/antOrchard/AntOrchard.java",m) for m in ("private int targetSpreadTimes(","private static boolean shouldBatchSpread(")))

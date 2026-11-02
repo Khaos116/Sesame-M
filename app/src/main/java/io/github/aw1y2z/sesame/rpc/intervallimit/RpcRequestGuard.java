@@ -225,7 +225,8 @@ public final class RpcRequestGuard {
             boolean learnedUnsupported = MyUtils.closeUnRpc() && !unsupportedRoute.isEmpty()
                     && MyUtils.isUnsupportedRpcRecorded(io.github.aw1y2z.sesame.hook.ApplicationHook.getContext(), unsupportedRoute);
             JSONObject saved = MyUtils.newJSONObject(state.getString(key));
-            long until = Math.max(saved.optLong("until"), verifyUntil());
+            long verificationUntil = verifyUntil();
+            long until = Math.max(saved.optLong("until"), verificationUntil);
             if (!knownUnsupported && !learnedUnsupported && until <= System.currentTimeMillis()) return false;
             String reason = unsupportedTaskFinish || learnedUnsupported ? "本地跳过已确认不支持的完成接口，未发送RPC；保留备用完成与列表核对"
                     : knownUnsupported ? "跳过GR已知异常任务" : "请求异常暂停中，剩余"
@@ -237,6 +238,13 @@ public final class RpcRequestGuard {
             try {
                 result.put("resultDesc", reason).put("errorMessage", reason).put("memo", reason);
                 result.put("localRuleSkip", knownUnsupported || learnedUnsupported);
+                if (!knownUnsupported && !learnedUnsupported) {
+                    boolean verifying = verificationUntil > System.currentTimeMillis();
+                    Object causeCode = verifying ? "1009" : saved.opt("causeCode");
+                    if (causeCode instanceof String && !((String) causeCode).isEmpty()) result.put("causeCode", causeCode);
+                    Object risk = verifying ? Boolean.TRUE : saved.opt("riskPause");
+                    if (risk instanceof Boolean) result.put("riskPause", risk);
+                }
                 // 备用完成按 code 判断接口不支持；error 仍为 RPC_SKIPPED，不能计入失败或拉黑。
                 if (unsupportedTaskFinish || learnedUnsupported) result.put("code", "400000040");
             } catch (Exception ignored) { }
@@ -354,8 +362,9 @@ public final class RpcRequestGuard {
             int failures = now - saved.optLong("last") < DAY ? saved.optInt("failures") + 1 : 1;
             long pause = 0;
             boolean needVerify = message.contains("验证") || message.contains("cheating traffic");
-            if (RpcFailurePolicy.isRiskDenied(code, message) || message.contains("验证后继续")
-                    || message.contains("滑动验证") || message.contains("cheating traffic")) {
+            boolean riskDenied = RpcFailurePolicy.isRiskDenied(code, message) || message.contains("验证后继续")
+                    || message.contains("滑动验证") || message.contains("cheating traffic");
+            if (riskDenied) {
                 if (needVerify) {
                     // 只在提示要验证时拉起支付宝；09-18 日报里 neverland 的 1009 是“系统繁忙”，不需要验证
                     VERIFY_PAUSE.put(key, new long[]{now + VERIFY_PAUSE_MS,
@@ -392,7 +401,8 @@ public final class RpcRequestGuard {
             try {
                 String causeCode = code.isEmpty() ? result.optString("errorCode") : code;
                 saved.put("last", now).put("failures", failures).put("until", now + pause)
-                        .put("causeCode", causeCode.matches("[A-Za-z0-9_]{1,80}") ? causeCode : "UNKNOWN");
+                        .put("causeCode", causeCode.matches("[A-Za-z0-9_]{1,80}") ? causeCode : "UNKNOWN")
+                        .put("riskPause", riskDenied);
                 state.put(key, saved.toString());
             } catch (Exception e) {
                 Log.printStackTrace(e);

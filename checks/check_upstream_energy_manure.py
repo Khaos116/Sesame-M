@@ -47,7 +47,7 @@ public class EnergyManureCheck {
         static boolean shouldLogServerBusy(String tag) { return true; }
         @@ERRORS@@
     }
-    static class RpcLog {static String errorSummary(JSONObject j){return j.optString("memo","unknown");}}
+    static class RpcLog {static String errorSummary(JSONObject j,String field){return safeErrorMessage(j,field);}static String safeErrorMessage(JSONObject j,String field){return j.optString(field,"unknown");}}
     static class Statistics {
         enum DataType { COLLECTED }
         static int total;

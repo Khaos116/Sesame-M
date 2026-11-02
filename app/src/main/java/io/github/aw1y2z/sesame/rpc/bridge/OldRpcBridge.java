@@ -164,6 +164,7 @@ public class OldRpcBridge implements RpcBridge {
                             }
                         }
                     }
+                    if (guard.shouldSkip()) return rpcEntity;
                     return null;
                 }
                 if (RunGeneration.isStale() || Thread.currentThread().isInterrupted()) throw new TaskCancelledException();

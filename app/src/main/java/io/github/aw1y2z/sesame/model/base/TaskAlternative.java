@@ -245,6 +245,10 @@ public final class TaskAlternative {
      * @return 是否有任务确认完成
      */
     public static boolean verify(Map<String, String> pending, VerifyConfig cfg, TaskListSnapshot snapshot) {
+        return verify(pending, cfg, snapshot, java.util.Collections.emptySet());
+    }
+
+    public static boolean verify(Map<String, String> pending, VerifyConfig cfg, TaskListSnapshot snapshot, Set<String> progressed) {
         if (pending == null || pending.isEmpty()) {
             return false;
         }
@@ -270,6 +274,11 @@ public final class TaskAlternative {
                 String key = item.getKey();
                 String title = item.getValue();
                 if (unknown.containsKey(key)) continue;
+                if (progressed.contains(key)) {
+                    cfg.sink.log(cfg.logPrefix + "🕓阶段推进[" + title + "]（已按任务列表核对，后续轮次继续）");
+                    changed = true;
+                    continue;
+                }
                 if (stillTodo.contains(key)) {
                     cfg.sink.log(cfg.logPrefix + "⚠️未完成[" + title + "]，已交给自动拉黑机制");
                     MessageUtil.MarkTaskBlackList(cfg.moduleName, cfg.taskListField, cfg.listDisplay,

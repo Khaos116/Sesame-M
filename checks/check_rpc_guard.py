@@ -1,6 +1,7 @@
 """Run the production RPC guard/entity with real org.json and isolated clock/account I/O."""
 from pathlib import Path
 import os
+import re
 import subprocess
 import tempfile
 import sys
@@ -40,9 +41,45 @@ import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.util.MyUtils;
 public class AntMemberRpcCall {
 """ + method("model/task/antMember/AntMemberRpcCall.java", "    public static Boolean check()") + "\n}")
-    write("util/MessageUtil.java", "package io.github.aw1y2z.sesame.util; import org.json.JSONObject; public class MessageUtil {"
-          + 'public static final String CODE_UNSUPPORTED_RPC = "400000040";'
-          + method("util/MessageUtil.java", "    public static boolean isUnsupportedRpc(") + "}")
+    write("util/MessageUtil.java", """
+package io.github.aw1y2z.sesame.util;
+import org.json.JSONObject;
+public class MessageUtil {
+    public static final String CODE_UNSUPPORTED_RPC="400000040";
+    private static final String TAG="test",UNKNOWN_TAG="unknown";
+    private static final int SERVER_BUSY_LOG_LIMIT=3;
+    private static final java.util.Map<String,int[]> SERVER_BUSY_LOG_COUNT=new java.util.concurrent.ConcurrentHashMap<>();
+""" + "\n".join(method("util/MessageUtil.java", signature) for signature in (
+        "public static boolean isUnsupportedRpc(", "public static boolean isServerBusy(",
+        "public static void printErrorMessage(", "private static void recordFailure(",
+        "private static boolean shouldLogServerBusy(", "public static Boolean checkSuccess(String tag,",
+        "public static Boolean checkMemo(String tag,", "public static Boolean checkResultCodeString(",
+        "public static Boolean checkResultCodeInteger(")) + """
+    private static void expected(JSONObject response,String field,String reason){
+        Log.lastClassified=Log.lastRuntime=Log.lastError=null;
+        printErrorMessage("case",response,field);
+        assert ("case error:"+reason).equals(Log.lastClassified):"preferred reason lost or category contains JSON: "+Log.lastClassified;
+        assert Log.lastRuntime.contains(reason):"runtime summary lost selected reason";
+        assert Log.lastError.endsWith(response.toString()):"original error response was rewritten";
+    }
+    public static void main(String[] args){
+        expected(new JSONObject().put("success",false).put("errorMsg","preferred").put("errorMessage","secondary"),"errorMsg","preferred");
+        expected(new JSONObject().put("memo","memo reason").put("resultDesc","secondary"),"memo","memo reason");
+        expected(new JSONObject().put("resultDesc","description reason").put("errorMsg","secondary"),"resultDesc","description reason");
+        expected(new JSONObject().put("resultMsg","integer reason").put("errorMessage","secondary"),"resultMsg","integer reason");
+        expected(new JSONObject().put("memo","").put("resultDesc","fallback"),"memo","fallback");
+        for(String secret:new String[]{"token=SECRET", "授权码SECRET", "https://secret.invalid/SECRET", "x".repeat(120)+"token=SECRET"}){
+            JSONObject response=new JSONObject().put("errorMessage","safe secondary").put("memo",secret);
+            expected(response,"memo","[原因含敏感信息，已省略]");
+            assert !Log.lastClassified.contains("SECRET")&&!Log.lastRuntime.contains("SECRET")&&Log.lastError.contains("SECRET");
+        }
+        Log.lastClassified=Log.lastRuntime=Log.lastError=null;
+        printErrorMessage("case",new JSONObject().put("error","RPC_SKIPPED").put("localRuleSkip",true).put("memo","local"),"memo");
+        assert Log.lastClassified==null&&Log.lastRuntime==null&&Log.lastError==null;
+        System.out.println("PASS production error messages: preferred field, plain category reason, fallback, redaction before truncation and preserved raw detail");
+    }
+}
+""")
     write("model/base/TaskAlternative.java", "package io.github.aw1y2z.sesame.model.base; import org.json.JSONObject;"
           + "import io.github.aw1y2z.sesame.util.MessageUtil; public class TaskAlternative {"
           + method("model/base/TaskAlternative.java", "    public static boolean hit(") + "}")
@@ -109,31 +146,71 @@ public class PreflightCheck {
 }
 """)
     load_module = method("hook/ApplicationHook.java", "public void onModuleLoaded(")
-    assert load_module.index("AppConfig.load();") < load_module.index("logInitializationStart();")
+    assert "AppConfig.load();" in load_module and "logInitializationStart();" not in load_module
+    initialize = method("hook/ApplicationHook.java", "private Boolean initializeHandler(")
+    assert initialize.index("UserIdMap.initUser(userId);") < initialize.index("logInitializationStart();") < initialize.index("Statistics.load();")
     handle_prefix = method("hook/ApplicationHook.java", "public void handleLoadPackage(")
-    handle_prefix = handle_prefix[:handle_prefix.index("XHelpers.findAndHookMethod(Application.class")]
+    assert "logInitializationStart();" not in handle_prefix
+    second_optional = handle_prefix.index('XHelpers.findAndHookMethod("com.alipay.mobile.quinox.LauncherActivity')
+    handle_prefix = handle_prefix[:handle_prefix.rindex("            try {", 0, second_optional)]
+    # Keep the production install/admission/failure branches; only the Android callback body is inert.
+    callback = handle_prefix.index("new XC_MethodHook() {") + len("new XC_MethodHook() ")
+    masked = re.sub(r'//[^\n]*|/\*[\s\S]*?\*/|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'',
+                    lambda m: " " * len(m[0]), handle_prefix)
+    depth = 0
+    for end in range(callback, len(masked)):
+        depth += (masked[end] == "{") - (masked[end] == "}")
+        if depth == 0:
+            handle_prefix = handle_prefix[:callback] + "{}" + handle_prefix[end + 1:]
+            break
     handle_prefix = handle_prefix.replace("ApplicationHook.class", "StartupCheck.class") + "hooks.incrementAndGet();\n}}"
     write("hook/StartupCheck.java", """
 package io.github.aw1y2z.sesame.hook;
 import java.util.*;import java.util.concurrent.*;import java.util.concurrent.atomic.AtomicInteger;
 public class StartupCheck {
     static boolean hooked;static volatile boolean initStartLogged;
-    static String processName;static Object classLoader;static AtomicInteger hooks=new AtomicInteger();
-    static class ClassUtil{static final String PACKAGE_NAME="main";}
-    static class XC_LoadPackage {static class LoadPackageParam {String packageName="main",processName;Object classLoader;}}
-    static class AppConfig {static boolean loaded;static void load(){loaded=true;}}
-    static class Log {static AtomicInteger lines=new AtomicInteger();static void i(String s){assert AppConfig.loaded;assert s.equals("模块初始化开始");lines.incrementAndGet();}}
+    static String processName;static ClassLoader classLoader;static AtomicInteger hooks=new AtomicInteger();
+    static final String TAG="startup";
+    static class ClassUtil{static final String PACKAGE_NAME="main",H5PAGE_NAME=Context.class.getName();}
+    static class XC_LoadPackage {static class LoadPackageParam {String packageName="main",processName;ClassLoader classLoader=StartupCheck.class.getClassLoader();}}
+    static class Application{}static class Context{}static class XC_MethodHook{}
+    static class XC_MethodReplacement{static Object returnConstant(boolean value){return null;}}
+    static class XHelpers {
+        static AtomicInteger attempts=new AtomicInteger(),installed=new AtomicInteger(),failures=new AtomicInteger(),optionalFailures=new AtomicInteger(),optionalAttempts=new AtomicInteger();
+        static void findAndHookMethod(Class<?> type,String name,Object...args){
+            attempts.incrementAndGet();if(failures.getAndUpdate(n->Math.max(0,n-1))>0)throw new IllegalStateException("attach install failed");
+            installed.incrementAndGet();
+        }
+        static void findAndHookMethod(String type,ClassLoader loader,String name,Object...args){
+            optionalAttempts.incrementAndGet();if(optionalFailures.getAndUpdate(n->Math.max(0,n-1))>0)throw new IllegalStateException("optional install failed");
+        }
+    }
+    static class AppConfig {static boolean loaded,fail;static void load(){if(fail)throw new IllegalStateException("config load failed");loaded=true;}}
+    static class Log {static AtomicInteger lines=new AtomicInteger(),errors=new AtomicInteger();static void i(String s){assert AppConfig.loaded;assert s.equals("模块初始化开始");lines.incrementAndGet();}
+        static void i(String tag,String message){}
+        static void err(String tag,String message,Throwable cause){errors.incrementAndGet();}}
 """ + method("hook/ApplicationHook.java", "private static synchronized void logInitializationStart(") + handle_prefix + """
     public static void main(String[] args) throws Exception {
         StartupCheck work=new StartupCheck();var child=new XC_LoadPackage.LoadPackageParam();child.processName="main:child";
         work.handleLoadPackage(child);assert hooks.get()==0&&Log.lines.get()==0&&!AppConfig.loaded;
         var main=new XC_LoadPackage.LoadPackageParam();main.processName="main";
+        XHelpers.failures.set(1);
+        try{work.handleLoadPackage(main);}catch(IllegalStateException expected){}
+        assert !hooked&&hooks.get()==0&&XHelpers.installed.get()==0:"failed first attach permanently sealed hook admission";
+        XHelpers.optionalFailures.set(1);
+        work.handleLoadPackage(main);assert hooked&&hooks.get()==1&&XHelpers.installed.get()==1&&Log.errors.get()==2;
+        work.handleLoadPackage(main);assert hooks.get()==1&&XHelpers.installed.get()==1&&XHelpers.optionalAttempts.get()==1:"optional failure reinstalled successful hooks";
+        hooked=initStartLogged=false;AppConfig.loaded=false;Log.lines.set(0);hooks.set(0);XHelpers.installed.set(0);AppConfig.fail=true;
+        try{work.handleLoadPackage(main);}catch(IllegalStateException expected){}
+        assert !hooked&&XHelpers.installed.get()==0:"failed startup preparation permanently sealed hook admission";
+        AppConfig.fail=false;
         var ready=new CountDownLatch(1);var threads=new ArrayList<Thread>();
         for(int i=0;i<40;i++){var t=new Thread(()->{try{ready.await();work.handleLoadPackage(main);}catch(InterruptedException e){throw new AssertionError(e);}});threads.add(t);t.start();}
         ready.countDown();for(var thread:threads)thread.join();
-        assert hooks.get()==1&&Log.lines.get()==1:"duplicate hook or initialization marker";
+        assert hooks.get()==1&&Log.lines.get()==0&&XHelpers.installed.get()==1:"hook admission emitted an unowned initialization marker";
         logInitializationStart();assert Log.lines.get()==1;
-        System.out.println("PASS production startup prefix: child exclusion, concurrent hook admission and one config-aware initialization marker");
+        logInitializationStart();assert Log.lines.get()==1:"account initialization duplicated its process marker";
+        System.out.println("PASS production startup admission/attach: failure retry, installed-hook deduplication, child exclusion and concurrent admission");
     }
 }
 """)
@@ -225,7 +302,7 @@ public class AppConfig {
     write("util/Log.java", """
 package io.github.aw1y2z.sesame.util;
 public class Log {
-    public static String lastDebug, lastError, lastRuntime;
+    public static String lastDebug, lastError, lastRuntime,lastClassified;
     public static int errorWrites,runtimeWrites;
     private static final ThreadLocal<Integer> staleLogDropped = ThreadLocal.withInitial(() -> 0);
     private static final ThreadLocal<String> MODULE_TAG = new ThreadLocal<>();
@@ -239,6 +316,10 @@ public class Log {
     private static Sink runtimeLoggerOf(String tag) { return new Sink(false); }
     public static final java.util.List<String> records = new java.util.ArrayList<>();
     public static void record(String s) { records.add(s); }
+    public static void forest(String s){lastClassified=s;}
+    public static void farm(String s){lastClassified=s;}
+    public static void goldenBeans(String s){lastClassified=s;}
+    public static void other(String s){lastClassified=s;}
     public static void i(String... s) { }
     public static void debug(String s) { lastDebug = s; }
     public static void printStackTrace(Throwable t) { }
@@ -366,6 +447,10 @@ public class GuardCheck {
     static JSONObject json(String s) { return new JSONObject(s); }
     static RpcRequestGuard guard(String method, String args) { return new RpcRequestGuard(new RpcEntity(method, args)); }
     static RpcRequestGuard guard(String method) { return guard(method, "[{}]"); }
+    static JSONObject skipped(String method,String args){
+        RpcEntity request=new RpcEntity(method,args);assert new RpcRequestGuard(request).shouldSkip();
+        assert request.getHasError();return json(request.getResponseString());
+    }
     static void reset() { RuntimeInfo.accounts.clear(); RuntimeInfo.account = "A"; MyUtils.enabled = true; MyUtils.unsupported.clear(); }
     public interface Callback { void sendJSONResponse(Reply reply); }
     public static class Reply {
@@ -375,7 +460,7 @@ public class GuardCheck {
     static String payload;
     static int calls;
     static JSONObject receivedHeaders, receivedRequest;
-    static boolean throwDenied;
+    static boolean throwDenied,throwTransport;
     static boolean expireOnCall;
     static boolean expireOnSuccess;
     static boolean interruptOnSuccess;
@@ -401,7 +486,7 @@ public class GuardCheck {
         if (interruptOnSuccess) Thread.currentThread().interrupt();
     }
     public static Object oldRpc(Object a,Object b,Object c,Object d,Object e,Object f,Object g,Object h,
-                                Object i,Object j,Object k,Object l) { calls++; receivedHeaders = (JSONObject)e; if (expireOnSuccess) generation.incrementAndGet(); if (interruptOnSuccess) Thread.currentThread().interrupt(); return new GuardCheck(); }
+                                Object i,Object j,Object k,Object l) { calls++; receivedHeaders = (JSONObject)e; if(throwDenied)throw new IllegalStateException("[1009]访问被拒绝");if(throwTransport)throw new IllegalStateException("network unavailable");if (expireOnSuccess) generation.incrementAndGet(); if (interruptOnSuccess) Thread.currentThread().interrupt(); return new GuardCheck(); }
     public static Object oldRpc13(Object a,Object b,Object c,Object d,Object e,Object f,Object g,Object h,
                                   Object i,Object j,Object k,Object l,Object m) { return oldRpc(a,b,c,d,e,f,g,h,i,j,k,l); }
     public String getResponse() { return payload; }
@@ -549,6 +634,15 @@ public class GuardCheck {
         field(old, "rpcCallMethod", GuardCheck.class.getMethod("oldRpc", java.util.Arrays.copyOf(types, 12)));
         field(old, "getResponseMethod", GuardCheck.class.getMethod("getResponse"));
         field(old, "parseObjectMethod", GuardCheck.class.getMethod("parse", String.class));
+        for(boolean risk:new boolean[]{true,false}){
+            reset();calls=0;throwDenied=risk;throwTransport=!risk;
+            String response=old.requestString(new RpcEntity("com.alipay.amic.memtask.h5.MemTaskListQueryFacade.signPageTaskList","[{}]"),1,0);
+            JSONObject pause=json(response);
+            assert calls==1&&"RPC_SKIPPED".equals(pause.optString("error"))&&pause.optBoolean("riskPause")==risk:"legacy transport pause lost its first structured response";
+            assert !risk||"1009".equals(pause.optString("causeCode"));
+            assert !guard("other.member.service").shouldSkip():"endpoint transport backoff unexpectedly became a global pause";
+            throwDenied=throwTransport=false;
+        }
         for (int parameterCount : new int[]{12,13}) {
             reset(); calls = 0; payload = "{\"success\":true}";
             field(old, "rpcCallMethod", GuardCheck.class.getMethod(parameterCount == 12 ? "oldRpc" : "oldRpc13", java.util.Arrays.copyOf(types, parameterCount)));
@@ -909,6 +1003,56 @@ public class GuardCheck {
         assert guard("other.precedence").shouldSkip() : "non-empty error must keep precedence";
         now++;
         assert !guard("other.precedence").shouldSkip();
+        reset();
+        {
+            String method="cause.busy",args="[{}]";
+            guard(method,args).record(json("{\"success\":false,\"resultCode\":\"102\",\"memo\":\"服务器正在开小差，请稍后再试\"}"));
+            JSONObject busy=skipped(method,args);
+            assert "102".equals(busy.optString("causeCode"))&&!busy.optBoolean("localRuleSkip"):"persistent busy causeCode was lost";
+            assert Boolean.FALSE.equals(busy.opt("riskPause")):"ordinary cooldown lost its source-local classification";
+            now+=5*MIN;
+            guard(method,args).record(json("{\"error\":\"1009\",\"errorMessage\":\"请进行验证后继续\"}"));
+            assert "1009".equals(skipped(method,args).optString("causeCode")):"active verification must override a saved busy cause";
+            assert Boolean.TRUE.equals(skipped(method,args).opt("riskPause")):"verification inherited a non-risk classification";
+            RpcRequestGuard.clearVerifyPause();
+            assert !guard(method,args).shouldSkip();
+            reset();
+            String risk="cause.denied";
+            guard(risk).record(json("{\"error\":\"1009\",\"errorMessage\":\"访问被拒绝\"}"));
+            assert "1009".equals(skipped(risk,args).optString("causeCode"));
+            assert Boolean.TRUE.equals(skipped(risk,args).opt("riskPause"));
+            var state=RuntimeInfo.getInstance();String key=state.values.keySet().iterator().next();
+            JSONObject legacy=json(state.getString(key));legacy.remove("causeCode");legacy.remove("riskPause");state.put(key,legacy);
+            assert !skipped(risk,args).has("causeCode"):"legacy pause invented a cause code";
+            assert !skipped(risk,args).has("riskPause"):"legacy pause invented a risk classification";
+            legacy.put("causeCode",new JSONObject().put("unexpected","value"));state.put(key,legacy);
+            legacy.put("riskPause", "false");state.put(key,legacy);
+            assert !skipped(risk,args).has("causeCode"):"invalid local metadata leaked into cause code";
+            assert !skipped(risk,args).has("riskPause"):"invalid metadata was treated as a safe cooldown";
+            reset();
+            JSONObject local=skipped("com.alipay.antfarm.doFarmTask","[{\"bizKey\":\"TAO_GOLDEN_V2\"}]");
+            assert local.optBoolean("localRuleSkip")&&!local.has("causeCode"):"known local exclusion invented a server cause";
+            assert !local.has("riskPause");
+            String learned="cause.learned.complete",task="[{\"taskId\":\"one\"}]";
+            guard(learned,task).record(json("{\"success\":false,\"resultCode\":\"400000040\",\"memo\":\"不支持rpc调用\"}"));
+            JSONObject unsupported=skipped(learned,task);
+            assert unsupported.optBoolean("localRuleSkip")&&"400000040".equals(unsupported.optString("code"))&&!unsupported.has("causeCode");
+            assert !unsupported.has("riskPause");
+            for(String code:new String[]{"48","TRANSPORT_ERROR","3000","SYSTEM_ERROR","1GBM02","invalid/code"}) {
+                reset();RpcRequestGuard.clearVerifyPause();
+                String source="other.pauseScope";
+                guard(source).record(new JSONObject().put("error",code).put("errorMessage","系统繁忙，请稍后再试"));
+                assert Boolean.FALSE.equals(skipped(source,args).opt("riskPause")):"non-risk source cooldown stopped unrelated tasks: "+code;
+                reset();
+                guard(source).record(new JSONObject().put("error",code).put("errorMessage","访问被拒绝"));
+                assert Boolean.TRUE.equals(skipped(source,args).opt("riskPause")):"overlapping cause code hid risk denial: "+code;
+            }
+            io.github.aw1y2z.sesame.hook.CaptchaTriggerStats.riskRecords=0;
+            io.github.aw1y2z.sesame.hook.PuzzleCaptchaSolver.arms=0;
+            io.github.aw1y2z.sesame.hook.ApplicationHook.verificationLaunches=0;
+            System.out.println("PASS skipped RPC cause metadata: persisted 102/1009, active verification precedence, legacy/invalid records and local exclusions");
+        }
+        reset();
         String farm = "com.alipay.antfarm.feedAnimal";
         String forest = "alipay.antmember.forest.h5.collectEnergy";
         String other = "com.alipay.antiep.receiveTaskAward";
@@ -1085,6 +1229,7 @@ public class GuardCheck {
     subprocess.run(["javac", "-encoding", "UTF-8", "-cp", cp, "-processorpath", str(LOMBOK),
                     "-d", tmp, *map(str, out.rglob("*.java"))], check=True)
     subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + cp, "io.github.aw1y2z.sesame.util.Log"], check=True)
+    subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + cp, "io.github.aw1y2z.sesame.util.MessageUtil"], check=True)
     subprocess.run(["java", "-ea", "-Drpc.report.root=" + str(out / "reports"), "-cp", tmp + os.pathsep + cp,
                     "io.github.aw1y2z.sesame.rpc.intervallimit.GuardCheck"], check=True, timeout=30)
     subprocess.run(["java", "-ea", "-Drpc.report.root=" + str(out / "reports"), "-cp", tmp + os.pathsep + cp,

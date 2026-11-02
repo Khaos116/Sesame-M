@@ -5,7 +5,6 @@ import org.json.JSONObject;
 
 import io.github.aw1y2z.sesame.entity.RpcEntity;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcFailurePolicy;
-import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 
 /** Summarizes runtime failures and advertising payloads only at the logging boundary. */
 public final class RpcLog {
@@ -22,6 +21,10 @@ public final class RpcLog {
 
     /** 仅供运行日志使用；错误日志沿用原有参数和回执输出。 */
     public static String errorSummary(JSONObject response) {
+        return errorSummary(response, null);
+    }
+
+    public static String errorSummary(JSONObject response, String preferredField) {
         JSONObject summary = MyUtils.newJSONObject();
         try {
             for (String field : new String[]{"success", "isSuccess", "resultCode", "retCode", "error", "errorCode", "code"}) {
@@ -29,18 +32,23 @@ public final class RpcLog {
                 if (value instanceof Number || value instanceof Boolean
                         || value instanceof String && ((String) value).matches("[A-Za-z0-9_.-]{1,64}")) summary.put(field, value);
             }
-            String message = RpcRequestGuard.errorMessage(response);
-            // 不截断后再脱敏，避免长消息把凭据标记截掉。
-            for (String field : new String[]{"errorMessage", "errorMsg", "resultDesc", "resultMsg", "memo", "resultView", "desc"}) {
-                String raw = response.optString(field);
-                if (raw.isEmpty()) continue;
-                if (raw.matches("(?is).*(token|cookie|auth|secret|signature|签名|授权码|令牌|https?://|alipays?://|[{}\\[\\]]|2088[0-9]{12}).*"))
-                    message = "[原因含敏感信息，已省略]";
-                break;
-            }
-            summary.put("原因", message.replaceAll("[\\r\\n\\t]", " "));
+            summary.put("原因", safeErrorMessage(response, preferredField));
         } catch (Exception ignored) { }
         return summary.toString();
+    }
+
+    static String safeErrorMessage(JSONObject response, String preferredField) {
+        String raw = preferredField == null ? "" : response.optString(preferredField);
+        if (raw.isEmpty()) {
+            for (String field : new String[]{"errorMessage", "errorMsg", "resultDesc", "resultMsg", "memo", "resultView", "desc"}) {
+                raw = response.optString(field);
+                if (!raw.isEmpty()) break;
+            }
+        }
+        // 不截断后再脱敏，避免长消息把凭据标记截掉。
+        if (raw.matches("(?is).*(token|cookie|auth|secret|signature|签名|授权码|令牌|https?://|alipays?://|[{}\\[\\]]|2088[0-9]{12}).*"))
+            return "[原因含敏感信息，已省略]";
+        return raw.isEmpty() ? "响应未提供错误原因" : RpcFailurePolicy.boundedMessage(raw).replaceAll("[\\r\\n\\t]", " ");
     }
 
     public static String responseData(RpcEntity rpc) {

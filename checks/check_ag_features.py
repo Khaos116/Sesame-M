@@ -29,6 +29,7 @@ def rpc_methods(path, names):
 code = r'''
 import org.json.*; import java.util.*; import java.util.concurrent.TimeUnit; import java.util.function.Consumer;
 import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
+import io.github.aw1y2z.sesame.util.RunGeneration;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class AGCheck {
     static JSONObject ok(){return new JSONObject().put("success",true).put("resultCode","SUCCESS").put("memo","SUCCESS");}
@@ -38,9 +39,10 @@ public class AGCheck {
         static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.set(2026,9,6,12,0,0);return c;}
     }
     static class Log {
+        static boolean expectedErrors;
         static List<String> lines=new ArrayList<>();
         static void record(String s){lines.add(s);} static void farm(String s){lines.add(s);} static void forest(String s){lines.add(s);}
-        static void err(String a,String b,Throwable t){if(t instanceof TaskCancelledException){lines.add("swallowed cancellation: "+b);return;}throw new AssertionError(b,t);}
+        static void err(String a,String b,Throwable t){if(t instanceof TaskCancelledException){lines.add("swallowed cancellation: "+b);return;}if(expectedErrors){lines.add(b);return;}throw new AssertionError(b,t);}
     }
     static class RpcFailurePolicy {static String boundedMessage(String s){return s;}}
     static class RpcRequestGuard {@@GUARD@@}
@@ -60,12 +62,16 @@ public class AGCheck {
     static class Field<T> {T value;Field(T v){value=v;}T getValue(){return value;}}
     static class KVNode<A,B> {A a;B b;KVNode(A x,B y){a=x;b=y;}A getKey(){return a;}B getValue(){return b;}}
     static class ApplicationHook {
+        static String throwOperation="";static Runnable onSwitch;static boolean offline;
+        static boolean isOffline(){return offline;}
         static boolean cancelUse;static String cancelOperation="";static JSONArray filteredTasks;
         static Map<String,Deque<String>> responses=new HashMap<>();static List<JSONObject> calls=new ArrayList<>();
         static String requestString(String op,String raw,int... ignored){
             assert !TaskLifecycle.isIdle():"RPC outside lifecycle scope";
             JSONObject args=new JSONArray(raw).optJSONObject(0);assert args!=null;
             String name=op.substring(op.lastIndexOf('.')+1);calls.add(new JSONObject().put("op",name).put("body",args));
+            if(name.equals("switchMonopolyRegion")&&onSwitch!=null){Runnable action=onSwitch;onSwitch=null;action.run();}
+            if(name.equals(throwOperation)){throwOperation="";throw new IllegalStateException("transport");}
             if(cancelUse&&name.equals("useFarmTool")||name.equals(cancelOperation))throw new TaskCancelledException();
             if(filteredTasks!=null&&name.equals("listTaskopengreen"))return ok().put("taskInfoList",args.optString("sceneCode").equals("ANTFOREST_MONOPOLY_TASK_HSDWY")?filteredTasks:new JSONArray()).toString();
             Deque<String> q=responses.get(name);return q==null?ok().toString():q.size()>1?q.removeFirst():q.peekFirst();
@@ -113,7 +119,6 @@ public class AGCheck {
         static final String TAG="Patrol",MONOPOLY_TASK_SCENE_HSDWY="ANTFOREST_MONOPOLY_TASK_HSDWY";
         static final long MONOPOLY_MAX_TASK_SECONDS=300;
         Field<Boolean> monopolyTasks=new Field<>(true),monopolyExchangeCertificate=new Field<>(false);int awards,blacklists;
-        void exchangeMonopolyCertificate(){throw new AssertionError("certificate disabled");}
         boolean isMonopolyClosed(JSONObject state){return false;}
         boolean isMonopolyTaskBlacklisted(String title){return false;}
         String monopolyTaskTitle(JSONObject task,String id){return task.optString("title",id);}
@@ -208,7 +213,7 @@ public class AGCheck {
         static String TAG="Orchard";Field<Set<String>> AntOrchardTaskList=new Field<>(new HashSet<>());
         @@ORCHARD@@
     }
-    static void reset(){ApplicationHook.responses.clear();ApplicationHook.calls.clear();ApplicationHook.cancelUse=false;ApplicationHook.cancelOperation="";ApplicationHook.filteredTasks=null;UserIdMap.uid="self";Status.day=0;Status.flags.clear();Status.intFlags.clear();Status.watered.clear();Log.lines.clear();TimeUtil.waits.clear();TimeUtil.cancel=false;AntOrchardTaskListMap.values.clear();AntOrchardTaskListMap.saves=0;}
+    static void reset(){ApplicationHook.responses.clear();ApplicationHook.calls.clear();ApplicationHook.cancelUse=false;ApplicationHook.cancelOperation="";ApplicationHook.throwOperation="";ApplicationHook.onSwitch=null;ApplicationHook.offline=false;Log.expectedErrors=false;ApplicationHook.filteredTasks=null;UserIdMap.uid="self";Status.day=0;Status.flags.clear();Status.intFlags.clear();Status.watered.clear();Log.lines.clear();TimeUtil.waits.clear();TimeUtil.cancel=false;AntOrchardTaskListMap.values.clear();AntOrchardTaskListMap.saves=0;}
     static void replies(String op,JSONObject... values){Deque<String> q=new ArrayDeque<>();for(JSONObject v:values)q.add(v.toString());ApplicationHook.responses.put(op,q);}
     static List<JSONObject> calls(String op){List<JSONObject> list=new ArrayList<>();for(JSONObject c:ApplicationHook.calls)if(op.equals(c.optString("op")))list.add(c.optJSONObject("body"));return list;}
     static boolean logged(String part){return Log.lines.stream().anyMatch(s->s.contains(part));}
@@ -322,8 +327,8 @@ public class AGCheck {
         JSONObject b=new JSONObject().put("regionCode","B\"\\region");
         JSONObject page=ok().put("regionList",new JSONArray().put(a).put(new JSONObject().put("regionCode","later").put("regionAvailability","PREPARING"))
             .put(a).put(new JSONObject().put("regionCode",7)).put(b));
-        reset();replies("queryMonopolyMapPage",page);replies("queryMonopolyEntryInfo",patrolEntry("A"),patrolEntry("A"),patrolEntry("B\"\\region"),patrolEntry("B\"\\region"));
-        p.monopolyPatrol();assert calls("triggerHomePageProps").size()==2&&calls("switchMonopolyRegion").size()==1;
+        reset();replies("queryMonopolyMapPage",page);replies("queryMonopolyEntryInfo",patrolEntry("A"),patrolEntry("A"),patrolEntry("B\"\\region"),patrolEntry("B\"\\region"),patrolEntry("A"));
+        p.monopolyPatrol();assert calls("triggerHomePageProps").size()==2&&calls("switchMonopolyRegion").size()==2;
         assert calls("switchMonopolyRegion").get(0).optString("regionCode").equals("B\"\\region"):"switch region was not escaped";
         for(JSONObject bad:List.of(new JSONObject(),new JSONObject().put("resultCode","FAIL"),ok().put("regionList",new JSONObject()),
                 ok().put("resData",new JSONObject().put("resultCode","FAIL")),new JSONObject().put("resultCode","FAIL").put("resData",ok()),ok().put("resData","invalid"))) {
@@ -335,13 +340,104 @@ public class AGCheck {
             assert calls("triggerHomePageProps").size()==1:"success envelope lost while unwrapping map page";
         }
         reset();replies("queryMonopolyMapPage",ok().put("regionList",new JSONArray().put(b)));replies("queryMonopolyEntryInfo",patrolEntry("A"));
-        p.monopolyPatrol();assert calls("switchMonopolyRegion").size()==1&&calls("triggerHomePageProps").isEmpty():"switch ACK permitted patrol of old region";
-        reset();replies("queryMonopolyMapPage",ok().put("regionList",new JSONArray().put(b)));replies("switchMonopolyRegion",new JSONObject().put("resultCode","FAIL"));
-        p.monopolyPatrol();assert calls("queryMonopolyEntryInfo").isEmpty()&&calls("triggerHomePageProps").isEmpty();
-        reset();ApplicationHook.cancelOperation="switchMonopolyRegion";replies("queryMonopolyMapPage",ok().put("regionList",new JSONArray().put(b)));
+        p.monopolyPatrol();assert calls("switchMonopolyRegion").size()==2&&calls("triggerHomePageProps").isEmpty():"switch ACK permitted patrol of old region";
+        reset();replies("queryMonopolyMapPage",ok().put("regionList",new JSONArray().put(b).put(a)));replies("switchMonopolyRegion",new JSONObject().put("resultCode","FAIL"),ok());replies("queryMonopolyEntryInfo",patrolEntry("A"));
+        p.monopolyPatrol();assert calls("queryMonopolyEntryInfo").size()==1&&calls("triggerHomePageProps").isEmpty();
+        reset();ApplicationHook.cancelOperation="switchMonopolyRegion";replies("queryMonopolyMapPage",ok().put("regionList",new JSONArray().put(b).put(a)));
         try{p.monopolyPatrol();throw new AssertionError("region switch cancellation swallowed");}catch(TaskCancelledException expected){}
         assert calls("triggerHomePageProps").isEmpty();
         System.out.println("PASS multi-region: open/deduplicated regions, escaped RPC, map failure, legacy fallback, switch readback and cancellation");
+    }
+    static void patrolReviewChecks(){
+        ActualPatrol p=new ActualPatrol();p.monopolyTasks.value=false;
+        JSONObject a=new JSONObject().put("regionCode","A").put("currentRegion",true),b=new JSONObject().put("regionCode","B");
+        JSONObject page=ok().put("regionList",new JSONArray().put(a).put(b));
+        reset();replies("queryMonopolyMapPage",page);replies("queryMonopolyEntryInfo",patrolEntry("A"),patrolEntry("A"),patrolEntry("B"),patrolEntry("B"),patrolEntry("A"));
+        p.monopolyPatrol();assert calls("switchMonopolyRegion").size()==2&&calls("switchMonopolyRegion").get(1).optString("regionCode").equals("A"):"multi-region left the user in the last region";
+        reset();replies("queryMonopolyMapPage",page);replies("queryMonopolyEntryInfo",patrolEntry("A"),patrolEntry("A"),patrolEntry("B"),patrolEntry("B"));
+        replies("switchMonopolyRegion",ok(),new JSONObject().put("resultCode","FAIL"));p.monopolyPatrol();
+        assert calls("switchMonopolyRegion").size()==2&&logged("恢复原区域未确认")&&!logged("已恢复原区域"):"failed restoration claimed success or retried writes";
+        reset();replies("queryMonopolyMapPage",ok().put("regionList",new JSONArray().put(b)));replies("queryMonopolyEntryInfo",ok());
+        p.monopolyPatrol();assert calls("switchMonopolyRegion").isEmpty():"unknown original region was changed without a restoration target";
+        for(JSONArray candidates:List.of(new JSONArray().put(b),new JSONArray().put(b).put(new JSONObject().put("regionCode","C")))){
+            for(boolean transport:new boolean[]{false,true}){
+                reset();Log.expectedErrors=transport;p.monopolyTasks.value=true;replies("queryMonopolyMapPage",ok().put("regionList",candidates));
+                if(transport){ApplicationHook.throwOperation="queryMonopolyEntryInfo";replies("queryMonopolyEntryInfo",patrolEntry("actual-current"));}
+                else replies("queryMonopolyEntryInfo",new JSONObject().put("resultCode","FAIL"),patrolEntry("actual-current"));
+                replies("listTaskopengreen",ok().put("taskInfoList",new JSONArray()));p.monopolyPatrol();
+                assert calls("switchMonopolyRegion").isEmpty()&&calls("triggerHomePageProps").size()==1:"temporary original-region failure lost current patrol or switched to a mere candidate";
+                assert calls("listTaskopengreen").size()==1&&calls("listTaskopengreen").get(0).optJSONObject("extend").optString("regionCode").equals("actual-current"):"fallback used the candidate instead of live entry region";
+            }
+        }
+        p.monopolyTasks.value=false;
+        for(JSONObject stillInvalid:List.of(new JSONObject().put("resultCode","FAIL"),ok(),patrolEntry(""),patrolEntry("A").put("regionInfo",new JSONObject().put("regionCode",1)))){
+            reset();replies("queryMonopolyMapPage",ok().put("regionList",new JSONArray().put(b)));
+            replies("queryMonopolyEntryInfo",new JSONObject().put("resultCode","FAIL"),stillInvalid);p.monopolyPatrol();
+            assert calls("queryMonopolyEntryInfo").size()==2&&calls("switchMonopolyRegion").isEmpty()&&calls("triggerHomePageProps").isEmpty()&&calls("listTaskopengreen").isEmpty():"invalid live entry allowed fallback business actions";
+        }
+        JSONObject nextFirst=ok().put("regionList",new JSONArray().put(b).put(a));
+        reset();replies("queryMonopolyMapPage",nextFirst);replies("switchMonopolyRegion",new JSONObject().put("resultCode","FAIL"),ok());replies("queryMonopolyEntryInfo",patrolEntry("A"));
+        p.monopolyPatrol();assert calls("switchMonopolyRegion").size()==1&&calls("queryMonopolyEntryInfo").size()==1&&logged("无需恢复"):"confirmed unchanged region received a redundant restoration write";
+        reset();Log.expectedErrors=true;replies("queryMonopolyMapPage",nextFirst);ApplicationHook.throwOperation="switchMonopolyRegion";replies("queryMonopolyEntryInfo",patrolEntry("A"));
+        p.monopolyPatrol();assert calls("switchMonopolyRegion").size()==1&&calls("queryMonopolyEntryInfo").size()==1:"transport exception ignored confirmed unchanged region";
+        for(boolean transport:new boolean[]{false,true}){
+            reset();Log.expectedErrors=transport;replies("queryMonopolyMapPage",nextFirst);replies("switchMonopolyRegion",new JSONObject().put("resultCode","FAIL"),ok());
+            if(transport){ApplicationHook.throwOperation="switchMonopolyRegion";replies("switchMonopolyRegion",ok());}
+            replies("queryMonopolyEntryInfo",patrolEntry("B"),patrolEntry("A"));p.monopolyPatrol();
+            assert calls("switchMonopolyRegion").size()==2&&calls("switchMonopolyRegion").get(1).optString("regionCode").equals("A")&&logged("已恢复原区域"):"uncertain switch with a changed live region lost restoration";
+        }
+        reset();replies("queryMonopolyMapPage",nextFirst);replies("switchMonopolyRegion",new JSONObject().put("resultCode","FAIL"),ok());
+        replies("queryMonopolyEntryInfo",new JSONObject().put("resultCode","FAIL"),patrolEntry("A"));p.monopolyPatrol();
+        assert calls("switchMonopolyRegion").size()==2&&logged("已恢复原区域"):"unreadable current region was treated as unchanged";
+        reset();replies("queryMonopolyMapPage",nextFirst);replies("switchMonopolyRegion",new JSONObject().put("resultCode","FAIL"));ApplicationHook.cancelOperation="queryMonopolyEntryInfo";
+        try{p.monopolyPatrol();throw new AssertionError("restoration probe cancellation swallowed");}catch(TaskCancelledException expected){}
+        assert calls("switchMonopolyRegion").size()==1:"cancelled restoration probe sent a write";
+        reset();replies("queryMonopolyMapPage",nextFirst);ApplicationHook.cancelOperation="switchMonopolyRegion";
+        try{p.monopolyPatrol();throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}
+        assert calls("switchMonopolyRegion").size()==1:"cancelled patrol sent cleanup RPC";
+        for(int mode=0;mode<4;mode++){
+            reset();Log.expectedErrors=true;replies("queryMonopolyMapPage",nextFirst);ApplicationHook.throwOperation="switchMonopolyRegion";
+            final long[] generation={1};RunGeneration previous=RunGeneration.bind(1,()->generation[0]);
+            final int change=mode;ApplicationHook.onSwitch=()->{if(change==0)UserIdMap.uid="other";else if(change==1)generation[0]++;else if(change==2)Thread.currentThread().interrupt();else ApplicationHook.offline=true;};
+            try{p.monopolyPatrol();}finally{RunGeneration.restore(previous);Thread.interrupted();}
+            assert calls("switchMonopolyRegion").size()==1:"account/generation/interruption boundary sent cleanup RPC";
+        }
+        System.out.println("PASS review patrol: live-current fallback, restoration/failures and account/generation cancellation boundaries");
+    }
+    static void certificateReviewChecks(){
+        ActualPatrol p=new ActualPatrol();p.monopolyTasks.value=false;
+        JSONObject a=new JSONObject().put("regionCode","A").put("currentRegion",true);
+        String legacyUrl="https://example.test?projectId=7";
+        JSONObject entry=patrolEntry("A").put("displayInfo",new JSONObject().put("mapDisplay",new JSONObject().put("protectionGuideDisplay",new JSONObject().put("redirectUrl",legacyUrl))));
+        for(boolean exception:new boolean[]{false,true}){
+            reset();Log.expectedErrors=exception;p.monopolyExchangeCertificate.value=true;
+            replies("queryMonopolyMapPage",new JSONObject().put("resultCode","FAIL"));if(exception)ApplicationHook.throwOperation="queryMonopolyMapPage";
+            replies("queryMonopolyEntryInfo",entry);replies("queryTreeForExchange",cert(0),cert(1));
+            p.monopolyPatrol();assert calls("exchangeTree").size()==1&&calls("queryMonopolyMapPage").size()==1&&calls("triggerHomePageProps").isEmpty():"patrol map failure starved independent certificate or retried the same failed map";
+        }
+        reset();p.monopolyExchangeCertificate.value=true;
+        JSONObject map=new JSONObject().put("currentMap",true).put("certificateStatus","PENDING").put("mapDisplay",new JSONObject().put("lockedRedirectUrl",legacyUrl));
+        for(boolean transport:new boolean[]{false,true}){
+            reset();Log.expectedErrors=transport;p.monopolyExchangeCertificate.value=true;
+            if(transport){ApplicationHook.throwOperation="queryMonopolyMapPage";replies("queryMonopolyMapPage",ok().put("currentRegionMapList",new JSONArray().put(map)));}
+            else replies("queryMonopolyMapPage",new JSONObject().put("resultCode","FAIL"),ok().put("currentRegionMapList",new JSONArray().put(map)));
+            replies("queryMonopolyEntryInfo",patrolEntry("A"));replies("queryTreeForExchange",cert(0),cert(1));p.monopolyPatrol();
+            assert calls("queryMonopolyMapPage").size()==2&&calls("exchangeTree").size()==1&&calls("triggerHomePageProps").isEmpty():"failed initial map blocked the certificate's independent map retry";
+        }
+        reset();p.monopolyExchangeCertificate.value=true;replies("queryMonopolyMapPage",new JSONObject().put("resultCode","FAIL"));replies("queryMonopolyEntryInfo",patrolEntry("A"));p.monopolyPatrol();
+        assert calls("queryMonopolyMapPage").size()==2&&calls("exchangeTree").isEmpty():"certificate map retry was unbounded or exchanged without a valid map";
+        reset();p.monopolyExchangeCertificate.value=true;
+        replies("queryMonopolyMapPage",ok().put("regionList",new JSONArray().put(a)).put("currentRegionMapList",new JSONArray().put(map)));
+        replies("queryMonopolyEntryInfo",patrolEntry("A"));replies("queryTreeForExchange",cert(0),cert(1));
+        p.monopolyPatrol();assert calls("exchangeTree").size()==1&&calls("queryMonopolyMapPage").size()==1:"certificate reloaded the already queried current map";
+        reset();p.monopolyExchangeCertificate.value=true;
+        JSONObject b=new JSONObject().put("regionCode","B"),mapB=new JSONObject(map.toString());mapB.optJSONObject("mapDisplay").put("lockedRedirectUrl","https://example.test?projectId=8");
+        replies("queryMonopolyMapPage",ok().put("regionList",new JSONArray().put(a).put(b)).put("currentRegionMapList",new JSONArray().put(map)),ok().put("currentRegionMapList",new JSONArray().put(mapB)));
+        replies("queryMonopolyEntryInfo",patrolEntry("A"),patrolEntry("A"),patrolEntry("A"),patrolEntry("B"),patrolEntry("B"),patrolEntry("B"),patrolEntry("A"));
+        JSONObject beforeB=cert(0),afterB=cert(1);beforeB.optJSONObject("exchangeableTree").put("projectId",8);afterB.optJSONObject("exchangeableTree").put("projectId",8);
+        replies("queryTreeForExchange",cert(0),cert(1),beforeB,afterB);p.monopolyPatrol();
+        assert calls("exchangeTree").size()==2&&calls("queryMonopolyMapPage").size()==2&&calls("switchMonopolyRegion").size()==2:"multi-region certificates lost coverage or duplicated map queries";
+        System.out.println("PASS review certificates: independent map failure/exception handling and shared current-map result");
     }
     static JSONObject farmState(boolean fence){return ok().put("subFarmVO",new JSONObject().put("farmId","farm")
         .put("buffInfoVO",new JSONObject().put("buffType","FENCE").put("hasBuffEffect",fence).put("buffCountDown",800)));}
@@ -509,18 +605,18 @@ public class AGCheck {
         System.out.println("PASS fence receipt: confirmed debit, unchanged stock retry, missing readback, delayed effect, last card, instance/account/day isolation");
     }
     public static void main(String[] args) throws Exception {
-        if(args.length>0){try(TaskLifecycle.Work w=TaskLifecycle.enter()){assert w!=null;auditEdges(args[0]);}return;}
-        try(TaskLifecycle.Work w=TaskLifecycle.enter()){assert w!=null;for(String edge:List.of("cancel_wait","cancel_award","task_stuck","task_progress","invalid_region","invalid_task_type","award_scene","award_other_scene","award_received","award_bad_row","cancel_probe","cancel_animal","page_cap","page_20_terminal","cursor_cycle","invalid_more"))auditEdges(edge);forestChecks();upstreamForestChecks();multiRegionChecks();fenceConsumptionChecks();fenceRuleChecks();farmChecks();orchardChecks();}
+        if(args.length>0){try(TaskLifecycle.Work w=TaskLifecycle.enter()){assert w!=null;if(args[0].equals("review_regions"))patrolReviewChecks();else if(args[0].equals("review_cert"))certificateReviewChecks();else auditEdges(args[0]);}return;}
+        try(TaskLifecycle.Work w=TaskLifecycle.enter()){assert w!=null;for(String edge:List.of("cancel_wait","cancel_award","task_stuck","task_progress","invalid_region","invalid_task_type","award_scene","award_other_scene","award_received","award_bad_row","cancel_probe","cancel_animal","page_cap","page_20_terminal","cursor_cycle","invalid_more"))auditEdges(edge);forestChecks();upstreamForestChecks();multiRegionChecks();patrolReviewChecks();certificateReviewChecks();fenceConsumptionChecks();fenceRuleChecks();farmChecks();orchardChecks();}
         assert TaskLifecycle.isIdle();
     }
 }
 '''
 tokens = {
     "@@AWARD@@": method("data/task/TaskAward.java", "    public static boolean confirmReceivedOrBlackList("),
-    "@@PATROL@@": methods(forest,["    private JSONObject monopolyResponse(","    private JSONObject queryMonopolyMapPage(","    private void monopolyPatrol()","    private void patrolMonopolyRegion(","    private boolean monopolyTask(","    private boolean monopolyFinishTask(","    private boolean monopolyReceiveTaskAward(","    private TaskAttemptPolicy.ProbeResult probeMonopolyStatus("]),
+    "@@PATROL@@": methods(forest,["    private JSONObject monopolyResponse(","    private JSONObject queryMonopolyMapPage(","    private void monopolyPatrol()","    private String getMonopolyRegionCode(","    private void patrolMonopolyRegion(","    private void exchangeMonopolyCertificate()","    private void exchangeMonopolyCertificate(JSONObject","    static long forestFeatureLong(","    private static String monopolyCertificateProjectId(","    private boolean monopolyTask(","    private boolean monopolyFinishTask(","    private boolean monopolyReceiveTaskAward(","    private TaskAttemptPolicy.ProbeResult probeMonopolyStatus("]),
     "@@ANIMAL@@": methods(forest,["    private boolean queryAnimalPropList()","    private int animalPropEnergy(","    private boolean consumeAnimalProp("]),
     "@@GUARD@@": methods("rpc/intervallimit/RpcRequestGuard.java", ["    public static boolean isFailure(JSONObject result)", "    public static String errorMessage(JSONObject result)"]),
-    "@@FOREST@@": methods(forest, ["    private String getMonopolyRegionCode(", "    private JSONObject monopolyResponse(", "    private JSONObject queryMonopolyMapPage(", "    private boolean monopolyTask(", "    private boolean queryAnimalPropList()", "    private int animalPropEnergy(", "    private int friendWaterEnergy(", "    private void waterFriendEnergy()", "    private boolean dispatchMonopolyAnimal(", "    private boolean isMonopolyCreatureExpired(", "    private boolean isMonopolyCreatureIdle(", "    static long forestFeatureLong(", "    private void waterMemberPlant()", "    private void exchangeMonopolyCertificate()", "    private static String monopolyCertificateProjectId("]),
+    "@@FOREST@@": methods(forest, ["    private String getMonopolyRegionCode(", "    private JSONObject monopolyResponse(", "    private JSONObject queryMonopolyMapPage(", "    private boolean monopolyTask(", "    private boolean queryAnimalPropList()", "    private int animalPropEnergy(", "    private int friendWaterEnergy(", "    private void waterFriendEnergy()", "    private boolean dispatchMonopolyAnimal(", "    private boolean isMonopolyCreatureExpired(", "    private boolean isMonopolyCreatureIdle(", "    static long forestFeatureLong(", "    private void waterMemberPlant()", "    private void exchangeMonopolyCertificate()","    private void exchangeMonopolyCertificate(JSONObject", "    private static String monopolyCertificateProjectId("]),
     "@@FARM@@": methods(farm, ["    private static boolean farmFeatureOk(", "    private JSONObject findFeatureTool(", re.search(r"    private (?:synchronized )?void useFenceTool\(\)",farm_source).group(0), "    private static int rankingInt(", "    private void step(", "    private void supplementDolls()", "    private void supplementDolls(int", "    private boolean likeChickenDiary(", "    private void likeChickenDiaries()"]) + methods(farm, [sig for sig in ["    private JSONObject queryFenceTool(", "    private boolean reconcileFenceStock("] if sig in farm_source]),
     "@@FENCESTEP@@": next(line.strip() for line in (SOURCE / farm).read_text(encoding="utf-8").splitlines() if line.strip().startswith('step("篱笆卡",')),
     "@@ORCHARD@@": methods(orchard, ["    private static JSONObject orchardExtraDisplay(", "    private static String orchardUrlParam(", "    private static String orchardTaskSource(", "    private static boolean orchardExtraOk(", "    private static JSONObject orchardUnwrapExtra(", "    private static boolean isExtraOrchardBrowse(", "    private void orchardStarTasks()", "    private static int extraOrchardCount(", "    private static String extraOrchardSnapshot(", "    private static int extraOrchardStage(", "    private static boolean extraOrchardAdvanced(", "    private JSONObject refreshExtraOrchardTask(", "    private void runExtraOrchardTask(", "    private boolean reportOrchardStarGame(", "    private JSONObject performOrchardBrowse("]),
@@ -547,5 +643,5 @@ with tempfile.TemporaryDirectory(prefix="sesame-ag-features-") as tmp:
     cancel.write_text("package io.github.aw1y2z.sesame.util; public class TaskCancelledException extends RuntimeException {}", encoding="utf-8")
     java = root / "AGCheck.java"
     java.write_text(code, encoding="utf-8")
-    subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(jar), "-d", tmp, str(java), str(uri), str(cancel), str(SOURCE / "data/task/TaskLifecycle.java")], check=True)
+    subprocess.run(["javac", "-encoding", "UTF-8", "-cp", str(jar), "-d", tmp, str(java), str(uri), str(cancel), str(SOURCE / "data/task/TaskLifecycle.java"), str(SOURCE / "util/RunGeneration.java")], check=True)
     subprocess.run(["java", "-ea", "-cp", tmp + os.pathsep + str(jar), "AGCheck", *sys.argv[1:]], check=True)

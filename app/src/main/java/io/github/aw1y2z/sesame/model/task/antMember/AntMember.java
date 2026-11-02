@@ -252,8 +252,8 @@ public class AntMember extends ModelTask {
                         "会员签到", "会员积分", "游戏中心", "黄金票", "福利金", "网商银行", "蚂蚁积分", "攒积分"));
                 MessageUtil.syncTaskBlackList("会员广告任务", "AntMemberAdTaskList", blackList, whiteList, AntMemberAdTaskList);
             }
-            MemberBrowseTasks.run(AntMemberTask.getValue(), AntMemberTaskList.getValue(),
-                    enableAdTask.getValue(), AntMemberAdTaskList.getValue());
+            if (!MemberBrowseTasks.run(AntMemberTask.getValue(), AntMemberTaskList.getValue(),
+                    enableAdTask.getValue(), AntMemberAdTaskList.getValue())) return;
             
             memberPointExchangeBenefit();
             scheduleMemberExchange();

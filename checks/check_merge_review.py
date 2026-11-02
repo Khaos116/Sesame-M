@@ -24,13 +24,13 @@ public class MergeReviewCheck {
   static void other(String s){lines.add(s);}static void err(String a,String b,Throwable t){throw new AssertionError(t);}}
  static class Status {static Set<String> flags=new HashSet<>();static boolean hasFlagToday(String k){return flags.contains(k);}
   static void flagToday(String k){flags.add(k);}static void clearFlag(String k){flags.remove(k);}}
- static class MessageUtil {static int marks;static boolean checkResultCode(String t,JSONObject j){return j!=null&&j.optBoolean("success");}
+ static class MessageUtil {static Set<String> orchardDestination;static int marks;static boolean checkResultCode(String t,JSONObject j){return j!=null&&j.optBoolean("success");}
   static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}
   static boolean isRetryable(JSONObject j){return j.optBoolean("retryable");}static boolean isServerBusy(JSONObject j){return "102".equals(j.optString("code"));}
   static void checkResultCodeAndMarkTaskBlackList(String l,String t,JSONObject j){
    if(isRetryable(j)||isServerBusy(j)||j.length()==0||"RPC_SKIPPED".equals(j.optString("error")))return;marks++;}
   static boolean isUnsupportedRpc(JSONObject j){return "400000040".equals(j.optString("code"));}
-  static void MarkTaskBlackList(String a,String b,String c,String d){marks++;}
+  static void MarkTaskBlackList(String a,String b,String c,String d){marks++;if(orchardDestination!=null)orchardDestination.add(d);}
   @@PRESETS@@
  }
  static class AlipayWelfareFundTaskList {static void clear(){}}
@@ -67,6 +67,7 @@ public class MergeReviewCheck {
   @@VERIFY_CONFIG@@
   @@VERIFY_SNAPSHOT@@
   @@VERIFY_METHOD@@
+  @@VERIFY_PROGRESS@@
   @@DESCRIBE@@
  }
  static class AntForestRpcCall {static int writes;static String finishMonopolyTask(String t,String s){writes++;return "{}";}}
@@ -77,10 +78,10 @@ public class MergeReviewCheck {
  static class AntOrchardVisitTask {static int floats;static void floatBall(JSONObject task,int budget){floats++;}}
  static class NetworkFailure extends RuntimeException {}
  static class AntOrchardRpcCall {
-  static JSONArray snapshot;static boolean cancelFinish;static int writes,networkFailureAt;
+  static JSONArray snapshot;static String snapshotOverride;static boolean cancelFinish,advanceFallback;static int writes,networkFailureAt;
   static String finishReply="{\"code\":\"400000040\"}",farmReply="{\"code\":\"102\"}";
-  static String orchardListTask(){return new JSONObject().put("success",true).put("taskList",snapshot).toString();}
-  static String finishTask(String scene,String id){writes++;if(cancelFinish)throw new TaskCancelledException();if(networkFailureAt==1)throw new NetworkFailure();return finishReply;}
+  static String orchardListTask(){return snapshotOverride!=null?snapshotOverride:new JSONObject().put("success",true).put("taskList",snapshot).toString();}
+  static String finishTask(String scene,String id){writes++;if(cancelFinish)throw new TaskCancelledException();if(networkFailureAt==1)throw new NetworkFailure();if(advanceFallback&&finishReply.contains("true")){JSONObject live=snapshot.optJSONObject(0);live.put("rightsTimes",live.optInt("rightsTimes")+1);}return finishReply;}
   static String doFarmTask(String id,String scene){writes++;if(networkFailureAt==2)throw new NetworkFailure();return farmReply;}
  }
  static class Orchard {
@@ -90,6 +91,7 @@ public class MergeReviewCheck {
   Field<Integer> orchardVisitDailyBudget=new Field<>(1);int finished,extras;boolean runReal;
   static class Log {static void farm(String s){MergeReviewCheck.Log.lines.add(s);}static void record(String s){MergeReviewCheck.Log.lines.add(s);}static void i(String s){}static void i(String tag,String s){}static void err(String a,String b,Throwable t){if(!(t instanceof NetworkFailure))throw new AssertionError(t);}}
   Map<String,String> pendingVerifyTasks=new LinkedHashMap<>();
+  Map<String,Integer> pendingVerifyStages=new HashMap<>();
   @@ORCHARD_VERIFY_CFG@@
   @@ORCHARD_BLACK@@
   @@ORCHARD_EXTRA@@
@@ -104,7 +106,40 @@ public class MergeReviewCheck {
   WelfareFundRpcCall.type="USER_TRIGGER";WelfareFundRpcCall.reply="{\"success\":true}";
   WelfareFundRpcCall.signups=0;WelfareFundRpcCall.sends=0;WelfareFundRpcCall.receives=0;WelfareFundRpcCall.reads=0;
   WelfareFundRpcCall.delayed=false;WelfareFundRpcCall.signupFailure=false;WelfareFundRpcCall.sendBusy=false;WelfareFundRpcCall.progress=-1;}
+ static void cappedOrchardProgress(){
+  for(boolean advance:new boolean[]{true,false}){
+   reset();Orchard orchard=new Orchard();orchard.runReal=true;Set<String> blocked=new HashSet<>();
+   orchard.AntOrchardTaskList.value=blocked;MessageUtil.orchardDestination=blocked;
+   AntOrchardRpcCall.writes=0;AntOrchardRpcCall.advanceFallback=advance;AntOrchardRpcCall.cancelFinish=false;AntOrchardRpcCall.networkFailureAt=0;AntOrchardRpcCall.finishReply="{success:true}";
+   JSONObject live=new JSONObject().put("taskId","large").put("actionType","JUMP").put("sceneCode","scene").put("taskStatus","TODO")
+    .put("taskDisplayConfig",new JSONObject().put("title","large")).put("rightsTimes",0).put("rightsTimesLimit",200);
+   AntOrchardRpcCall.snapshot=new JSONArray().put(live);orchard.handleTaskList(new JSONArray(AntOrchardRpcCall.snapshot.toString()));
+   assert AntOrchardRpcCall.writes==8;
+   if(advance){
+    assert live.optInt("rightsTimes")==8&&MessageUtil.marks==0&&blocked.isEmpty():"capped partial progress was blacklisted";
+    assert Log.lines.stream().anyMatch(s->s.contains("阶段推进"))&&Log.lines.stream().noneMatch(s->s.contains("🧾完成")):"partial progress was reported as terminal completion";
+    orchard.handleTaskList(new JSONArray(AntOrchardRpcCall.snapshot.toString()));
+    assert AntOrchardRpcCall.writes==16&&live.optInt("rightsTimes")==16&&blocked.isEmpty():"real next handle/verify round could not continue capped stages";
+   }else{
+    assert MessageUtil.marks==1&&blocked.contains("large"):"confirmed no-progress TODO escaped automatic blacklist";
+    orchard.handleTaskList(new JSONArray(AntOrchardRpcCall.snapshot.toString()));assert AntOrchardRpcCall.writes==8;
+   }
+  }
+  AntOrchardRpcCall.advanceFallback=false;MessageUtil.orchardDestination=null;
+  for(Object bad:new Object[]{null,JSONObject.NULL,true,new JSONObject(),1.5,-1,2147483648L,"bad"}){
+   reset();Orchard orchard=new Orchard();orchard.runReal=true;AntOrchardRpcCall.writes=0;
+   JSONObject live=new JSONObject().put("taskId","large").put("actionType","JUMP").put("sceneCode","scene").put("taskStatus","TODO")
+    .put("taskDisplayConfig",new JSONObject().put("title","large")).put("rightsTimes",0).put("rightsTimesLimit",200);
+   JSONObject invalid=new JSONObject(live.toString()).put("rightsTimes",bad);
+   AntOrchardRpcCall.snapshotOverride=new JSONObject().put("success",true).put("taskList",new JSONArray().put(invalid)).toString();
+   orchard.handleTaskList(new JSONArray().put(live));
+   assert AntOrchardRpcCall.writes==8&&MessageUtil.marks==0:"bad fresh stage counter authorized blacklist or extra stages";
+   assert Log.lines.stream().noneMatch(s->s.contains("阶段推进")||s.contains("🧾完成")):"bad fresh stage counter was treated as confirmed progress";
+  }
+  AntOrchardRpcCall.snapshotOverride=null;
+ }
  public static void main(String[] args){
+  cappedOrchardProgress();
   reset();WelfareFund.run(false,true,true,Set.of());
   assert WelfareFundRpcCall.signups==1&&WelfareFundRpcCall.sends==1&&WelfareFundRpcCall.reads==2;
   assert Log.lines.stream().anyMatch(s->s.contains("✅"));WelfareFund.run(false,true,true,Set.of());
@@ -199,7 +234,7 @@ public class MergeReviewCheck {
     assert orchard.pendingVerifyTasks.containsKey("confirmed"):"Every successful response still requires a task-list probe";
     assert Log.lines.stream().noneMatch(s->s.contains("🧾完成")):"RPC success must never report task completion";
     assert AntOrchardRpcCall.writes==(primary?1:2)*((action.equals("VISIT")||action.equals("XLIGHT")||action.equals("JUMP"))?2:1);
-    AntOrchardRpcCall.snapshot=new JSONArray().put(new JSONObject().put("taskId","confirmed").put("taskStatus","TODO"));
+    AntOrchardRpcCall.snapshot=new JSONArray().put(new JSONObject().put("taskId","confirmed").put("taskStatus","TODO").put("rightsTimes",1));
     orchard.verifyPendingTasksByList();assert MessageUtil.marks==1;
     assert Log.lines.stream().noneMatch(s->s.contains("🧾完成")):"Unchanged TODO must not be reported as complete";
     if(action.equals("JUMP")) {
@@ -216,10 +251,15 @@ public class MergeReviewCheck {
    JSONObject staged=new JSONObject().put("taskId","staged").put("actionType","JUMP").put("sceneCode","scene")
     .put("taskDisplayConfig",new JSONObject().put("title","staged")).put("rightsTimes",1).put("rightsTimesLimit",limit);
    orchard.realFinishOrchardTask(staged);
-   int expected=limit==0?1:Math.min(100,limit-1);
+   int expected=limit==0?1:Math.min(8,limit-1);
    assert AntOrchardRpcCall.writes==expected:"fallback must process remaining stages within cap";
    orchard.realFinishOrchardTask(staged);assert AntOrchardRpcCall.writes==expected:"same stages must not repeat today";
   }
+  Status.flags.clear();AntOrchardRpcCall.writes=0;
+  JSONObject resumed=new JSONObject().put("taskId","large").put("actionType","JUMP").put("sceneCode","scene")
+   .put("taskDisplayConfig",new JSONObject().put("title","large")).put("rightsTimes",0).put("rightsTimesLimit",200);
+  orchard.realFinishOrchardTask(resumed);assert AntOrchardRpcCall.writes==8:"one task exceeded a small per-run stage budget";
+  resumed.put("rightsTimes",8);orchard.realFinishOrchardTask(resumed);assert AntOrchardRpcCall.writes==16:"remaining stages must resume on a later server snapshot";
   Status.flags.clear();AntOrchardRpcCall.writes=0;
   JSONObject staged=new JSONObject().put("taskId","extend").put("actionType","JUMP").put("sceneCode","scene")
    .put("taskDisplayConfig",new JSONObject().put("title","extend")).put("rightsTimes",0)
@@ -288,6 +328,7 @@ for token, path, signature in (
     ("@@VERIFY_CONFIG@@", "model/base/TaskAlternative.java", "public static final class VerifyConfig"),
     ("@@VERIFY_SNAPSHOT@@", "model/base/TaskAlternative.java", "public interface TaskListSnapshot"),
     ("@@VERIFY_METHOD@@", "model/base/TaskAlternative.java", "public static boolean verify("),
+    ("@@VERIFY_PROGRESS@@", "model/base/TaskAlternative.java", "public static boolean verify(Map<String, String> pending, VerifyConfig cfg, TaskListSnapshot snapshot, Set<String> progressed)"),
     ("@@DESCRIBE@@", "model/base/TaskAlternative.java", "public static String describe("),
 ):
     code = code.replace(token, method(path, signature).replace("public class WelfareFund", "static class WelfareFund", 1))

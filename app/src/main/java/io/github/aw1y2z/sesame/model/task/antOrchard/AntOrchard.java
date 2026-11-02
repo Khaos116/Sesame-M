@@ -1901,7 +1901,8 @@ public class AntOrchard extends ModelTask {
                 Log.record("肥料任务：跳过[" + title + "]#任务档位无效，未发送完成请求");
                 return false;
             }
-            int timesToDo = rightsTimesLimit > 0 ? Math.min(100, Math.max(0, rightsTimesLimit - rightsTimes)) : 1;
+            // 单任务每轮最多推进8档，剩余档位等下一轮服务端进度再处理。
+            int timesToDo = rightsTimesLimit > 0 ? Math.min(8, Math.max(0, rightsTimesLimit - rightsTimes)) : 1;
             for (int cnt = 0; cnt < timesToDo; cnt++) {
                 String stageFlag = rightsTimesLimit > 1 ? fallbackFlag + "::" + (rightsTimes + cnt) : fallbackFlag;
                 if (Status.hasFlagToday(stageFlag)) continue;
@@ -1909,6 +1910,7 @@ public class AntOrchard extends ModelTask {
                 if (via == null) break;
                 Status.flagToday(stageFlag);
                 Log.farm("肥料任务🕓已触发[" + title + "]第" + (rightsTimes + cnt + 1) + "次#" + via + "，结果以任务列表为准");
+                if (rightsTimesLimit > 1) pendingVerifyStages.put(taskId, rightsTimes);
                 pendingVerifyTasks.put(taskId, title);
                 TimeUtil.sleep(500);
             }
@@ -1925,6 +1927,7 @@ public class AntOrchard extends ModelTask {
      * <p>由 {@link #verifyPendingTasksByList()} 在列表处理完后用任务列表状态核对。
      */
     private final LinkedHashMap<String, String> pendingVerifyTasks = new LinkedHashMap<>();
+    private final Map<String, Integer> pendingVerifyStages = new HashMap<>();
 
     /** 同轮核对配置（见 TaskAlternative.verify） */
     private static final TaskAlternative.VerifyConfig VERIFY_CFG = new TaskAlternative.VerifyConfig(
@@ -1975,6 +1978,9 @@ public class AntOrchard extends ModelTask {
      * 服务端是异步推进状态的，只有任务列表的 {@code taskStatus} 才是最终判据。
      */
     private void verifyPendingTasksByList() {
+        Map<String, Integer> before = new HashMap<>(pendingVerifyStages);
+        pendingVerifyStages.clear();
+        Set<String> progressed = new HashSet<>();
         TaskAlternative.verify(pendingVerifyTasks, VERIFY_CFG, unknown -> {
             JSONObject jo = MyUtils.newJSONObject(AntOrchardRpcCall.orchardListTask());
             if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -1998,11 +2004,19 @@ public class AntOrchard extends ModelTask {
                     continue;
                 }
                 if (TaskStatus.TODO.name().equals(taskStatus)) {
+                    if (before.containsKey(taskId)) {
+                        int count = extraOrchardCount(task, "rightsTimes");
+                        if (count < before.get(taskId)) {
+                            unknown.put(taskId, "INVALID_OR_REGRESSED_PROGRESS");
+                            continue;
+                        }
+                        if (count > before.get(taskId)) progressed.add(taskId);
+                    }
                     stillTodo.add(taskId);
                 }
             }
             return stillTodo;
-        });
+        }, progressed);
     }
 
     /**

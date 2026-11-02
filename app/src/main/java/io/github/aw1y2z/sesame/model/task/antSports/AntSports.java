@@ -2454,8 +2454,8 @@ public class AntSports extends ModelTask {
                 JSONObject data = jsonResult.optJSONObject("data");
                 JSONArray rewards = data != null ? data.optJSONArray("userItems") : null;
                 if (rewards == null) {
-                    Log.record("悦动健康：领奖响应缺少奖励列表，结果未确认");
-                    return false;
+                    Log.record("悦动健康：领奖请求已受理，奖励明细缺失，继续按任务列表回查");
+                    return true;
                 }
                 ArrayList<String> rewardList = parseRewards(rewards);
                 Log.other("悦动健康🚑️领取奖励[" + taskName + "]#获得" + rewardList);

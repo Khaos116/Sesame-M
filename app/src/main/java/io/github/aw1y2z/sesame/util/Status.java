@@ -106,6 +106,15 @@ public class Status {
         ensureLoadedForCurrentUid();
         return INSTANCE.flagLogList.contains(tag);
     }
+
+    public static synchronized Set<String> flagsStartingWith(String prefix) {
+        ensureLoadedForCurrentUid();
+        Set<String> result = new HashSet<>();
+        for (String flag : INSTANCE.flagLogList) {
+            if (flag != null && flag.startsWith(prefix)) result.add(flag);
+        }
+        return result;
+    }
     
     public static synchronized void flagToday(String tag) {
         ensureLoadedForCurrentUid();
@@ -113,6 +122,15 @@ public class Status {
             INSTANCE.flagLogList.add(tag);
             save();
         }
+    }
+
+    public static synchronized boolean flagTodayVerified(Set<String> tags, String businessDay) {
+        ensureLoadedForCurrentUid();
+        Calendar now = MyUtils.getInstance();
+        if (!(now.get(Calendar.YEAR) + ":" + now.get(Calendar.DAY_OF_YEAR)).equals(businessDay)) return false;
+        if (updateDay(now)) INSTANCE.saveTime = now.getTimeInMillis();
+        INSTANCE.flagLogList.addAll(tags);
+        return save(now);
     }
 
     public static void setFlagToday(String tag) {
@@ -868,7 +886,7 @@ public class Status {
         save(TimeUtil.getNow());
     }
     
-    public static synchronized void save(Calendar nowCalendar) {
+    public static synchronized boolean save(Calendar nowCalendar) {
         if (StringUtil.isEmpty(UserIdMap.getCurrentUid())) {
             Log.record("用户为空，状态保存失败");
             throw new RuntimeException("用户为空，状态保存失败");
@@ -905,6 +923,7 @@ public class Status {
         else {
             notifySaveFailure(currentUid, "写入失败", null);
         }
+        return saved;
     }
 
     /**

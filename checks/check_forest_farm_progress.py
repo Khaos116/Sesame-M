@@ -125,7 +125,7 @@ public class ForestTeamPriorityCheck {
  static class Num {int getValue(){return 20;}}
  Bool teamPriority=new Bool();Num partnerteamWaterNum=new Num();
  AtomicInteger taskCount=new AtomicInteger();String selfId;boolean hasErrorWait;
- static boolean mode,quiet,waterInBody,cancelRestore,personalCultivate,ignoreSwitch;static int failTeam,failPersonal,bodyError,waters,errors;static String failPhase;
+ static boolean mode,quiet,waterInBody,cancelRestore,personalCultivate,ignoreSwitch;static int failTeam,failPersonal,bodyError,waters,errors,homeQueries;static String failPhase,homeReply;
  static Boolean collectionMode;static List<String> events=new ArrayList<>(),requests=new ArrayList<>();
  static class Status {
   static Set<String> flags=new HashSet<>();static int used;
@@ -138,7 +138,7 @@ public class ForestTeamPriorityCheck {
  static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}}
  static class TimeUtil {static void sleep(long ms){}}
  static class Toast {static void show(String s){}}
- static class Log {static void record(String s){}static void forest(String s){}static void i(String t,String s){}static void err(String t,String s,Throwable e){errors++;}}
+ static class Log {static List<String> records=new ArrayList<>();static void record(String s){records.add(s);}static void forest(String s){}static void i(String t,String s){}static void err(String t,String s,Throwable e){errors++;}}
  static class AntForestRpcCall {
   static String updateUserConfiginTeam(Boolean target){
    String event=target?"team":"personal";requests.add(event);events.add(event);
@@ -147,7 +147,7 @@ public class ForestTeamPriorityCheck {
    if(!target&&failPersonal>0){failPersonal--;return "{resultCode:'FAIL'}";}
    if(!target||!ignoreSwitch)mode=target;return "{resultCode:'SUCCESS'}";
   }
-  static String queryHomePage(){JSONObject h=new JSONObject().put("resultCode","SUCCESS").put("nextAction",mode||personalCultivate?"Cultivate":"Team")
+  static String queryHomePage(){homeQueries++;if(homeReply!=null)return homeReply;JSONObject h=new JSONObject().put("resultCode","SUCCESS").put("nextAction",mode||personalCultivate?"Cultivate":"Team")
    .put("userBaseInfo",new JSONObject().put("currentEnergy",100));
    if(mode||personalCultivate){JSONObject team=new JSONObject().put("teamBaseInfo",new JSONObject().put("teamId","team"));if(mode)team.put("mainMember",new JSONObject());h.put("teamHomeResult",team);}
    return h.toString();}
@@ -165,8 +165,8 @@ public class ForestTeamPriorityCheck {
  @@RUN@@
  @@HELPERS@@
  static ForestTeamPriorityCheck reset(boolean enabled){
-  mode=quiet=waterInBody=cancelRestore=personalCultivate=ignoreSwitch=false;failTeam=failPersonal=bodyError=waters=errors=0;failPhase=null;collectionMode=null;
-  Status.flags.clear();Status.used=0;events.clear();requests.clear();ForestTeamPriorityCheck f=new ForestTeamPriorityCheck();f.teamPriority.value=enabled;return f;
+  mode=quiet=waterInBody=cancelRestore=personalCultivate=ignoreSwitch=false;failTeam=failPersonal=bodyError=waters=errors=homeQueries=0;failPhase=homeReply=null;collectionMode=null;
+  Status.flags.clear();Status.used=0;events.clear();requests.clear();Log.records.clear();ForestTeamPriorityCheck f=new ForestTeamPriorityCheck();f.teamPriority.value=enabled;return f;
  }
  static void enabled(){ForestTeamPriorityCheck f=reset(true);waterInBody=true;collectionMode=true;f.run();
   assert requests.equals(List.of("team","personal"))&&waters==1&&!mode&&Status.flags.isEmpty():"priority mode restored during watering or not restored at end";
@@ -181,8 +181,28 @@ public class ForestTeamPriorityCheck {
   f=reset(false);personalCultivate=ignoreSwitch=true;f.teamCooperateWater();
   assert waters==0&&Status.used==0&&requests.equals(List.of("team","personal")):"unconfirmed switch allowed water debit";
   assert teamState(new JSONObject())==-1&&teamState(new JSONObject().put("nextAction",new JSONObject()))==-1;
-  assert teamState(new JSONObject().put("userBaseInfo",new JSONObject()))==0;
+  assert teamState(new JSONObject().put("userBaseInfo",new JSONObject()))==-1;
   assert teamState(new JSONObject().put("teamHomeResult",new JSONObject().put("mainMember",new JSONObject())))==1;}
+ static void unknownHome(){
+  Map<JSONObject,String> pages=new LinkedHashMap<>();
+  pages.put(new JSONObject().put("now",1L),"nextAction=<缺失>，teamHomeResult对象=false，mainMember对象=false");
+  pages.put(new JSONObject().put("userBaseInfo",new JSONObject().put("currentEnergy",100)),"nextAction=<缺失>，teamHomeResult对象=false，mainMember对象=false");
+  pages.put(new JSONObject().put("now",1L).put("userBaseInfo",new JSONObject()).put("nextAction","NewProtocol"),"nextAction=NewProtocol，teamHomeResult对象=false，mainMember对象=false");
+  pages.put(new JSONObject().put("now",1L).put("nextAction",new JSONObject().put("token","private-token")),"nextAction=<类型异常>，teamHomeResult对象=false，mainMember对象=false");
+  pages.put(new JSONObject().put("now",1L).put("nextAction",JSONObject.NULL),"nextAction=<null>，teamHomeResult对象=false，mainMember对象=false");
+  pages.put(new JSONObject().put("userBaseInfo",new JSONObject()).put("teamHomeResult",new JSONObject().put("mainMember","invalid").put("teamBaseInfo",new JSONObject().put("teamId","stale"))),"nextAction=<缺失>，teamHomeResult对象=true，mainMember对象=false");
+  pages.put(new JSONObject().put("nextAction","NewAction\nhttps://example.test/?token=private-token").put("teamHomeResult","private-token"),"nextAction=<非标准字符串>，teamHomeResult对象=false，mainMember对象=false");
+  pages.put(new JSONObject().put("nextAction","A".repeat(10000)).put("userBaseInfo",new JSONObject().put("token","private-token")),"nextAction=<非标准字符串>，teamHomeResult对象=false，mainMember对象=false");
+  for(var entry:pages.entrySet()){
+   JSONObject page=entry.getKey();
+   for(boolean initiallyTeam:new boolean[]{false,true}){
+    ForestTeamPriorityCheck f=reset(false);mode=initiallyTeam;homeReply=page.put("resultCode","SUCCESS").toString();f.teamCooperateWater();
+    assert requests.isEmpty()&&homeQueries==1&&waters==0&&Status.used==0&&Status.flags.isEmpty()&&mode==initiallyTeam&&errors==0:"unknown home triggered mode writes, extra query or watering: "+page;
+    assert Log.records.size()==1&&Log.records.get(0).contains("无法判定组队状态")&&Log.records.get(0).contains(entry.getValue()):"unknown mode omitted action/structure evidence: "+Log.records;
+    assert Log.records.get(0).length()<240&&!Log.records.get(0).contains("private-token")&&!Log.records.get(0).contains("\n"):"unknown-mode diagnostics exposed nested/unsafe data or grew without bound";
+   }
+  }
+ }
  static void cleanupFailures(){for(String phase:List.of("schedule","boost","collect","calibrate","statistics","friends")){
   ForestTeamPriorityCheck f=reset(true);failPhase=phase;try{f.run();throw new AssertionError("cleanup error hidden");}catch(IllegalStateException expected){}
   assert !mode&&requests.equals(List.of("team","personal"))&&!Status.hasFlagToday(FLAG_TEAM_MODE_SWITCHED):"cleanup failure bypassed personal restoration: "+phase;
@@ -198,7 +218,7 @@ public class ForestTeamPriorityCheck {
   f.teamPriority.value=false;f.run();assert !mode&&!Status.hasFlagToday(FLAG_TEAM_MODE_SWITCHED);
   f=reset(true);quiet=true;f.run();assert requests.isEmpty():"quiet window changed account mode";}
  public static void main(String[] args){Map<String,Runnable> tests=new LinkedHashMap<>();tests.put("enabled",ForestTeamPriorityCheck::enabled);
-  tests.put("disabled",ForestTeamPriorityCheck::disabled);tests.put("failed entry/watering fallback",ForestTeamPriorityCheck::fallback);tests.put("personal Cultivate/switch readback",ForestTeamPriorityCheck::cultivate);
+  tests.put("disabled",ForestTeamPriorityCheck::disabled);tests.put("failed entry/watering fallback",ForestTeamPriorityCheck::fallback);tests.put("unknown home preserves account mode",ForestTeamPriorityCheck::unknownHome);tests.put("personal Cultivate/switch readback",ForestTeamPriorityCheck::cultivate);
   tests.put("cleanup failures",ForestTeamPriorityCheck::cleanupFailures);tests.put("cancellation",ForestTeamPriorityCheck::cancellation);tests.put("recovery",ForestTeamPriorityCheck::recovery);
   List<String> failures=new ArrayList<>();for(var t:tests.entrySet())try{t.getValue().run();System.out.println("PASS priority: "+t.getKey());}catch(AssertionError e){failures.add(t.getKey()+": "+e.getMessage());}
   assert failures.isEmpty():String.join("; ",failures);
@@ -213,3 +233,36 @@ with tempfile.TemporaryDirectory(prefix='sesame-team-priority-') as tmp:
     f=Path(tmp)/'ForestTeamPriorityCheck.java';f.write_text(priority,encoding='utf-8')
     subprocess.run(['javac','-encoding','UTF-8','-cp',str(jar),'-d',tmp,str(f),str(SOURCE/'util/TaskCancelledException.java')],check=True)
     subprocess.run(['java','-ea','-cp',tmp+os.pathsep+str(jar),'ForestTeamPriorityCheck'],check=True)
+
+# Replay the real dispatch branch with two ready bubbles; unrelated page parsing is covered above.
+collect_user=method(forest,'private JSONObject collectUserEnergy(')
+dispatch_start=collect_user.index('                if (batchRobEnergy.getValue()')
+dispatch_end=collect_user.index('\n            }\n\n            return userHomeObject;',dispatch_start)
+batch=r'''
+import org.json.*;import java.util.*;
+public class ForestBatchDispatchCheck {
+ static class Bool{boolean value=true;boolean getValue(){return value;}}
+ static class Num{int getValue(){return 0;}}static class CollectSelfType{static final int ALL=0;}
+ Bool batchRobEnergy=new Bool();Num CollectSelfEnergyType=new Num();
+ static class AntForestRpcCall{static String getCollectBatchEnergyRpcEntity(String id,List<Long> ids){return "batch";}static String getCollectEnergyRpcEntity(Object p,String id,long b){return "single";}}
+ static class CollectEnergyEntity{String kind;CollectEnergyEntity(String id,JSONObject page,String type){kind=type;}}
+ List<String> requests=new ArrayList<>();void collectEnergy(CollectEnergyEntity e,String name){requests.add(e.kind);}
+ @@TEAM@@
+ void dispatch(JSONObject userHomeObject){String userId="friend",userName="friend";List<Long> bubbleIdList=List.of(1L,2L);
+ @@DISPATCH@@
+ }
+ public static void main(String[] args){ForestBatchDispatchCheck f=new ForestBatchDispatchCheck();
+  for(JSONObject page:List.of(new JSONObject(),new JSONObject().put("nextAction","Cultivate"),new JSONObject().put("userBaseInfo",new JSONObject()),
+    new JSONObject().put("now",1L),new JSONObject().put("nextAction","Team").put("teamHomeResult",new JSONObject().put("mainMember",new JSONObject())))){
+   f.requests.clear();f.dispatch(page);assert f.requests.equals(List.of("single","single")):"water-mode fix broadened batch collection: "+page;
+  }
+  f.requests.clear();f.dispatch(new JSONObject().put("nextAction","Team"));assert f.requests.equals(List.of("batch"));
+  f.batchRobEnergy.value=false;f.requests.clear();f.dispatch(new JSONObject().put("nextAction","Team"));assert f.requests.equals(List.of("single","single"));
+  System.out.println("PASS batch dispatch: explicit legacy personal contract only; Cultivate/unknown/team/off retain individual collection");
+ }
+}
+'''.replace('@@TEAM@@',method(forest,'private static int teamState(')+method(forest,'private static boolean isTeam(')).replace('@@DISPATCH@@',collect_user[dispatch_start:dispatch_end])
+with tempfile.TemporaryDirectory(prefix='sesame-forest-batch-') as tmp:
+    f=Path(tmp)/'ForestBatchDispatchCheck.java';f.write_text(batch,encoding='utf-8')
+    subprocess.run(['javac','-encoding','UTF-8','-cp',str(jar),'-d',tmp,str(f)],check=True)
+    subprocess.run(['java','-ea','-cp',tmp+os.pathsep+str(jar),'ForestBatchDispatchCheck'],check=True)

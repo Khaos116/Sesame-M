@@ -91,14 +91,14 @@ public class MessageUtil {
                         tag + ", 请求未受理：不支持RPC调用，后续由调用方处理");
                 return;
             }
-            String memo = RpcLog.errorSummary(jo);
+            String summary = RpcLog.errorSummary(jo, errorMessageField);
             if (isServerBusy(jo)) {
                 // 高频失败仅限制运行摘要，错误回执仍逐次保留。
-                Log.errorWithSummary(tag + ", " + jo, shouldLogServerBusy(tag) ? tag + ", " + memo : null);
+                Log.errorWithSummary(tag + ", " + jo, shouldLogServerBusy(tag) ? tag + ", " + summary : null);
                 return;
             }
-            recordFailure(tag, memo);
-            Log.errorWithSummary(tag + ", " + jo, tag + ", 接口返回失败 " + memo);
+            recordFailure(tag, RpcLog.safeErrorMessage(jo, errorMessageField));
+            Log.errorWithSummary(tag + ", " + jo, tag + ", 接口返回失败 " + summary);
         } catch (Throwable t) {
             Log.err(TAG, "printErrorMessage err:", t);
         }

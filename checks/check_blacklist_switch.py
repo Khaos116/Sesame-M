@@ -65,8 +65,17 @@ public class BlacklistSwitchCheck {
   assert ConfigV2.saves==3&&!ConfigV2.dirty;
   syncTaskBlackList("display","TaskList",Set.of("preset"),Set.of(),list);
   assert ConfigV2.saves==3&&TASK_WHITE_LIST.get("TaskList").isEmpty();
+  ConfigV2.dirty=true;ConfigV2.saveOk=false;
+  syncTaskBlackList("display","TaskList",Set.of("preset"),Set.of(),list);
+  assert ConfigV2.saves==4&&ConfigV2.dirty&&list.contains("manual")&&list.contains("preset");
+  ConfigV2.saveOk=true;
+  syncTaskBlackList("display","TaskList",Set.of("preset"),Set.of(),list);
+  assert ConfigV2.saves==5&&!ConfigV2.dirty;
+  syncTaskBlackList("display","TaskList",Set.of("preset"),Set.of(),list);
+  assert ConfigV2.saves==5:"unchanged sync repeated a completed whole-config save";
   System.out.println("PASS disabled auto blacklist prevents direct/permanent/deferred/observation writes; manual entries retained");
   System.out.println("PASS preset sync avoids duplicate saves, refreshes whitelist and retries failed persistence without dropping active filters");
+  System.out.println("PASS existing whole-config save contract: pending fields persist together and failed writes remain retryable");
  }
 }
 '''
