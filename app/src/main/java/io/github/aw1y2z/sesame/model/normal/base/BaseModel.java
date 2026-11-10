@@ -9,6 +9,8 @@ import java.util.Map;
 
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectAndCountModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
+import io.github.aw1y2z.sesame.entity.AlipayAntMemberAdTaskList;
+import io.github.aw1y2z.sesame.entity.AlipayAntMemberTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayrpcRequest;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
 import io.github.aw1y2z.sesame.hook.CaptchaHook;
@@ -86,6 +88,8 @@ public class BaseModel extends Model {
         modelFields.addField(energyTime);
         modelFields.addField(timedTaskModel);
         modelFields.addField(timeoutRestart);
+        // 字段早已声明并被 AntForestV2 / OldRpcBridge 读取，但漏了注册，导致界面无法修改、恒为默认 60 分钟
+        modelFields.addField(waitWhenException);
         modelFields.addField(backupConfigDays);
         modelFields.addField(rpcRequestList);
         modelFields.addField(rpcRequestTaskList);
@@ -129,6 +133,9 @@ public class BaseModel extends Model {
             AntStallTaskListMap.clear();
             AntSportsTaskListMap.clear();
             AntMemberTaskListMap.clear();
+            AlipayAntMemberTaskList.clear();
+            AntMemberAdTaskListMap.clear();
+            AlipayAntMemberAdTaskList.clear();
             // 这两个列表原先漏了 clear，切换账号后候选项会残留上一个账号的任务
             MonopolyTaskListMap.clear();
             GoldenBeansTaskListMap.clear();

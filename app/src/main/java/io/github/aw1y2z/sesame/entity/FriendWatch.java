@@ -20,6 +20,9 @@ public class FriendWatch extends IdAndName {
 
     private static JSONObject joFriendWatch;
 
+    /** 本次加载是否解析失败：内存是空对象时不得落盘，否则历史统计被抹成 {} */
+    private static volatile boolean loadFailed;
+
     private String startTime;
 
     private int allGet;
@@ -42,12 +45,29 @@ public class FriendWatch extends IdAndName {
         return super.compareTo(o);
     }
 
-    public static void friendWatch(String id, int collectedEnergy) {
+    /**
+     * 记录一个好友本次被收取的能量。
+     * <p>调用方是最多 16 条并行收取线程，而 {@link #joFriendWatch} 是单个共享 JSONObject：
+     * 这里的「取-判-建-改」必须整体原子，否则并发首次写入会互相覆盖，或与
+     * {@link #updateDay()} 的遍历撞成 ConcurrentModificationException。
+     */
+    public static synchronized void friendWatch(String id, int collectedEnergy) {
+        if (joFriendWatch == null) {
+            // 已 unload 或尚未 load：静默丢弃这一次统计，不在空表上继续累加
+            return;
+        }
         try {
+            String maskName = UserIdMap.getMaskName(id);
+            // 通讯录好友表已就绪时，查不到名字说明是种树 PK 等渠道来的陌生关系：
+            // 它们没有可展示的资料，不该出现在好友统计里。
+            // 表还没载入时不做这个甄别，否则会把真实好友一起漏掉。
+            if (maskName == null && UserIdMap.isFriendListLoaded()) {
+                return;
+            }
             JSONObject joSingle = joFriendWatch.optJSONObject(id);
             if (joSingle == null) {
                 joSingle = new JSONObject();
-                joSingle.put("name", UserIdMap.getMaskName(id));
+                joSingle.put("name", maskName);
                 joSingle.put("allGet", 0);
                 joSingle.put("startTime", TimeUtil.getDateStr());
                 joFriendWatch.put(id, joSingle);
@@ -58,7 +78,40 @@ public class FriendWatch extends IdAndName {
         }
     }
 
+    /**
+     * 剔除没有名字的记录：老版本不区分好友关系，把 PK 好友也记进了统计，表现为 name 缺失或空白。
+     * 真正的通讯录好友记录时一定带着 {@code UserEntity#getMaskName()}（形如「昵称|*实名」），不会是空串。
+     *
+     * @return 是否发生了删除
+     */
+    private static boolean pruneNonFriends(JSONObject jo) {
+        boolean changed = false;
+        List<String> toRemove = new ArrayList<>();
+        Iterator<String> ids = jo.keys();
+        while (ids.hasNext()) {
+            String id = ids.next();
+            JSONObject friend = jo.optJSONObject(id);
+            if (friend == null || friend.optString("name").trim().isEmpty()) {
+                toRemove.add(id);
+            }
+        }
+        for (String id : toRemove) {
+            jo.remove(id);
+            changed = true;
+        }
+        return changed;
+    }
+
     public static synchronized void save() {
+        if (loadFailed) {
+            // 内存是空对象：写盘会把历史统计抹成 {}
+            Log.debug(TAG + ", 好友统计加载失败，跳过保存");
+            return;
+        }
+        if (joFriendWatch == null) {
+            // unload 之后又触发保存：没有可写的内容，直接跳过而不是抛 NPE
+            return;
+        }
         try {
             FileUtil.write2File(joFriendWatch.toString(), FileUtil.getFriendWatchFile());
         } catch (Exception e){
@@ -66,7 +119,15 @@ public class FriendWatch extends IdAndName {
         }
     }
 
-    public static void updateDay() {
+    /**
+     * 跨周结算：把各好友的 weekGet 累加进 allGet 并清零。
+     * <p>与 {@link #friendWatch} 共用同一把锁——一边遍历 keys() 一边被收取线程 put 新好友，
+     * 会抛 ConcurrentModificationException 并让本次结算半途而废。
+     */
+    public static synchronized void updateDay() {
+        if (loadFailed || joFriendWatch == null) {
+            return;
+        }
         if (!needUpdateAll(FileUtil.getFriendWatchFile().lastModified())) {
             return;
         }
@@ -92,6 +153,7 @@ public class FriendWatch extends IdAndName {
     }
 
     public static synchronized Boolean load() {
+        loadFailed = false;
         try {
             String strFriendWatch = FileUtil.readFromFile(FileUtil.getFriendWatchFile());
             if (!strFriendWatch.isEmpty()) {
@@ -99,9 +161,16 @@ public class FriendWatch extends IdAndName {
             } else {
                 joFriendWatch = new JSONObject();
             }
+            // 顺手清掉历史脏数据（PK 好友），否则它们会一直留在统计里
+            if (pruneNonFriends(joFriendWatch)) {
+                save();
+            }
             return true;
         } catch (JSONException e) {
             Log.printStackTrace(e);
+            // 不写盘：空对象落盘就是历史统计全丢
+            loadFailed = true;
+            Log.record("好友统计解析失败，本次使用空统计（不写盘，原文件保留）");
             joFriendWatch = new JSONObject();
         }
         return false;
@@ -146,6 +215,10 @@ public class FriendWatch extends IdAndName {
             } else {
                 joFriendWatch = new JSONObject(strFriendWatch);
             }
+            // 打开统计页时也清一次：这一步在模块 App 进程里跑，不依赖注入进程是否已启动
+            if (pruneNonFriends(joFriendWatch)) {
+                FileUtil.write2File(joFriendWatch.toString(), FileUtil.getFriendWatchFile());
+            }
             Iterator<String> ids = joFriendWatch.keys();
             while (ids.hasNext()) {
                 String id = ids.next();
@@ -161,12 +234,8 @@ public class FriendWatch extends IdAndName {
                 list.add(friendWatch);
             }
         } catch (Throwable t) {
+            // 只跳过本次读取：覆写成 {} 会把历史统计抹掉
             Log.err(TAG, "FriendWatch getList: ", t);
-            try {
-                FileUtil.write2File(new JSONObject().toString(), FileUtil.getFriendWatchFile());
-            } catch (Exception e) {
-                Log.printStackTrace(e);
-            }
         }
         return list;
     }

@@ -79,6 +79,28 @@ public class ConfigV2 {
         }
     }
 
+    /**
+     * 代码里认识的配置键路径（组级 + 字段级，含 {@code modelFieldsMap} 本身），
+     * 供「格式化回写」判定区分"数据丢失"与"清掉代码里已删除的废弃键"。
+     * 依据是 {@link #setModelFieldsMap} 只保留 ModelConfig 注册过的组与字段。
+     */
+    @JsonIgnore
+    public Set<String> collectKnownFieldPaths() {
+        Set<String> paths = new LinkedHashSet<>();
+        paths.add("modelFieldsMap");
+        for (Map.Entry<String, ModelFields> entry : modelFieldsMap.entrySet()) {
+            String groupPath = "modelFieldsMap." + entry.getKey();
+            paths.add(groupPath);
+            ModelFields modelFields = entry.getValue();
+            if (modelFields != null) {
+                for (String fieldCode : modelFields.keySet()) {
+                    paths.add(groupPath + "." + fieldCode);
+                }
+            }
+        }
+        return paths;
+    }
+
     public Boolean hasModelFields(String modelCode) {
         return modelFieldsMap.containsKey(modelCode);
     }
@@ -191,7 +213,6 @@ public class ConfigV2 {
     }
     
     public static synchronized ConfigV2 load(String userId) {
-        Log.i(TAG, "开始加载配置");
         String userName = "";
         File configV2File = null;
         try {
@@ -213,13 +234,19 @@ public class ConfigV2 {
                 JsonUtil.copyMapper().readerForUpdating(INSTANCE).readValue(json);
                 String formatted = INSTANCE.toSaveStr();
                 if (formatted != null && !formatted.equals(json)) {
-                    // 回写只允许改格式、不许改数据；判定不过就保留磁盘原文
-                    if (!JsonUtil.isRewriteLossless(json, formatted)) {
-                        Log.record("配置加载结果与磁盘数据不一致，已跳过格式化回写以免覆盖丢失: " + userName);
+                    // 回写允许改格式、也允许清掉代码里已删除的废弃键；其余数据差异一律保留磁盘原文
+                    Set<String> knownPaths = INSTANCE.collectKnownFieldPaths();
+                    if (!JsonUtil.isRewriteLossless(json, formatted, knownPaths)) {
+                        Log.record("配置加载结果与磁盘数据不一致，已跳过格式化回写以免覆盖丢失: " + userName
+                                + "（" + JsonUtil.describeRewriteDiff(json, formatted, knownPaths) + "）");
                     } else {
                         Log.i(TAG, "格式化配置: " + userName);
                         FileUtil.backupConfigV2WithRolling(userId);
                         FileUtil.write2File(formatted, configV2File);
+                        List<String> removedKeys = JsonUtil.removedKeys(json, formatted);
+                        if (!removedKeys.isEmpty()) {
+                            Log.record("清理配置里的废弃键: " + userName + " " + removedKeys);
+                        }
                     }
                 }
             } else {
@@ -253,7 +280,6 @@ public class ConfigV2 {
         captureBaseline();
         // 记下本次同步到的文本，供 save() 判断磁盘是否被别的进程改过
         lastSyncedText = configV2File != null && configV2File.exists() ? FileUtil.readFromFile(configV2File) : null;
-        Log.i(TAG, "加载配置结束");
         return INSTANCE;
     }
 

@@ -25,6 +25,9 @@ import java.util.TreeMap;
 public class GreenFinance extends ModelTask {
     private static final String TAG = GreenFinance.class.getSimpleName();
 
+    /** 金币巡查翻页上限：防服务端恒回 lastPage=false 且游标不前进时死循环 */
+    private static final int MAX_STEAL_PAGES = 50;
+
     private BooleanModelField greenFinanceLsxd;
     private BooleanModelField greenFinanceLsbg;
     private BooleanModelField greenFinanceLscg;
@@ -77,27 +80,43 @@ public class GreenFinance extends ModelTask {
                 Log.i(TAG, jo.optString("resultDesc"));
                 return;
             }
-            JSONObject result = jo.getJSONObject("result");
-            if (!result.getBoolean("greenFinanceSigned")) {
+            JSONObject result = jo.optJSONObject("result");
+            if (result == null) {
+                Log.i(TAG + ".index", "响应缺少 result");
+                return;
+            }
+            if (!result.optBoolean("greenFinanceSigned", false)) {
                 Log.i("绿色经营📊未开通");
                 return;
             }
-            JSONObject mcaGreenLeafResult = result.getJSONObject("mcaGreenLeafResult");
-            JSONArray greenLeafList = mcaGreenLeafResult.getJSONArray("greenLeafList");
-            String currentCode = "";
-            JSONArray bsnIds = new JSONArray();
-            for (int i = 0; i < greenLeafList.length(); i++) {
-                JSONObject greenLeaf = greenLeafList.getJSONObject(i);
-                String code = greenLeaf.getString("code");
-                if (currentCode.equals(code) || bsnIds.length() == 0) {
-                    bsnIds.put(greenLeaf.getString("bsnId"));
-                } else {
-                    batchSelfCollect(bsnIds);
-                    bsnIds = new JSONArray();
+            // 缺字段只跳过收集:这里抛出去会把下面的签到/打卡/捐助一起跳过
+            JSONObject mcaGreenLeafResult = result.optJSONObject("mcaGreenLeafResult");
+            JSONArray greenLeafList = mcaGreenLeafResult == null ? null : mcaGreenLeafResult.optJSONArray("greenLeafList");
+            if (greenLeafList != null) {
+                // 同 code 的叶子合并成一批收取;code 变化时先提交上一批,再开始新的一批
+                JSONArray bsnIds = new JSONArray();
+                String currentCode = null;
+                for (int i = 0; i < greenLeafList.length(); i++) {
+                    JSONObject greenLeaf = greenLeafList.optJSONObject(i);
+                    if (greenLeaf == null) {
+                        continue;
+                    }
+                    String code = greenLeaf.optString("code", "");
+                    if (!code.equals(currentCode)) {
+                        if (bsnIds.length() > 0) {
+                            batchSelfCollect(bsnIds);
+                        }
+                        bsnIds = new JSONArray();
+                        currentCode = code;
+                    }
+                    String bsnId = greenLeaf.optString("bsnId", "");
+                    if (!bsnId.isEmpty()) {
+                        bsnIds.put(bsnId);
+                    }
                 }
-            }
-            if (bsnIds.length() > 0) {
-                batchSelfCollect(bsnIds);
+                if (bsnIds.length() > 0) {
+                    batchSelfCollect(bsnIds);
+                }
             }
         } catch (Throwable th) {
             Log.err(TAG, "index err:", th);
@@ -417,7 +436,13 @@ public class GreenFinance extends ModelTask {
                 return;
             }
             int n = 0;
+            int page = 0;
             while (true) {
+                // 服务端恒回 lastPage=false 且游标不前进时，这里会一直翻同一页
+                if (++page > MAX_STEAL_PAGES) {
+                    Log.i(TAG, "金币巡查翻页超过上限，本轮停止");
+                    break;
+                }
                 try {
                     String str = GreenFinanceRpcCall.queryRankingList(n);
                     TimeUtil.sleep(1500);
@@ -432,7 +457,13 @@ public class GreenFinance extends ModelTask {
                         Status.greenFinancePointFriend();
                         return;
                     }
-                    n = result.getInt("nextStartIndex");
+                    // 游标不前进会永远翻同一页，这种情况直接结束本轮
+                    int nextStartIndex = result.getInt("nextStartIndex");
+                    if (nextStartIndex <= n) {
+                        Log.i(TAG, "金币巡查翻页游标未前进(" + n + " -> " + nextStartIndex + ")，本轮停止");
+                        break;
+                    }
+                    n = nextStartIndex;
                     JSONArray list = result.getJSONArray("rankingList");
                     for (int i = 0; i < list.length(); i++) {
                         JSONObject object = list.getJSONObject(i);

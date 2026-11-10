@@ -17,10 +17,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.Map;
 
-/**
- * 新版rpc接口 支持最低支付宝版本v10.3.96.8100
- * 记录rpc抓包 支持最低支付宝版本v10.3.96.8100
- */
+/** 新版 RPC 接口与抓包记录，最低支持支付宝 v10.3.96.8100 */
 public class NewRpcBridge implements RpcBridge {
 
     private static final String TAG = NewRpcBridge.class.getSimpleName();
@@ -90,7 +87,6 @@ public class NewRpcBridge implements RpcBridge {
                     , loader.loadClass("com.alibaba.ariver.engine.api.bridge.model.ApiContext")
                     , bridgeCallbackClazz
             );
-            Log.i(TAG, "get newRpcCallMethod successfully");
         } catch (Exception e) {
             Log.i(TAG, "get newRpcCallMethod err:");
             throw e;
@@ -170,7 +166,7 @@ public class NewRpcBridge implements RpcBridge {
                                 NotificationUtil.updateStatusText("登录超时");
                                 if (BaseModel.getTimeoutRestart().getValue()) {
                                     Log.record("尝试重新登录");
-                                    ApplicationHook.reLoginByBroadcast();
+                                    ApplicationHook.reLogin();
                                 }
                             }
                             return null;
@@ -286,7 +282,7 @@ public class NewRpcBridge implements RpcBridge {
                                 NotificationUtil.updateStatusText("登录超时");
                                 if (BaseModel.getTimeoutRestart().getValue()) {
                                     Log.record("尝试重新登录");
-                                    ApplicationHook.reLoginByBroadcast();
+                                    ApplicationHook.reLogin();
                                 }
                             }
                             return null;
