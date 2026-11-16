@@ -14,7 +14,8 @@ package = "io.github.aw1y2z.sesame"
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches/modules-2/files-2.1/org.json/json"
 jar = sorted(p for p in cache.glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar", "-javadoc.jar")))[-1]
 stubs = {
-    "util.MyUtils": '''import org.json.*;public class MyUtils {
+    "util.MyUtils": '''import org.json.*;import java.util.*;public class MyUtils {
+        public static int day=1;public static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.clear();c.set(2026,0,day);return c;}
         public static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}''',
     "util.Log": '''import java.util.*;public class Log {
         public static List<String> messages=new ArrayList<>();
@@ -27,32 +28,35 @@ stubs = {
         public static boolean checkSuccess(String tag,JSONObject j){return Boolean.TRUE.equals(j.opt("success"));}
         public static boolean checkResultCode(String tag,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}}''',
     "util.Statistics": '''public class Statistics {public enum DataType {COLLECTED}
-        public static int collected;public static void addData(DataType type,int amount){collected+=amount;}
-        public static void save(){}}''',
+        public static int collected,saves;public static void addData(DataType type,int amount){collected+=amount;}
+        public static void save(){saves++;}}''',
     "util.Status": '''import java.util.*;public class Status {
         public static Set<String> flags=new HashSet<>();public static Map<String,Integer> counts=new HashMap<>();
-        public static Runnable beforeFlag;
+        public static Runnable beforeFlag,beforeClear;public static boolean failVerified;
         public static boolean hasFlagToday(String key){return flags.contains(key);}
+        public static void clearFlag(String key){if(beforeClear!=null)beforeClear.run();flags.remove(key);}
+        public static boolean flagTodayVerified(Set<String> keys,String day){Calendar c=MyUtils.getInstance();if(!day.equals(c.get(Calendar.YEAR)+":"+c.get(Calendar.DAY_OF_YEAR)))return false;if(beforeFlag!=null){Runnable action=beforeFlag;beforeFlag=null;action.run();}flags.addAll(keys);return !failVerified;}
         public static void flagToday(String key){if(beforeFlag!=null){Runnable action=beforeFlag;beforeFlag=null;action.run();}flags.add(key);}
         public static int getIntFlagToday(String key){return counts.getOrDefault(key,0);}
         public static void setIntFlagToday(String key,int value){counts.put(key,value);}}''',
-    "util.TimeUtil": '''public class TimeUtil {public static boolean cancel;
+    "util.TimeUtil": '''public class TimeUtil {public static boolean cancel,nextDay;
         public static void sleep(long delay){if(cancel||RunGeneration.isStale()||Thread.currentThread().isInterrupted())throw new TaskCancelledException();
+            if(nextDay){MyUtils.day++;nextDay=false;}
             try{Thread.sleep(delay);}catch(InterruptedException e){Thread.currentThread().interrupt();throw new TaskCancelledException();}}}''',
     "util.StringUtil": '''public class StringUtil {public static String truncate(String value,int n){return value.substring(0,Math.min(n,value.length()));}}''',
     "hook.Toast": '''public class Toast {public static void show(String value){}}''',
     "model.task.antForest.AntForestRpcCall": '''import java.util.*;import org.json.*;
         import io.github.aw1y2z.sesame.util.*;public class AntForestRpcCall {
         public static Deque<String> starts=new ArrayDeque<>();public static List<Long> hits=new ArrayList<>();
-        public static List<String> settled=new ArrayList<>();public static int startCalls,settleCalls;public static boolean rejectSettlement;
-        public static long startedAt,settledAt;public static boolean cancelStart;
+        public static List<String> settled=new ArrayList<>();public static int startCalls,settleCalls;public static boolean rejectSettlement;public static int failSettlementAt;
+        public static long startedAt,settledAt;public static boolean cancelStart,zeroFirstSettlement;public static String settlementOverride;
         public static String startWhackMole(String source){startCalls++;startedAt=System.currentTimeMillis();
             if(cancelStart)throw new TaskCancelledException();return starts.removeFirst();}
         public static String startWhackMole(){return startWhackMole("source");}
         public static String whackMole(long id,String token,String source){assert token.equals("private-token");hits.add(id);return "{success:true}";}
         public static String settlementWhackMole(String token,List<String> ids,String source){
             settled=new ArrayList<>(ids);settleCalls++;settledAt=System.currentTimeMillis();
-            return rejectSettlement?"{success:false,resultCode:'FAIL',token:'private-token'}":"{success:true,totalEnergy:7}";}
+            return settlementOverride!=null?settlementOverride:(rejectSettlement||settleCalls==failSettlementAt)?"{success:false,resultCode:'FAIL',token:'private-token'}":zeroFirstSettlement&&settleCalls==1?"{success:true,totalEnergy:0}":"{success:true,totalEnergy:7}";}
         public static String oldstartWhackMole(String source){return startWhackMole(source);}
         public static String oldwhackMole(long id,String token,String source){return whackMole(id,token,source);}
         public static String oldsettlementWhackMole(String token,List<String> ids,String source){return settlementWhackMole(token,ids,source);}
@@ -70,18 +74,24 @@ public class UpstreamForestCheck {
         .put("moleInfo",new JSONArray().put(new JSONObject().put("id",91).put("type","NORMAL"))
             .put(new JSONObject().put("id",304).put("bubbleId",8)).put(new JSONObject().put("id",304).put("bubbleId",8))
             .put(new JSONObject().put("id",705).put("type","BOMB")).put(new JSONObject().put("id",-1))).toString();}
-    static void reset(){Status.flags.clear();Status.counts.clear();Status.beforeFlag=null;Log.messages.clear();Statistics.collected=0;
+    static void reset(){Status.flags.clear();Status.counts.clear();Status.beforeFlag=Status.beforeClear=null;Status.failVerified=TimeUtil.nextDay=false;MyUtils.day=1;Log.messages.clear();Statistics.collected=Statistics.saves=0;
         AntForestRpcCall.starts.clear();AntForestRpcCall.hits.clear();AntForestRpcCall.settled.clear();
-        AntForestRpcCall.startCalls=AntForestRpcCall.settleCalls=0;
-        AntForestRpcCall.cancelStart=AntForestRpcCall.rejectSettlement=TimeUtil.cancel=false;WhackMole.setTotalGames(1);}
+        AntForestRpcCall.startCalls=AntForestRpcCall.settleCalls=AntForestRpcCall.failSettlementAt=0;
+        AntForestRpcCall.settlementOverride=null;AntForestRpcCall.cancelStart=AntForestRpcCall.rejectSettlement=AntForestRpcCall.zeroFirstSettlement=TimeUtil.cancel=false;WhackMole.setTotalGames(1);}
     static void whack(){
         reset();AntForestRpcCall.starts.add(round());Status.beforeFlag=()->WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+        Status.beforeClear=()->{assert Status.getIntFlagToday("forest::whackMole::executed::rounds")==1&&Statistics.collected==7&&Statistics.saves==1:"pending cleared before confirmed progress";};
         WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
         assert AntForestRpcCall.hits.equals(List.of(304L)):AntForestRpcCall.hits;
         assert AntForestRpcCall.settled.equals(List.of("91")):AntForestRpcCall.settled;
         assert AntForestRpcCall.settledAt-AntForestRpcCall.startedAt>=1000:"settled before server duration";
         assert Statistics.collected==7&&Status.hasFlagToday("forest::whackMole::executed");
         WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);assert AntForestRpcCall.startCalls==1;
+        reset();Status.failVerified=true;AntForestRpcCall.starts.add(round());WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+        assert AntForestRpcCall.settleCalls==0&&Status.hasFlagToday("forest::whackMole::executed::settlementPending"):"failed marker save allowed settlement";
+        Status.failVerified=false;WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);assert AntForestRpcCall.startCalls==1:"failed marker save allowed immediate retry";
+        reset();TimeUtil.nextDay=true;AntForestRpcCall.starts.add(round());WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+        assert AntForestRpcCall.settleCalls==0:"previous business day authorized settlement";
         reset();for(int i=0;i<3;i++)AntForestRpcCall.starts.add("{}");
         for(int i=0;i<5;i++)WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
         assert AntForestRpcCall.startCalls==3&&!Status.hasFlagToday("forest::whackMole::executed");
@@ -92,6 +102,28 @@ public class UpstreamForestCheck {
             reset();AntForestRpcCall.starts.add(bad.toString());WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
             assert AntForestRpcCall.hits.isEmpty()&&AntForestRpcCall.settleCalls==0&&Status.flags.isEmpty();
         }
+        reset();WhackMole.setTotalGames(2);AntForestRpcCall.zeroFirstSettlement=true;AntForestRpcCall.starts.add(round());AntForestRpcCall.starts.add(round());
+        WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+        assert AntForestRpcCall.settleCalls==2&&Statistics.collected==7&&Status.hasFlagToday("forest::whackMole::executed"):"confirmed zero settlement blocked next round";
+        for(String energy:List.of("2147483647.0000000001","2147483648","-1","0.5")){
+            reset();AntForestRpcCall.starts.add(round());AntForestRpcCall.settlementOverride="{success:true,totalEnergy:"+energy+"}";
+            WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+            assert AntForestRpcCall.startCalls==1&&Statistics.collected==0&&!Status.hasFlagToday("forest::whackMole::executed"):"invalid settlement energy accepted: "+energy;
+        }
+        reset();Status.setIntFlagToday("forest::whackMole::executed::rounds",Integer.MAX_VALUE);
+        WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);assert AntForestRpcCall.startCalls==0:"overflowed count opened extra round";
+        reset();Status.setIntFlagToday("forest::whackMole::executed::rounds",Integer.MIN_VALUE);AntForestRpcCall.starts.add(round());
+        WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);assert AntForestRpcCall.startCalls==1&&Status.hasFlagToday("forest::whackMole::executed"):"negative count caused extra rounds";
+        reset();WhackMole.setTotalGames(2);AntForestRpcCall.starts.add(round());AntForestRpcCall.starts.add("{}");
+        WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+        assert Statistics.collected==7&&!Status.hasFlagToday("forest::whackMole::executed"):"partial start failure marked complete";
+        AntForestRpcCall.starts.add(round());WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+        assert AntForestRpcCall.startCalls==3&&Statistics.collected==14&&Status.hasFlagToday("forest::whackMole::executed"):"confirmed rounds must count across retries";
+        reset();WhackMole.setTotalGames(2);AntForestRpcCall.starts.add(round());AntForestRpcCall.starts.add(round());AntForestRpcCall.failSettlementAt=2;
+        WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+        assert Statistics.collected==7&&!Status.hasFlagToday("forest::whackMole::executed"):"unknown settlement marked complete";
+        WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+        assert AntForestRpcCall.startCalls==2&&AntForestRpcCall.settleCalls==2:"unknown settlement repeated";
         reset();AntForestRpcCall.starts.add("{success:true,canPlayToday:false}");WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
         assert Status.hasFlagToday("forest::whackMole::executed")&&AntForestRpcCall.settleCalls==0;
         reset();AntForestRpcCall.starts.add(round());TimeUtil.cancel=true;
@@ -110,6 +142,18 @@ public class UpstreamForestCheck {
         for(String message:Log.messages)assert !message.contains("private-token");
         WhackMole.shutdown();
         System.out.println("PASS whack server ids/duration, invalid fields, exhausted/retry cap, stale/cancel and queued lifecycle admission");
+    }
+    static class GiftCancellation {
+        static final String TAG="gift";static int calls;
+        static class UserIdMap {static String getCurrentUid(){return "self";}static String getMaskName(String s){return s;}}
+        static class AntForestRpcCall {static String collectFriendGiftBox(String id,String uid){calls++;throw new TaskCancelledException();}}
+        @@GIFT_CANCEL@@
+        static void check(){GiftCancellation g=new GiftCancellation();calls=0;
+            JSONObject home=new JSONObject().put("userEnergy",new JSONObject().put("userId","friend"))
+                .put("giftBoxInfo",new JSONObject().put("giftBoxList",new JSONArray().put(new JSONObject().put("giftBoxId","1")).put(new JSONObject().put("giftBoxId","2"))));
+            try{g.collectGiftBox(home);throw new AssertionError("nested gift cancellation swallowed");}catch(TaskCancelledException expected){}
+            assert calls==1:"next gift RPC ran after cancellation";
+        }
     }
     static class Rain {
         static final String TAG="rain";static int totalCollected,settlements,starts,homes;
@@ -262,9 +306,10 @@ public class UpstreamForestCheck {
             System.out.println("PASS real RPC friend-id escaping/string type and family receiver-array serialization");
         }
     }
-    public static void main(String[] args){whack();Rain.check();Home.check();Gifts.check();Watering.check();RpcArguments.check();}
+    public static void main(String[] args){whack();GiftCancellation.check();Rain.check();Home.check();Gifts.check();Watering.check();RpcArguments.check();}
 }
 '''
+test = test.replace("@@GIFT_CANCEL@@", method("model/task/antForest/AntForestEnergy.java", "void collectGiftBox("))
 game = "model/task/antForest/AntForestGame.java"
 rain_methods = "\n".join(method(game, signature) for signature in (
     "int startEnergyRain(", "private static String energyRainLabel(", "private int drainEnergyRainQuota("))

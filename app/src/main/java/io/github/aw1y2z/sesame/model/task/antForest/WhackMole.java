@@ -7,6 +7,8 @@ import io.github.aw1y2z.sesame.util.TaskCancelledException;
 
 
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
@@ -34,6 +36,8 @@ public class WhackMole {
     private static final String SOURCE = "senlinguangchangdadishu";
     private static final String EXEC_FLAG = "forest::whackMole::executed";
     private static final String FAIL_FLAG = EXEC_FLAG + "::fail";
+    private static final String ROUNDS_FLAG = EXEC_FLAG + "::rounds";
+    private static final String SETTLEMENT_PENDING = EXEC_FLAG + "::settlementPending";
     /** 今日失败次数上限：失败不锁全天，但也不能无限重发请求 */
     private static final int MAX_FAILURES = 3;
     
@@ -173,7 +177,7 @@ public class WhackMole {
     public static void startSuspend(Mode mode) {
         checkCancelled();
         synchronized (WhackMole.class) {
-            if (isRunning || Status.hasFlagToday(EXEC_FLAG) || Status.getIntFlagToday(FAIL_FLAG) >= MAX_FAILURES) {
+            if (isRunning || Status.hasFlagToday(EXEC_FLAG) || Status.hasFlagToday(SETTLEMENT_PENDING) || Status.getIntFlagToday(FAIL_FLAG) >= MAX_FAILURES) {
                 return;
             }
             isRunning = true;
@@ -315,10 +319,14 @@ public class WhackMole {
      * 旧实现只开多局、从不出手，结算提交写死的 1..20，等于白跑一轮。
      */
     private static boolean runAggressiveMode() {
+        Calendar day = MyUtils.getInstance();
+        String businessDay = day.get(Calendar.YEAR) + ":" + day.get(Calendar.DAY_OF_YEAR);
         int totalEnergy = 0;
         int playedRounds = 0;
         int hitTotal = 0;
-        for (int roundNum = 1; roundNum <= totalGames; roundNum++) {
+        int completedRounds = Math.min(Math.max(0, Status.getIntFlagToday(ROUNDS_FLAG)), Math.max(0, totalGames));
+        for (int roundNum = completedRounds; roundNum < totalGames;) {
+            roundNum++;
             checkCancelled();
             GameSession session = startSingleRound(roundNum);
             if (session == null) {
@@ -328,26 +336,32 @@ public class WhackMole {
             List<Long> hitIds = whackRound(session);
             hitTotal += hitIds.size();
             TimeUtil.sleep(Math.max(0L, session.getSettlesAt() - System.currentTimeMillis()));
-            int roundEnergy = settleStandardRound(session);
+            if (!Status.flagTodayVerified(Collections.singleton(SETTLEMENT_PENDING), businessDay)) {
+                Log.record("打地鼠：结算前未能保存当日防重标记或业务日期已变化，本轮停止");
+                return false;
+            }
+            int roundEnergy = -1;
+            try {
+                roundEnergy = settleStandardRound(session);
+            } finally {
+                if (roundEnergy < 0) Log.record("打地鼠：结算结果未确认，今日暂停后续游戏以避免重复提交");
+            }
+            if (roundEnergy < 0) break;
             totalEnergy += roundEnergy;
             playedRounds++;
+            Status.setIntFlagToday(ROUNDS_FLAG, ++completedRounds);
+            if (roundEnergy > 0) {
+                Statistics.addData(Statistics.DataType.COLLECTED, roundEnergy);
+                Statistics.save();
+            }
+            Status.clearFlag(SETTLEMENT_PENDING);
             Log.i(TAG + ".round", "第" + roundNum + "局：可打" + session.getMoleIds().size()
                     + "个，击中" + hitIds.size() + "个，结算+" + roundEnergy + "g");
-            if (roundEnergy <= 0) {
-                // 结算没收益说明这一轮有问题（并非次数用尽），继续开新局只会白耗当天次数
-                Log.i(TAG + ".round", "第" + roundNum + "局无收益，剩余轮次不再尝试");
-                break;
-            }
         }
         if (playedRounds > 0) {
             Log.forest("森林能量⚡️[激进模式" + playedRounds + "局/打" + hitTotal + "个#总计" + totalEnergy + "g]");
-            if (totalEnergy > 0) {
-                Statistics.addData(Statistics.DataType.COLLECTED, totalEnergy);
-                Statistics.save();
-            }
         }
-        // 次数用尽或已拿到能量才算完成；一局都没开成/整轮无收益则返回 false，留给下一轮重试
-        return totalEnergy > 0 || Status.hasFlagToday(EXEC_FLAG);
+        return completedRounds >= totalGames || Status.hasFlagToday(EXEC_FLAG);
     }
 
     /**
@@ -496,7 +510,7 @@ public class WhackMole {
         }
         if (settleIds.isEmpty()) {
             Log.i(TAG + ".settlement", "第" + session.getRoundNumber() + "局没有可结算的地鼠，跳过结算");
-            return 0;
+            return -1;
         }
         try {
             List<String> ids = new ArrayList<>(settleIds.size());
@@ -506,7 +520,11 @@ public class WhackMole {
             String respStr = AntForestRpcCall.settlementWhackMole(session.getToken(), ids, SOURCE);
             JSONObject resp = MyUtils.newJSONObject(respStr);
             if (MessageUtil.checkSuccess(TAG, resp)) {
-                return resp.optInt("totalEnergy", 0);
+                Object energy = resp.opt("totalEnergy");
+                if (energy instanceof Number) {
+                    int amount = new java.math.BigDecimal(energy.toString()).intValueExact();
+                    if (amount >= 0) return amount;
+                }
             }
             Log.i(TAG + ".settlement", "第" + session.getRoundNumber() + "局结算未成功，code="
                     + resp.optString("resultCode", "缺失"));
@@ -514,7 +532,7 @@ public class WhackMole {
             if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.printStackTrace("结算第" + session.getRoundNumber() + "局失败:", e);
         }
-        return 0;
+        return -1;
     }
     
     /**

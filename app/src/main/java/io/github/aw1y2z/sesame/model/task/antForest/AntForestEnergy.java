@@ -156,6 +156,7 @@ final class AntForestEnergy {
             Log.record(ForestInfo);
 
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "ForestEnergyInfo err:", th);
         }
 
@@ -200,6 +201,7 @@ final class AntForestEnergy {
                 Log.forest("收取PK能量🧾完成！");
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.printStackTrace(TAG, e);
         }
     }
@@ -497,6 +499,7 @@ final class AntForestEnergy {
                 return collectUserEnergy(UserIdMap.getCurrentUid(), selfHomeObject, "ordinary");
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.printStackTrace(t);
         }
         return null;
@@ -512,6 +515,7 @@ final class AntForestEnergy {
                 return collectUserEnergy(userId, userHomeObject, getType);
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.printStackTrace(t);
         }
         return null;
@@ -692,6 +696,7 @@ final class AntForestEnergy {
 
             return userHomeObject;
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.err(TAG, "collectUserEnergy err:", t);
         }
         return null;
@@ -704,6 +709,7 @@ final class AntForestEnergy {
             }
             collectFriendsEnergy(MyUtils.newJSONObject(AntForestRpcCall.fillUserRobFlag(new JSONArray(idList).toString())), getType);
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.printStackTrace(e);
         }
     }
@@ -779,10 +785,12 @@ final class AntForestEnergy {
                         }
                     }
                 } catch (Exception t) {
+                    if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
                     Log.err(TAG, "collectFriendEnergy err:", t);
                 }
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.printStackTrace(e);
         }
     }
@@ -811,6 +819,7 @@ final class AntForestEnergy {
                             Log.forest("礼盒能量🎁[" + UserIdMap.getMaskName(userId) + "-" + title + "]#" + energy + "g");
                             Statistics.addData(Statistics.DataType.COLLECTED, energy);
                         } catch (Throwable t) {
+                            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
                             Log.printStackTrace(t);
                             break;
                         } finally {
@@ -820,6 +829,7 @@ final class AntForestEnergy {
                 }
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.printStackTrace(e);
         }
     }
@@ -863,6 +873,7 @@ final class AntForestEnergy {
 
                         break;
                     } catch (Throwable t) {
+                        if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
                         Log.printStackTrace(t);
                         break;
                     } finally {
@@ -871,6 +882,7 @@ final class AntForestEnergy {
                 }
             }
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.printStackTrace(e);
         }
     }
@@ -1167,6 +1179,7 @@ final class AntForestEnergy {
             }
             host.forestExtensions();
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "updateUsingPropsEndTime err:", th);
         }
     }
@@ -1236,6 +1249,7 @@ final class AntForestEnergy {
                 collectRobExpandEnergy(propId, propType);
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "collectRobExpandEnergy err:", th);
         }
     }
@@ -1250,6 +1264,7 @@ final class AntForestEnergy {
                 Statistics.addData(Statistics.DataType.COLLECTED, collectEnergy);
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "collectRobExpandEnergy err:", th);
         }
     }
@@ -1281,6 +1296,7 @@ final class AntForestEnergy {
                 TimeUtil.sleep(1000);
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "queryForestEnergy err:", th);
         }
     }
@@ -1304,6 +1320,7 @@ final class AntForestEnergy {
                 }
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "produceForestEnergy err:", th);
         }
         return energyGeneratedList;
@@ -1329,6 +1346,7 @@ final class AntForestEnergy {
                 return true;
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "harvestForestEnergy err:", th);
         }
         return false;

@@ -62,14 +62,16 @@ public class AGCheck {
     static class Field<T> {T value;Field(T v){value=v;}T getValue(){return value;}}
     static class KVNode<A,B> {A a;B b;KVNode(A x,B y){a=x;b=y;}A getKey(){return a;}B getValue(){return b;}}
     static class ApplicationHook {
-        static String throwOperation="";static Runnable onSwitch;static boolean offline;
+        static String throwOperation="";static Runnable onSwitch;static boolean offline,diceCap;
         static boolean isOffline(){return offline;}
         static boolean cancelUse;static String cancelOperation="";static JSONArray filteredTasks;
         static Map<String,Deque<String>> responses=new HashMap<>();static List<JSONObject> calls=new ArrayList<>();
         static String requestString(String op,String raw,int... ignored){
             assert !TaskLifecycle.isIdle():"RPC outside lifecycle scope";
             JSONObject args=new JSONArray(raw).optJSONObject(0);assert args!=null;
-            String name=op.substring(op.lastIndexOf('.')+1);calls.add(new JSONObject().put("op",name).put("body",args));
+            String name=op.substring(op.lastIndexOf('.')+1);if(!diceCap&&name.equals("rollDice")&&calls("rollDice").size()>=8)throw new AssertionError("dice loop did not stop");calls.add(new JSONObject().put("op",name).put("body",args));
+            if(diceCap&&name.equals("queryMonopolyEntryInfo"))return patrolEntry("A").put("totalDiceCount",200-calls("rollDice").size()).put("userInfo",new JSONObject().put("stepCount",calls("rollDice").size())).toString();
+            if(diceCap&&name.equals("rollDice"))return ok().put("totalDiceCount",200-calls("rollDice").size()).put("userInfo",new JSONObject().put("stepCount",calls("rollDice").size())).toString();
             if(name.equals("switchMonopolyRegion")&&onSwitch!=null){Runnable action=onSwitch;onSwitch=null;action.run();}
             if(name.equals(throwOperation)){throwOperation="";throw new IllegalStateException("transport");}
             if(cancelUse&&name.equals("useFarmTool")||name.equals(cancelOperation))throw new TaskCancelledException();
@@ -214,7 +216,7 @@ public class AGCheck {
         static String TAG="Orchard";Field<Set<String>> AntOrchardTaskList=new Field<>(new HashSet<>());
         @@ORCHARD@@
     }
-    static void reset(){ApplicationHook.responses.clear();ApplicationHook.calls.clear();ApplicationHook.cancelUse=false;ApplicationHook.cancelOperation="";ApplicationHook.throwOperation="";ApplicationHook.onSwitch=null;ApplicationHook.offline=false;Log.expectedErrors=false;ApplicationHook.filteredTasks=null;UserIdMap.uid="self";Status.day=0;Status.flags.clear();Status.intFlags.clear();Status.watered.clear();Log.lines.clear();TimeUtil.waits.clear();TimeUtil.cancel=false;AntOrchardTaskListMap.values.clear();AntOrchardTaskListMap.saves=0;}
+    static void reset(){ApplicationHook.responses.clear();ApplicationHook.calls.clear();ApplicationHook.cancelUse=false;ApplicationHook.cancelOperation="";ApplicationHook.throwOperation="";ApplicationHook.onSwitch=null;ApplicationHook.offline=false;ApplicationHook.diceCap=false;Log.expectedErrors=false;ApplicationHook.filteredTasks=null;UserIdMap.uid="self";Status.day=0;Status.flags.clear();Status.intFlags.clear();Status.watered.clear();Log.lines.clear();TimeUtil.waits.clear();TimeUtil.cancel=false;AntOrchardTaskListMap.values.clear();AntOrchardTaskListMap.saves=0;}
     static void replies(String op,JSONObject... values){Deque<String> q=new ArrayDeque<>();for(JSONObject v:values)q.add(v.toString());ApplicationHook.responses.put(op,q);}
     static List<JSONObject> calls(String op){List<JSONObject> list=new ArrayList<>();for(JSONObject c:ApplicationHook.calls)if(op.equals(c.optString("op")))list.add(c.optJSONObject("body"));return list;}
     static boolean logged(String part){return Log.lines.stream().anyMatch(s->s.contains(part));}
@@ -320,6 +322,18 @@ public class AGCheck {
         System.out.println("PASS forest: expiry/confirm/occupancy, independent grams/quota/off, plant progress, certificate balance and uncertain debit");
     }
 
+    static void diceProgress(){
+        reset();ActualPatrol p=new ActualPatrol();p.monopolyTasks.value=false;
+        JSONObject entry=patrolEntry("A").put("totalDiceCount",2).put("userInfo",new JSONObject().put("stepCount",5));
+        replies("queryMonopolyEntryInfo",entry);replies("rollDice",ok().put("totalDiceCount",1).put("userInfo",new JSONObject().put("stepCount",6)));
+        p.patrolMonopolyRegion("A",true);assert calls("rollDice").size()==1:"unchanged readback repeated roll";
+        reset();replies("queryMonopolyEntryInfo",entry);replies("rollDice",ok());
+        p.patrolMonopolyRegion("A",true);assert calls("rollDice").size()==1:"malformed receipt repeated roll";
+        reset();JSONObject alternate=patrolEntry("A").put("totalDiceCount",1).put("userInfo",new JSONObject().put("stepCount",6));
+        replies("queryMonopolyEntryInfo",entry,entry,alternate,entry);replies("rollDice",ok().put("totalDiceCount",1).put("userInfo",new JSONObject().put("stepCount",6)));
+        p.patrolMonopolyRegion("A",true);assert calls("rollDice").size()==2:"cycling readback repeated roll";
+        reset();ApplicationHook.diceCap=true;p.patrolMonopolyRegion("A",true);assert calls("rollDice").size()==100:"progressing rolls exceeded cap";
+    }
     static JSONObject patrolEntry(String code){return ok().put("regionInfo",new JSONObject().put("regionCode",code))
         .put("mapInfo",new JSONObject()).put("userInfo",new JSONObject()).put("totalDiceCount",0);}
     static void multiRegionChecks(){
@@ -606,6 +620,7 @@ public class AGCheck {
         System.out.println("PASS fence receipt: confirmed debit, unchanged stock retry, missing readback, delayed effect, last card, instance/account/day isolation");
     }
     public static void main(String[] args) throws Exception {
+        try(TaskLifecycle.Work work=TaskLifecycle.enter()){diceProgress();}
         if(args.length>0){try(TaskLifecycle.Work w=TaskLifecycle.enter()){assert w!=null;if(args[0].equals("review_regions"))patrolReviewChecks();else if(args[0].equals("review_cert"))certificateReviewChecks();else auditEdges(args[0]);}return;}
         try(TaskLifecycle.Work w=TaskLifecycle.enter()){assert w!=null;for(String edge:List.of("cancel_wait","cancel_award","task_stuck","task_progress","invalid_region","invalid_task_type","award_scene","award_other_scene","award_received","award_bad_row","cancel_probe","cancel_animal","page_cap","page_20_terminal","cursor_cycle","invalid_more"))auditEdges(edge);forestChecks();upstreamForestChecks();multiRegionChecks();patrolReviewChecks();certificateReviewChecks();fenceConsumptionChecks();fenceRuleChecks();farmChecks();orchardChecks();}
         assert TaskLifecycle.isIdle();

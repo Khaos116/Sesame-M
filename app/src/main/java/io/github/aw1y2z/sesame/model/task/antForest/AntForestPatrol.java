@@ -279,6 +279,7 @@ final class AntForestPatrol {
                 s = AntForestRpcCall.patrolKeepGoing(currentNode, patrolId, materialType);
                 TimeUtil.sleep(100);
             } while (true);
+        } catch (TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "patrolKeepGoing err:", t);
         }
@@ -470,6 +471,8 @@ final class AntForestPatrol {
             }
 
             Set<String> confirmedEvents = new HashSet<>();
+            Set<String> rollStates = new HashSet<>();
+            int rollCount = 0;
             while (!Thread.currentThread().isInterrupted()) {
                 JSONObject event = pendingEvent;
                 if (event != null && event.optBoolean("needConfirm")) {
@@ -502,11 +505,12 @@ final class AntForestPatrol {
                     continue;
                 }
 
-                int diceCount = state.optInt("totalDiceCount", -1);
-                if (diceCount < 0) {
+                long diceValue = forestFeatureLong(state, "totalDiceCount");
+                if (!(state.opt("totalDiceCount") instanceof Number) || diceValue < 0 || diceValue > Integer.MAX_VALUE) {
                     Log.record("新版保护地🌲响应缺少可用骰子数量，跳过本轮");
                     return;
                 }
+                int diceCount = (int) diceValue;
                 if (diceCount == 0) {
                     if (tasksEnabled && tasksMayHaveChanged) {
                         monopolyTask(regionCode);
@@ -524,8 +528,18 @@ final class AntForestPatrol {
 
                 JSONObject currentUserInfo = state.optJSONObject("userInfo");
                 int previousSteps = currentUserInfo == null ? -1 : currentUserInfo.optInt("stepCount", -1);
+                String rollState = diceCount + ":" + previousSteps;
+                if (!rollStates.add(rollState) || ++rollCount > 100) {
+                    Log.record("新版保护地：掷骰回查未推进或达到100次上限，本轮停止");
+                    return;
+                }
                 JSONObject roll = MyUtils.newJSONObject(AntForestRpcCall.rollMonopolyDice(guideRoll));
                 if (!MessageUtil.checkResultCode(TAG, roll)) {
+                    return;
+                }
+                long returnedDice = forestFeatureLong(roll, "totalDiceCount");
+                if (!(roll.opt("totalDiceCount") instanceof Number) || returnedDice < 0 || returnedDice > Integer.MAX_VALUE) {
+                    Log.record("新版保护地：掷骰回执缺少有效骰子数量，本轮停止");
                     return;
                 }
                 guideRoll = false;
@@ -911,6 +925,7 @@ final class AntForestPatrol {
                 Statistics.addData(Statistics.DataType.COLLECTED, collected);
             }
             Log.forest("新版动物伙伴🦩[" + creature.optString("creatureName", creatureCode) + "]派遣能量[" + collected + "g]");
+        } catch (TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "collectMonopolyAnimalEnergy err:", t);
         }

@@ -14,12 +14,12 @@ home_loop = run[run.index('                boolean hasMore = false;'):run.index(
 code = r'''
 import org.json.*;import java.util.*;import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class ForestFarmProgressCheck {
- static final String TAG="test",SOURCE="test",EXEC_FLAG="whack",FAIL_FLAG="whack-fail";
+ static final String TAG="test",SOURCE="test",EXEC_FLAG="whack",FAIL_FLAG="whack-fail",SETTLEMENT_PENDING="whack-pending";
  static final int MAX_FAILURES=3;
  static class RunGeneration {static boolean isStale(){return false;}}
  @@LIMITS@@
  static class MyUtils {static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}static Calendar getInstance(){return Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));}}
- static class Log {static List<String> logs=new ArrayList<>();static void record(String s){logs.add(s);}static void forest(String s){}static void farm(String s){}static void i(String s){}static void i(String t,String s){}static void err(String t,String s,Throwable e){if(e instanceof TaskCancelledException)throw (TaskCancelledException)e;throw new AssertionError(e);}static void printStackTrace(String s,Throwable t){if(t instanceof TaskCancelledException)throw (TaskCancelledException)t;throw new AssertionError(t);}}
+ static class Log {static List<String> logs=new ArrayList<>();static void record(String s){logs.add(s);}static void forest(String s){}static void farm(String s){}static void i(String s){}static void i(String t,String s){}static void err(String t,String s,Throwable e){if(e instanceof TaskCancelledException)return;throw new AssertionError(e);}static void printStackTrace(String s,Throwable t){if(t instanceof TaskCancelledException)throw (TaskCancelledException)t;throw new AssertionError(t);}}
  static class TimeUtil {static void sleep(long n){}}
  static class MessageUtil {static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}static boolean checkResultCodeString(String t,JSONObject j){return checkResultCode(t,j);}}
  static class Toast {static void show(String s){}}static class UserIdMap {static String getShowName(String s){return s;}}
@@ -33,7 +33,7 @@ public class ForestFarmProgressCheck {
  void homeRewards(JSONObject selfHomeObject){@@HOME@@}
  static JSONObject page(int start,String type){JSONArray b=new JSONArray();for(int i=start;i<start+20;i++)b.put(new JSONObject().put("id",i).put("bizType",type));return new JSONObject().put("wateringBubbles",b);}
  static JSONObject props(){JSONArray p=new JSONArray();for(int i=0;i<20;i++)p.put(new JSONObject().put("giveConfigId","c").put("giveId","p"+i));return new JSONObject().put("givenProps",p);}
- static int patrolQueries,switchCalls,goCalls,exchanges,keepCalls,patrolMode;
+ static int patrolQueries,switchCalls,goCalls,exchanges,keepCalls,patrolMode;static boolean cancelPatrol;
  static Deque<String> eventReplies=new ArrayDeque<>();
  static String patrolEvent(int node,String type,boolean reacted,boolean going){return new JSONObject().put("resultCode","SUCCESS").put("currentStatus",going?"GOING":"STANDING")
   .put("userPatrol",new JSONObject().put("currentNode",node)).put("events",new JSONArray().put(new JSONObject().put("nodeIndex",node).put("eventType",reacted?"reward":"material").put("reacted",reacted)
@@ -52,7 +52,7 @@ public class ForestFarmProgressCheck {
   static String switchUserPatrol(String id){switchCalls++;return patrolMode==0?"{}":ok();}
   static String patrolGo(int n,int p){goCalls++;return patrolMode==2?"{}":ok();}
   static String exchangePatrolChance(int n){exchanges++;return ok();}
-  static String patrolKeepGoing(int n,int p,String type){if(++keepCalls>3)throw new AssertionError("patrol event repeated");if(!eventReplies.isEmpty())return eventReplies.removeFirst();return new JSONObject().put("resultCode","SUCCESS").put("currentStatus","GOING").put("userPatrol",new JSONObject().put("currentNode",1)).put("events",new JSONArray().put(new JSONObject().put("materialInfo",new JSONObject().put("materialType","image")))).toString();}
+  static String patrolKeepGoing(int n,int p,String type){if(cancelPatrol)throw new TaskCancelledException();if(++keepCalls>3)throw new AssertionError("patrol event repeated");if(!eventReplies.isEmpty())return eventReplies.removeFirst();return new JSONObject().put("resultCode","SUCCESS").put("currentStatus","GOING").put("userPatrol",new JSONObject().put("currentNode",1)).put("events",new JSONArray().put(new JSONObject().put("materialInfo",new JSONObject().put("materialType","image")))).toString();}
   static String oldstartWhackMole(String s){if(cancelStage==0)throw new TaskCancelledException();return new JSONObject().put("success",true).put("token","private").put("moleInfo",new JSONArray().put(new JSONObject().put("id",1).put("bubbleId",2))).toString();}
   static String oldwhackMole(long id,String t,String s){if(cancelStage==1)throw new TaskCancelledException();if(cancelStage==3)throw new IllegalStateException("secret-token");return new JSONObject().put("success",true).toString();}
   static String oldsettlementWhackMole(String t,List<String> ids,String s){settles++;throw new TaskCancelledException();}
@@ -79,6 +79,7 @@ public class ForestFarmProgressCheck {
   reset();home=props();reject=true;f.homeRewards(home);assert propCalls==20&&homeQueries==0;
   reset();home=page(1,"jiaoshui");homeNull=true;f.homeRewards(home);assert homeQueries==1;
   for(int mode=0;mode<=4;mode++){reset();patrolMode=mode;f.queryUserPatrol();assert Status.flags.isEmpty();assert patrolQueries==(mode==0||mode==2?1:2);assert switchCalls==(mode<=1?1:0);assert goCalls==(mode==2||mode==3?1:0);assert exchanges==(mode==4?1:0);}
+  reset();cancelPatrol=true;try{f.patrolKeepGoing(null,0,1);throw new AssertionError("legacy patrol swallowed cancellation");}catch(TaskCancelledException expected){}cancelPatrol=false;
   reset();f.patrolKeepGoing(null,0,1);assert keepCalls==2&&Status.flags.isEmpty():"unchanged node/event must stop";
   reset();eventReplies.add(patrolEvent(30,"image",true,true));eventReplies.add(patrolEvent(32,"story",false,true));eventReplies.add(patrolEvent(32,"story",true,false));
   f.patrolKeepGoing(patrolEvent(30,"image",false,true),29,2);
