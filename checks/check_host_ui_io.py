@@ -22,9 +22,10 @@ public class HostUiIoCheck {
  static final ThreadLocal<Boolean> isMain=ThreadLocal.withInitial(()->false);
  static void io(String operation){if(isMain.get())mainIo.set(true);if(operation.equals(blocking)){entered.countDown();try{if(!release.await(3,TimeUnit.SECONDS))throw new AssertionError("I/O release timed out");}catch(InterruptedException e){throw new AssertionError(e);}}}
  static class ProbeFile {final String path;ProbeFile(String path){this.path=path;}ProbeFile(ProbeFile root,String path){this.path=path;}boolean exists(){io("exists");return files.containsKey(path);}boolean delete(){io("delete");deletes.incrementAndGet();return files.remove(path)!=null;}boolean renameTo(ProbeFile target){io("rename");synchronized(files){String text=files.remove(path);if(text==null)return false;files.put(target.path,text);return true;}}}
- static class FileUtil {static final ProbeFile MAIN_DIRECTORY_FILE=new ProbeFile("root");static String readFromFile(ProbeFile file){io("read");reads.incrementAndGet();return files.get(file.path);}}
+ static class FileUtil {static final ProbeFile MAIN_DIRECTORY_FILE=new ProbeFile("root");static void initPrivateDirectory(Context c){io("privateDir");}static String readFromFile(ProbeFile file){io("read");reads.incrementAndGet();return files.get(file.path);}}
  static class Context {
   Context getApplicationContext(){return this;}
+  void sendBroadcast(Intent i){io("broadcast");if(broadcastFails)throw new IllegalStateException("broadcast failed");assert "module".equals(i.pkg)&&"secret".equals(i.token);statuses.incrementAndGet();}
   static final int RECEIVER_EXPORTED=2;BroadcastReceiver receiver;Handler scheduler;
   void unregisterReceiver(BroadcastReceiver r){receiver=null;}
   void registerReceiver(BroadcastReceiver r,IntentFilter f){receiver=r;}
@@ -35,12 +36,19 @@ public class HostUiIoCheck {
  }
  static class BroadcastReceiver {void onReceive(Context c,Intent i){}}
  static class IntentFilter {void addAction(String s){}}
- static class Intent {final String action;String token="valid",op="reloadConfig";Intent(String a){action=a;}String getAction(){return action;}String getStringExtra(String key){return key.equals("token")?token:key.equals("op")?op:null;}boolean getBooleanExtra(String key,boolean fallback){return fallback;}}
+ static class Intent {final String action;String token="valid",op="reloadConfig",pkg;Intent(String a){action=a;}void setPackage(String p){pkg=p;}void putExtra(String key,String value){token=value;}String getAction(){return action;}String getStringExtra(String key){return key.equals("token")?token:key.equals("op")?op:null;}boolean getBooleanExtra(String key,boolean fallback){return fallback;}}
  static class Build {static class VERSION {static int SDK_INT=33;}static class VERSION_CODES {static final int TIRAMISU=33;}}
- static class HandlerThread {final ExecutorService executor=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r);t.setDaemon(true);return t;});HandlerThread(String name){}void start(){}Object getLooper(){return executor;}}
+ static final AtomicInteger controlThreads=new AtomicInteger();
+ static class HandlerThread {final ExecutorService executor=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r);t.setDaemon(true);return t;});HandlerThread(String name){controlThreads.incrementAndGet();}void start(){}Object getLooper(){return executor;}}
  static final ThreadLocal<Boolean> inReceiver=ThreadLocal.withInitial(()->false);
  static final String ACTION_PAIR_REQUEST="pair",ACTION_ALARM_EXECUTE="alarm",ACTION_CONTROL="control";
  static Handler controlHandler;static HandlerThread controlThread;static boolean broadcastReceiverRegistered;static BroadcastReceiver broadcastReceiver;
+ static final Object controlHandlerLock=new Object();static final AtomicBoolean statusPending=new AtomicBoolean();
+ static final String MODULE_PACKAGE_NAME="module",ACTION_STATUS_REPLY="status";static volatile String httpToken;static boolean tokenFails,emptyToken,broadcastFails;
+ static final AtomicInteger statuses=new AtomicInteger(),tokenReads=new AtomicInteger();
+ static synchronized String resolveHttpToken(){io("token");tokenReads.incrementAndGet();if(tokenFails)throw new IllegalStateException("token failed");httpToken=emptyToken?"":"secret";return httpToken;}
+ @@STATUS@@
+ @@CONTROL_GETTER@@
  static final AtomicInteger controls=new AtomicInteger(),pairs=new AtomicInteger(),alarms=new AtomicInteger();
  static boolean isTrustedBroadcastSender(Context c,BroadcastReceiver r){assert inReceiver.get():"sender UID checked outside receiver callback";return true;}
  static boolean verifyControl(Intent i){return "valid".equals(i.token);}static boolean verifyAlarmNonce(Intent i){return "valid".equals(i.token);}static boolean controlRateLimited(String op){return false;}
@@ -51,10 +59,10 @@ public class HostUiIoCheck {
  static class Activity extends Context {boolean isFinishing(){return false;}boolean isDestroyed(){return false;}}
  static class UserIdMap {static volatile String uid="A";static String getCurrentUid(){return uid;}}
  static class StringUtil {static boolean isEmpty(String s){return s==null||s.isEmpty();}}
- static class Handler {static final Queue<Runnable> pending=new ConcurrentLinkedQueue<>();final ExecutorService executor;Handler(){executor=null;}Handler(Object looper){executor=looper instanceof ExecutorService?(ExecutorService)looper:null;}void post(Runnable r){if(executor==null)pending.add(r);else executor.execute(r);}void postDelayed(Runnable r,long delay){pending.add(r);} }
+ static class Handler {static final Queue<Runnable> pending=new ConcurrentLinkedQueue<>();static boolean rejectPost,throwPost;final ExecutorService executor;Handler(){executor=null;}Handler(Object looper){executor=looper instanceof ExecutorService?(ExecutorService)looper:null;}boolean post(Runnable r){if(throwPost)throw new IllegalStateException("post failed");if(rejectPost)return false;if(executor==null)pending.add(r);else executor.execute(r);return true;}void postDelayed(Runnable r,long delay){pending.add(r);} }
  static class Looper {static Object getMainLooper(){return null;}}
  static final Handler mainHandler=new Handler();
- static class Log {static void err(String tag,String s,Throwable t){if(!s.equals("profile probe err:"))throw new AssertionError(t);}static void d(String tag,String s){}static void record(String s){}static void i(String s){}static void i(String t,String s){}}
+ static class Log {static void err(String tag,String s,Throwable t){if(!s.equals("profile probe err:")&&!s.contains("status"))throw new AssertionError(t);}static void d(String tag,String s){}static void record(String s){}static void i(String s){}static void i(String t,String s){}}
  static final java.util.regex.Pattern USER_ID_PATTERN=java.util.regex.Pattern.compile("[0-9]{1,32}");
  static String lastProfileUserId;static long lastProfileTime,profileOpenExpectAt;
  static final List<String> opened=new CopyOnWriteArrayList<>();static volatile String hostUid="A";
@@ -137,6 +145,7 @@ public class HostUiIoCheck {
  static void broadcast()throws Exception {
   for(int api:List.of(26,33)){
    Build.VERSION.SDK_INT=api;HostUiIoCheck hook=new HostUiIoCheck();Context context=new Context();hook.registerBroadcastReceiver(context);
+   assert context.scheduler==getControlHandler()&&controlThreads.get()==1:"receiver did not reuse status scheduler";
    blocking="config";entered=new CountDownLatch(1);release=new CountDownLatch(1);mainIo.set(false);CountDownLatch returned=new CountDownLatch(1),done=new CountDownLatch(1);
    Thread ui=new Thread(()->{isMain.set(true);try{context.deliver(new Intent(ACTION_CONTROL),done);}finally{returned.countDown();}});ui.start();
    assert entered.await(2,TimeUnit.SECONDS);boolean prompt=returned.await(200,TimeUnit.MILLISECONDS);release.countDown();ui.join(2000);assert done.await(2,TimeUnit.SECONDS);
@@ -147,10 +156,36 @@ public class HostUiIoCheck {
   }
   assert pairs.get()==2&&alarms.get()==2;
  }
- public static void main(String[] args)throws Exception {if(args.length==0||args[0].equals("broadcast"))broadcast();if(args.length==0||args[0].equals("profile"))profile();if(args.length==0||args[0].equals("dialogs"))dialog();System.out.println("PASS host UI I/O and dialog pruning");}
+ static void status()throws Exception {
+  // First creation of the control handler must not acquire the class lock used by token I/O.
+  CountDownLatch locked=new CountDownLatch(1),unlock=new CountDownLatch(1);
+  Thread holder=new Thread(()->{synchronized(HostUiIoCheck.class){locked.countDown();try{unlock.await();}catch(InterruptedException e){throw new AssertionError(e);}}});holder.start();assert locked.await(2,TimeUnit.SECONDS);
+  try {mainCall(()->sendStatusBroadcast(new Context()));assert statusPending.get();assert statuses.get()==0;}finally{unlock.countDown();holder.join();}
+  awaitStatus();assert statuses.get()==1&&controlThreads.get()==1;
+  blocking="token";entered=new CountDownLatch(1);release=new CountDownLatch(1);httpToken=null;mainIo.set(false);
+  int before=statuses.get(),readsBefore=tokenReads.get();
+  try {mainCall(()->sendStatusBroadcast(new Context()));assert entered.await(2,TimeUnit.SECONDS);mainCall(()->{for(int i=0;i<30;i++)sendStatusBroadcast(new Context());});assert statuses.get()==before;}finally{release.countDown();}
+  awaitStatus();assert !mainIo.get()&&statuses.get()==before+1&&tokenReads.get()==readsBefore+1:"startup status blocked main or did not coalesce";
+  blocking=null;before=statuses.get();tokenFails=true;httpToken=null;
+  mainCall(()->sendStatusBroadcast(new Context()));awaitStatus();assert statuses.get()==before;
+  tokenFails=false;mainCall(()->sendStatusBroadcast(new Context()));awaitStatus();assert statuses.get()==before+1;
+  before=statuses.get();broadcastFails=true;mainCall(()->sendStatusBroadcast(new Context()));awaitStatus();assert statuses.get()==before;
+  broadcastFails=false;mainCall(()->sendStatusBroadcast(new Context()));awaitStatus();assert statuses.get()==before+1;
+  before=statuses.get();httpToken=null;emptyToken=true;mainCall(()->sendStatusBroadcast(new Context()));awaitStatus();assert statuses.get()==before;
+  httpToken=null;emptyToken=false;Handler.rejectPost=true;mainCall(()->sendStatusBroadcast(new Context()));assert !statusPending.get()&&statuses.get()==before;
+  Handler.rejectPost=false;Handler.throwPost=true;mainCall(()->sendStatusBroadcast(new Context()));assert !statusPending.get()&&statuses.get()==before;
+  Handler.throwPost=false;
+  TaskLifecycle.Freeze freeze=TaskLifecycle.freezeIfIdle();assert freeze!=null;
+  mainCall(()->sendStatusBroadcast(new Context()));awaitStatus();assert statuses.get()==before+1:"account freeze suppressed process status";TaskLifecycle.thaw(freeze);
+  assert controlThreads.get()==1;
+ }
+ static void awaitStatus()throws Exception {long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(3);while(statusPending.get()){assert System.nanoTime()<end:"status flag stuck";Thread.sleep(1);}}
+ public static void main(String[] args)throws Exception {if(args.length==0||args[0].equals("status"))status();if(args.length==0||args[0].equals("broadcast"))broadcast();if(args.length==0||args[0].equals("profile"))profile();if(args.length==0||args[0].equals("dialogs"))dialog();System.out.println("PASS host UI I/O and dialog pruning");}
 }
 '''
 source = (SOURCE / hook).read_text(encoding="utf-8")
+code = code.replace("@@STATUS@@", method(hook, "private static void sendStatusBroadcast(") + method(hook, "private static void sendStatusInBackground("))
+code = code.replace("@@CONTROL_GETTER@@", method(hook, "private static Handler getControlHandler("))
 extra = "".join(method(hook, signature) for signature in ("private static void requestFriendProfile(", "private static void startProfileProbeWorker(", "private static void drainProfileProbes(", "private static void consumePendingProfile("))
 code = code.replace("@@EXTRA@@", extra)
 for key, path, signature in (

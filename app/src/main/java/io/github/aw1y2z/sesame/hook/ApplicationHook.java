@@ -232,7 +232,9 @@ public class ApplicationHook extends XposedModule {
 
     private static volatile boolean broadcastReceiverRegistered = false;
     private static android.os.HandlerThread controlThread;
-    private static Handler controlHandler;
+    private static volatile Handler controlHandler;
+    private static final Object controlHandlerLock = new Object();
+    private static final java.util.concurrent.atomic.AtomicBoolean statusPending = new java.util.concurrent.atomic.AtomicBoolean();
 
     /** 主进程"模块初始化开始"标记是否已打印（供日志查看器按轮分组，每个主进程加载周期只打一次） */
     private static volatile boolean initStartLogged = false;
@@ -1812,6 +1814,27 @@ public class ApplicationHook extends XposedModule {
      * <p>静态是因为 onModuleLoaded 早于 Service.onCreate，那时还拿不到当前实例上的 {@code context}。
      */
     private static void sendStatusBroadcast(Context ctx) {
+        if (ctx == null || !statusPending.compareAndSet(false, true)) return;
+        try {
+            Context appContext = ctx.getApplicationContext();
+            if (!getControlHandler().post(() -> {
+                try {
+                    sendStatusInBackground(appContext);
+                } finally {
+                    statusPending.set(false);
+                }
+            })) {
+                statusPending.set(false);
+                Log.record("状态回包未发送#后台队列拒绝请求");
+            }
+        } catch (Throwable t) {
+            statusPending.set(false);
+            Log.err(TAG, "status dispatch err:", t);
+        }
+    }
+
+    /** 进程级状态不依赖账号；目录和令牌 I/O 必须在控制线程完成。 */
+    private static void sendStatusInBackground(Context ctx) {
         if (ctx == null) {
             return;
         }
@@ -2077,19 +2100,31 @@ public class ApplicationHook extends XposedModule {
             intentFilter.addAction(ACTION_CONTROL);
 
             broadcastReceiver = new AlipayBroadcastReceiver();
-            if (controlHandler == null) {
-                controlThread = new android.os.HandlerThread("Sesame-Control");
-                controlThread.start();
-                controlHandler = new Handler(controlThread.getLooper());
-            }
+            Handler scheduler = getControlHandler();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(broadcastReceiver, intentFilter, null, controlHandler, Context.RECEIVER_EXPORTED);
+                context.registerReceiver(broadcastReceiver, intentFilter, null, scheduler, Context.RECEIVER_EXPORTED);
             } else {
-                context.registerReceiver(broadcastReceiver, intentFilter, null, controlHandler);
+                context.registerReceiver(broadcastReceiver, intentFilter, null, scheduler);
             }
             broadcastReceiverRegistered = true;
         } catch (Throwable th) {
             Log.err(TAG, "hook registerBroadcastReceiver err:", th);
+        }
+    }
+
+    /** 独立短锁：不能让主线程等待 resolveHttpToken/destroyHandler 持有的类锁。 */
+    private static Handler getControlHandler() {
+        Handler handler = controlHandler;
+        if (handler != null) return handler;
+        synchronized (controlHandlerLock) {
+            if (controlHandler == null) {
+                android.os.HandlerThread thread = new android.os.HandlerThread("Sesame-Control");
+                thread.start();
+                Handler created = new Handler(thread.getLooper());
+                controlThread = thread;
+                controlHandler = created;
+            }
+            return controlHandler;
         }
     }
 
