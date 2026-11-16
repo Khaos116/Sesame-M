@@ -136,11 +136,11 @@ public class ForestTeamPriorityCheck {
  static class Status {
   static Set<String> flags=new HashSet<>();static int used;
   static boolean hasFlagToday(String k){return flags.contains(k);}static void flagToday(String k){flags.add(k);}static void clearFlag(String k){flags.remove(k);}
-  static int getforestHuntHelpToday(String k){return used;}static void forestHuntHelpToday(String k,int n,String uid){used=n;}
+  static int getforestHuntHelpToday(String k){return used;}static void forestHuntHelpToday(String k,int n,String uid){used=n;}static boolean forestHuntHelpTodayVerified(String k,int expected,int n,String uid,String day){if(used!=expected||n<=expected)return false;used=n;return true;}
  }
  static class UserIdMap {static String getCurrentUid(){return "self";}}
  static class ApplicationHook {static boolean isOffline(){return false;}}
- static class MyUtils {static JSONObject newJSONObject(String raw){try{return new JSONObject(raw);}catch(Exception e){return new JSONObject();}}}
+ static class MyUtils {static Calendar getInstance(){return Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));}static JSONObject newJSONObject(String raw){try{return new JSONObject(raw);}catch(Exception e){return new JSONObject();}}}
  static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}static boolean checkSuccess(String t,JSONObject j){return j.optBoolean("success");}}
  static class TimeUtil {static void sleep(long ms){}}
  static class Toast {static void show(String s){}}
@@ -272,3 +272,119 @@ with tempfile.TemporaryDirectory(prefix='sesame-forest-batch-') as tmp:
     f=Path(tmp)/'ForestBatchDispatchCheck.java';f.write_text(batch,encoding='utf-8')
     subprocess.run(['javac','-encoding','UTF-8','-cp',str(jar),'-d',tmp,str(f)],check=True)
     subprocess.run(['java','-ea','-cp',tmp+os.pathsep+str(jar),'ForestBatchDispatchCheck'],check=True)
+
+
+# Real Team methods plus real Status save/load against temporary files (no network).
+status_path='util/Status.java'
+status_text=(SOURCE/status_path).read_text(encoding='utf-8')
+status_sigs=['public static synchronized Boolean hasFlagToday(', 'public static synchronized void flagToday(String tag)',
+ 'public static synchronized boolean flagTodayVerified(Set<String> tags, String businessDay)',
+ 'public static synchronized void clearFlag(', 'public static synchronized void forestHuntHelpToday(',
+ 'public static synchronized Integer getforestHuntHelpToday(', 'private static String ensureLoadedForCurrentUid(',
+ 'public static synchronized Status load(', 'public static synchronized void unload(', 'public static synchronized void save()',
+ 'public static synchronized boolean save(Calendar', 'private static void notifySaveFailure(', 'public static synchronized Boolean updateDay(']
+for sig in ('public static synchronized boolean forestHuntHelpTodayVerified(',
+ 'public static synchronized boolean flagTodayVerified(Set<String> tags, String businessDay, String taskUid)'):
+ if sig in status_text:status_sigs.append(sig)
+asset=r'''
+import java.io.*;import java.nio.file.*;import java.util.*;import org.json.*;
+import com.fasterxml.jackson.databind.*;import io.github.aw1y2z.sesame.util.TaskCancelledException;
+public class TeamAssetCheck {
+ @com.fasterxml.jackson.annotation.JsonAutoDetect(fieldVisibility=com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility.ANY)
+ static class Status {
+  static final String TAG="status";static final Status INSTANCE=new Status();static String loadedUid;static boolean loadFailed,saveFailureNotified;
+  private final Map<String,Integer> forestHuntHelpLogList=new HashMap<>();private final Set<String> flagLogList=new HashSet<>();private Long saveTime=0L;
+  @@STATUS@@
+ }
+ static class FileUtil {static File root;static boolean failCount,failAll;static Runnable beforeWrite;
+  static File getStatusFile(String uid){return new File(root,uid+".json");}
+  static String readFromFile(File f){try{return Files.readString(f.toPath());}catch(Exception e){throw new RuntimeException(e);}}
+  static boolean write2File(String text,File f){if(beforeWrite!=null){Runnable r=beforeWrite;beforeWrite=null;r.run();}if(failAll||failCount&&text.contains("team-count"))return false;try{Files.writeString(f.toPath(),text);return true;}catch(Exception e){throw new RuntimeException(e);}}
+ }
+ static class JsonUtil {static ObjectMapper copyMapper(){return new ObjectMapper();}static String toFormatJsonString(Object v){try{return copyMapper().writerWithDefaultPrettyPrinter().writeValueAsString(v);}catch(Exception e){throw new RuntimeException(e);}}static boolean isRewriteLossless(String a,String b){try{return copyMapper().readTree(a).equals(copyMapper().readTree(b));}catch(Exception e){return false;}}}
+ static class UserIdMap {static String uid="A";static boolean switchOnSave,switchOnLegacy;static String getCurrentUid(){if(switchOnLegacy&&StackWalker.getInstance().walk(frames->frames.filter(f->f.getClassName().endsWith("$Status")&&f.getMethodName().equals("flagTodayVerified")).count())>1){switchOnLegacy=false;uid="B";}if(switchOnSave&&StackWalker.getInstance().walk(frames->frames.anyMatch(f->f.getClassName().endsWith("$Status")&&f.getMethodName().equals("save")))){switchOnSave=false;uid="B";}return uid;}}
+ static class MyUtils {static long offset;static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.setTimeInMillis(System.currentTimeMillis()+offset);return c;}static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}}
+ static class TimeUtil {static boolean cancel;static Calendar getNow(){return MyUtils.getInstance();}static void sleep(long n){if(cancel)throw new TaskCancelledException();}static boolean isLessThanSecondOfDays(long a,long b){return Math.floorDiv(a+28800000L,86400000L)<Math.floorDiv(b+28800000L,86400000L);}}
+ static class StringUtil {static boolean isEmpty(String s){return s==null||s.isEmpty();}}
+ static class MessageUtil {static boolean checkResultCode(String t,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}static boolean checkSuccess(String t,JSONObject j){return Boolean.TRUE.equals(j.opt("success"));}static void sweepExpiredBlackList(){}static void sweepReleasedDefaults(){}}
+ static class Log {static void record(String s){}static void forest(String s){}static void i(String t,String s){}static void debug(String s){}static void system(String t,String s){}static void err(String t,String s,Throwable e){}static void printStackTrace(String t,Throwable e){}}
+ static class Toast {static void show(String s){}static void show(String s,boolean b){}}
+ static class ApplicationHook {static boolean isOffline(){return false;}}
+ static class AntForestV2 {static final String FLAG_TEAM_WATER_DAILY_COUNT="team-count",FLAG_TEAM_MODE_SWITCHED="team-mode",FLAG_LOVETEAM_WATER="love";static class Num {int value=20;int getValue(){return value;}}Num partnerteamWaterNum=new Num();}
+ static class AntForestRpcCall {static boolean mode=true,unknown,cancel;static Runnable beforeMisc;static List<Integer> waters=new ArrayList<>();static int loves;
+  static String queryHomePage(){return "{resultCode:SUCCESS,nextAction:"+(mode?"Cultivate":"Team")+",userBaseInfo:{currentEnergy:100},teamHomeResult:{teamBaseInfo:{teamId:team}"+(mode?",mainMember:{}":"")+"}}";}
+  static String queryMiscInfo(String k,String id){if(beforeMisc!=null){Runnable r=beforeMisc;beforeMisc=null;r.run();}return "{resultCode:SUCCESS,combineHandlerVOMap:{teamCanWaterCount:{waterCount:100}}}";}
+  static String updateUserConfiginTeam(Boolean b){mode=b;return "{resultCode:SUCCESS}";}
+  static String teamWater(String id,int n){waters.add(n);if(cancel)throw new TaskCancelledException();return unknown?"{}":"{resultCode:SUCCESS}";}
+  static String loveteamHome(){return "{resultCode:SUCCESS,userInfo:{teamId:team}}";}
+  static String loveteamWater(String id,int n){loves++;if(cancel)throw new TaskCancelledException();return unknown?"{}":"{success:true}";}
+ }
+ @@TEAM@@
+ static AntForestV2 host=new AntForestV2();static AntForestTeam team=new AntForestTeam(host);
+ static void reset()throws Exception{FileUtil.failCount=FileUtil.failAll=false;FileUtil.beforeWrite=null;MyUtils.offset=0;TimeUtil.cancel=false;UserIdMap.uid="A";UserIdMap.switchOnSave=false;AntForestRpcCall.mode=true;AntForestRpcCall.unknown=AntForestRpcCall.cancel=false;AntForestRpcCall.beforeMisc=null;AntForestRpcCall.waters.clear();AntForestRpcCall.loves=0;host.partnerteamWaterNum.value=20;Files.deleteIfExists(FileUtil.getStatusFile("A").toPath());Files.deleteIfExists(FileUtil.getStatusFile("B").toPath());Status.load();}
+ static void restart(){Status.unload();Status.load();}
+ public static void main(String[] args)throws Exception{
+  FileUtil.root=Path.of(args[0]).toFile();
+  reset();FileUtil.failCount=true;team.teamCooperateWater();assert AntForestRpcCall.waters.isEmpty():"failed count reservation still spent energy";
+  assert Status.getforestHuntHelpToday("team-count")==0:"failed unsent reservation retained memory quota";FileUtil.failCount=false;team.teamCooperateWater();restart();team.teamCooperateWater();assert AntForestRpcCall.waters.equals(List.of(20));
+  reset();FileUtil.failAll=true;AntForestTeam.loveteam(20);assert AntForestRpcCall.loves==0:"failed love marker save still spent energy";
+  assert Status.hasFlagToday("love"):"verified failure must retain conservative memory flag";FileUtil.failAll=false;AntForestTeam.loveteam(20);assert AntForestRpcCall.loves==0;restart();AntForestTeam.loveteam(20);assert AntForestRpcCall.loves==1;
+  reset();AntForestRpcCall.unknown=true;team.teamCooperateWater();restart();team.teamCooperateWater();assert AntForestRpcCall.waters.equals(List.of(20)):"restart repeated unknown team debit";
+  host.partnerteamWaterNum.value=40;team.teamCooperateWater();assert AntForestRpcCall.waters.equals(List.of(20,20)):"partial quota lost";
+  reset();Status.forestHuntHelpToday("team-count",10,"A");host.partnerteamWaterNum.value=25;team.teamCooperateWater();assert AntForestRpcCall.waters.equals(List.of(15));
+  reset();AntForestRpcCall.unknown=true;AntForestTeam.loveteam(20);restart();AntForestTeam.loveteam(20);assert AntForestRpcCall.loves==1:"restart repeated unknown love debit";
+  for(boolean love:List.of(false,true)){
+   reset();AntForestRpcCall.cancel=true;try{if(love)AntForestTeam.loveteam(20);else team.teamCooperateWater();throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}
+   AntForestRpcCall.cancel=false;restart();if(love){AntForestTeam.loveteam(20);assert AntForestRpcCall.loves==1;}else{team.teamCooperateWater();assert AntForestRpcCall.waters.equals(List.of(20));}
+  }
+  reset();AntForestRpcCall.beforeMisc=()->MyUtils.offset=86400000L;team.teamCooperateWater();assert AntForestRpcCall.waters.isEmpty():"cross-day team admitted";
+  reset();AntForestRpcCall.beforeMisc=()->UserIdMap.uid="B";team.teamCooperateWater();assert AntForestRpcCall.waters.isEmpty():"changed UID team admitted";
+  for(boolean love:List.of(false,true)){
+   reset();FileUtil.beforeWrite=()->MyUtils.offset=86400000L;if(love)AntForestTeam.loveteam(20);else team.teamCooperateWater();assert AntForestRpcCall.waters.isEmpty()&&AntForestRpcCall.loves==0:"day changed during save";
+   reset();FileUtil.beforeWrite=()->UserIdMap.uid="B";if(love)AntForestTeam.loveteam(20);else team.teamCooperateWater();assert AntForestRpcCall.waters.isEmpty()&&AntForestRpcCall.loves==0:"UID changed during save";assert Files.readString(FileUtil.getStatusFile("A").toPath()).contains(love?"love":"team-count"):"captured A reservation was not written to A";assert !FileUtil.getStatusFile("B").exists():"late UID switch redirected A reservation to B";
+  }
+  for(boolean love:List.of(false,true)){
+   reset();if(!love)Status.forestHuntHelpToday("team-count",10,"A");UserIdMap.switchOnSave=true;FileUtil.failAll=true;
+   if(love)AntForestTeam.loveteam(20);else team.teamCooperateWater();
+   assert AntForestRpcCall.waters.isEmpty()&&AntForestRpcCall.loves==0&&"B".equals(UserIdMap.uid);
+   assert Status.getforestHuntHelpToday("team-count")==0&&!Status.hasFlagToday("love"):"A rollback polluted B memory";
+   FileUtil.failAll=false;Status.save();String b=Files.readString(FileUtil.getStatusFile("B").toPath());
+   assert !b.contains("team-count")&&!b.contains("love"):"A reservation/rollback was saved to B";
+  }
+  reset();UserIdMap.switchOnLegacy=true;
+  boolean admittedFlag=Status.flagTodayVerified(Set.of("love"),(MyUtils.getInstance().get(Calendar.YEAR)+":"+MyUtils.getInstance().get(Calendar.DAY_OF_YEAR)),"A");
+  assert admittedFlag=="A".equals(UserIdMap.uid);
+  assert !FileUtil.getStatusFile("B").exists()||!Files.readString(FileUtil.getStatusFile("B").toPath()).contains("love"):"legacy delegation copied A flag to B";
+  UserIdMap.switchOnLegacy=false;
+  reset();AntForestRpcCall.mode=false;FileUtil.failCount=true;team.teamCooperateWater();assert !AntForestRpcCall.mode&&AntForestRpcCall.waters.isEmpty():"failed reservation bypassed mode recovery";
+  @@VERIFIED_TESTS@@
+  System.out.println("PASS real Team/Status asset reservations: failed writes, restart unknown/cancel, target difference, GMT8/UID boundary and mode recovery");
+ }
+}
+'''
+verified_tests=r'''
+  reset();Calendar day=MyUtils.getInstance();String businessDay=day.get(Calendar.YEAR)+":"+day.get(Calendar.DAY_OF_YEAR);
+  for(String uid:new String[]{null,"","other"})assert !Status.forestHuntHelpTodayVerified("team-count",0,20,uid,businessDay)&&!Status.flagTodayVerified(Set.of("love"),businessDay,uid);
+  assert !Status.forestHuntHelpTodayVerified("team-count",-1,20,"A",businessDay)&&!Status.forestHuntHelpTodayVerified("team-count",10,9,"A",businessDay)&&!Status.forestHuntHelpTodayVerified("team-count",10,10,"A",businessDay);
+  assert !Status.forestHuntHelpTodayVerified("team-count",0,20,"A","old-day")&&!Status.flagTodayVerified(Set.of("love"),"old-day","A");
+  java.util.concurrent.atomic.AtomicInteger admitted=new java.util.concurrent.atomic.AtomicInteger();java.util.concurrent.CountDownLatch go=new java.util.concurrent.CountDownLatch(1);
+  Thread one=new Thread(()->{try{go.await();if(Status.forestHuntHelpTodayVerified("team-count",0,20,"A",businessDay))admitted.incrementAndGet();}catch(InterruptedException e){throw new AssertionError(e);}});
+  Thread two=new Thread(()->{try{go.await();if(Status.forestHuntHelpTodayVerified("team-count",0,20,"A",businessDay))admitted.incrementAndGet();}catch(InterruptedException e){throw new AssertionError(e);}});
+  one.start();two.start();go.countDown();one.join();two.join();assert admitted.get()==1;restart();assert Status.getforestHuntHelpToday("team-count")==20;
+  reset();admitted.set(0);java.util.concurrent.CountDownLatch flagGo=new java.util.concurrent.CountDownLatch(1);
+  one=new Thread(()->{try{flagGo.await();if(Status.flagTodayVerified(Set.of("love"),businessDay,"A"))admitted.incrementAndGet();}catch(InterruptedException e){throw new AssertionError(e);}});
+  two=new Thread(()->{try{flagGo.await();if(Status.flagTodayVerified(Set.of("love"),businessDay,"A"))admitted.incrementAndGet();}catch(InterruptedException e){throw new AssertionError(e);}});
+  one.start();two.start();flagGo.countDown();one.join();two.join();assert admitted.get()==1;restart();assert Status.hasFlagToday("love");
+  assert Status.flagTodayVerified(Set.of("love"),businessDay):"legacy two-argument verified ABI changed";
+'''
+asset=asset.replace('@@STATUS@@','\n'.join(method(status_path,sig) for sig in status_sigs)).replace('@@TEAM@@',method('model/task/antForest/AntForestTeam.java','final class AntForestTeam').replace('final class AntForestTeam','static final class AntForestTeam',1)).replace('@@VERIFIED_TESTS@@',verified_tests)
+cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1'
+dependencies=(Path(__file__).resolve().parents[1]/'app/build.gradle').read_text(encoding='utf-8')
+jackson=[]
+for name in ('jackson-databind','jackson-core','jackson-annotations'):
+ version=re.search(r"name: '"+name+r"', version: '([^']+)'",dependencies).group(1)
+ jackson.append(next(p for p in (cache/'com.fasterxml.jackson.core'/name/version).glob('*/'+name+'-*.jar') if not p.name.endswith(('-sources.jar','-javadoc.jar'))))
+with tempfile.TemporaryDirectory(prefix='sesame-team-assets-') as tmp:
+ f=Path(tmp)/'TeamAssetCheck.java';f.write_text(asset,encoding='utf-8');cp=os.pathsep.join(map(str,[jar,*jackson]))
+ subprocess.run(['javac','-encoding','UTF-8','-cp',cp,'-d',tmp,str(f),str(SOURCE/'util/TaskCancelledException.java')],check=True)
+ subprocess.run(['java','-ea','-cp',tmp+os.pathsep+cp,'TeamAssetCheck',tmp],check=True)

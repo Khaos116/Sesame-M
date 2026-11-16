@@ -123,6 +123,7 @@ public class FlowCheck {
     static final String TAG = "test";
     static class Field<T> { T value; Field(T v) { value = v; } T getValue() { return value; } }
     static class MyUtils {
+        static Calendar getInstance() { return Calendar.getInstance(TimeZone.getTimeZone("GMT+8")); }
         static JSONObject newJSONObject(String raw) {
             try { return raw == null ? new JSONObject() : new JSONObject(raw); }
             catch (JSONException e) { return new JSONObject(); }
@@ -163,6 +164,14 @@ public class FlowCheck {
         static void clearFlag(String key) { flags.remove(key); }
         static int getforestHuntHelpToday(String key) { return used; }
         static void forestHuntHelpToday(String key, int n, String uid) { used = n; }
+        static boolean forestHuntHelpTodayVerified(String key, int expected, int n, String uid, String day) {
+            if (!"self".equals(uid) || used != expected || n <= expected) return false;
+            used = n; return true;
+        }
+        static boolean flagTodayVerified(Set<String> tags, String day, String uid) {
+            if (!"self".equals(uid) || tags.stream().anyMatch(flags::contains)) return false;
+            flags.addAll(tags); return true;
+        }
     }
     static class AntMemberRpcCall {
         static String gameHome; static int prizes;

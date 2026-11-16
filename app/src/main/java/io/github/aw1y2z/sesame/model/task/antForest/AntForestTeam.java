@@ -10,6 +10,9 @@ import io.github.aw1y2z.sesame.util.Status;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
+import java.util.Calendar;
+import java.util.Collections;
+import java.util.Objects;
 import static io.github.aw1y2z.sesame.model.task.antForest.AntForestV2.*;
 
 final class AntForestTeam {
@@ -22,6 +25,9 @@ final class AntForestTeam {
     }
 
     void teamCooperateWater() {
+        String taskUid = UserIdMap.getCurrentUid();
+        Calendar started = MyUtils.getInstance();
+        String businessDay = started.get(Calendar.YEAR) + ":" + started.get(Calendar.DAY_OF_YEAR);
         // 记录本次是否由本方法切到组队模式，只要是就得切回来
         boolean switchedToTeam = false;
         try {
@@ -110,7 +116,19 @@ final class AntForestTeam {
 
             if (ApplicationHook.isOffline()) return;
             // 先保留额度：RPC返回异常或取消也可能发生在服务端已扣能量之后。
-            Status.forestHuntHelpToday(AntForestV2.FLAG_TEAM_WATER_DAILY_COUNT, todayUsed + finalWaterAmount, UserIdMap.getCurrentUid());
+            if (!Status.forestHuntHelpTodayVerified(AntForestV2.FLAG_TEAM_WATER_DAILY_COUNT, todayUsed,
+                    todayUsed + finalWaterAmount, taskUid, businessDay)) {
+                Log.record("组队合种：额度预留未持久确认或账号/业务日期已变化，未发送浇水请求");
+                return;
+            }
+            TimeUtil.sleep(0);
+            Calendar now = MyUtils.getInstance();
+            if (!Objects.equals(taskUid, UserIdMap.getCurrentUid())
+                    || !businessDay.equals(now.get(Calendar.YEAR) + ":" + now.get(Calendar.DAY_OF_YEAR))
+                    || ApplicationHook.isOffline()) {
+                Log.record("组队合种：已保存额度预留，但账号/业务日期或在线状态已变化，未发送浇水请求");
+                return;
+            }
             JSONObject waterJo = MyUtils.newJSONObject(AntForestRpcCall.teamWater(teamId, finalWaterAmount));
             if (MessageUtil.checkResultCode(TAG, waterJo) || MessageUtil.checkSuccess(TAG, waterJo)) {
                 Log.forest("组队合种🚿给合种浇水" + finalWaterAmount + "g");
@@ -284,8 +302,22 @@ final class AntForestTeam {
      */
     static void loveteamWater(String teamId, String teamName, int waterNum) {
         if (ApplicationHook.isOffline()) return;
-        Status.flagToday(AntForestV2.FLAG_LOVETEAM_WATER);
+        String taskUid = UserIdMap.getCurrentUid();
+        Calendar started = MyUtils.getInstance();
+        String businessDay = started.get(Calendar.YEAR) + ":" + started.get(Calendar.DAY_OF_YEAR);
+        if (!Status.flagTodayVerified(Collections.singleton(AntForestV2.FLAG_LOVETEAM_WATER), businessDay, taskUid)) {
+            Log.record("真爱合种：防重标记未持久确认、已有预留或账号/业务日期已变化，未发送浇水请求");
+            return;
+        }
         try {
+            TimeUtil.sleep(0);
+            Calendar now = MyUtils.getInstance();
+            if (!Objects.equals(taskUid, UserIdMap.getCurrentUid())
+                    || !businessDay.equals(now.get(Calendar.YEAR) + ":" + now.get(Calendar.DAY_OF_YEAR))
+                    || ApplicationHook.isOffline()) {
+                Log.record("真爱合种：已保存防重预留，但账号/业务日期或在线状态已变化，未发送浇水请求");
+                return;
+            }
             JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.loveteamWater(teamId, waterNum));
             if (!hasWaterResult(jo)) {
                 Log.record("真爱合种浇水响应为空或无效，保留标记避免重复");

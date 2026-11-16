@@ -136,6 +136,20 @@ public class Status {
         return save(now);
     }
 
+    /** 扣资源前的一次性预留；旧两参方法仍允许补写已有标记。 */
+    public static synchronized boolean flagTodayVerified(Set<String> tags, String businessDay, String taskUid) {
+        if (StringUtil.isEmpty(taskUid) || !taskUid.equals(UserIdMap.getCurrentUid())) return false;
+        ensureLoadedForCurrentUid();
+        Calendar now = MyUtils.getInstance();
+        if (!(now.get(Calendar.YEAR) + ":" + now.get(Calendar.DAY_OF_YEAR)).equals(businessDay)) return false;
+        if (updateDay(now)) INSTANCE.saveTime = now.getTimeInMillis();
+        if (!taskUid.equals(UserIdMap.getCurrentUid())) return false;
+        for (String tag : tags) if (INSTANCE.flagLogList.contains(tag)) return false;
+        INSTANCE.flagLogList.addAll(tags);
+        boolean saved = save(now);
+        return saved && taskUid.equals(loadedUid) && taskUid.equals(UserIdMap.getCurrentUid());
+    }
+
     public static void setFlagToday(String tag) {
         flagToday(tag);
     }
@@ -184,6 +198,32 @@ public class Status {
         if (taskUid.equals(UserIdMap.getCurrentUid())) {
             INSTANCE.forestHuntHelpLogList.put(taskType, count);
             save();
+        }
+    }
+
+    /** 组队扣能量前持久预留差额，旧额度已变化时不能覆盖或重复准入。 */
+    public static synchronized boolean forestHuntHelpTodayVerified(String taskType, int expectedCount, int count,
+                                                                  String taskUid, String businessDay) {
+        if (StringUtil.isEmpty(taskUid) || !taskUid.equals(UserIdMap.getCurrentUid())
+                || expectedCount < 0 || count <= expectedCount) return false;
+        ensureLoadedForCurrentUid();
+        Calendar now = MyUtils.getInstance();
+        if (!(now.get(Calendar.YEAR) + ":" + now.get(Calendar.DAY_OF_YEAR)).equals(businessDay)) return false;
+        if (updateDay(now)) INSTANCE.saveTime = now.getTimeInMillis();
+        Integer previous = INSTANCE.forestHuntHelpLogList.get(taskType);
+        if ((previous == null ? 0 : previous) != expectedCount || !taskUid.equals(UserIdMap.getCurrentUid())) return false;
+        INSTANCE.forestHuntHelpLogList.put(taskType, count);
+        boolean saved = false;
+        try {
+            saved = save(now);
+            return saved && taskUid.equals(loadedUid) && taskUid.equals(UserIdMap.getCurrentUid());
+        } finally {
+            // 尚未发送 RPC；写失败只撤回本次内存预留，已落盘/未知回执绝不回滚。
+            if (!saved && taskUid.equals(loadedUid)
+                    && Objects.equals(INSTANCE.forestHuntHelpLogList.get(taskType), count)) {
+                if (previous == null) INSTANCE.forestHuntHelpLogList.remove(taskType);
+                else INSTANCE.forestHuntHelpLogList.put(taskType, previous);
+            }
         }
     }
     
