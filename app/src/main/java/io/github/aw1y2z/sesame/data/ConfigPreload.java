@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.data;
 
+import io.github.aw1y2z.sesame.entity.AlipayAntKitchenTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayAntMemberAdTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayAntMemberTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayGoldenBeansMallItem;
@@ -95,6 +96,7 @@ public final class ConfigPreload {
         AntFarmDoFarmTaskListMap.load();
         AntFarmDrawMachineTaskListMap.load();
         AntKitchenTaskListMap.load();
+        AlipayAntKitchenTaskList.clear();
         AntDodoTaskListMap.load();
         AntOceanAntiepTaskListMap.load();
         AntOceanFishBlackListMap.load();

@@ -25,6 +25,10 @@ public class AlipayAntKitchenTaskList extends IdAndName {
         return list;
     }
 
+    public static void clear() {
+        list = null;
+    }
+
     public static void remove(String id) {
         getList();
         for (int i = 0; i < list.size(); i++) {

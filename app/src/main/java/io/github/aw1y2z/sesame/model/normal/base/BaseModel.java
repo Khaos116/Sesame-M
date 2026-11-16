@@ -9,6 +9,7 @@ import java.util.Map;
 
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectAndCountModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
+import io.github.aw1y2z.sesame.entity.AlipayAntKitchenTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayAntMemberAdTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayAntMemberTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayrpcRequest;
@@ -136,6 +137,7 @@ public class BaseModel extends Model {
             AntFarmDoFarmTaskListMap.clear();
             AntFarmDrawMachineTaskListMap.clear();
             AntKitchenTaskListMap.clear();
+            AlipayAntKitchenTaskList.clear();
             AntDodoTaskListMap.clear();
             AntOceanAntiepTaskListMap.clear();
             AntOceanFishBlackListMap.clear();
