@@ -49,13 +49,13 @@ stubs = {
         import io.github.aw1y2z.sesame.util.*;public class AntForestRpcCall {
         public static Deque<String> starts=new ArrayDeque<>();public static List<Long> hits=new ArrayList<>();
         public static List<String> settled=new ArrayList<>();public static int startCalls,settleCalls;public static boolean rejectSettlement;public static int failSettlementAt;
-        public static long startedAt,settledAt;public static boolean cancelStart,zeroFirstSettlement;public static String settlementOverride;
+        public static long startedAt,settledAt;public static boolean cancelStart,cancelSettlement,zeroFirstSettlement;public static String settlementOverride;
         public static String startWhackMole(String source){startCalls++;startedAt=System.currentTimeMillis();
             if(cancelStart)throw new TaskCancelledException();return starts.removeFirst();}
         public static String startWhackMole(){return startWhackMole("source");}
         public static String whackMole(long id,String token,String source){assert token.equals("private-token");hits.add(id);return "{success:true}";}
         public static String settlementWhackMole(String token,List<String> ids,String source){
-            settled=new ArrayList<>(ids);settleCalls++;settledAt=System.currentTimeMillis();
+            settled=new ArrayList<>(ids);settleCalls++;settledAt=System.currentTimeMillis();if(cancelSettlement)throw new TaskCancelledException();
             return settlementOverride!=null?settlementOverride:(rejectSettlement||settleCalls==failSettlementAt)?"{success:false,resultCode:'FAIL',token:'private-token'}":zeroFirstSettlement&&settleCalls==1?"{success:true,totalEnergy:0}":"{success:true,totalEnergy:7}";}
         public static String oldstartWhackMole(String source){return startWhackMole(source);}
         public static String oldwhackMole(long id,String token,String source){return whackMole(id,token,source);}
@@ -77,7 +77,7 @@ public class UpstreamForestCheck {
     static void reset(){Status.flags.clear();Status.counts.clear();Status.beforeFlag=Status.beforeClear=null;Status.failVerified=TimeUtil.nextDay=false;MyUtils.day=1;Log.messages.clear();Statistics.collected=Statistics.saves=0;
         AntForestRpcCall.starts.clear();AntForestRpcCall.hits.clear();AntForestRpcCall.settled.clear();
         AntForestRpcCall.startCalls=AntForestRpcCall.settleCalls=AntForestRpcCall.failSettlementAt=0;
-        AntForestRpcCall.settlementOverride=null;AntForestRpcCall.cancelStart=AntForestRpcCall.rejectSettlement=AntForestRpcCall.zeroFirstSettlement=TimeUtil.cancel=false;WhackMole.setTotalGames(1);}
+        AntForestRpcCall.settlementOverride=null;AntForestRpcCall.cancelSettlement=AntForestRpcCall.cancelStart=AntForestRpcCall.rejectSettlement=AntForestRpcCall.zeroFirstSettlement=TimeUtil.cancel=false;WhackMole.setTotalGames(1);}
     static void whack(){
         reset();AntForestRpcCall.starts.add(round());Status.beforeFlag=()->WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
         Status.beforeClear=()->{assert Status.getIntFlagToday("forest::whackMole::executed::rounds")==1&&Statistics.collected==7&&Statistics.saves==1:"pending cleared before confirmed progress";};
@@ -119,6 +119,30 @@ public class UpstreamForestCheck {
         assert Statistics.collected==7&&!Status.hasFlagToday("forest::whackMole::executed"):"partial start failure marked complete";
         AntForestRpcCall.starts.add(round());WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
         assert AntForestRpcCall.startCalls==3&&Statistics.collected==14&&Status.hasFlagToday("forest::whackMole::executed"):"confirmed rounds must count across retries";
+        // Server-empty rounds are rejected by startSingleRound before reserving settlement.
+        for(JSONArray empty:List.of(new JSONArray(),new JSONArray().put(JSONObject.NULL).put(new JSONObject().put("id",-1)).put(new JSONObject().put("id",true)))){
+            String emptyRound=new JSONObject(round()).put("moleInfo",empty).toString();
+            reset();AntForestRpcCall.starts.add(emptyRound);WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+            assert AntForestRpcCall.startCalls==1&&AntForestRpcCall.settleCalls==0&&Statistics.collected==0;
+            assert !Status.hasFlagToday("forest::whackMole::executed::settlementPending")&&!Status.hasFlagToday("forest::whackMole::executed");
+            assert Status.getIntFlagToday("forest::whackMole::executed::rounds")==0:"empty server round counted as confirmed";
+            AntForestRpcCall.starts.add(round());WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+            assert AntForestRpcCall.startCalls==2&&AntForestRpcCall.settleCalls==1&&Statistics.collected==7&&Status.hasFlagToday("forest::whackMole::executed"):"empty round blocked later valid round";
+            reset();WhackMole.setTotalGames(2);AntForestRpcCall.starts.add(round());AntForestRpcCall.starts.add(emptyRound);
+            WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+            assert AntForestRpcCall.startCalls==2&&AntForestRpcCall.settleCalls==1&&Statistics.collected==7;
+            assert Status.getIntFlagToday("forest::whackMole::executed::rounds")==1&&!Status.hasFlagToday("forest::whackMole::executed::settlementPending")&&!Status.hasFlagToday("forest::whackMole::executed");
+            AntForestRpcCall.starts.add(round());WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+            assert AntForestRpcCall.startCalls==3&&AntForestRpcCall.settleCalls==2&&Statistics.collected==14&&Status.hasFlagToday("forest::whackMole::executed"):"empty round lost prior confirmed progress";
+            reset();for(int i=0;i<3;i++)AntForestRpcCall.starts.add(emptyRound);
+            for(int i=0;i<5;i++)WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+            assert AntForestRpcCall.startCalls==3&&AntForestRpcCall.settleCalls==0&&!Status.hasFlagToday("forest::whackMole::executed::settlementPending"):"empty-round retries were unbounded";
+        }
+        reset();AntForestRpcCall.starts.add(round());AntForestRpcCall.cancelSettlement=true;
+        try{WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);throw new AssertionError("settlement cancellation swallowed");}catch(TaskCancelledException expected){}
+        assert Status.hasFlagToday("forest::whackMole::executed::settlementPending")&&Status.getIntFlagToday("forest::whackMole::executed::rounds")==0&&Statistics.collected==0;
+        AntForestRpcCall.cancelSettlement=false;WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
+        assert AntForestRpcCall.startCalls==1&&AntForestRpcCall.settleCalls==1:"cancelled settlement lost unknown-result guard";
         reset();WhackMole.setTotalGames(2);AntForestRpcCall.starts.add(round());AntForestRpcCall.starts.add(round());AntForestRpcCall.failSettlementAt=2;
         WhackMole.startSuspend(WhackMole.Mode.AGGRESSIVE);
         assert Statistics.collected==7&&!Status.hasFlagToday("forest::whackMole::executed"):"unknown settlement marked complete";
