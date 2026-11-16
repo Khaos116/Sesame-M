@@ -45,6 +45,7 @@ for source in (settings, group, selection):
     assert ': MiuixConfigActivity()' in source
 assert 'activity.importConfig(uri)' in block(settings, 'val importLauncher =')
 assert 'activity.exportConfig(uri)' in block(settings, 'val exportLauncher =')
+assert 'onExport = { activity.prepareExport { exportLauncher.launch(it) } }' in settings
 assert 'setEditorContent(userId, forceReload = true)' in block(settings, 'override fun onCreate(')
 assert 'setCancelable(false)' in block(base, 'private fun updateProgress(')
 assert 'SettingsIo.listeners.remove(ioListener)' in block(base, 'override fun onDestroy(')
@@ -123,16 +124,19 @@ object ConfigPreload {
 object Model { fun initAllModel() { Storage.touch() } }
 object FileUtil {
     var backups = 0
+    var deletes = 0
+    fun accountLabel(uid: String): String = io.github.aw1y2z.sesame.util.AccountFolderName.displayLabel(uid)
     fun backupConfigV2BeforeWrite(uid: String) { Storage.touch(); backups++ }
     fun backupConfigV2WithRolling(uid: String) { Storage.touch() }
-    fun deleteFile(f: File): Boolean { Storage.touch(); return f.delete() }
+    fun deleteFile(f: File): Boolean { Storage.touch(); deletes++; return f.delete() }
 }
 object JsonUtil { fun toNode(text: String): Any? = ObjectMapper().readTree(text); fun copyMapper() = ObjectMapper() }
 class Resolver {
     var text = ""
     var output: java.io.OutputStream? = java.io.ByteArrayOutputStream()
+    var outputCalls = 0
     fun openInputStream(uri: String): java.io.InputStream? { Storage.touch(); return text.byteInputStream() }
-    fun openOutputStream(uri: String): java.io.OutputStream? { Storage.touch(); return output }
+    fun openOutputStream(uri: String): java.io.OutputStream? { Storage.touch(); outputCalls++; return output }
 }
 class Context { val contentResolver = Resolver() }
 object ToastUtil { val messages = mutableListOf<String>(); fun show(a: Any, text: String) { Main.checkMain(); messages += text } }
@@ -170,6 +174,8 @@ class Settings(uid: String?): Editor(uid) {
     var fieldsVersion = 0
     @@IMPORT@@
     @@EXPORT@@
+    @@DELETE@@
+    @@EXPORT_NAME@@
 }
 class Selection(uid: String?): Editor(uid) {
     val activity = this
@@ -187,6 +193,50 @@ fun load(uid: String?) {
 fun main() {
     Main.checkMain()
     load("A")
+    io.github.aw1y2z.sesame.util.AccountFolderName.install({ uid ->
+        Storage.touch()
+        val self = File(ConfigPreload.folder, "$uid.self")
+        if (self.exists()) self.readLines().toTypedArray() else null
+    }, null)
+    File(ConfigPreload.folder, "A.self").writeText("C176\naccount")
+    val exportNames = mutableListOf<String>()
+    Storage.slow()
+    val naming = Settings("A")
+    naming.prepareExport { Main.checkMain(); exportNames += it }
+    check(Storage.entered.await(2, TimeUnit.SECONDS) && exportNames.isEmpty())
+    Storage.release.countDown(); Main.settle()
+    check(exportNames == listOf("[C176]-config_v2.json"))
+    load(null)
+    Settings(null).prepareExport { Main.checkMain(); exportNames += it }; Main.settle()
+    load("missing")
+    Settings("missing").prepareExport { Main.checkMain(); exportNames += it }; Main.settle()
+    check(exportNames == listOf("[C176]-config_v2.json", "[默认]-config_v2.json", "[missing]-config_v2.json"))
+    val rejectedNames = ToastUtil.messages.size
+    naming.prepareExport { error("stale owner opened file picker") }
+    check(ToastUtil.messages.size == rejectedNames + 1)
+    var failures = 0
+    var successes = 0
+    naming.runEditorIo(work = { error("stale work ran") }, onSuccess = { successes++ }, onFailure = { failures++ })
+    check(failures == 1 && successes == 0)
+    naming.isDestroyed = true
+    naming.runEditorIo(work = { error("destroyed work ran") }, onSuccess = { successes++ }, onFailure = { failures++ })
+    check(failures == 1 && successes == 0)
+    naming.isDestroyed = false; naming.isFinishing = true
+    naming.runEditorIo(work = { error("finishing work ran") }, onSuccess = { successes++ }, onFailure = { failures++ })
+    check(failures == 1 && successes == 0)
+    load("A")
+    Settings("A").runEditorIo(work = { true }, onSuccess = { successes++ }, onFailure = { failures++ })
+    Main.settle(); check(successes == 1 && failures == 1)
+    // A rejected import must not restore the old owner while another same-UID reload owns the slot.
+    Storage.slow()
+    check(SettingsIo.submit("A", true, { Storage.touch(); true }, { check(it) }))
+    check(Storage.entered.await(2, TimeUnit.SECONDS) && !SettingsIo.loaded)
+    val refusedImport = Settings("A")
+    val importFailures = ToastUtil.messages.size
+    refusedImport.importConfig("uri")
+    check(SettingsIo.busy && !SettingsIo.loaded && ToastUtil.messages.size == importFailures + 1)
+    Storage.release.countDown(); Main.settle()
+    check(SettingsIo.owns("A"))
     // Real prepare/listener: a paused A waiting behind B must not take B's owner.
     Storage.slow()
     check(SettingsIo.submit("B", true, { ConfigPreload.prepare("B"); true }, { check(it) }))
@@ -214,6 +264,12 @@ fun main() {
     val group = Group("A")
     group.executeModule("FOREST")
     check(SettingsIo.busy && Storage.entered.await(2, TimeUnit.SECONDS))
+    val blockedSettings = Settings("A")
+    val failureCount = ToastUtil.messages.size
+    blockedSettings.exportConfig("uri")
+    blockedSettings.deleteConfig()
+    check(ToastUtil.messages.size == failureCount + 2) { "busy picker/delete requests disappeared without failure feedback" }
+    check(blockedSettings.applicationContext.contentResolver.outputCalls == 0 && FileUtil.deletes == 0 && blockedSettings.finishes == 0)
     check(HostBridge.executions == 0 && Storage.writes == 0)
     check(!group.canEditConfig())
     group.executeModule("FOREST")
@@ -367,6 +423,8 @@ for marker, value in {
     '@@LISTENER@@': block(base, 'private val ioListener:'),
     '@@EXECUTE@@': block(group, 'fun executeModule('), '@@CLOSE@@': block(group, 'fun saveAndFinish('),
     '@@IMPORT@@': block(settings, 'internal fun importConfig('), '@@EXPORT@@': block(settings, 'internal fun exportConfig('),
+    '@@DELETE@@': block(settings, 'internal fun deleteConfig('),
+    '@@EXPORT_NAME@@': block(settings, 'internal fun prepareExport('),
     '@@APPLY@@': block(selection, 'fun applyAndSave('),
 }.items():
     code = code.replace(marker, value)
@@ -448,6 +506,7 @@ def replay(code):
     with tempfile.TemporaryDirectory(prefix="sesame-settings-io-") as temporary:
         work = Path(temporary)
         atomic = ROOT / "app/src/main/java/io/github/aw1y2z/sesame/util/AtomicConfigFile.java"
+        account_folder = ROOT / "app/src/main/java/io/github/aw1y2z/sesame/util/AccountFolderName.java"
         java_replay = work / "LoadReplay.java"
         java_replay.write_text(load_replay, encoding="utf-8")
         boundary = work / "SettingsAtomicBoundary.java"
@@ -483,7 +542,7 @@ public final class SettingsAtomicBoundary {
                        for line in (ROOT / "local.properties").read_text().splitlines() if line.startswith("sdk.dir="))
         android = next((Path(sdk) / "platforms").glob("android-37*/android.jar"))
         cp = os.pathsep.join(map(str, [work, stdlib, classes, android] + jackson))
-        subprocess.run(["javac", "-encoding", "UTF-8", "-cp", cp, "-d", str(work), str(atomic), str(boundary), str(java_replay)], check=True, timeout=30)
+        subprocess.run(["javac", "-encoding", "UTF-8", "-cp", cp, "-d", str(work), str(atomic), str(boundary), str(java_replay), str(account_folder)], check=True, timeout=30)
         subprocess.run(["java", "-Xmx256m", "-cp", os.pathsep.join(map(str, compiler)),
                         "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler", "-no-stdlib", "-no-reflect",
                         "-classpath", cp, "-d", str(work), str(path)], check=True, timeout=90)

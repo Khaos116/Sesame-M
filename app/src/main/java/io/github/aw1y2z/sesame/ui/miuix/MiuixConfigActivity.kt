@@ -108,11 +108,12 @@ open class MiuixConfigActivity : MiuixBaseActivity() {
                              onFailure: () -> Unit = { ToastUtil.show(this, "操作失败，请重试") }) {
         if (isFinishing || isDestroyed) return
         val uid = editorUid
-        SettingsIo.submit(uid, reload, work, complete = { success ->
+        val complete: (Boolean) -> Unit = { success ->
             if (!isDestroyed && !isFinishing && editorUid == uid) {
                 if (success) onSuccess() else onFailure()
             }
-        })
+        }
+        if (!SettingsIo.submit(uid, reload, work, complete)) complete(false)
     }
 
     internal fun saveConfig(restart: Boolean = true, onSaved: () -> Unit) {

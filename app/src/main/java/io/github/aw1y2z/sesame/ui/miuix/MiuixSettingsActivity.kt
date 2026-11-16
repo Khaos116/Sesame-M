@@ -108,12 +108,18 @@ class MiuixSettingsActivity : MiuixConfigActivity() {
     }
 
     internal fun importConfig(uri: android.net.Uri) {
-        if (!canEditConfig()) return
+        if (isDestroyed || isFinishing) return
+        if (!canEditConfig()) {
+            ToastUtil.show(this, "配置正在处理或账号已变化，请稍后重试")
+            return
+        }
         val uid = userId
         val resolver = applicationContext.contentResolver
         val context = applicationContext
         var written = false
+        var started = false
         runEditorIo(reload = true, work = {
+            started = true
             val text = resolver.openInputStream(uri)?.use { it.bufferedReader().readText() }
                 ?: throw IllegalArgumentException("empty config")
             val node = JsonUtil.toNode(text) as? com.fasterxml.jackson.databind.JsonNode
@@ -135,9 +141,19 @@ class MiuixSettingsActivity : MiuixConfigActivity() {
             fieldsVersion++
             ToastUtil.show(this, "导入成功！")
         }, onFailure = {
-            if (!written) SettingsIo.restoreUnchanged(uid)
+            if (started && !written) SettingsIo.restoreUnchanged(uid)
             ToastUtil.show(this, if (written) "文件已导入，但加载失败，请返回重新打开" else "导入失败，原配置未修改")
         })
+    }
+
+    internal fun prepareExport(onReady: (String) -> Unit) {
+        val uid = userId
+        var name = ""
+        runEditorIo(work = {
+            name = if (uid.isNullOrEmpty()) "默认" else FileUtil.accountLabel(uid)
+            true
+        }, onSuccess = { onReady("[$name]-config_v2.json") },
+            onFailure = { ToastUtil.show(this, "导出失败，请稍后重试") })
     }
 
     internal fun exportConfig(uri: android.net.Uri) {
@@ -203,7 +219,7 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
                 title = "配置设置",
                 onBack = { activity.saveAndFinish() },
                 onImport = { importLauncher.launch("*/*") },
-                onExport = { exportLauncher.launch("[" + (if (userId.isNullOrEmpty()) "默认" else userId) + "]-config_v2.json") },
+                onExport = { activity.prepareExport { exportLauncher.launch(it) } },
                 onClear = { showDeleteDialog = true }
             )
         },
