@@ -23,7 +23,7 @@ public class MakeupCheck {
    static Calendar getInstance(){Calendar c=Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));c.setTimeInMillis(now);return c;}
  }
  static class TimeUtil {static boolean cancel;static void sleep(long n){if(cancel)throw new TaskCancelledException();}}
- static class Status {static Set<String> flags=new HashSet<>();static boolean hasFlagToday(String k){return flags.contains(k);}static void flagToday(String k){flags.add(k);}}
+ static class Status {static boolean failSave,crossDay;static Set<String> flags=new HashSet<>();static boolean hasFlagToday(String k){return flags.contains(k);}static void flagToday(String k){flags.add(k);}static boolean flagTodayVerified(Set<String> keys,String day){flags.addAll(keys);if(failSave)return false;if(crossDay)MyUtils.now+=86400000L;return true;}}
  static class RpcRequestGuard {static boolean isFailure(JSONObject j){return Boolean.FALSE.equals(j.opt("success")) || "FAIL".equals(j.optString("resultCode"));}}
  static class Log {static int ok;static void record(String s){}static void forest(String s){ok++;}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
  static class ApplicationHook {
@@ -60,8 +60,10 @@ public class MakeupCheck {
    reset();ApplicationHook.cards=0;f.autoMakeUpSign();assert mutations()==0;
    reset();ApplicationHook.inventoryCalls=0;ApplicationHook.crossDay=true;ApplicationHook.days.put("2026-01-30",day("2026-01-30",false,false));f.autoMakeUpSign();assert mutations()==0:"day changed, oldest date is now outside 30 days";ApplicationHook.crossDay=false;MyUtils.now=Instant.parse("2026-02-28T17:00:00Z").toEpochMilli();
    reset();ApplicationHook.malformed=true;f.autoMakeUpSign();assert mutations()==0;
-   reset();ApplicationHook.days.put("2026-02-28",day("2026-02-28",false,false));ApplicationHook.changed=false;f.autoMakeUpSign();f.autoMakeUpSign();assert mutations()==1&&Log.ok==0;
+   reset();ApplicationHook.days.put("2026-02-28",day("2026-02-28",false,false));ApplicationHook.changed=false;f.autoMakeUpSign();Set<String> persisted=new HashSet<>(Status.flags);Status.flags.clear();Status.flags.addAll(persisted);f.autoMakeUpSign();assert mutations()==1&&Log.ok==0:"persisted unknown result blocks retry after restart";
    reset();ApplicationHook.days.put("2026-02-28",day("2026-02-28",false,false));ApplicationHook.fail=true;f.autoMakeUpSign();f.autoMakeUpSign();assert mutations()==1&&Log.ok==0;
+   reset();ApplicationHook.days.put("2026-02-28",day("2026-02-28",false,false));Status.failSave=true;f.autoMakeUpSign();assert mutations()==0:"failed marker persistence must stop consumption";Status.failSave=false;Status.flags.clear();f.autoMakeUpSign();assert mutations()==1:"restart after failed write can retry";
+   reset();ApplicationHook.days.put("2026-02-28",day("2026-02-28",false,false));Status.crossDay=true;f.autoMakeUpSign();assert mutations()==0:"day changed while writing marker";Status.crossDay=false;MyUtils.now=Instant.parse("2026-02-28T17:00:00Z").toEpochMilli();
    reset();TimeUtil.cancel=true;try{f.autoMakeUpSign();throw new AssertionError("cancel swallowed");}catch(TaskCancelledException expected){}assert mutations()==0;
    reset();ApplicationHook.changed=false;AntForestRpcCall.manualMakeUpSign("quote\"date");assert ApplicationHook.calls.get(0).optString("makeUpDate").equals("quote\"date");
    System.out.println("PASS GMT+8, 30-day inclusive range across three months, oldest-first, eligibility/unknown/duplicates, default-off, inventory, readback, uncertain retry guard, cancellation and RPC escaping");

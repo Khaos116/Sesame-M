@@ -819,8 +819,9 @@ public class AntForestV2 extends ModelTask {
 
                 //初始任务列表
                 if (!Status.hasFlagToday("BlackList::initAntForest")) {
-                    taskHelper.initAntForestTaskListMap(AutoAntForestVitalityTaskList.getValue(), AutoAntForestHuntTaskList.getValue(), forestTaskGroup.getValue() && receiveForestTaskAward.getValue(), ForestHunt.getValue());
-                    Status.flagToday("BlackList::initAntForest");
+                    if (taskHelper.initAntForestTaskListMap(AutoAntForestVitalityTaskList.getValue(), AutoAntForestHuntTaskList.getValue(), forestTaskGroup.getValue() && receiveForestTaskAward.getValue(), ForestHunt.getValue())) {
+                        Status.flagToday("BlackList::initAntForest");
+                    }
                 }
                 // 新版保护地任务名单来自服务端下发：每轮同步一次，保证黑名单候选项与当前区域任务一致
                 if (monopolyTasks.getValue()) {

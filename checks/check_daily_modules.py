@@ -7,12 +7,13 @@ import tempfile
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).parent / 'audit_regressions'))
-from run import method
+from run import method, SOURCE
 from daily_task_fixture import with_daily_task
 
 code = r'''
 import org.json.*;
 import java.util.*;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class DailyModulesCheck {
  static final String TAG="test";
  static String response="{}"; static int calls;
@@ -87,5 +88,5 @@ jar = sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-s
 with tempfile.TemporaryDirectory(prefix='sesame-daily-modules-') as tmp:
     java = Path(tmp)/'DailyModulesCheck.java'
     java.write_text(code, encoding='utf-8')
-    subprocess.run(['javac','-encoding','UTF-8','-cp',str(jar),'-d',tmp,str(java)],check=True)
+    subprocess.run(['javac','-encoding','UTF-8','-cp',str(jar),'-d',tmp,str(java),str(SOURCE/'util/TaskCancelledException.java')],check=True)
     subprocess.run(['java','-ea','-cp',tmp+os.pathsep+str(jar),'DailyModulesCheck'],check=True)

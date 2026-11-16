@@ -41,8 +41,9 @@ final class AntForestTask {
         this.host = host;
     }
 
-    public void initAntForestTaskListMap(boolean AutoAntForestVitalityTaskList, boolean AutoAntForestHuntTaskList, boolean receiveForestTaskAward, boolean ForestHunt) {
+    public boolean initAntForestTaskListMap(boolean AutoAntForestVitalityTaskList, boolean AutoAntForestHuntTaskList, boolean receiveForestTaskAward, boolean ForestHunt) {
         try {
+            if (!receiveForestTaskAward && !ForestHunt) return true;
 
             //初始化AntForestVitalityTaskListMap
             AntForestVitalityTaskListMap.load();
@@ -63,51 +64,49 @@ final class AntForestTask {
                 JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryTaskList());
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     JSONArray forestTasksNew = jo.optJSONArray("forestTasksNew");
+                    if (forestTasksNew == null) return false;
                     if (forestTasksNew != null && forestTasksNew.length() != 0) {
                         for (int i = 0; i < forestTasksNew.length(); i++) {
                             JSONObject forestTask = forestTasksNew.optJSONObject(i);
-                            if (forestTask == null) {
-                                continue;
-                            }
+                            if (forestTask == null) return false;
                             JSONArray taskInfoList = forestTask.optJSONArray("taskInfoList");
+                            if (taskInfoList == null) return false;
                             if (taskInfoList != null && taskInfoList.length() != 0) {
                                 for (int j = 0; j < taskInfoList.length(); j++) {
                                     JSONObject taskInfo = taskInfoList.optJSONObject(j);
                                     JSONObject taskBaseInfo = taskInfo != null ? taskInfo.optJSONObject("taskBaseInfo") : null;
-                                    if (taskBaseInfo == null) {
-                                        continue;
-                                    }
+                                    if (taskBaseInfo == null) return false;
                                     JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.optString("bizInfo"));
                                     String taskType = taskBaseInfo.optString("taskType");
                                     String taskTitle = bizInfo.optString("taskTitle", taskType);
+                                    if (taskTitle.isEmpty()) return false;
                                     AntForestVitalityTaskListMap.add(taskTitle, taskTitle);
                                 }
                             }
                         }
                     }
-                }
+                } else return false;
 
                 jo = MyUtils.newJSONObject(AntForestRpcCall.listTaskopengreen());
                 if (MessageUtil.checkResultCode(TAG, jo)) {
                     // 添加安全的空值判断
+                    if (jo.optJSONArray("taskInfoList") == null) return false;
                     if (jo.has("taskInfoList")) {
                         JSONArray taskInfoList = jo.optJSONArray("taskInfoList");
                         if (taskInfoList != null && taskInfoList.length() != 0) {
                             for (int j = 0; j < taskInfoList.length(); j++) {
                                 JSONObject taskInfo = taskInfoList.optJSONObject(j);
                                 JSONObject taskBaseInfo = taskInfo != null ? taskInfo.optJSONObject("taskBaseInfo") : null;
-                                if (taskBaseInfo == null) {
-                                    continue;
-                                }
+                                if (taskBaseInfo == null) return false;
                                 JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.optString("bizInfo"));
                                 String taskType = taskBaseInfo.optString("taskType");
                                 String taskTitle = bizInfo.optString("taskTitle", taskType);
+                                if (taskTitle.isEmpty()) return false;
                                 AntForestVitalityTaskListMap.add(taskTitle, taskTitle);
                             }
                         }
                     }
-                }
-
+                } else return false;
 
                 //保存任务到配置文件
                 AntForestVitalityTaskListMap.save();
@@ -120,7 +119,7 @@ final class AntForestTask {
                     ModelFields AntForestV2 = config.getModelFieldsMap().get("AntForestV2");
                     SelectModelField AntForestVitalityTaskList = (SelectModelField) AntForestV2.get("AntForestVitalityTaskList");
                     if (AntForestVitalityTaskList == null) {
-                        return;
+                        return false;
                     }
 
                     // 2~4. 批量写回黑/白名单并保存
@@ -146,30 +145,29 @@ final class AntForestTask {
                 JSONObject resData = MyUtils.newJSONObject(AntForestRpcCall.enterDrawActivityopengreen("", "ANTFOREST_NORMAL_DRAW", "task_entry"));
                 if (MessageUtil.checkSuccess(TAG, resData)) {
                     JSONArray drawSceneGroups = resData.optJSONArray("drawSceneGroups");
+                    if (drawSceneGroups == null) return false;
                     for (int i = 0; drawSceneGroups != null && i < drawSceneGroups.length(); i++) {
                         JSONObject drawScene = drawSceneGroups.optJSONObject(i);
                         JSONObject drawActivity = drawScene != null ? drawScene.optJSONObject("drawActivity") : null;
-                        if (drawActivity == null) {
-                            continue;
-                        }
+                        if (drawActivity == null) return false;
                         String sceneCode = drawActivity.optString("sceneCode");
-                        if (sceneCode.isEmpty()) continue;
+                        if (sceneCode.isEmpty()) return false;
                         JSONObject listTaskopengreen = MyUtils.newJSONObject(AntForestRpcCall.listTaskopengreen(sceneCode + "_TASK", "task_entry"));
                         if (MessageUtil.checkSuccess(TAG, listTaskopengreen)) {
                             JSONArray taskList = listTaskopengreen.optJSONArray("taskInfoList");
+                            if (taskList == null) return false;
                             for (int j = 0; taskList != null && j < taskList.length(); j++) {
                                 JSONObject taskInfo = taskList.optJSONObject(j);
                                 JSONObject taskBaseInfo = taskInfo != null ? taskInfo.optJSONObject("taskBaseInfo") : null;
-                                if (taskBaseInfo == null) {
-                                    continue;
-                                }
+                                if (taskBaseInfo == null) return false;
                                 JSONObject bizInfo = MyUtils.newJSONObject(taskBaseInfo.optString("bizInfo"));
                                 String taskName = bizInfo.optString("title");
-                                if (!taskName.isEmpty()) AntForestHuntTaskListMap.add(taskName, taskName);
+                                if (taskName.isEmpty()) return false;
+                                AntForestHuntTaskListMap.add(taskName, taskName);
                             }
-                        }
+                        } else return false;
                     }
-                }
+                } else return false;
                 AntForestHuntTaskListMap.save();
                 Log.record("同步任务🉑森林抽抽乐任务列表");
                 //自动按模块初始化设定调整黑名单和白名单
@@ -179,15 +177,18 @@ final class AntForestTask {
                     ModelFields AntForestV2 = config.getModelFieldsMap().get("AntForestV2");
                     SelectModelField AntForestHuntTaskList = (SelectModelField) AntForestV2.get("AntForestHuntTaskList");
                     if (AntForestHuntTaskList == null) {
-                        return;
+                        return false;
                     }
 
                     // 2~4. 批量写回黑/白名单并保存
                     MessageUtil.syncTaskBlackList("森林抽抽乐任务", "AntForestHuntTaskList", blackList, whiteList, AntForestHuntTaskList);
                 }
             }
+            return true;
+        } catch (TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "initAntForestTaskListMap err:", t);
+            return false;
         }
     }
 
@@ -257,7 +258,10 @@ final class AntForestTask {
                 if (forestMakeupCardCount() <= 0) return;
                 Calendar current = MyUtils.getInstance();
                 if (!today.equals(java.time.LocalDate.of(current.get(Calendar.YEAR), current.get(Calendar.MONTH) + 1, current.get(Calendar.DAY_OF_MONTH)))) return;
-                Status.flagToday(flag);
+                String businessDay = day.get(Calendar.YEAR) + ":" + day.get(Calendar.DAY_OF_YEAR);
+                if (!Status.flagTodayVerified(java.util.Collections.singleton(flag), businessDay)) return;
+                current = MyUtils.getInstance();
+                if (!(current.get(Calendar.YEAR) + ":" + current.get(Calendar.DAY_OF_YEAR)).equals(businessDay)) return;
                 JSONObject response = AntForestV2.forestSignPayload(MyUtils.newJSONObject(AntForestRpcCall.manualMakeUpSign(date.toString())));
                 JSONArray after = queryForestSignMonth(java.time.YearMonth.from(date));
                 if (response == null || after == null) return;
@@ -291,22 +295,27 @@ final class AntForestTask {
             if (forestSignVO == null) {
                 return;
             }
+            if (!(forestSignVO.opt("currentSignKey") instanceof String)) return;
             String currentSignKey = forestSignVO.optString("currentSignKey"); // 当前签到的 key
             String signId = forestSignVO.optString("signId"); // 签到ID
             String sceneCode = forestSignVO.optString("sceneCode"); // 场景代码
+            if (currentSignKey.trim().isEmpty()) return;
             JSONArray signRecords = forestSignVO.optJSONArray("signRecords"); // 签到记录
             for (int i = 0; signRecords != null && i < signRecords.length(); i++) { // 遍历签到记录
                 JSONObject signRecord = signRecords.optJSONObject(i);
                 if (signRecord == null) {
                     continue;
                 }
+                if (!(signRecord.opt("signKey") instanceof String)) continue;
                 String signKey = signRecord.optString("signKey");
                 int awardCount = signRecord.optInt("awardCount");
                 if (signKey.equals(currentSignKey) && Boolean.TRUE.equals(signRecord.opt("signed"))) {
                     Status.flagToday("forest::vantiepSign");
                     break;
                 }
-                if (signKey.equals(currentSignKey) && !signRecord.optBoolean("signed")) {
+                if (signKey.equals(currentSignKey) && Boolean.FALSE.equals(signRecord.opt("signed"))) {
+                    if (!(forestSignVO.opt("signId") instanceof String) || !(forestSignVO.opt("sceneCode") instanceof String)
+                            || signId.trim().isEmpty() || sceneCode.trim().isEmpty()) return;
                     JSONObject joSign = MyUtils.newJSONObject(AntForestRpcCall.antiepSign(signId, UserIdMap.getCurrentUid(), sceneCode));
                     TimeUtil.sleep(300); // 等待300毫秒
                     if (MessageUtil.checkSuccess(TAG + "森林签到失败:", joSign)) {
@@ -332,6 +341,7 @@ final class AntForestTask {
                     break;
                 }
             }
+        } catch (TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "vitalitySign err:", t);
         }
@@ -355,15 +365,18 @@ final class AntForestTask {
             if (forestSignVO == null) {
                 return;
             }
+            if (!(forestSignVO.opt("currentSignKey") instanceof String)) return;
             String currentSignKey = forestSignVO.optString("currentSignKey"); // 当前签到的 key
             String signId = forestSignVO.optString("signId"); // 签到ID
             String sceneCode = forestSignVO.optString("sceneCode"); // 场景代码
+            if (currentSignKey.trim().isEmpty()) return;
             JSONArray signRecords = forestSignVO.optJSONArray("signRecords"); // 签到记录
             for (int i = 0; signRecords != null && i < signRecords.length(); i++) { // 遍历签到记录
                 JSONObject signRecord = signRecords.optJSONObject(i);
                 if (signRecord == null) {
                     continue;
                 }
+                if (!(signRecord.opt("signKey") instanceof String)) continue;
                 String signKey = signRecord.optString("signKey");
                 int awardCount = signRecord.optInt("awardCount");
                 String awardType = signRecord.optString("awardType");
@@ -373,7 +386,9 @@ final class AntForestTask {
                     DailyTask.done("forest::sevenDaySign");
                     break;
                 }
-                if (signKey.equals(currentSignKey) && !signRecord.optBoolean("signed")) {
+                if (signKey.equals(currentSignKey) && Boolean.FALSE.equals(signRecord.opt("signed"))) {
+                    if (!(forestSignVO.opt("signId") instanceof String) || !(forestSignVO.opt("sceneCode") instanceof String)
+                            || signId.trim().isEmpty() || sceneCode.trim().isEmpty()) return;
                     JSONObject joSign = MyUtils.newJSONObject(AntForestRpcCall.antiepSign(signId, UserIdMap.getCurrentUid(), sceneCode));
                     TimeUtil.sleep(300); // 等待300毫秒
                     if (MessageUtil.checkSuccess(TAG + "森林7日签到:", joSign)) {
@@ -387,6 +402,7 @@ final class AntForestTask {
                     break;
                 }
             }
+        } catch (TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "vitalitySign err:", t);
         }
@@ -403,6 +419,7 @@ final class AntForestTask {
                 Log.forest("森林任务📆签到[" + continuousCount + "天]奖励[" + signAwardCount + "活力值]");
                 DailyTask.done("forest::vitalitySign");
             }
+        } catch (TaskCancelledException e) { throw e;
         } catch (Throwable t) {
             Log.err(TAG, "vitalitySign err:", t);
         }
