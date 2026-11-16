@@ -22,7 +22,7 @@ public class ControlHandler extends BaseHandler {
     @Override
     protected NanoHTTPD.Response onGet(NanoHTTPD.IHTTPSession session) {
         // 会改变宿主行为的 op 不接受 GET：链接预取可能随时命中 URL
-        if (!"status".equals(op) && !"openProfile".equals(op)) {
+        if (!"status".equals(op)) {
             return methodNotAllowed();
         }
         return run(session);

@@ -127,6 +127,19 @@ public class InfraCheck {
  enum ModelGroup {BASE,OTHER;static ModelGroup getByCode(String s){return "BASE".equals(s)?BASE:OTHER;}static String getName(String s){return s;}}
  static class DailyTask {static <T>T manual(Supplier<T> s){return s.get();}}
  static class TaskCancelledException extends RuntimeException {}
+ static class NanoHTTPD {
+  interface IHTTPSession {Map<String,String> getParms();}
+  static class Response {final int code;Response(int code){this.code=code;}}
+ }
+ static class BaseHandler {
+  BaseHandler(String token){}
+  protected NanoHTTPD.Response onGet(NanoHTTPD.IHTTPSession session){return methodNotAllowed();}
+  protected NanoHTTPD.Response onPost(NanoHTTPD.IHTTPSession session,String body){return methodNotAllowed();}
+  NanoHTTPD.Response methodNotAllowed(){return new NanoHTTPD.Response(405);}
+  NanoHTTPD.Response badRequest(String message){return new NanoHTTPD.Response(400);}
+  NanoHTTPD.Response ok(Map<String,String> body){return new NanoHTTPD.Response(200);}
+ }
+ @@CONTROLHANDLER@@
  static class ExtensionsHandle {static int calls;static boolean cancel;static void handleRequest(String type,String fun,String data){assert !TaskLifecycle.isIdle();calls++;if(cancel)throw new TaskCancelledException();}}
  static class TestRpc {
   static final String TAG="rpc";
@@ -140,11 +153,11 @@ public class InfraCheck {
   static final long CONTROL_MIN_INTERVAL_STATUS=2000,CONTROL_MIN_INTERVAL_RESTART=10000,CONTROL_MIN_INTERVAL_EXECUTE=60000,CONTROL_MIN_INTERVAL_OPEN_PROFILE=1000;
   static final Map<String,AtomicLong> lastControlAt=new ConcurrentHashMap<>();static final java.util.regex.Pattern HTTP_TOKEN_PATTERN=java.util.regex.Pattern.compile("[0-9a-f]{64}");
   static String httpToken;static Context context=new Context();static ApplicationHook self=new ApplicationHook();
-  static int initCalls,statusCalls;static boolean lastExec,initAdmitted;
+  static int initCalls,statusCalls,profileOpens;static boolean lastExec,initAdmitted;
   static class Thread {static Queue<Runnable> jobs=new ArrayDeque<>();Runnable job;Thread(Runnable r,String name){job=r;}void start(){jobs.add(job);}}
   Boolean initHandler(Boolean force){return initHandler(force,null,true);}
   Boolean initHandler(Boolean force,TaskLifecycle.Freeze owner,boolean exec){initCalls++;lastExec=exec;initAdmitted=!TaskLifecycle.isIdle();assert TaskLifecycle.freezeIfIdle()==null:"async initialization not admitted atomically";return true;}
-  static void reloadAppConfig(){AppConfig.load();}void replyStatus(){statusCalls++;}static void openFriendProfile(Context c,String user){}
+  static void reloadAppConfig(){AppConfig.load();}void replyStatus(){statusCalls++;}static void openFriendProfile(Context c,String user){profileOpens++;}static void reLogin(){}
   @@TOKEN@@
   @@TOKENSHAPE@@
   @@RANDOMTOKEN@@
@@ -171,8 +184,13 @@ public class InfraCheck {
   root=new File(args[0]);FileUtil.MAIN_DIRECTORY_FILE.mkdirs();
   Set<String> known=Set.of("modelFieldsMap","modelFieldsMap.Current","modelFieldsMap.Current.keep");
   String src="{\"modelFieldsMap\":{\"Current\":{\"keep\":{\"value\":{\"token\":\"private-token-value\",\"n\":2}},\"retired\":{\"value\":1}},\"Retired\":{}},\"obsoleteRoot\":1}";
-  String good="{\"modelFieldsMap\":{\"Current\":{\"keep\":{\"value\":{\"token\":\"private-token-value\",\"n\":2}}}}}";
+  String good="{\"modelFieldsMap\":{\"Current\":{\"keep\":{\"value\":{\"token\":\"private-token-value\",\"n\":2}}}},\"obsoleteRoot\":1}";
   assert JsonUtil.isRewriteLossless(src,good,known);assert !JsonUtil.isRewriteLossless(src,good):"strict mode cannot remove unknown fields";
+  for(String key:List.of("obsoleteRoot","futureSetting","modelFieldsMap.futureSetting")){
+   String original="{\""+key+"\":{\"value\":2},\"modelFieldsMap\":{}}",removed="{\"modelFieldsMap\":{}}";
+   assert !JsonUtil.isRewriteLossless(original,removed,known):"unregistered top-level key silently removed";
+   assert JsonUtil.describeRewriteDiff(original,removed,known).equals(key+" : 回写后键消失");
+  }
   for(String bad:List.of("{\"modelFieldsMap\":{}}","{\"modelFieldsMap\":{\"Current\":{}}}","{\"modelFieldsMap\":{\"Current\":{\"keep\":{}}}}",good.replace(",\"n\":2",""),good.replace("private-token-value","different-secret"))){
    assert !JsonUtil.isRewriteLossless(src,bad,known):bad;String diff=JsonUtil.describeRewriteDiff(src,bad,known);assert !diff.isEmpty()&&!diff.contains("private-token-value")&&!diff.contains("different-secret"):diff;
   }
@@ -231,6 +249,13 @@ public class InfraCheck {
    assert FileUtil.isHostRunning()&&!FileUtil.acquireHostLock()&&!FileUtil.deleteAccount("A")&&account.exists();
   }
   assert FileUtil.acquireHostLock()&&FileUtil.acquireHostLock()&&FileUtil.isHostRunning()&&!FileUtil.deleteAccount("A");FileUtil.hostLock.release();FileUtil.hostLockRaf.close();FileUtil.hostLock=null;FileUtil.hostLockRaf=null;
+  resetHost();NanoHTTPD.IHTTPSession session=()->Map.of("userId","2088");
+  int opens=ApplicationHook.profileOpens,statuses=ApplicationHook.statusCalls;
+  ControlHandler profile=new ControlHandler("token","openProfile");
+  assert profile.onGet(session).code==405&&ApplicationHook.profileOpens==opens:"GET opened friend profile";
+  assert profile.onPost(session,"").code==200&&ApplicationHook.profileOpens==opens+1:"POST profile action unavailable";
+  assert new ControlHandler("token","status").onGet(session).code==200&&ApplicationHook.statusCalls==statuses+1;
+  for(String op:List.of("reLogin","restart","reloadConfig","execute","forestQuery","walkPath"))assert new ControlHandler("token",op).onGet(session).code==405:op;
   System.out.println("PASS Nov16 infra: known-path nested preservation, secret-free diagnostics, corrupt map protection, agreement rollback/GMT8, directed pairing/token/alarm, generation/account admitted controls, deletion lease and host lock");
  }
 }
@@ -254,6 +279,7 @@ replace = {
     "@@EXTENSIONSTART@@": method("model/extensions/TestRpc.java", "public static void start(").replace("io.github.aw1y2z.sesame.util.Log", "Log"),
     "@@LIFECYCLE@@": method("data/task/TaskLifecycle.java", "public final class TaskLifecycle").replace("public final class", "static final class", 1),
     "@@BRIDGE@@": bridge,
+    "@@CONTROLHANDLER@@": method("hook/ControlHandler.java", "public class ControlHandler").replace("public class ControlHandler", "static class ControlHandler", 1),
 }
 signatures = {
     "TOKEN": "private static synchronized String resolveHttpToken(",

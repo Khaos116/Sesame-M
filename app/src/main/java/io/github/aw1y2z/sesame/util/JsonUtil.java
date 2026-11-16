@@ -371,7 +371,7 @@ public class JsonUtil {
                 String childPath = path.isEmpty() ? entry.getKey() : path + "." + entry.getKey();
                 JsonNode rewrittenValue = rewritten.get(entry.getKey());
                 if (rewrittenValue == null) {
-                    if (mayRemoveUnknownConfigKey(childPath, knownPaths)) {
+                    if (mayRemoveUnknownConfigKey(path, childPath, knownPaths)) {
                         // 代码里已删除的废弃键，会被回写清掉，不算数据差异
                         continue;
                     }
@@ -429,10 +429,9 @@ public class JsonUtil {
         return text.length() <= 60 ? text : text.substring(0, 60) + "...";
     }
 
-    private static boolean mayRemoveUnknownConfigKey(String path, Set<String> knownPaths) {
-        return knownPaths != null && !knownPaths.contains(path)
-                && (!path.contains(".") || path.startsWith("modelFieldsMap.")
-                && path.split("\\.", 4).length <= 3);
+    private static boolean mayRemoveUnknownConfigKey(String parentPath, String path, Set<String> knownPaths) {
+        return !parentPath.isEmpty() && knownPaths != null && !knownPaths.contains(path)
+                && path.startsWith("modelFieldsMap.") && path.split("\\.", 4).length <= 3;
     }
 
     private static boolean dataContainedIn(JsonNode source, JsonNode rewritten, String path, Set<String> knownPaths) {
@@ -450,7 +449,7 @@ public class JsonUtil {
                 JsonNode rewrittenValue = rewritten.get(entry.getKey());
                 if (rewrittenValue == null) {
                     // 只允许改格式、不许改数据：除非调用方确认这是代码里已删除的废弃键
-                    if (mayRemoveUnknownConfigKey(childPath, knownPaths)) {
+                    if (mayRemoveUnknownConfigKey(path, childPath, knownPaths)) {
                         continue;
                     }
                     return false;
