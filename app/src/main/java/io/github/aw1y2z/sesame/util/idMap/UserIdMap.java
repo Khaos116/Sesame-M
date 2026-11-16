@@ -124,6 +124,7 @@ public class UserIdMap {
     }
     
     public synchronized static void initUser(String currentUserId) {
+        friendListLoaded = false;
         setCurrentUserId(currentUserId);
         FileUtil.publishCurrentLogUser(currentUserId);
         // mainHandler 只在 Service onCreate hook 内赋值：未就绪说明模块还没起来，
@@ -134,6 +135,7 @@ public class UserIdMap {
             return;
         }
         handler.post(() -> {
+            if (!Objects.equals(currentUserId, getCurrentUid()) || !Objects.equals(currentUserId, ApplicationHook.getUserId())) return;
             ClassLoader loader;
             try {
                 loader = ApplicationHook.getClassLoader();
@@ -150,11 +152,13 @@ public class UserIdMap {
                 UserEntity selfEntity = buildSelfFromAccountModel();
 
                 // 遍历本地好友列表：补全好友映射；若自身仍在其中且上面没拿到，则作为兜底。
+                boolean friendsComplete = false;
                 try {
                     Class<?> clsUserIndependentCache = loader.loadClass("com.alipay.mobile.socialcommonsdk.bizdata.UserIndependentCache");
                     Class<?> clsAliAccountDaoOp = loader.loadClass("com.alipay.mobile.socialcommonsdk.bizdata.contact.data.AliAccountDaoOp");
                     Object aliAccountDaoOp = XHelpers.callStaticMethod(clsUserIndependentCache, "getCacheObj", clsAliAccountDaoOp);
                     List<?> allFriends = (List<?>) XHelpers.callMethod(aliAccountDaoOp, "getAllFriends", new Object[0]);
+                    friendsComplete = true;
                     if (!allFriends.isEmpty()) {
                         Class<?> friendClass = allFriends.get(0).getClass();
                         Field userIdField = XHelpers.findField(friendClass, "userId");
@@ -166,6 +170,7 @@ public class UserIdMap {
                         for (Object userObject : allFriends) {
                             try {
                                 String userId = (String) userIdField.get(userObject);
+                                if (userId == null || userId.isEmpty()) throw new IllegalArgumentException("missing friend userId");
                                 String account = (String) accountField.get(userObject);
                                 String name = (String) nameField.get(userObject);
                                 String nickName = (String) nickNameField.get(userObject);
@@ -179,24 +184,31 @@ public class UserIdMap {
                                 }
                                 UserIdMap.add(userEntity);
                             } catch (Throwable t) {
+                                friendsComplete = false;
                                 Log.i("addUserObject err:");
                                 Log.printStackTrace(t);
                             }
                         }
                     }
                 } catch (Throwable t) {
+                    friendsComplete = false;
                     Log.i("load friends err:");
                     Log.printStackTrace(t);
                 }
 
+                if (!Objects.equals(currentUserId, getCurrentUid()) || !Objects.equals(currentUserId, ApplicationHook.getUserId())) return;
                 if (selfEntity != null) {
                     UserIdMap.add(selfEntity);
                     UserIdMap.saveSelf(selfEntity);
                 } else {
                     Log.record("未能获取自身账号信息，配置页副标题将回退为用户ID");
                 }
-                UserIdMap.save(selfId);
-                friendListLoaded = true;
+                if (friendsComplete) {
+                    UserIdMap.save(selfId);
+                    friendListLoaded = true;
+                } else {
+                    Log.record("好友表读取不完整#保留好友缓存，暂不按陌生关系过滤");
+                }
             } catch (Throwable t) {
                 Log.i("checkUnknownId.run err:");
                 Log.printStackTrace(t);

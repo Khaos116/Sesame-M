@@ -35,6 +35,20 @@ with tempfile.TemporaryDirectory(prefix="sesame-statistics-") as directory:
     write("io/github/aw1y2z/sesame/util/idMap/AutoBlackListMap.java", (SOURCE / "util/idMap/AutoBlackListMap.java").read_text(encoding="utf-8"))
     write("io/github/aw1y2z/sesame/entity/IdAndName.java", """package io.github.aw1y2z.sesame.entity;
 public class IdAndName implements Comparable<IdAndName> { public String id, name; public int compareTo(IdAndName other) { return id.compareTo(other.id); } }""")
+    write("android/os/Handler.java", "package android.os; public class Handler {public Runnable pending;public boolean post(Runnable r){pending=r;return true;}public void run(){Runnable r=pending;pending=null;r.run();}}")
+    for cls in ("UserIndependentCache", "contact.data.AliAccountDaoOp"):
+        package="com.alipay.mobile.socialcommonsdk.bizdata"+(".contact.data" if "." in cls else "")
+        name=cls.split(".")[-1]
+        write(package.replace(".","/")+"/"+name+".java", "package "+package+";public class "+name+" {}")
+    write("io/github/aw1y2z/sesame/hook/ApplicationHook.java", """package io.github.aw1y2z.sesame.hook;
+public class ApplicationHook {public static android.os.Handler handler=new android.os.Handler();public static android.os.Handler getMainHandler(){return handler;}public static ClassLoader getClassLoader(){return ApplicationHook.class.getClassLoader();}public static String getUserId(){return io.github.aw1y2z.sesame.util.idMap.UserIdMap.uid;}}""")
+    write("io/github/aw1y2z/sesame/util/XHelpers.java", """package io.github.aw1y2z.sesame.util;
+public class XHelpers {public static boolean fail;public static java.util.List<?> friends=java.util.List.of();
+public static Object callStaticMethod(Class<?> c,String n,Object...args){return new Object();}
+public static Object callMethod(Object o,String n,Object...args){if(fail)throw new IllegalStateException("DAO failure");return friends;}
+public static java.lang.reflect.Field findField(Class<?> c,String n)throws Exception{return c.getField(n);}
+public static class Friend {public String userId="friend",account="account",name="name",nickName="Friend",remarkName="remark";public Integer friendStatus=1;}}
+""")
     write("android/content/Context.java", "package android.content; public class Context { public String getString(int id) { return \"\"; } }")
     write("androidx/annotation/Keep.java", "package androidx.annotation; public @interface Keep {}")
     write("io/github/aw1y2z/sesame/R.java", """package io.github.aw1y2z.sesame;
@@ -44,16 +58,19 @@ public final class R { public static final class string {
     write("io/github/aw1y2z/sesame/util/AccountFolderName.java", """package io.github.aw1y2z.sesame.util;
 public class AccountFolderName { public static boolean isValidUid(String uid) { return uid != null && uid.matches("[A-Za-z0-9_-]{1,128}"); } }""")
     user_map = """package io.github.aw1y2z.sesame.util.idMap;
-import java.util.*;import java.io.File;import com.fasterxml.jackson.core.type.TypeReference;
+import java.util.*;import java.io.File;import java.lang.reflect.Field;import android.os.Handler;import io.github.aw1y2z.sesame.hook.ApplicationHook;import com.fasterxml.jackson.core.type.TypeReference;
 import io.github.aw1y2z.sesame.entity.UserEntity;import io.github.aw1y2z.sesame.util.*;
 public class UserIdMap {
  public static String uid;public static boolean realMap;private static boolean friendListLoaded;
  private static final Map<String,UserEntity> userMap=new HashMap<>();
  public static String getCurrentUid(){return uid;}
  public static String getMaskName(String id){return realMap?realMaskName(id):id;}
- @@LOADED@@ @@LOAD@@ @@ADD@@ @@UNLOAD@@ @@MASK@@
+ static void setCurrentUserId(String id){uid=id;}
+ static UserEntity buildSelfFromAccountModel(){return new UserEntity(uid,"self-account",null,null,"self",null);}
+ static UserEntity mergeSelfEntity(UserEntity a,UserEntity b){return a==null?b:a;}
+ @@INIT@@ @@SAVE@@ @@SAVESELF@@ @@LOADED@@ @@LOAD@@ @@ADD@@ @@UNLOAD@@ @@MASK@@
 }"""
-    for tag, signature in {"LOADED":"public static boolean isFriendListLoaded(","LOAD":"public synchronized static void load(",
+    for tag, signature in {"INIT":"public synchronized static void initUser(","SAVE":"public synchronized static boolean save(","SAVESELF":"public synchronized static boolean saveSelf(","LOADED":"public static boolean isFriendListLoaded(","LOAD":"public synchronized static void load(",
                            "ADD":"public synchronized static void add(","UNLOAD":"public synchronized static void unload(",
                            "MASK":"public static String getMaskName("}.items():
         value = method("util/idMap/UserIdMap.java", signature)
@@ -66,6 +83,8 @@ import java.io.*; import java.nio.file.*; import io.github.aw1y2z.sesame.util.id
 public class FileUtil {
     public static File root;
     public static int writes;
+    public static void publishCurrentLogUser(String uid){}
+    public static File getSelfIdFile(String uid){return new File(new File(new File(root,"config"),uid),"self.json");}
     public static File getStatisticsFile(String uid) { return new File(new File(new File(root, "config"), uid), "statistics.json"); }
     public static File getStatisticsFile() { return getStatisticsFile(UserIdMap.getCurrentUid()); }
     public static File getFriendWatchFile(String uid) { return new File(new File(new File(root, "config"), uid), "friendWatch.json"); }
@@ -87,7 +106,7 @@ public class JsonUtil {
     public static String toJsonString(Object value) { return toFormatJsonString(value); }
 }""")
     write("io/github/aw1y2z/sesame/util/Log.java", """package io.github.aw1y2z.sesame.util;
-public class Log { public static boolean expectedParseFailure; public static void record(String s){} public static void i(String a, String b) {} public static void printStackTrace(String a, Throwable b) { if(!expectedParseFailure)throw new RuntimeException(b); }
+public class Log { public static boolean expectedParseFailure; public static void record(String s){} public static void i(String a, String b) {} public static void i(String a){} public static void printStackTrace(String a, Throwable b) { if(!expectedParseFailure)throw new RuntimeException(b); }
 public static void printStackTrace(Throwable b) { if(!expectedParseFailure)throw new RuntimeException(b); } public static void err(String a, String b, Throwable c) { throw new RuntimeException(c); }
 public static void system(String a, String b) {} public static void debug(String a) {} }""")
     write("io/github/aw1y2z/sesame/util/TimeUtil.java", """package io.github.aw1y2z.sesame.util;
@@ -178,6 +197,28 @@ public class StatisticsAccountCheck {
         Files.writeString(friendFile,"{}");UserIdMap.load("A");assert UserIdMap.isFriendListLoaded()&&UserIdMap.getMaskName("friend")==null;
         FriendWatch.friendWatch("friend",99);FriendWatch.save();assert FriendWatch.getList("A").get(0).getAllGet()==10:"valid complete list stopped filtering strangers";
         UserIdMap.unload();assert !UserIdMap.isFriendListLoaded();
+        for(int scenario=0;scenario<4;scenario++){
+            Files.writeString(friendFile,friendJson);UserIdMap.load("A");
+            XHelpers.fail=scenario==0;
+            XHelpers.friends=scenario==1?java.util.List.of(new XHelpers.Friend(),new Object()):scenario==2?java.util.List.of():java.util.List.of(new XHelpers.Friend());
+            Log.expectedParseFailure=true;UserIdMap.initUser("A");io.github.aw1y2z.sesame.hook.ApplicationHook.handler.run();Log.expectedParseFailure=false;
+            assert UserIdMap.isFriendListLoaded()==(scenario>=2):"callback claimed incomplete friend enumeration: "+scenario;
+            if(scenario<2)assert Files.readString(friendFile).equals(friendJson):"failed callback overwrote good friend cache";
+            else assert UserIdMap.getMaskName("friend")!=null== (scenario==3):"complete enumeration did not replace friend cache";
+            assert Files.isRegularFile(FileUtil.getSelfIdFile("A").toPath()):"friend failure discarded valid self info";
+        }
+        XHelpers.fail=false;
+        Files.writeString(friendFile,friendJson);UserIdMap.load("A");assert UserIdMap.isFriendListLoaded();
+        UserIdMap.initUser("B");assert !UserIdMap.isFriendListLoaded():"queued initialization retained old-account complete flag";
+        UserIdMap.uid="A";UserIdMap.load("A");assert UserIdMap.isFriendListLoaded();
+        android.os.Handler originalHandler=io.github.aw1y2z.sesame.hook.ApplicationHook.handler;
+        io.github.aw1y2z.sesame.hook.ApplicationHook.handler=null;
+        UserIdMap.initUser("B");assert !UserIdMap.isFriendListLoaded():"missing handler retained old-account complete flag";
+        io.github.aw1y2z.sesame.hook.ApplicationHook.handler=originalHandler;
+        UserIdMap.initUser("A");UserIdMap.uid="B";int staleWrites=FileUtil.writes;
+        io.github.aw1y2z.sesame.hook.ApplicationHook.handler.run();
+        assert FileUtil.writes==staleWrites:"queued old-account callback wrote new account metadata";
+        UserIdMap.uid="A";
         System.out.println("PASS: account statistics/blacklists isolated; failed friend loads preserve statistics and complete lists still filter strangers");
     }
 }""")
