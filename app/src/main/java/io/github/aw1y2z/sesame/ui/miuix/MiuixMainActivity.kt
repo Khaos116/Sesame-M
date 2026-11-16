@@ -110,6 +110,9 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.File
 import kotlin.math.roundToInt
 
+// Keep accepted saves ordered and alive when a tab or Activity leaves composition.
+private val appConfigWriter = java.util.concurrent.Executors.newSingleThreadExecutor()
+
 class MiuixMainActivity : MiuixBaseActivity() {
 
     var runTypeText by mutableStateOf("")
@@ -354,13 +357,31 @@ class MiuixMainActivity : MiuixBaseActivity() {
         }
     }
 
+    fun saveAppConfig(change: () -> Unit, clearLog: String? = null,
+                      afterWrite: () -> Unit = {}, onSaved: () -> Unit = { broadcastReloadConfig() }) {
+        val appContext = applicationContext
+        change()
+        appConfigWriter.execute {
+            try {
+                if (!AppConfig.save()) throw IllegalStateException("AppConfig save failed")
+                if (clearLog != null) FileUtil.clearLog(clearLog)
+                afterWrite()
+                Handler(Looper.getMainLooper()).post { onSaved() }
+            } catch (e: Exception) {
+                Log.printStackTrace(e)
+                Handler(Looper.getMainLooper()).post { ToastUtil.show(appContext, "配置保存失败，请重试") }
+            }
+        }
+    }
+
     fun toggleLanguage() {
-        val appConfig = AppConfig.INSTANCE
-        appConfig.languageSimplifiedChinese = !appConfig.languageSimplifiedChinese
-        if (AppConfig.save()) {
+        saveAppConfig({
+            val config = AppConfig.INSTANCE
+            config.languageSimplifiedChinese = !config.languageSimplifiedChinese
+        }, onSaved = {
             LanguageUtil.setLocal(this)
             recreate()
-        }
+        })
     }
 
     fun isIconHidden(): Boolean {
@@ -706,42 +727,27 @@ fun LogsTab(activity: MiuixMainActivity, currentAccount: String) {
         var forest by remember { mutableStateOf(AppConfig.INSTANCE.enableForestLog ?: true) }
         LogSwitchRow("森林记录", forest, onClick = { openLog(activity, LogType.FOREST) }) {
             forest = it
-            AppConfig.INSTANCE.enableForestLog = it
-            AppConfig.save()
-            activity.broadcastReloadConfig()
-            if (!it) FileUtil.clearLog("forest")
+            activity.saveAppConfig({ AppConfig.INSTANCE.enableForestLog = it }, clearLog = if (!it) "forest" else null)
         }
         var farm by remember { mutableStateOf(AppConfig.INSTANCE.enableFarmLog ?: true) }
         LogSwitchRow("庄园记录", farm, onClick = { openLog(activity, LogType.FARM) }) {
             farm = it
-            AppConfig.INSTANCE.enableFarmLog = it
-            AppConfig.save()
-            activity.broadcastReloadConfig()
-            if (!it) FileUtil.clearLog("farm")
+            activity.saveAppConfig({ AppConfig.INSTANCE.enableFarmLog = it }, clearLog = if (!it) "farm" else null)
         }
         var goldenBeans by remember { mutableStateOf(AppConfig.INSTANCE.enableGoldenBeansLog ?: true) }
         LogSwitchRow("金豆记录", goldenBeans, onClick = { openLog(activity, LogType.GOLDENBEANS) }) {
             goldenBeans = it
-            AppConfig.INSTANCE.enableGoldenBeansLog = it
-            AppConfig.save()
-            activity.broadcastReloadConfig()
-            if (!it) FileUtil.clearLog("goldenbeans")
+            activity.saveAppConfig({ AppConfig.INSTANCE.enableGoldenBeansLog = it }, clearLog = if (!it) "goldenbeans" else null)
         }
         var other by remember { mutableStateOf(AppConfig.INSTANCE.enableOtherLog ?: true) }
         LogSwitchRow("其他记录", other, onClick = { openLog(activity, LogType.OTHER) }) {
             other = it
-            AppConfig.INSTANCE.enableOtherLog = it
-            AppConfig.save()
-            activity.broadcastReloadConfig()
-            if (!it) FileUtil.clearLog("other")
+            activity.saveAppConfig({ AppConfig.INSTANCE.enableOtherLog = it }, clearLog = if (!it) "other" else null)
         }
         var captcha by remember { mutableStateOf(AppConfig.INSTANCE.enableCaptchaLog ?: true) }
         LogSwitchRow("验证记录", captcha, onClick = { openLog(activity, LogType.CAPTCHA) }) {
             captcha = it
-            AppConfig.INSTANCE.enableCaptchaLog = it
-            AppConfig.save()
-            activity.broadcastReloadConfig()
-            if (!it) FileUtil.clearLog("captcha")
+            activity.saveAppConfig({ AppConfig.INSTANCE.enableCaptchaLog = it }, clearLog = if (!it) "captcha" else null)
         }
     }
     Spacer(Modifier.height(16.dp))
@@ -756,35 +762,25 @@ fun LogsTab(activity: MiuixMainActivity, currentAccount: String) {
             summary = "同时允许 PC 调试"
         ) {
             debug = it
-            AppConfig.INSTANCE.enableDebugLog = it
-            AppConfig.save()
-            if (it) {
-                // 副本由宿主写入，未配对时只能等它下次加载
-                if (!HostBridge.isPaired(activity)) {
+            activity.saveAppConfig({ AppConfig.INSTANCE.enableDebugLog = it }, afterWrite = {
+                if (!it) HostBridge.revokeMirrorToken(activity.applicationContext)
+            }, onSaved = {
+                if (it && !HostBridge.isPaired(activity)) {
                     ToastUtil.show(activity, "已开启，打开支付宝后生效")
                 }
-            } else {
-                // 关闭即撤销副本：宿主那条 reloadConfig 在未配对、宿主未运行或频控命中时都不生效
-                HostBridge.revokeMirrorToken(activity)
-            }
-            activity.broadcastReloadConfig()
+                activity.broadcastReloadConfig()
+            })
             // 关闭时**不清空** debug 日志：抓到的包是排查证据，要清空请到日志页点「删除」
         }
         var error by remember { mutableStateOf(AppConfig.INSTANCE.enableViewErrorLog ?: true) }
         LogSwitchRow("查看异常日志", error, onClick = { openLog(activity, LogType.ERROR) }) {
             error = it
-            AppConfig.INSTANCE.enableViewErrorLog = it
-            AppConfig.save()
-            activity.broadcastReloadConfig()
-            if (!it) FileUtil.clearLog("error")
+            activity.saveAppConfig({ AppConfig.INSTANCE.enableViewErrorLog = it }, clearLog = if (!it) "error" else null)
         }
         var runtime by remember { mutableStateOf(AppConfig.INSTANCE.enableViewRuntimeLog ?: true) }
         LogSwitchRow("查看运行日志", runtime, onClick = { openLog(activity, LogType.RUNTIME) }) {
             runtime = it
-            AppConfig.INSTANCE.enableViewRuntimeLog = it
-            AppConfig.save()
-            activity.broadcastReloadConfig()
-            if (!it) FileUtil.clearLog("runtime")
+            activity.saveAppConfig({ AppConfig.INSTANCE.enableViewRuntimeLog = it }, clearLog = if (!it) "runtime" else null)
         }
     }
     Spacer(Modifier.height(16.dp))
@@ -923,37 +919,47 @@ private fun SwipeRevealRow(
     }
 }
 
+private fun loadConfigAccounts(): List<Triple<String?, String, String?>> {
+    // (userId, 标题, 副标题)：标题固定为「账号N」保证单行不换行，昵称/账号放副标题
+    val list = ArrayList<Triple<String?, String, String?>>()
+    list.add(Triple(null, "默认", null))
+    try {
+        val dir = FileUtil.CONFIG_DIRECTORY_FILE
+        dir.listFiles()?.forEach { configDir ->
+            if (configDir.isDirectory) {
+                val userId = configDir.name
+                val userEntity = try {
+                    val json = FileUtil.readFromFile(FileUtil.getSelfIdFile(userId))
+                    if (json.isBlank()) null else JsonUtil.parseObject(json, UserEntity.UserDto::class.java)?.toEntity()
+                } catch (e: Exception) {
+                    Log.printStackTrace(e)
+                    null
+                }
+                val label = UserIdMap.getAccountLabel(userId) ?: userId
+                // 副标题优先显示「昵称:账号」；新用户尚未被模块钩子同步资料（self.json 不存在）时
+                // 回退显示 userId 本身，避免空白且仍能区分账号
+                // 副标题优先显示「昵称:账号」；昵称缺失时只显示账号，不再出现字面 "null"
+                val summary = userEntity?.let { ue ->
+                    ue.showName?.let { name -> "$name: ${ue.account}" } ?: (ue.account ?: userId)
+                } ?: userId
+                list.add(Triple(userId, label, summary))
+            }
+        }
+    } catch (e: Exception) {
+        Log.printStackTrace(e)
+    }
+    return list
+}
+
 @Composable
 fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // 删除账号后自增，触发重新扫描账号目录
     var refreshKey by remember { mutableIntStateOf(0) }
-    val items = remember(refreshKey) {
-        // (userId, 标题, 副标题)：标题固定为「账号N」保证单行不换行，昵称/账号放副标题
-        val list = ArrayList<Triple<String?, String, String?>>()
-        list.add(Triple(null, "默认", null))
-        try {
-            val dir = FileUtil.CONFIG_DIRECTORY_FILE
-            dir.listFiles()?.forEach { configDir ->
-                if (configDir.isDirectory) {
-                    val userId = configDir.name
-                    UserIdMap.loadSelf(userId)
-                    val userEntity = UserIdMap.get(userId)
-                    val label = UserIdMap.getAccountLabel(userId) ?: userId
-                    // 副标题优先显示「昵称:账号」；新用户尚未被模块钩子同步资料（self.json 不存在）时
-                    // 回退显示 userId 本身，避免空白且仍能区分账号
-                    // 副标题优先显示「昵称:账号」；昵称缺失时只显示账号，不再出现字面 "null"
-                    val summary = userEntity?.let { ue ->
-                        ue.showName?.let { name -> "$name: ${ue.account}" } ?: (ue.account ?: userId)
-                    } ?: userId
-                    list.add(Triple(userId, label, summary))
-                }
-            }
-        } catch (e: Exception) {
-            Log.printStackTrace(e)
-        }
-        list
+    var items by remember { mutableStateOf(listOf(Triple<String?, String, String?>(null, "默认", null))) }
+    LaunchedEffect(refreshKey) {
+        items = withContext(Dispatchers.IO) { loadConfigAccounts() }
     }
 
     // 删除确认：只有点了左滑露出的「删除」才弹，避免误触不可恢复操作
@@ -1044,18 +1050,14 @@ fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
         // 这几项原先是「按账号」存在账号配置里，现改为全局配置 AppConfig（模块级，不分账号）
         var newRpc by remember { mutableStateOf(AppConfig.INSTANCE.newRpc ?: true) }
         BooleanSwitch("使用新接口", newRpc, summary = "最低支持 v10.3.96.8100") {
-            AppConfig.INSTANCE.newRpc = it
-            AppConfig.save()
+            activity.saveAppConfig({ AppConfig.INSTANCE.newRpc = it }, onSaved = { activity.broadcastRestart() })
             newRpc = it
             // 换接口要重挂 RPC bridge，必须让注入进程整体重启（只重载配置不够）
-            activity.broadcastRestart()
         }
         var showToast by remember { mutableStateOf(AppConfig.INSTANCE.showToast ?: true) }
         BooleanSwitch("气泡提示", showToast) {
-            AppConfig.INSTANCE.showToast = it
-            AppConfig.save()
+            activity.saveAppConfig({ AppConfig.INSTANCE.showToast = it })
             showToast = it
-            activity.broadcastReloadConfig()
         }
         // 气泡纵向偏移：一级界面没有整数控件，用 ArrowPreference 展开输入框，输入即保存
         var toastOffsetY by remember { mutableStateOf((AppConfig.INSTANCE.toastOffsetY ?: 0).toString()) }
@@ -1073,9 +1075,7 @@ fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
                     val filtered = text.filterIndexed { index, c -> c.isDigit() || (c == '-' && index == 0) }
                     toastOffsetY = filtered
                     filtered.toIntOrNull()?.let { value ->
-                        AppConfig.INSTANCE.toastOffsetY = value
-                        AppConfig.save()
-                        activity.broadcastReloadConfig()
+                        activity.saveAppConfig({ AppConfig.INSTANCE.toastOffsetY = value })
                     }
                 },
                 // 不要 label：它会作为浮动小标题显示在输入框内部（与上方行标题重复）；单位说明放到上面的 summary 里
@@ -1087,31 +1087,23 @@ fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
         }
         var enableOnGoing by remember { mutableStateOf(AppConfig.INSTANCE.enableOnGoing ?: false) }
         BooleanSwitch("开启状态栏禁删", enableOnGoing) {
-            AppConfig.INSTANCE.enableOnGoing = it
-            AppConfig.save()
+            activity.saveAppConfig({ AppConfig.INSTANCE.enableOnGoing = it })
             enableOnGoing = it
-            activity.broadcastReloadConfig()
         }
         var closeCaptchaDialog by remember { mutableStateOf(AppConfig.INSTANCE.closeCaptchaDialog ?: true) }
         BooleanSwitch("屏蔽部分弹窗", closeCaptchaDialog) {
-            AppConfig.INSTANCE.closeCaptchaDialog = it
-            AppConfig.save()
+            activity.saveAppConfig({ AppConfig.INSTANCE.closeCaptchaDialog = it })
             closeCaptchaDialog = it
-            activity.broadcastReloadConfig()
         }
         var autoPuzzleSlider by remember { mutableStateOf(AppConfig.INSTANCE.autoPuzzleSlider ?: true) }
         BooleanSwitch("自动处理拼图滑块验证", autoPuzzleSlider, summary = "关闭后不自动拖动图片拼图滑块") {
-            AppConfig.INSTANCE.autoPuzzleSlider = it
-            AppConfig.save()
+            activity.saveAppConfig({ AppConfig.INSTANCE.autoPuzzleSlider = it })
             autoPuzzleSlider = it
-            activity.broadcastReloadConfig()
         }
         var newPuzzleSlider by remember { mutableStateOf(AppConfig.INSTANCE.newPuzzleSlider ?: true) }
         BooleanSwitch("使用新版拼图识别", newPuzzleSlider, summary = "关闭后使用原有 M 版识别和滑动逻辑") {
-            AppConfig.INSTANCE.newPuzzleSlider = it
-            AppConfig.save()
+            activity.saveAppConfig({ AppConfig.INSTANCE.newPuzzleSlider = it })
             newPuzzleSlider = it
-            activity.broadcastReloadConfig()
         }
     }
     Spacer(Modifier.height(16.dp))
@@ -1165,8 +1157,7 @@ fun SettingsTab(activity: MiuixMainActivity, currentAccount: String) {
         }
         var logViewByRun by remember { mutableStateOf(AppConfig.INSTANCE.logViewByRun ?: false) }
         BooleanSwitch("日志查看方式切换", logViewByRun) {
-            AppConfig.INSTANCE.logViewByRun = it
-            AppConfig.save()
+            activity.saveAppConfig({ AppConfig.INSTANCE.logViewByRun = it }, onSaved = {})
             logViewByRun = it
         }
         var darkMode by remember { mutableStateOf(AppConfig.INSTANCE.darkMode ?: false) }
@@ -1177,35 +1168,31 @@ fun SettingsTab(activity: MiuixMainActivity, currentAccount: String) {
         fun effectiveDark(follow: Boolean, dark: Boolean) = if (follow) systemDark else dark
         BooleanSwitch("深色模式", darkMode) {
             val before = effectiveDark(followSystem, darkMode)
-            AppConfig.INSTANCE.darkMode = it
-            // 手动选深/浅色就是明确不想跟随系统了，不然"跟随系统"默认开着，这个开关切了
-            // 也不会生效（MiuixBaseActivity 里 followSystem 优先级更高）。
-            if (followSystem) {
-                AppConfig.INSTANCE.followSystem = false
-                followSystem = false
-            }
-            AppConfig.save()
+            val nextDark = it
+            followSystem = false
             darkMode = it
-            if (effectiveDark(followSystem, darkMode) != before) activity.recreate()
+            val recreateNeeded = effectiveDark(followSystem, darkMode) != before
+            activity.saveAppConfig({
+                AppConfig.INSTANCE.darkMode = nextDark
+                AppConfig.INSTANCE.followSystem = false
+            }, onSaved = { if (recreateNeeded) activity.recreate() })
         }
         BooleanSwitch("跟随系统设置", followSystem) {
             val before = effectiveDark(followSystem, darkMode)
-            AppConfig.INSTANCE.followSystem = it
-            // 跟深色模式开关互斥：开了跟随系统，深色模式这个手动选择就没意义了，关掉它，
-            // 免得用户以为两个开关都生效、实际只有先设置优先级更高的那个说了算。
-            if (it && darkMode) {
-                AppConfig.INSTANCE.darkMode = false
-                darkMode = false
-            }
-            AppConfig.save()
+            val nextFollow = it
+            if (it) darkMode = false
             followSystem = it
-            if (effectiveDark(followSystem, darkMode) != before) activity.recreate()
+            val nextDark = darkMode
+            val recreateNeeded = effectiveDark(followSystem, darkMode) != before
+            activity.saveAppConfig({
+                AppConfig.INSTANCE.followSystem = nextFollow
+                AppConfig.INSTANCE.darkMode = nextDark
+            }, onSaved = { if (recreateNeeded) activity.recreate() })
         }
+
         var batteryPerm by remember { mutableStateOf(AppConfig.shouldRequestBatteryPermission()) }
         BooleanSwitch("为支付宝申请后台运行权限", batteryPerm) {
-            AppConfig.INSTANCE.batteryPerm = it
-            AppConfig.save()
-            activity.broadcastReloadConfig()
+            activity.saveAppConfig({ AppConfig.INSTANCE.batteryPerm = it })
             batteryPerm = it
         }
         if (batteryPerm) {

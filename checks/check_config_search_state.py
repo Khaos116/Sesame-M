@@ -185,11 +185,22 @@ fun main() = runBlocking {
 
 main_source = (UI / "MiuixMainActivity.kt").read_text(encoding="utf-8")
 config_tab, _ = block(main_source, "fun ConfigTab(")
+forest_state = re.search(r"var forest by remember[^\n]+", main_source)[0]
+_, forest_change = block(main_source, '}) {\n            forest = it')
+scan_declaration = config_tab[config_tab.index("    var items by remember"):config_tab.index("    // ", config_tab.index("    LaunchedEffect(refreshKey)"))]
+account_loader = block(main_source, "private fun loadConfigAccounts(")[0]
+save_start = main_source.index("fun saveAppConfig(")
+save_body = main_source.index("        val appContext", save_start)
+save_open = main_source.rfind("{", save_start, save_body)
+config_save = main_source[save_start:save_open] + block(main_source, main_source[save_open:save_body + len("        val appContext")])[0]
+writer_declaration = re.search(r"private val appConfigWriter = [^\n]+", main_source)[0]
+
 _, delete_click = block(config_tab, "onDelete = {")
 _, delete_confirm = block(config_tab, "onConfirm = {")
 io_checks = r'''
 object IoBoundary {
     lateinit var uiThread: Thread
+    lateinit var post: (() -> Unit) -> Unit
     fun ui() = check(Thread.currentThread() === uiThread) { "UI update left the UI thread" }
     fun io() = check(Thread.currentThread() !== uiThread) { "blocking file I/O ran on the UI thread" }
 }
@@ -198,6 +209,11 @@ object FileUtil {
     val deletes = java.util.concurrent.atomic.AtomicInteger()
     var running = false
     var deleted = true
+    val CONFIG_DIRECTORY_FILE = java.nio.file.Files.createTempDirectory("accounts-ui").toFile().apply { resolve("A").mkdir() }
+    val clears=mutableListOf<String>()
+    fun clearLog(type: String) { IoBoundary.io();clears.add(type) }
+    fun getSelfIdFile(uid: String)=CONFIG_DIRECTORY_FILE.resolve(uid).resolve("self.json")
+    fun readFromFile(file: java.io.File): String { IoBoundary.io();val n=UserIdMap.calls.incrementAndGet();if(n==1)check(UserIdMap.gate?.await(5,java.util.concurrent.TimeUnit.SECONDS)!=false);return if(n==1) "old" else "new" }
     var deleteGate: java.util.concurrent.CountDownLatch? = null
     fun isHostRunning(): Boolean { IoBoundary.io(); probes.incrementAndGet(); return running }
     fun deleteAccount(uid: String): Boolean {
@@ -205,6 +221,43 @@ object FileUtil {
         check(deleteGate?.await(5, java.util.concurrent.TimeUnit.SECONDS) != false)
         return deleted
     }
+}
+object UserIdMap {
+    val calls=java.util.concurrent.atomic.AtomicInteger()
+    var gate: java.util.concurrent.CountDownLatch? = null
+    private val title=ThreadLocal<String>()
+    fun loadSelf(uid: String) { IoBoundary.io();val n=calls.incrementAndGet();title.set(if(n==1) "old" else "new");if(n==1)check(gate?.await(5,java.util.concurrent.TimeUnit.SECONDS)!=false) }
+    fun get(uid: String): User? = User(title.get())
+    fun getAccountLabel(uid: String): String? { IoBoundary.io(); return "account" }
+}
+class User(val showName: String?) {val account: String? = "account"}
+class UserEntity {class UserDto(val name:String) {fun toEntity()=User(name)}}
+object JsonUtil {fun parseObject(json:String,cls:Class<UserEntity.UserDto>):UserEntity.UserDto? {IoBoundary.io();return UserEntity.UserDto(json)}}
+object Log {fun printStackTrace(e: Exception) {if(e.message=="blocking file I/O ran on the UI thread")throw AssertionError(e)}}
+object AppConfig {
+    val INSTANCE=this;var enableForestLog=true;var fail=false
+    var gate: java.util.concurrent.CountDownLatch?=null
+    val entered=java.util.concurrent.atomic.AtomicInteger();val saved=mutableListOf<Boolean>()
+    fun save(): Boolean {IoBoundary.io();entered.incrementAndGet();check(gate?.await(5,java.util.concurrent.TimeUnit.SECONDS)!=false);if(fail)return false;saved.add(enableForestLog);return true}
+}
+class Looper {companion object{fun getMainLooper()=Looper()}}
+class Handler(looper: Looper) {fun post(action:()->Unit){IoBoundary.post(action)}}
+@@WRITER@@
+class MiuixMainActivity {
+    val applicationContext=this;var broadcasts=0
+    fun broadcastReloadConfig(){IoBoundary.ui();check(AppConfig.saved.isNotEmpty());broadcasts++}
+    @@CONFIG_SAVE@@
+}
+var rebuiltForest: Boolean?=null
+@Composable fun ReadForest() { @@FOREST_STATE@@
+    val rendered=forest;SideEffect {rebuiltForest=rendered}
+}
+class ForestFixture(val activity: MiuixMainActivity) {var forest=true;val change:(Boolean)->Unit={@@FOREST_CHANGE@@}}
+@@ACCOUNT_LOADER@@
+var observedAccounts: List<Triple<String?,String,String?>> = emptyList()
+@Composable fun ScanAccounts(refreshKey: Int) { @@SCAN_DECLARATION@@
+    val rendered=items
+    SideEffect {IoBoundary.ui();observedAccounts=rendered}
 }
 object ConfigV2 { var unloads = 0; fun unload() { IoBoundary.io(); unloads++ } }
 object ToastUtil { val messages = mutableListOf<String>(); fun show(context: Any, text: String) { IoBoundary.ui(); messages.add(text) } }
@@ -220,6 +273,43 @@ class DeleteFixture(val scope: CoroutineScope) {
 suspend fun accountIoChecks() {
     java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "test-ui") }.asCoroutineDispatcher().use { ui ->
         withContext(ui) { IoBoundary.uiThread = Thread.currentThread() }
+        val saveScope=CoroutineScope(SupervisorJob()+ui)
+        IoBoundary.post={action->saveScope.launch {action()}}
+        suspend fun settleSaves(){withContext(Dispatchers.IO){appConfigWriter.submit {}.get(5,java.util.concurrent.TimeUnit.SECONDS)};withContext(ui){}}
+        val activity=MiuixMainActivity();val forest=ForestFixture(activity)
+        AppConfig.gate=java.util.concurrent.CountDownLatch(1)
+        val departingTab=SupervisorJob()
+        withContext(ui){CoroutineScope(departingTab+ui).launch(start=CoroutineStart.UNDISPATCHED){forest.change(false);forest.change(true);forest.change(false);check(!forest.forest)}}
+        departingTab.cancel()
+        withTimeout(5000){while(AppConfig.entered.get()==0)delay(1)}
+        withContext(ui){
+            check(activity.broadcasts==0&&AppConfig.saved.isEmpty())
+            val nextTab=Composition(NoNodes(),Recomposer(ui))
+            nextTab.setContent {ReadForest()};check(rebuiltForest==false) {"new tab restored stale switch state"};nextTab.dispose()
+        }
+        AppConfig.gate!!.countDown();settleSaves();AppConfig.gate=null
+        withContext(ui){check(AppConfig.saved==listOf(false,false,false));check(activity.broadcasts==3);check(FileUtil.clears==listOf("forest","forest"))}
+        AppConfig.fail=true
+        withContext(ui){forest.change(true)};settleSaves()
+        withContext(ui){check(activity.broadcasts==3&&ToastUtil.messages.last().contains("\u4fdd\u5b58\u5931\u8d25"))}
+        AppConfig.fail=false
+        val scanClock=BroadcastFrameClock()
+        val scanRecomposer=Recomposer(ui+scanClock)
+        val scanRunner=CoroutineScope(ui+scanClock).launch {scanRecomposer.runRecomposeAndApplyChanges()}
+        val framePump=CoroutineScope(ui).launch {while(isActive){scanClock.sendFrame(System.nanoTime());delay(1)}}
+        val scanComposition=Composition(NoNodes(),scanRecomposer)
+        var scanKey by mutableIntStateOf(0)
+        withContext(ui){scanComposition.setContent {ScanAccounts(scanKey)}}
+        suspend fun scan(key:Int){withContext(ui){scanKey=key;Snapshot.sendApplyNotifications();yield();scanRecomposer.awaitIdle()}}
+        UserIdMap.gate=java.util.concurrent.CountDownLatch(1)
+        scan(0);withTimeout(5000){while(UserIdMap.calls.get()==0)delay(1)}
+        scan(1)
+        try {withTimeout(5000){while(withContext(ui){Snapshot.sendApplyNotifications();yield();scanClock.sendFrame(System.nanoTime());yield();observedAccounts.none {it.third?.startsWith("new")==true}})delay(1)}}
+        catch(e:TimeoutCancellationException){error("scan calls="+UserIdMap.calls.get()+" observed="+observedAccounts)}
+        UserIdMap.gate!!.countDown();withContext(Dispatchers.IO){Thread.sleep(30)}
+        withContext(ui){Snapshot.sendApplyNotifications();scanClock.sendFrame(System.nanoTime());yield()}
+        withContext(ui){check(observedAccounts.none {it.third?.startsWith("old")==true});scanComposition.dispose();scanRecomposer.close()};scanRunner.join();framePump.cancelAndJoin()
+        saveScope.cancel()
         val owner = SupervisorJob(); val scope = CoroutineScope(owner + ui)
         suspend fun settle() { owner.children.toList().joinAll() }
         val fixture = DeleteFixture(scope)
@@ -250,13 +340,15 @@ suspend fun accountIoChecks() {
         check(ConfigV2.unloads == 3 && fixture.refreshKey == refreshes && ToastUtil.messages.size == messages) { "cancelled UI lost disk cleanup or published stale success" }
 
     }
+    appConfigWriter.shutdown()
+    println("PASS serial config saves, off-main account scans and cancelled refresh protection")
     println("PASS production account callbacks: IO dispatch, duplicate clicks, host refusal, failure and cancellation cleanup")
 }
 '''
-for marker, value in {"@@DELETE_CLICK@@": delete_click, "@@DELETE_CONFIRM@@": delete_confirm}.items():
+for marker, value in {"@@DELETE_CLICK@@": delete_click, "@@DELETE_CONFIRM@@": delete_confirm,"@@FOREST_CHANGE@@":forest_change,"@@SCAN_DECLARATION@@":scan_declaration,"@@WRITER@@":writer_declaration,"@@CONFIG_SAVE@@":config_save,"@@ACCOUNT_LOADER@@":account_loader,"@@FOREST_STATE@@":forest_state}.items():
     io_checks = io_checks.replace(marker, value)
 code = code.replace('    println("PASS real Compose search/clear/reorder/empty results and isolated config writes")',
-                    '    accountIoChecks()\n    println("PASS real Compose search/clear/reorder/empty results and isolated config writes")') + io_checks
+                    '    try { accountIoChecks() } finally { appConfigWriter.shutdownNow() }\n    println("PASS real Compose search/clear/reorder/empty results and isolated config writes")') + io_checks
 
 with tempfile.TemporaryDirectory(prefix="sesame-config-search-") as temporary:
     work = Path(temporary)
@@ -273,6 +365,9 @@ with tempfile.TemporaryDirectory(prefix="sesame-config-search-") as temporary:
         kind = "interface" if name == "Parcelable" else "class"
         path.write_text(f"package android.os; public {kind} {name} {{{body}}}", encoding="utf-8")
         java_sources.append(str(path))
+    android_log = work / "Log.java"
+    android_log.write_text("package android.util; public class Log {public static int e(String tag,String message,Throwable error){error.printStackTrace();return 0;}}", encoding="utf-8")
+    java_sources.append(str(android_log))
     subprocess.run(["javac", "-J-Xmx128m", "-d", str(work)] + java_sources, check=True, timeout=30)
     runtime = work / "compose-runtime.jar"
     runtime_aar = artifact("androidx.compose.runtime", "runtime-android", extension="aar")
