@@ -6,7 +6,6 @@ import io.github.libxposed.service.XposedService;
 import io.github.libxposed.service.XposedServiceHelper;
 import io.github.aw1y2z.sesame.data.RunType;
 import io.github.aw1y2z.sesame.data.ViewAppInfo;
-import io.github.aw1y2z.sesame.ui.HostBridge;
 
 /**
  * 模块自身 App 进程的 Application。
@@ -19,8 +18,6 @@ public class SesameApplication extends Application implements XposedServiceHelpe
     public void onCreate() {
         super.onCreate();
         XposedServiceHelper.registerListener(this);
-        // 首次启动先配对：此时宿主多半没在跑，进前台时 MiuixMainActivity 会再试一次
-        HostBridge.ensurePaired(this);
     }
 
     @Override

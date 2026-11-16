@@ -926,6 +926,7 @@ private fun SwipeRevealRow(
 @Composable
 fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     // 删除账号后自增，触发重新扫描账号目录
     var refreshKey by remember { mutableIntStateOf(0) }
     val items = remember(refreshKey) {
@@ -957,6 +958,7 @@ fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
 
     // 删除确认：只有点了左滑露出的「删除」才弹，避免误触不可恢复操作
     var pendingDelete by remember { mutableStateOf<Triple<String, String, String?>?>(null) }
+    var deleteInProgress by remember { mutableStateOf(false) }
     // 同一时间只允许展开一行
     var revealedUid by remember { mutableStateOf<String?>(null) }
 
@@ -966,9 +968,11 @@ fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
     CardColumn {
         items.forEach { (userId, title, summary) ->
             val openSettings = {
-                val intent = Intent(context, MiuixSettingsActivity::class.java)
-                if (userId != null) intent.putExtra("userId", userId)
-                context.startActivity(intent)
+                if (!deleteInProgress) {
+                    val intent = Intent(context, MiuixSettingsActivity::class.java)
+                    if (userId != null) intent.putExtra("userId", userId)
+                    context.startActivity(intent)
+                }
             }
             if (userId == null) {
                 // 「默认」不是账号，只提供进入配置
@@ -979,12 +983,22 @@ fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
                     revealedKey = revealedUid,
                     onRevealChange = { revealedUid = it },
                     onDelete = {
-                        revealedUid = null
-                        // 宿主运行中它的注入进程会持续写账号目录，删完立刻被重建，所以直接拒绝
-                        if (FileUtil.isHostRunning()) {
-                            ToastUtil.show(context, "支付宝正在运行，请先在系统里强制停止支付宝，再删除账号")
-                        } else {
-                            pendingDelete = Triple(userId, title, summary)
+                        if (!deleteInProgress && pendingDelete == null) {
+                            revealedUid = null
+                            deleteInProgress = true
+                            scope.launch {
+                                try {
+                                    // 宿主运行中拒绝删除，最终删除仍会重新持锁检查。
+                                    val hostRunning = withContext(Dispatchers.IO) { FileUtil.isHostRunning() }
+                                    if (hostRunning) {
+                                        ToastUtil.show(context, "支付宝正在运行，请先在系统里强制停止支付宝，再删除账号")
+                                    } else {
+                                        pendingDelete = Triple(userId, title, summary)
+                                    }
+                                } finally {
+                                    deleteInProgress = false
+                                }
+                            }
                         }
                     }
                 ) {
@@ -999,13 +1013,25 @@ fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
             title = "删除账号",
             text = "将删除 $display 的配置、状态与备份，无法恢复。该账号下次登录时会重新出现，并从默认配置开始。",
             onConfirm = {
-                pendingDelete = null
-                revealedUid = null
-                val deleted = FileUtil.deleteAccount(target.first)
-                // 模块 App 若正持有该账号配置，卸载掉，避免继续往已删除的目录写
-                ConfigV2.unload()
-                refreshKey++
-                ToastUtil.show(context, if (deleted) "已删除账号 ${target.second}" else "删除失败，请检查存储权限")
+                if (!deleteInProgress) {
+                    pendingDelete = null
+                    revealedUid = null
+                    deleteInProgress = true
+                    scope.launch {
+                        try {
+                            val deleted = withContext(Dispatchers.IO) {
+                                val result = FileUtil.deleteAccount(target.first)
+                                // 删除开始后即使界面退出，也要卸载旧配置，避免目录被重新写回。
+                                ConfigV2.unload()
+                                result
+                            }
+                            refreshKey++
+                            ToastUtil.show(context, if (deleted) "已删除账号 ${target.second}" else "删除失败，请检查存储权限")
+                        } finally {
+                            deleteInProgress = false
+                        }
+                    }
+                }
             },
             onDismiss = { pendingDelete = null }
         )

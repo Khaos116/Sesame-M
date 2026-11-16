@@ -276,7 +276,7 @@ public class AntForestRpcCall {
     }
     
     public static String grantEnergyRainChance(String targetUserId) {
-        return ApplicationHook.requestString("alipay.antforest.forest.h5.grantEnergyRainChance", "[{\"targetUserId" + "\":" + targetUserId + "}]");
+        return ApplicationHook.requestString("alipay.antforest.forest.h5.grantEnergyRainChance", "[{\"targetUserId\":" + JSONObject.quote(targetUserId) + "}]");
     }
     
     public static String startEnergyRain() {

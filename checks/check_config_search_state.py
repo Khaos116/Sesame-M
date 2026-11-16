@@ -1,4 +1,4 @@
-"""Run production field-row rendering and switch logic with real Compose state, no device/network.
+"""Replay production Compose field state and account-deletion IO callbacks, no device/network.
 
 Removing field identity must fail: filtering/reordering cannot borrow another field's
 remembered switch state, and toggling a filtered row must update only that field.
@@ -183,6 +183,81 @@ fun main() = runBlocking {
 }
 '''.replace("@@SWITCH@@", switch).replace("@@ROWS@@", rows).replace("@@CARD_STATE@@", card_state).replace("@@CARD_CLICK@@", card_click)
 
+main_source = (UI / "MiuixMainActivity.kt").read_text(encoding="utf-8")
+config_tab, _ = block(main_source, "fun ConfigTab(")
+_, delete_click = block(config_tab, "onDelete = {")
+_, delete_confirm = block(config_tab, "onConfirm = {")
+io_checks = r'''
+object IoBoundary {
+    lateinit var uiThread: Thread
+    fun ui() = check(Thread.currentThread() === uiThread) { "UI update left the UI thread" }
+    fun io() = check(Thread.currentThread() !== uiThread) { "blocking file I/O ran on the UI thread" }
+}
+object FileUtil {
+    val probes = java.util.concurrent.atomic.AtomicInteger()
+    val deletes = java.util.concurrent.atomic.AtomicInteger()
+    var running = false
+    var deleted = true
+    var deleteGate: java.util.concurrent.CountDownLatch? = null
+    fun isHostRunning(): Boolean { IoBoundary.io(); probes.incrementAndGet(); return running }
+    fun deleteAccount(uid: String): Boolean {
+        IoBoundary.io(); check(uid == "A"); deletes.incrementAndGet()
+        check(deleteGate?.await(5, java.util.concurrent.TimeUnit.SECONDS) != false)
+        return deleted
+    }
+}
+object ConfigV2 { var unloads = 0; fun unload() { IoBoundary.io(); unloads++ } }
+object ToastUtil { val messages = mutableListOf<String>(); fun show(context: Any, text: String) { IoBoundary.ui(); messages.add(text) } }
+class DeleteFixture(val scope: CoroutineScope) {
+    val context = this; val userId = "A"; val title = "account"; val summary: String? = null
+    var revealedUid: String? = null
+    var pendingDelete: Triple<String, String, String?>? = null
+    var deleteInProgress = false
+    var refreshKey = 0
+    val onDelete: () -> Unit = { @@DELETE_CLICK@@ }
+    fun confirmation(target: Triple<String, String, String?>): () -> Unit = { @@DELETE_CONFIRM@@ }
+}
+suspend fun accountIoChecks() {
+    java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "test-ui") }.asCoroutineDispatcher().use { ui ->
+        withContext(ui) { IoBoundary.uiThread = Thread.currentThread() }
+        val owner = SupervisorJob(); val scope = CoroutineScope(owner + ui)
+        suspend fun settle() { owner.children.toList().joinAll() }
+        val fixture = DeleteFixture(scope)
+        withContext(ui) { fixture.onDelete(); fixture.onDelete() }; settle()
+        withContext(ui) { check(FileUtil.probes.get() == 1 && fixture.pendingDelete?.first == "A" && !fixture.deleteInProgress) }
+        FileUtil.running = true
+        withContext(ui) { fixture.pendingDelete = null; fixture.onDelete() }; settle()
+        withContext(ui) { check(fixture.pendingDelete == null && ToastUtil.messages.last().contains("支付宝正在运行")) }
+        FileUtil.running = false
+        withContext(ui) { fixture.onDelete() }; settle()
+        val confirm = withContext(ui) { fixture.confirmation(fixture.pendingDelete!!) }
+        FileUtil.deleteGate = java.util.concurrent.CountDownLatch(1)
+        withContext(ui) { confirm(); confirm() }
+        withTimeout(5000) { while (FileUtil.deletes.get() == 0) delay(1) }
+        withContext(ui) { check(fixture.deleteInProgress && fixture.pendingDelete == null && fixture.refreshKey == 0) }
+        FileUtil.deleteGate!!.countDown(); settle()
+        withContext(ui) { check(FileUtil.deletes.get() == 1 && ConfigV2.unloads == 1 && fixture.refreshKey == 1 && !fixture.deleteInProgress) }
+        FileUtil.deleted = false; FileUtil.deleteGate = null
+        withContext(ui) { fixture.onDelete() }; settle()
+        withContext(ui) { fixture.confirmation(fixture.pendingDelete!!)() }; settle()
+        withContext(ui) { check(ToastUtil.messages.last().contains("删除失败") && !fixture.deleteInProgress) }
+        FileUtil.deleted = true; FileUtil.deleteGate = java.util.concurrent.CountDownLatch(1)
+        withContext(ui) { fixture.onDelete() }; settle()
+        withContext(ui) { fixture.confirmation(fixture.pendingDelete!!)() }
+        withTimeout(5000) { while (FileUtil.deletes.get() < 3) delay(1) }
+        val refreshes = fixture.refreshKey; val messages = ToastUtil.messages.size
+        owner.cancel(); FileUtil.deleteGate!!.countDown(); owner.join()
+        check(ConfigV2.unloads == 3 && fixture.refreshKey == refreshes && ToastUtil.messages.size == messages) { "cancelled UI lost disk cleanup or published stale success" }
+
+    }
+    println("PASS production account callbacks: IO dispatch, duplicate clicks, host refusal, failure and cancellation cleanup")
+}
+'''
+for marker, value in {"@@DELETE_CLICK@@": delete_click, "@@DELETE_CONFIRM@@": delete_confirm}.items():
+    io_checks = io_checks.replace(marker, value)
+code = code.replace('    println("PASS real Compose search/clear/reorder/empty results and isolated config writes")',
+                    '    accountIoChecks()\n    println("PASS real Compose search/clear/reorder/empty results and isolated config writes")') + io_checks
+
 with tempfile.TemporaryDirectory(prefix="sesame-config-search-") as temporary:
     work = Path(temporary)
     # Only Android thread/trace/parcel boundaries are replaced; Compose slots/state are real.
@@ -228,3 +303,6 @@ with tempfile.TemporaryDirectory(prefix="sesame-config-search-") as temporary:
                     "-d", str(work), str(source)], check=True, timeout=90)
     subprocess.run(["java", "-Xms16m", "-Xmx128m", "-XX:+UseSerialGC", "-cp",
                     classpath, "ConfigSearchCheckKt"], check=True, timeout=30)
+
+application = (UI.parents[1] / "SesameApplication.java").read_text(encoding="utf-8")
+assert "HostBridge.ensurePaired" not in block(application, "public void onCreate()")[0], "Application startup still eagerly reads external agreement config"

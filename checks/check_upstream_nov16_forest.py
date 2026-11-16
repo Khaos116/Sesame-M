@@ -248,7 +248,21 @@ public class UpstreamForestCheck {
             System.out.println("PASS watering counts/confirmed quota on cancel, query/transfer/wait cancellation, automatic return separation and ordinary failure");
         }
     }
-    public static void main(String[] args){whack();Rain.check();Home.check();Gifts.check();Watering.check();}
+    static class RpcArguments {
+        static JSONObject sent;
+        static class ApplicationHook {static String requestString(String name,String args){sent=new JSONArray(args).optJSONObject(0);return "{}";}}
+        @@GRANT_RPC@@
+        @@FAMILY_RPC@@
+        static void check(){
+            for(String uid:List.of("20881234567890","000123","id\"},\"extra\":true,\"x\":\"","id\\\n{}中文")){
+                grantEnergyRainChance(uid);assert uid.equals(sent.opt("targetUserId"))&&sent.length()==1:"friend id changed JSON type/value";
+            }
+            JSONArray receivers=new JSONArray().put("20881234567890").put("id\"\\\n{}中文");inviteFriendVisitFamily(receivers);
+            JSONArray parsed=sent.optJSONArray("receiverUserId");assert parsed!=null&&parsed.length()==2&&parsed.opt(1).equals(receivers.opt(1)):"family receiver ids must remain a JSON array";
+            System.out.println("PASS real RPC friend-id escaping/string type and family receiver-array serialization");
+        }
+    }
+    public static void main(String[] args){whack();Rain.check();Home.check();Gifts.check();Watering.check();RpcArguments.check();}
 }
 '''
 game = "model/task/antForest/AntForestGame.java"
@@ -261,6 +275,8 @@ home_methods = "\n".join(method("model/task/antForest/AntForestEnergy.java", sig
 test = test.replace("@@HOME@@", home_methods.replace("AntForestV2.offsetTimeMath", "offsetTimeMath"))
 test = test.replace("@@GIVE@@", method("model/task/antForest/AntForestProp.java", "void giveProp(String targetUserId)"))
 test = test.replace("@@GIVE_NUMBER@@", method("model/task/antForest/AntForestV2.java", "static long forestFeatureLong("))
+test = test.replace("@@GRANT_RPC@@", method("model/task/antForest/AntForestRpcCall.java", "public static String grantEnergyRainChance("))
+test = test.replace("@@FAMILY_RPC@@", method("model/task/antFarm/AntFarmRpcCall.java", "public static String inviteFriendVisitFamily(JSONArray receiverUserId)"))
 test = test.replace("@@WATER@@", "\n".join(method("model/task/antForest/AntForestWater.java", signature) for signature in (
     "void waterFriendEnergy(", "KVNode<Integer, Boolean> returnFriendWater(", "private KVNode<Integer, Boolean> returnFriendWater(",
     "int getEnergyId(", "int friendWaterEnergy(")))

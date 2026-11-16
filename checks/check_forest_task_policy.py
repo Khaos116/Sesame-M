@@ -42,7 +42,8 @@ public class ForestTaskPolicyCheck {
   static boolean checkResultCode(String tag,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}
   static boolean isRetryable(JSONObject j){return j.optBoolean("retryable");}static boolean isServerBusy(JSONObject j){return "102".equals(j.optString("code"));}
   static boolean isUnsupportedRpc(JSONObject j){return "400000040".equals(j.optString("code"));}
-  static boolean isAlreadyDone(JSONObject j){return j.optBoolean("alreadyDone");}
+  @@FAIL_TEXT_FIELDS@@
+  @@ALREADY_DONE@@
   static String blacklistKey;static void checkResultCodeAndMarkTaskBlackList(String a,String b,JSONObject j){blacklistKey=b;}
   static void MarkTaskBlackList(String a,String b,String c,String d){}
   static void beginDeferBlackList(){}static void endDeferBlackList(boolean b){}
@@ -56,7 +57,7 @@ public class ForestTaskPolicyCheck {
  @@AWARD@@
  @@CHOUCHOU@@
  static class AntForestRpcCall {
-  static Map<String,String> replies=new HashMap<>();static int reads,awards,writes,optionalReads;
+  static Map<String,String> replies=new HashMap<>();static Deque<String> finishReplies=new ArrayDeque<>();static int reads,awards,writes,optionalReads;
   static boolean cancelProbe,cancelAttempt,cancelAward;static JSONArray snapshot=new JSONArray(),nativeSnapshot=new JSONArray();
   static int optionalStage=-1;static boolean drawStages,drawWait;
   static boolean exchangeStages,failExchangeAward,staleExchangeAward;static int exchangeWrites,exchangeAwards;
@@ -67,7 +68,7 @@ public class ForestTaskPolicyCheck {
    return "{success:true}";}
   static List<String> exchangeEvents=new ArrayList<>();
   static String youthOverride,optionalAfter;static int youthReads;static String awardReply,optionalOverride,home="{}",rain="{}";static int inits;
-  static String finishTask(String scene,String type){writes++;if(cancelAttempt)throw new TaskCancelledException();if(drawStages){JSONObject t=snapshot.optJSONObject(0);t.optJSONObject("taskRights").put("rightsTimes",writes);t.optJSONObject("taskBaseInfo").put("taskStatus",drawWait?"FINISHED":"TODO");return "{success:true}";}if(optionalStage>=0){optionalStage++;return "{\"success\":true}";}return replies.getOrDefault(type,"{\"success\":false,\"code\":\"102\"}");}
+  static String finishTask(String scene,String type){writes++;if(cancelAttempt)throw new TaskCancelledException();if(!finishReplies.isEmpty())return finishReplies.removeFirst();if(drawStages){JSONObject t=snapshot.optJSONObject(0);t.optJSONObject("taskRights").put("rightsTimes",writes);t.optJSONObject("taskBaseInfo").put("taskStatus",drawWait?"FINISHED":"TODO");return "{success:true}";}if(optionalStage>=0){optionalStage++;return "{\"success\":true}";}return replies.getOrDefault(type,"{\"success\":false,\"code\":\"102\"}");}
   static String listTaskopengreen(){reads++;if(cancelProbe)throw new TaskCancelledException();return new JSONObject().put("resultCode","SUCCESS").put("taskInfoList",snapshot).toString();}
   static String receiveTaskAward(String scene,String type){awards++;if(cancelAward)throw new TaskCancelledException();return awardReply;}
   static String queryTaskList(JSONObject args){return new JSONObject().put("resultCode","SUCCESS").put("forestTasksNew",new JSONArray().put(new JSONObject().put("taskInfoList",nativeSnapshot))).toString();}
@@ -125,11 +126,24 @@ public class ForestTaskPolicyCheck {
  static JSONObject task(String type,String status){return new JSONObject().put("taskBaseInfo",new JSONObject().put("sceneCode","scene").put("taskType",type).put("taskStatus",status).put("bizInfo","{\"taskTitle\":\""+type+"\",\"autoCompleteTask\":true}"));}
  static void reset(){AntForestRpcCall.exchangeStages=AntForestRpcCall.failExchangeAward=AntForestRpcCall.staleExchangeAward=false;AntForestRpcCall.exchangeWrites=AntForestRpcCall.exchangeAwards=0;AntForestRpcCall.exchangeEvents.clear();AntForestRpcCall.drawStages=false;AntForestRpcCall.optionalStage=-1;AntForestRpcCall.youthOverride=AntForestRpcCall.optionalAfter=null;AntForestRpcCall.youthReads=0;Status.flags.clear();Status.counts.clear();RuntimeInfo.value.data.clear();ApplicationHook.fallback=0;AntForestRpcCall.replies.clear();
   AntForestRpcCall.optionalOverride=null;AntForestRpcCall.snapshot=new JSONArray();AntForestRpcCall.nativeSnapshot=new JSONArray();AntForestRpcCall.awardReply="{\"success\":true,\"returnData\":\"{}\",\"incAwardCount\":1}";
-  AntForestRpcCall.reads=AntForestRpcCall.awards=AntForestRpcCall.writes=AntForestRpcCall.optionalReads=0;AntForestRpcCall.cancelProbe=AntForestRpcCall.cancelAttempt=AntForestRpcCall.cancelAward=false;}
+  AntForestRpcCall.finishReplies.clear();AntForestRpcCall.reads=AntForestRpcCall.awards=AntForestRpcCall.writes=AntForestRpcCall.optionalReads=0;AntForestRpcCall.cancelProbe=AntForestRpcCall.cancelAttempt=AntForestRpcCall.cancelAward=false;}
  static void resetTakeLook(){reset();AntForestRpcCall.takeLookWrites=0;AntForestRpcCall.takeLookSource=null;AntForestRpcCall.completeTakeLook=AntForestRpcCall.failTakeLook=false;}
  static void expectCancel(Runnable work){try{work.run();check(false,"Task chain swallowed cancellation");}catch(TaskCancelledException expected){}}
  static int failures;static void check(boolean ok,String message){if(!ok){failures++;System.out.println("FAIL "+message);}}
  public static void main(String[] args){ForestTaskPolicyCheck f=new ForestTaskPolicyCheck();
+  for(String field:List.of("desc","resultDesc","resultView","memo","errorMsg","errorMessage","resultMsg"))
+   for(String text:List.of("已领取","已完结","无法重复领取","重复领取","已经领取","已领完")){
+    JSONObject receipt=new JSONObject().put("success",false).put(field,"任务"+text+"，请勿重试");
+    check(MessageUtil.isAlreadyDone(receipt),"Real already-done text not recognized: "+field+"/"+text);
+    reset();AntForestRpcCall.replies.put("done",receipt.toString());
+    check(new ForestChouChouLe().attemptChouChouLeTask("done","scene","done",true)==TaskAttemptPolicy.Outcome.DONE&&AntForestRpcCall.writes==1,"Already-done receipt must stop before fallback RPC");
+    reset();AntForestRpcCall.finishReplies.add("{success:false,memo:'temporary error'}");AntForestRpcCall.finishReplies.add(receipt.toString());
+    check(new ForestChouChouLe().attemptChouChouLeTask("done","scene","done",false)==TaskAttemptPolicy.Outcome.DONE&&AntForestRpcCall.writes==2,"Fallback already-done receipt must confirm completion");
+   }
+  check(!MessageUtil.isAlreadyDone(null)&&!MessageUtil.isAlreadyDone(new JSONObject().put("alreadyDone",true)),"Synthetic alreadyDone flag must not replace server text");
+  for(Object invalid:List.of(JSONObject.NULL,true,123,"处理中","领取失败"))
+   check(!MessageUtil.isAlreadyDone(new JSONObject().put("memo",invalid)),"Invalid/unconfirmed receipt marked done");
+  check(!MessageUtil.isAlreadyDone(new JSONObject().put("unrelated","已领取")),"Unrelated fields must not confirm completion");
   for(JSONObject meta:List.of(new JSONObject().put("taskAccEffectiveType","EFFECTIVE_TASK"),new JSONObject().put("taskJumpUrl","https://example.test/browse"))){
    resetTakeLook();JSONObject visit=task("GYG_diantao","TODO");meta.put("taskTitle","browse").put("autoCompleteTask",true);visit.optJSONObject("taskBaseInfo").put("bizInfo",meta.toString());AntForestRpcCall.snapshot=new JSONArray().put(visit);
    AntForestRpcCall.replies.put("GYG_diantao","{success:false,code:'400000040'}");AntForestRpcCall.completeTakeLook=true;
@@ -346,10 +360,12 @@ public class ForestTaskPolicyCheck {
   Status.flags.clear();
   AntForestRpcCall.cancelRain=true;expectCancel(ForestTaskPolicyCheck::checkAndDoEndGameTask);AntForestRpcCall.cancelRain=false;
   if(failures>0)throw new AssertionError(failures+" forest task policy failures");
-  System.out.println("PASS forest reward/completion requery, child/optional fallback, same-day prevention and probe cancellation");
+  System.out.println("PASS real already-done text/fields through both receipt paths, forest task requery, fallback, prevention and cancellation");
  }
 }
 '''
+code=code.replace('@@FAIL_TEXT_FIELDS@@',method('util/MessageUtil.java','private static final String[] FAIL_TEXT_FIELDS =')+';')
+code=code.replace('@@ALREADY_DONE@@',method('util/MessageUtil.java','public static boolean isAlreadyDone('))
 for marker, path, name in [('@@ALTERNATIVE@@','model/base/TaskAlternative.java','TaskAlternative'),('@@POLICY@@','data/task/TaskAttemptPolicy.java','TaskAttemptPolicy'),('@@AWARD@@','data/task/TaskAward.java','TaskAward'),('@@CHOUCHOU@@','model/task/antForest/ForestChouChouLe.java','ForestChouChouLe')]:
     source=(SOURCE/path).read_text(encoding='utf-8')
     source=re.sub(r'^package .*?;\s*','',source,flags=re.M)
