@@ -154,6 +154,7 @@ final class AntForestGame {
                 // 使用能量雨卡
             } while (AntForestProp.consumeProp(jo));
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "useEnergyRainCard err:", th);
         }
     }

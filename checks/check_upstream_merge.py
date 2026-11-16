@@ -748,7 +748,7 @@ public class SyncProbeCheck {
 sync_probe = sync_probe.replace("@@PROBE@@", method("model/task/antSports/AntSports.java", "private static boolean syncStepByRpcManager("))
 
 reload_check = r'''
-import org.json.*;import java.util.*;
+import org.json.*;import java.util.*;import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class ReloadCheck {
  static final String TAG="reload";static final int FALLBACK_INTERVAL=180000,VITALITY_EXCHANGE_RETRY_MAX=3;
  boolean initializing,init,offline;int executions;long delayed;

@@ -143,6 +143,7 @@ final class AntForestMall {
                 VitalityBenefitIdMap.save(UserIdMap.getCurrentUid());
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "getSkuInfoBySpuId err:", th);
         }
     }
@@ -240,6 +241,7 @@ final class AntForestMall {
                 return true;
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "exchangeBenefit err:", th);
         }
         return false;
@@ -263,6 +265,7 @@ final class AntForestMall {
             }
             return MessageUtil.checkResultCode(TAG, jo);
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "exchangeBenefit err:", th);
         }
         return false;

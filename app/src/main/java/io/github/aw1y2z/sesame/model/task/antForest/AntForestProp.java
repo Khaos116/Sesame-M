@@ -1178,6 +1178,7 @@ final class AntForestProp {
                 }
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "getForestPropVOList err:", th);
         }
         return forestPropVOList;
@@ -1260,6 +1261,7 @@ final class AntForestProp {
             String propName = propConfigVO.optString("propName");
             return consumeProp(propGroup, propId, propType, propName);
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "consumeProp err:", th);
         }
         return false;
@@ -1274,6 +1276,7 @@ final class AntForestProp {
                 return true;
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "consumeProp err:", th);
         }
         return false;
