@@ -39,7 +39,11 @@ public class ManualTaskCheck {
 '''.replace('@@METHOD@@', method('data/task/ModelTask.java','public static boolean startNamedTask(String code, String uid)')+'\n'+method('data/task/ModelTask.java','public static boolean startNamedTask(String code, String uid, String action)')).replace('static List<','static java.util.List<')
 ui=(SOURCE/'ui/miuix/MiuixGroupFieldsActivity.kt').read_text(encoding='utf-8')
 bridge=(SOURCE/'ui/HostBridge.java').read_text(encoding='utf-8')
-assert 'HostBridge.executeModule(this, userId, modelCode, action)' in ui
+execute_start = ui.index('fun executeModule(')
+execute = ui[execute_start:ui.index('\n    }\n', execute_start)]
+assert 'val uid = userId' in execute
+assert 'saveConfig(restart = false) {' in execute
+assert execute.index('saveConfig(restart = false) {') < execute.index('HostBridge.executeModule(this, uid, modelCode, action)')
 assert 'intent.putExtra("model", model)' in bridge and 'intent.putExtra("userId", userId)' in bridge and 'intent.putExtra("taskAction", taskAction)' in bridge
 assert 'new Intent(ACTION_CONTROL).setPackage(HOST_PACKAGE)' in bridge
 assert 'intent.putExtra("token", token)' in bridge

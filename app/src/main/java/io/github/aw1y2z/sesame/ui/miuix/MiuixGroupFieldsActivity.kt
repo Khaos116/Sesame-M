@@ -71,7 +71,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.roundToInt
 
 /** 配置字段页（三级）：某分组下的全部配置字段，Intent 传入 userId 与 groupCode */
-class MiuixGroupFieldsActivity : MiuixBaseActivity() {
+class MiuixGroupFieldsActivity : MiuixConfigActivity() {
 
     companion object {
         const val EXTRA_USER_ID = "userId"
@@ -89,9 +89,8 @@ class MiuixGroupFieldsActivity : MiuixBaseActivity() {
         super.onCreate(savedInstanceState)
         userId = intent.getStringExtra(EXTRA_USER_ID)
         groupCode = intent.getStringExtra(EXTRA_GROUP_CODE)
-        ConfigPreload.ensurePrepared(userId)
         initialQuery = intent.getStringExtra(EXTRA_SEARCH_QUERY)
-        setAppContent {
+        setEditorContent(userId) {
             groupCode?.let { code ->
                 val group = ModelGroup.entries.find { it.name == code }
                 if (group != null) {
@@ -107,46 +106,20 @@ class MiuixGroupFieldsActivity : MiuixBaseActivity() {
     }
 
     override fun onBackPressed() {
-        save()
-        super.onBackPressed()
+        saveAndFinish()
     }
 
     /** 顶部返回按钮与系统返回统一入口：先保存再退出。 */
     fun saveAndFinish() {
-        save()
-        finish()
-    }
-
-    /**
-     * 统一落盘入口：本页字段变更只写内存，退出时写一次盘；有改动走 force=true，
-     * 免掉 save() 内部的全量序列化比较。
-     * <p>没有账号或写盘失败必须出声，否则改动无声消失。
-     */
-    fun save(restart: Boolean = true): Boolean {
-        if (userId == null) {
-            if (ConfigV2.hasFieldChanges()) ToastUtil.show(this, "未获取到账号，改动未保存")
-            return false
-        }
-        if (!ConfigV2.hasFieldChanges()) return true
-        if (ConfigV2.save(userId, true)) {
-            ToastUtil.show(this, "保存成功！")
-            if (restart) sendRestartIfNeeded()
-            return true
-        }
-        ToastUtil.show(this, "保存失败，未执行任务")
-        return false
+        closeEditor()
     }
 
     fun executeModule(modelCode: String, action: String = "") {
         if (userId.isNullOrBlank()) { ToastUtil.show(this, "请在具体账号配置中执行");return }
-        if (!save(false)) return
-        HostBridge.executeModule(this, userId, modelCode, action)
-        ToastUtil.show(this, "已发送执行请求")
-    }
-
-    private fun sendRestartIfNeeded() {
-        if (!StringUtil.isEmpty(userId)) {
-            HostBridge.send(this, "restart", userId, null, false)
+        val uid = userId
+        saveConfig(restart = false) {
+            HostBridge.executeModule(this, uid, modelCode, action)
+            ToastUtil.show(this, "已发送执行请求")
         }
     }
 }

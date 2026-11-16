@@ -68,7 +68,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.roundToInt
 
 /** 选填编辑页（四级）：编辑 SELECT* 类型字段，Intent 传入 userId/groupCode/fieldCode/modelCode */
-class MiuixSelectionEditActivity : MiuixBaseActivity() {
+class MiuixSelectionEditActivity : MiuixConfigActivity() {
 
     companion object {
         const val EXTRA_USER_ID = "userId"
@@ -91,8 +91,7 @@ class MiuixSelectionEditActivity : MiuixBaseActivity() {
         groupCode = intent.getStringExtra(EXTRA_GROUP_CODE)
         fieldCode = intent.getStringExtra(EXTRA_FIELD_CODE)
         modelCode = intent.getStringExtra(EXTRA_MODEL_CODE)
-        ConfigPreload.ensurePrepared(userId)
-        setAppContent {
+        setEditorContent(userId) {
             val modelCodeVal = modelCode
             val fieldCodeVal = fieldCode
             if (fieldCodeVal != null && modelCodeVal != null) {
@@ -115,14 +114,12 @@ class MiuixSelectionEditActivity : MiuixBaseActivity() {
     }
 
     override fun onBackPressed() {
-        saveHandler?.invoke()
-        finish()
+        saveAndFinish()
     }
 
     /** 顶部返回按钮与系统返回统一入口：先保存再退出。 */
     fun saveAndFinish() {
-        saveHandler?.invoke()
-        finish()
+        if (canEditConfig() && saveHandler != null) saveHandler?.invoke() else closeEditor()
     }
 }
 
@@ -256,22 +253,15 @@ fun SelectionEditContent(
                 csmf?.add(sel.firstOrNull() ?: "", counts[sel.firstOrNull()] ?: 1)
             }
         }
-        val saved = if (userId != null) ConfigV2.save(userId, true) else false
-        Log.i("SelectionEdit", "applyAndSave: field=${field.code}, saved=$saved, value=${configField.value}")
-        if (saved) {
-            // 本页的保存是"退出时隐式落盘"，成功不弹气泡（失败才提示）
+        activity.saveConfig {
             dirty = false
-            if (userId != null) {
-                HostBridge.send(activity, "restart", userId, null, false)
-            }
-        } else {
-            ToastUtil.show(activity, "保存失败")
+            activity.finish()
         }
     }
 
     // 退出前统一先保存：顶部返回按钮与系统返回键（手势/物理键）共用同一逻辑。
     androidx.compose.runtime.SideEffect {
-        activity.saveHandler = { if (dirty) applyAndSave() }
+        activity.saveHandler = { if (dirty) applyAndSave() else activity.finish() }
     }
 
     Scaffold(

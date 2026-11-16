@@ -2,7 +2,6 @@ package io.github.aw1y2z.sesame.util.idMap;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.github.aw1y2z.sesame.util.XHelpers;
-import lombok.Getter;
 
 import io.github.aw1y2z.sesame.entity.UserEntity;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
@@ -37,8 +36,11 @@ public class UserIdMap {
     }
     
     /** 当前账号；volatile：切号在别的线程发生，读方必须能看到最新值 */
-    @Getter
     private static volatile String currentUid = null;
+
+    public static String getCurrentUid() {
+        return currentUid;
+    }
     
     public static Map<String, UserEntity> getUserMap() {
         return readOnlyUserMap;

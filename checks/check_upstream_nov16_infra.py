@@ -62,6 +62,7 @@ public class InfraCheck {
   public static class FirstExtension {public static class SameCode extends Model {public SameCode(){}}}
   public static class SecondExtension {public static class SameCode extends Model {public SameCode(){}}}
   static class Config {
+   static boolean lastLoadFailed;
    final Map<String,ModelFields> modelFieldsMap=new LinkedHashMap<>();
    static final Config INSTANCE=new Config();static final Map<String,String> valueBaseline=new HashMap<>();static String lastSyncedText;
    static final String TAG="config";

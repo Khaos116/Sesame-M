@@ -10,6 +10,7 @@ import io.github.aw1y2z.sesame.util.JsonUtil;
 
 public class MergeConfigCheck {
     static final String TAG = "merge-check";
+    static boolean lastLoadFailed;
     final Map<String, ModelFields> modelFieldsMap = new HashMap<>();
     static final MergeConfigCheck INSTANCE = new MergeConfigCheck();
     Boolean batteryPerm;

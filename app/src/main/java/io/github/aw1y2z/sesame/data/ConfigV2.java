@@ -31,6 +31,19 @@ public class ConfigV2 {
     @JsonIgnore
     private boolean init;
 
+    /** 显式 getter 供同模块 Kotlin 源分析使用，保持原 Lombok ABI。 */
+    public boolean isInit() {
+        return init;
+    }
+
+    @JsonIgnore
+    private static volatile boolean lastLoadFailed;
+
+    /** 容错恢复仍可编辑，但导入不能把恢复/丢弃字段当作完整成功。 */
+    public static boolean didLastLoadFail() {
+        return lastLoadFailed;
+    }
+
     private final Map<String, ModelFields> modelFieldsMap = new ConcurrentHashMap<>();
 
     /**
@@ -108,6 +121,7 @@ public class ConfigV2 {
                             }
                         }
                     } catch (Exception e) {
+                        lastLoadFailed = true;
                         Log.printStackTrace(e);
                     }
                     newModelFields.addField(configModelField);
@@ -266,6 +280,7 @@ public class ConfigV2 {
     }
     
     public static synchronized ConfigV2 load(String userId) {
+        lastLoadFailed = false;
         String userName = "";
         File configV2File = null;
         boolean canWrite = Model.isRegistrationComplete();
@@ -319,6 +334,7 @@ public class ConfigV2 {
                 }
             }
         } catch (Throwable t) {
+            lastLoadFailed = true;
             Log.printStackTrace(TAG, t);
             // 解析失败先用滚动备份兜底恢复，恢复不了才重置为默认（原来直接重置，整份配置就没了）
             if (!restoreFromBackup(configV2File, userId)) {

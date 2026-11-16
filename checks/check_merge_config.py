@@ -106,7 +106,10 @@ public class PreloadCheck {
 '''.replace("@@GUARD@@", method("data/ConfigPreload.java", "    public static void ensurePrepared("))
 for activity in ("MiuixGroupFieldsActivity", "MiuixSelectionEditActivity"):
     on_create = method(f"ui/miuix/{activity}.kt", "    override fun onCreate(")
-    assert on_create.index("ConfigPreload.ensurePrepared(userId)") < on_create.index("setAppContent")
+    assert "setEditorContent(userId)" in on_create
+    assert "ConfigPreload.ensurePrepared" not in on_create, "cold preload must not block main"
+editor_base = (SOURCE / "ui/miuix/MiuixConfigActivity.kt").read_text(encoding="utf-8")
+assert "else ConfigPreload.ensurePrepared(uid)" in editor_base
 with tempfile.TemporaryDirectory(prefix="sesame-preload-check-") as temporary:
     source = Path(temporary) / "PreloadCheck.java"
     source.write_text(preload_check, encoding="utf-8")

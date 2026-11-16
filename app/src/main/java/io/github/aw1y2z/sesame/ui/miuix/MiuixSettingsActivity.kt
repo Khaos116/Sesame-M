@@ -76,7 +76,7 @@ import top.yukonga.miuix.kmp.preference.SliderPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-class MiuixSettingsActivity : MiuixBaseActivity() {
+class MiuixSettingsActivity : MiuixConfigActivity() {
 
     companion object {
         const val EXTRA_USER_ID = "userId"
@@ -88,16 +88,13 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         userId = intent.getStringExtra(EXTRA_USER_ID)
-        Model.initAllModel()
-        ConfigPreload.prepare(userId)
-        setAppContent {
+        setEditorContent(userId, forceReload = true) {
             SettingsContent(this, userId)
         }
     }
 
     override fun onBackPressed() {
-        save()
-        super.onBackPressed()
+        saveAndFinish()
     }
 
     override fun onResume() {
@@ -107,33 +104,65 @@ class MiuixSettingsActivity : MiuixBaseActivity() {
 
     /** 顶部返回按钮与系统返回统一入口：先保存再退出（与三级/四级保持一致）。 */
     fun saveAndFinish() {
-        save()
-        finish()
+        closeEditor()
     }
 
-    /**
-     * 统一落盘入口（二级/三级/四级同款）：无改动直接短路，有改动走 force=true，
-     * 免掉 save() 内部的全量序列化比较。
-     * <p>写盘失败必须出声，否则改动无声消失。
-     */
-    fun save() {
-        if (!ConfigV2.hasFieldChanges()) return
-        if (ConfigV2.save(userId, true)) {
-            ToastUtil.show(this, "保存成功！")
-            sendRestartIfNeeded()
-        } else {
-            ToastUtil.show(this, "保存失败，改动未落盘")
-        }
+    internal fun importConfig(uri: android.net.Uri) {
+        if (!canEditConfig()) return
+        val uid = userId
+        val resolver = applicationContext.contentResolver
+        val context = applicationContext
+        var written = false
+        runEditorIo(reload = true, work = {
+            val text = resolver.openInputStream(uri)?.use { it.bufferedReader().readText() }
+                ?: throw IllegalArgumentException("empty config")
+            val node = JsonUtil.toNode(text) as? com.fasterxml.jackson.databind.JsonNode
+            require(node != null && node.isObject && node.path("modelFieldsMap").isObject) { "not a config_v2 json" }
+            // 先验证内部反序列化，不让 load() 的恢复/重置兜底把错误导入伪装成成功。
+            // 只构造临时字段 Map，不调用会修改注册模型的 ConfigV2.setModelFieldsMap。
+            JsonUtil.copyMapper().readValue(node.path("modelFieldsMap").toString(),
+                object : com.fasterxml.jackson.core.type.TypeReference<Map<String, io.github.aw1y2z.sesame.data.ModelFields>>() {})
+            FileUtil.backupConfigV2BeforeWrite(uid ?: "")
+            FileUtil.backupConfigV2WithRolling(if (uid.isNullOrEmpty()) "默认" else uid)
+            io.github.aw1y2z.sesame.util.AtomicConfigFile.write(text, ConfigPreload.getConfigFile(uid))
+            written = true
+            Model.initAllModel()
+            ConfigPreload.prepare(uid)
+            val success = ConfigV2.INSTANCE.isInit && !ConfigV2.didLastLoadFail()
+            if (success && !uid.isNullOrEmpty()) HostBridge.send(context, "restart", uid, null, false)
+            success
+        }, onSuccess = {
+            fieldsVersion++
+            ToastUtil.show(this, "导入成功！")
+        }, onFailure = {
+            if (!written) SettingsIo.restoreUnchanged(uid)
+            ToastUtil.show(this, if (written) "文件已导入，但加载失败，请返回重新打开" else "导入失败，原配置未修改")
+        })
     }
 
-    private fun sendRestartIfNeeded() {
-        if (!StringUtil.isEmpty(userId)) {
-            HostBridge.send(this, "restart", userId, null, false)
-        }
+    internal fun exportConfig(uri: android.net.Uri) {
+        val uid = userId
+        val resolver = applicationContext.contentResolver
+        runEditorIo(work = {
+            val output = resolver.openOutputStream(uri) ?: throw IllegalStateException("cannot open output")
+            output.use { stream -> ConfigPreload.getConfigFile(uid).inputStream().use { it.copyTo(stream) } }
+            true
+        }, onSuccess = { ToastUtil.show(this, "导出成功！") },
+            onFailure = { ToastUtil.show(this, "导出失败！") })
+    }
+
+    internal fun deleteConfig() {
+        val uid = userId
+        runEditorIo(work = { FileUtil.deleteFile(ConfigPreload.getConfigFile(uid)) }, onSuccess = {
+            ToastUtil.show(this, "配置删除成功")
+            finish()
+            SettingsIo.invalidate()
+        })
     }
 
     /** 打开搜索命中：选择型进四级编辑页，其余进三级页并把字段名当搜索词带过去 */
     internal fun openFieldHit(hit: FieldHit) {
+        if (!canEditConfig()) return
         if (hit.field.type in SELECTION_FIELD_TYPES) {
             startActivity(
                 Intent(this, MiuixSelectionEditActivity::class.java).apply {
@@ -161,42 +190,10 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
-        if (uri != null) {
-            val file = ConfigPreload.getConfigFile(userId)
-            try {
-                context.contentResolver.openOutputStream(uri)?.use { os ->
-                    file.inputStream().use { it.copyTo(os) }
-                }
-                ToastUtil.show(context, "导出成功！")
-            } catch (e: Exception) {
-                ToastUtil.show(context, "导出失败！")
-            }
-        }
+        if (uri != null) activity.exportConfig(uri)
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            val file = ConfigPreload.getConfigFile(userId)
-            try {
-                val text = context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() }
-                // 必须是合法的 config_v2（顶层含 modelFieldsMap）：只验 JSON 语法挡不住误选其它 JSON
-                if (text.isNullOrBlank()) throw IllegalArgumentException("empty config")
-                val node = JsonUtil.toNode(text) as? com.fasterxml.jackson.databind.JsonNode
-                if (node?.has("modelFieldsMap") != true) throw IllegalArgumentException("not a config_v2 json")
-                // 覆盖前先备份现有配置：即时快照与每日滚动备份各自独立
-                FileUtil.backupConfigV2BeforeWrite(userId ?: "")
-                FileUtil.backupConfigV2WithRolling(if (StringUtil.isEmpty(userId)) "默认" else userId!!)
-                if (!FileUtil.write2File(text, file)) throw IllegalStateException("write config failed")
-                if (!StringUtil.isEmpty(userId)) {
-                    HostBridge.send(context, "restart", userId, null, false)
-                }
-                Model.initAllModel()
-                ConfigPreload.prepare(userId)
-                activity.fieldsVersion++
-                ToastUtil.show(context, "导入成功！")
-            } catch (e: Exception) {
-                ToastUtil.show(context, "导入失败！")
-            }
-        }
+        if (uri != null) activity.importConfig(uri)
     }
 
     // ============ 二级:分组目录 ============
@@ -206,7 +203,7 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
                 title = "配置设置",
                 onBack = { activity.saveAndFinish() },
                 onImport = { importLauncher.launch("*/*") },
-                onExport = { exportLauncher.launch("[" + (if (userId.isNullOrEmpty()) "默认" else FileUtil.accountLabel(userId)) + "]-config_v2.json") },
+                onExport = { exportLauncher.launch("[" + (if (userId.isNullOrEmpty()) "默认" else userId) + "]-config_v2.json") },
                 onClear = { showDeleteDialog = true }
             )
         },
@@ -302,10 +299,7 @@ fun SettingsContent(activity: MiuixSettingsActivity, userId: String?) {
                     text = "确认删除该配置？",
                     onConfirm = {
                         showDeleteDialog = false
-                        if (ConfigPreload.getConfigFile(userId).let { io.github.aw1y2z.sesame.util.FileUtil.deleteFile(it) }) {
-                            ToastUtil.show(context, "配置删除成功")
-                        }
-                        activity.finish()
+                        activity.deleteConfig()
                     },
                     onDismiss = { showDeleteDialog = false }
                 )
