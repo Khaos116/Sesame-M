@@ -186,6 +186,7 @@ public class ApplicationHook extends XposedModule {
 
     /** 标记一次重载是否正在进行，避免重载期间被主线程反复丢后台线程造成重复初始化 */
     private static volatile boolean initializing = false;
+    private static volatile boolean checkingLauncherAccount = false;
 
     private static volatile Calendar dayCalendar;
 
@@ -197,7 +198,8 @@ public class ApplicationHook extends XposedModule {
 
     @Getter
     private static Handler mainHandler;
-    private static Runnable pendingAccountReload;
+    private static final java.util.concurrent.atomic.AtomicReference<Runnable> pendingAccountReload =
+            new java.util.concurrent.atomic.AtomicReference<>();
 
     private static BaseTask mainTask;
 
@@ -310,7 +312,6 @@ public class ApplicationHook extends XposedModule {
             }
             try {
                 classLoader = lpparam.classLoader;
-                AppConfig.load();
                 if (!FileUtil.acquireHostLock()) throw new IllegalStateException("Account directory is busy");
 
                 XHelpers.findAndHookMethod(Application.class, "attach", Context.class, new XC_MethodHook() {
@@ -348,35 +349,7 @@ public class ApplicationHook extends XposedModule {
                 XHelpers.findAndHookMethod("com.alipay.mobile.quinox.LauncherActivity", classLoader, "onResume", new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
-                        Log.i(TAG, "Activity onResume");
-                        try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
-                        if (work == null) return;
-                        String targetUid = getUserId();
-                        if (targetUid == null) {
-                            Log.record("用户未登录");
-                            Toast.show("用户未登录");
-                            return;
-                        }
-                        if (!init) {
-                            // 重载在后台线程执行，加载成功后会自行置 init=true；此处无需依赖返回值
-                            initHandler(true);
-                            return;
-                        }
-                        String currentUid = UserIdMap.getCurrentUid();
-                        if (!targetUid.equals(currentUid)) {
-                            if (currentUid != null) {
-                                scheduleAccountReload();
-                                return;
-                            }
-                            UserIdMap.initUser(targetUid);
-                        }
-                        if (offline) {
-                            offline = false;
-                            execHandler();
-                            ((Activity) param.thisObject).finish();
-                            Log.i(TAG, "Activity reLogin");
-                        }
-                        }
+                        onLauncherResume((Activity) param.thisObject);
                     }
                 });
             } catch (Throwable t) {
@@ -807,7 +780,7 @@ public class ApplicationHook extends XposedModule {
      * 切换账号 / 首启的重载入口。
      * 重载（force=true）包含大量文件 IO、整份配置 JSON 反序列化、反射建 Model、逐 Model 装 Hook，
      * 这些若在「主线程」同步执行会把支付宝界面卡住（表现为"切号卡死不动"）。
-     * 因此这里只做需要 UI 反馈的快速前置检查，真正的重活统一交给 {@link #runInit} 在后台线程执行；
+     * 配置、宿主账号与权限查询也可能等待磁盘或宿主锁，必须连同前置检查一起转后台；
      * 后台线程里仍然走 TaskLifecycle 守卫，避免和切号并发。
      */
     private Boolean initHandler(Boolean force, TaskLifecycle.Freeze owner) {
@@ -816,6 +789,28 @@ public class ApplicationHook extends XposedModule {
 
     /** 配置保存只重载并恢复排期；首启、切号及手动执行仍立即运行。 */
     private Boolean initHandler(Boolean force, TaskLifecycle.Freeze owner, boolean exec) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            if (initializing) return false;
+            initializing = true;
+            long generation = TaskLifecycle.generation();
+            try {
+                new Thread(() -> {
+                    try (TaskLifecycle.Work work = owner == null
+                            ? TaskLifecycle.enter(generation) : TaskLifecycle.enterInitialization(owner)) {
+                        if (work != null) initHandler(force, owner, exec);
+                    } catch (Throwable t) {
+                        Log.err(TAG, "Sesame-InitHandler err:", t);
+                    } finally {
+                        initializing = false;
+                    }
+                }, "Sesame-InitHandler").start();
+                return null;
+            } catch (Throwable t) {
+                initializing = false;
+                Log.err(TAG, "Sesame-InitHandler start err:", t);
+                return false;
+            }
+        }
         if (!Agreement.isAccepted()) {
             AppConfig.load();
             if (!Agreement.isAccepted()) {
@@ -826,7 +821,7 @@ public class ApplicationHook extends XposedModule {
         if (service == null) {
             return false;
         }
-        // 快速前置检查：未登录 / 无闹钟权限，留在调用线程同步返回（Toast 内部已切主线程，后台调用也安全）
+        // 后台前置检查；需要交互的权限提示仍投递给主线程。
         if (force) {
             String userId = getUserId();
             if (userId == null) {
@@ -843,23 +838,6 @@ public class ApplicationHook extends XposedModule {
                 }, 2000);
                 return false;
             }
-        }
-        // 主线程调用则丢到后台线程执行，避免卡 UI；广播重启等已在后台线程的场景直接同步执行
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            if (initializing) {
-                return false;
-            }
-            initializing = true;
-            final Boolean f = force;
-            new Thread(() -> {
-                try {
-                    runInit(f, owner, exec);
-                } catch (Throwable t) {
-                    initializing = false;
-                    Log.err(TAG, "Sesame-InitHandler err:", t);
-                }
-            }, "Sesame-InitHandler").start();
-            return null;
         }
         return runInit(force, owner, exec);
     }
@@ -937,8 +915,6 @@ public class ApplicationHook extends XposedModule {
             boolean initialized = initializeHandler(force, exec);
             if (initialized && owner == null) BaseModel.initData();
             return initialized;
-        } finally {
-            initializing = false;
         }
     }
 
@@ -988,6 +964,10 @@ public class ApplicationHook extends XposedModule {
                     FriendWatch.save();
                 }
                 UserIdMap.initUser(userId);
+                if (!userId.equals(UserIdMap.getCurrentUid()) || !userId.equals(getUserId())) {
+                    Log.record("初始化已停止#好友初始化期间账号变化，等待当前账号重新加载");
+                    return false;
+                }
                 logInitializationStart();
                 Statistics.load();
                 FriendWatch.load();
@@ -1034,6 +1014,10 @@ public class ApplicationHook extends XposedModule {
                 TokenConfig.load();
                 updateDay();
                 BaseModel.initRpcRequest();
+                if (!userId.equals(UserIdMap.getCurrentUid()) || !userId.equals(getUserId())) {
+                    Log.record("初始化已停止#模型加载期间账号变化，未启动任务");
+                    return false;
+                }
                 Log.record("加载完成");
                 Toast.show("芝麻粒-M加载成功:" + modelVersion);
             }
@@ -1177,24 +1161,85 @@ public class ApplicationHook extends XposedModule {
         }
     }
 
+    private void onLauncherResume(Activity activity) {
+        if (!init) {
+            initHandler(true);
+            return;
+        }
+        if (checkingLauncherAccount) return;
+        checkingLauncherAccount = true;
+        long generation = TaskLifecycle.generation();
+        String currentUid = UserIdMap.getCurrentUid();
+        try {
+            new Thread(() -> {
+                try (TaskLifecycle.Work work = TaskLifecycle.enter(generation)) {
+                    if (work == null || !Objects.equals(currentUid, UserIdMap.getCurrentUid())) return;
+                    String targetUid = getUserId();
+                    if (!Objects.equals(currentUid, UserIdMap.getCurrentUid())) return;
+                    if (targetUid == null) {
+                        Log.record("用户未登录");
+                        Toast.show("用户未登录");
+                        return;
+                    }
+                    if (!targetUid.equals(currentUid)) {
+                        if (currentUid != null) {
+                            scheduleAccountReload();
+                            return;
+                        }
+                        UserIdMap.initUser(targetUid);
+                    }
+                    if (!targetUid.equals(getUserId()) || !targetUid.equals(UserIdMap.getCurrentUid())) return;
+                    if (offline) {
+                        offline = false;
+                        execHandler();
+                        mainHandler.post(() -> {
+                            try (TaskLifecycle.Work finishWork = TaskLifecycle.enter(generation)) {
+                                if (finishWork == null || !targetUid.equals(UserIdMap.getCurrentUid())) return;
+                                if (!activity.isFinishing() && !activity.isDestroyed()) activity.finish();
+                            }
+                        });
+                        Log.i(TAG, "Activity reLogin");
+                    }
+                } catch (Throwable t) {
+                    Log.err(TAG, "Launcher account check err:", t);
+                } finally {
+                    checkingLauncherAccount = false;
+                }
+            }, "Sesame-LauncherAccount").start();
+        } catch (Throwable t) {
+            checkingLauncherAccount = false;
+            Log.err(TAG, "Launcher account worker start err:", t);
+        }
+    }
+
     private void scheduleAccountReload() {
         if (mainHandler == null) return;
-        if (pendingAccountReload != null) mainHandler.removeCallbacks(pendingAccountReload);
         long generation = TaskLifecycle.generation();
-        pendingAccountReload = () -> {
-            pendingAccountReload = null;
-            try (TaskLifecycle.Work work = TaskLifecycle.enter(generation)) {
-                if (work == null) return;
-                String targetUid = getUserId();
-                if (targetUid == null || targetUid.equals(UserIdMap.getCurrentUid())) return;
-                Boolean triggered = initHandler(true);
-                if (!Boolean.FALSE.equals(triggered)) {
-                    Log.record("用户已切换");
-                    Toast.show("用户已切换");
-                }
+        String currentUid = UserIdMap.getCurrentUid();
+        Runnable reload = new Runnable() {
+            @Override
+            public void run() {
+                if (!pendingAccountReload.compareAndSet(this, null)) return;
+                new Thread(() -> {
+                    try (TaskLifecycle.Work work = TaskLifecycle.enter(generation)) {
+                        if (work == null || !Objects.equals(currentUid, UserIdMap.getCurrentUid())) return;
+                        String targetUid = getUserId();
+                        if (targetUid == null || targetUid.equals(currentUid)
+                                || !Objects.equals(currentUid, UserIdMap.getCurrentUid())) return;
+                        Boolean triggered = initHandler(true);
+                        if (!Boolean.FALSE.equals(triggered)) {
+                            Log.record("用户已切换");
+                            Toast.show("用户已切换");
+                        }
+                    } catch (Throwable t) {
+                        Log.err(TAG, "Account reload err:", t);
+                    }
+                }, "Sesame-AccountReload").start();
             }
         };
-        mainHandler.postDelayed(pendingAccountReload, 1000);
+        Runnable previous = pendingAccountReload.getAndSet(reload);
+        if (previous != null) mainHandler.removeCallbacks(previous);
+        mainHandler.postDelayed(reload, 1000);
     }
 
     private static void execHandler() {
@@ -1351,8 +1396,8 @@ public class ApplicationHook extends XposedModule {
     };
 
     private static void stopHandler() {
-        if (pendingAccountReload != null && mainHandler != null) mainHandler.removeCallbacks(pendingAccountReload);
-        pendingAccountReload = null;
+        Runnable reload = pendingAccountReload.getAndSet(null);
+        if (reload != null && mainHandler != null) mainHandler.removeCallbacks(reload);
         mainTask.stopTask();
         ModelTask.stopAllTask();
         // 一并清掉待发 tick：否则重载后新周期第一轮会误判「已排期」而跳过续排，下一跳由上一周期的时刻决定

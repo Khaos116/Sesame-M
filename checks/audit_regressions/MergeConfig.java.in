@@ -9,6 +9,7 @@ import io.github.aw1y2z.sesame.entity.IdAndName;
 import io.github.aw1y2z.sesame.util.JsonUtil;
 
 public class MergeConfigCheck {
+    static final String TAG = "merge-check";
     final Map<String, ModelFields> modelFieldsMap = new HashMap<>();
     static final MergeConfigCheck INSTANCE = new MergeConfigCheck();
     Boolean batteryPerm;
@@ -24,7 +25,14 @@ public class MergeConfigCheck {
     }
     static class Log {
         static void printStackTrace(Throwable t) { throw new AssertionError(t); }
+        static void err(String tag, String message, Throwable t) { throw new AssertionError(t); }
         static void record(String s) { }
+    }
+    // Deterministic worker dispatch; real main/worker separation is checked by check_startup_threading.py.
+    static class Thread {
+        final Runnable task;
+        Thread(Runnable task, String name) { this.task = task; }
+        void start() { task.run(); }
     }
     static class Toast { static void show(String s) { } }
     static class FileUtil {
@@ -49,7 +57,7 @@ public class MergeConfigCheck {
         void tick() { queued.remove(0).run(); }
     }
     static Handler mainHandler = new Handler();
-    static Runnable pendingAccountReload;
+    static final java.util.concurrent.atomic.AtomicReference<Runnable> pendingAccountReload = new java.util.concurrent.atomic.AtomicReference<>();
     static String targetUid = "B";
     static class UserIdMap { static String current = "A"; static String getCurrentUid() { return current; } }
     static String getUserId() { return targetUid; }

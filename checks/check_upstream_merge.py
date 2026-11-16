@@ -751,7 +751,7 @@ reload_check = r'''
 import org.json.*;import java.util.*;
 public class ReloadCheck {
  static final String TAG="reload";static final int FALLBACK_INTERVAL=180000,VITALITY_EXCHANGE_RETRY_MAX=3;
- boolean initializing=true,init,offline;int executions;long delayed;
+ boolean initializing,init,offline;int executions;long delayed;
  static class Log {static void i(String t,String s){}static void record(String s){}static void printStackTrace(Throwable t){throw new AssertionError(t);}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
  static class BaseModel {static int data;static void initData(){data++;}static Interval getCheckInterval(){return new Interval();}static class Interval{int getValue(){return interval;}}}
  static int interval=300000;static boolean rejectInit,throwInit;
@@ -782,10 +782,10 @@ public class ReloadCheck {
   interval=0;h.delayed=0;assert h.runInit(true,null,false)&&h.delayed==FALLBACK_INTERVAL;
   assert h.initHandler(true)&&h.executions==1&&TaskLifecycle.isIdle();
   TaskLifecycle.Freeze owner=TaskLifecycle.freezeIfIdle();assert owner!=null;
-  int data=BaseModel.data;h.initializing=true;assert !h.runInit(true,null,false)&&!h.initializing&&BaseModel.data==data;
-  assert h.initHandler(true,owner)&&h.executions==2&&BaseModel.data==data;TaskLifecycle.thaw(owner);assert TaskLifecycle.isOpen()&&TaskLifecycle.isIdle();
+  int data=BaseModel.data;h.initializing=true;assert !h.runInit(true,null,false)&&h.initializing&&BaseModel.data==data;
+  assert h.initHandler(true,owner)&&h.executions==2&&BaseModel.data==data&&h.initializing;TaskLifecycle.thaw(owner);assert TaskLifecycle.isOpen()&&TaskLifecycle.isIdle();h.initializing=false;
   rejectInit=true;assert !h.runInit(true,null,false)&&BaseModel.data==data;rejectInit=false;
-  throwInit=true;h.initializing=true;try{h.runInit(true,null,false);throw new AssertionError();}catch(IllegalStateException expected){}assert !h.initializing&&TaskLifecycle.isIdle();throwInit=false;
+  throwInit=true;h.initializing=true;try{h.runInit(true,null,false);throw new AssertionError();}catch(IllegalStateException expected){}assert h.initializing&&TaskLifecycle.isIdle():"background initialization cleared another worker's dispatch slot";throwInit=false;h.initializing=false;
   AntForestRpcCall.reply="{errorMessage:'系统繁忙，请稍后再试。'}";
   for(int i=1;i<=VITALITY_EXCHANGE_RETRY_MAX;i++){assert !h.exchangeBenefit("spu","one");assert Status.flags.contains("forest::exchangeLimit::one")== (i==VITALITY_EXCHANGE_RETRY_MAX);}
   assert !h.exchangeBenefit("spu","two")&&!Status.flags.contains("forest::exchangeLimit::two");

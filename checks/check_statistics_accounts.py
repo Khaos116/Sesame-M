@@ -41,11 +41,12 @@ public class IdAndName implements Comparable<IdAndName> { public String id, name
         name=cls.split(".")[-1]
         write(package.replace(".","/")+"/"+name+".java", "package "+package+";public class "+name+" {}")
     write("io/github/aw1y2z/sesame/hook/ApplicationHook.java", """package io.github.aw1y2z.sesame.hook;
-public class ApplicationHook {public static android.os.Handler handler=new android.os.Handler();public static android.os.Handler getMainHandler(){return handler;}public static ClassLoader getClassLoader(){return ApplicationHook.class.getClassLoader();}public static String getUserId(){return io.github.aw1y2z.sesame.util.idMap.UserIdMap.uid;}}""")
+public class ApplicationHook {public static volatile String hostUid="A";public static android.os.Handler handler=new android.os.Handler();public static android.os.Handler getMainHandler(){return handler;}public static ClassLoader getClassLoader(){return ApplicationHook.class.getClassLoader();}public static String getUserId(){return hostUid;}}""")
     write("io/github/aw1y2z/sesame/util/XHelpers.java", """package io.github.aw1y2z.sesame.util;
 public class XHelpers {public static boolean fail;public static java.util.List<?> friends=java.util.List.of();
 public static Object callStaticMethod(Class<?> c,String n,Object...args){return new Object();}
-public static Object callMethod(Object o,String n,Object...args){if(fail)throw new IllegalStateException("DAO failure");return friends;}
+public static java.util.concurrent.CountDownLatch entered,release;public static boolean changeUid;
+public static Object callMethod(Object o,String n,Object...args){assert Thread.currentThread()!=FileUtil.mainThread:"DAO work ran on main";assert !Thread.holdsLock(io.github.aw1y2z.sesame.util.idMap.UserIdMap.class):"DAO holds UserIdMap monitor";if(entered!=null){entered.countDown();try{release.await();}catch(InterruptedException e){throw new RuntimeException(e);}}if(changeUid)io.github.aw1y2z.sesame.util.idMap.UserIdMap.uid="B";if(fail)throw new IllegalStateException("DAO failure");return friends;}
 public static java.lang.reflect.Field findField(Class<?> c,String n)throws Exception{return c.getField(n);}
 public static class Friend {public String userId="friend",account="account",name="name",nickName="Friend",remarkName="remark";public Integer friendStatus=1;}}
 """)
@@ -62,6 +63,7 @@ import java.util.*;import java.io.File;import java.lang.reflect.Field;import and
 import io.github.aw1y2z.sesame.entity.UserEntity;import io.github.aw1y2z.sesame.util.*;
 public class UserIdMap {
  public static String uid;public static boolean realMap;private static boolean friendListLoaded;
+ private static final Object userInitLock=new Object();
  private static final Map<String,UserEntity> userMap=new HashMap<>();
  public static String getCurrentUid(){return uid;}
  public static String getMaskName(String id){return realMap?realMaskName(id):id;}
@@ -70,7 +72,7 @@ public class UserIdMap {
  static UserEntity mergeSelfEntity(UserEntity a,UserEntity b){return a==null?b:a;}
  @@INIT@@ @@SAVE@@ @@SAVESELF@@ @@LOADED@@ @@LOAD@@ @@ADD@@ @@UNLOAD@@ @@MASK@@
 }"""
-    for tag, signature in {"INIT":"public synchronized static void initUser(","SAVE":"public synchronized static boolean save(","SAVESELF":"public synchronized static boolean saveSelf(","LOADED":"public static boolean isFriendListLoaded(","LOAD":"public synchronized static void load(",
+    for tag, signature in {"INIT":"public static void initUser(","SAVE":"public synchronized static boolean save(","SAVESELF":"public synchronized static boolean saveSelf(","LOADED":"public static boolean isFriendListLoaded(","LOAD":"public synchronized static void load(",
                            "ADD":"public synchronized static void add(","UNLOAD":"public synchronized static void unload(",
                            "MASK":"public static String getMaskName("}.items():
         value = method("util/idMap/UserIdMap.java", signature)
@@ -82,8 +84,10 @@ public class UserIdMap {
 import java.io.*; import java.nio.file.*; import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 public class FileUtil {
     public static File root;
-    public static int writes;
-    public static void publishCurrentLogUser(String uid){}
+    public static int writes;public static Thread mainThread;public static boolean requireBackground;
+    public static void checkThread(){assert !requireBackground||Thread.currentThread()!=mainThread:"init file work ran on main";}
+    public static int publishes;public static String publishedUid;
+    public static void publishCurrentLogUser(String uid){checkThread();publishes++;publishedUid=uid;}
     public static File getSelfIdFile(String uid){return new File(new File(new File(root,"config"),uid),"self.json");}
     public static File getStatisticsFile(String uid) { return new File(new File(new File(root, "config"), uid), "statistics.json"); }
     public static File getStatisticsFile() { return getStatisticsFile(UserIdMap.getCurrentUid()); }
@@ -92,8 +96,8 @@ public class FileUtil {
     public static File getFriendIdMapFile(String uid) { return new File(new File(new File(root, "config"), uid), "friendIdMap.json"); }
     public static File getAutoBlackListMapFile(String uid) { return new File(new File(new File(root, "config"), uid), "AutoBlackList.json"); }
     public static File getAutoBlackListMapFile() { return getAutoBlackListMapFile(UserIdMap.getCurrentUid()); }
-    public static String readFromFile(File file) { try { return file.isFile() ? Files.readString(file.toPath()) : ""; } catch (Exception e) { throw new RuntimeException(e); } }
-    public static boolean write2File(String text, File file) { try { file.getParentFile().mkdirs(); Files.writeString(file.toPath(), text); writes++; return true; } catch (Exception e) { throw new RuntimeException(e); } }
+    public static String readFromFile(File file) {checkThread(); try { return file.isFile() ? Files.readString(file.toPath()) : ""; } catch (Exception e) { throw new RuntimeException(e); } }
+    public static boolean write2File(String text, File file) {checkThread(); try { file.getParentFile().mkdirs(); Files.writeString(file.toPath(), text); writes++; return true; } catch (Exception e) { throw new RuntimeException(e); } }
 }""")
     write("io/github/aw1y2z/sesame/util/JsonUtil.java", """package io.github.aw1y2z.sesame.util;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -124,7 +128,20 @@ public class StringUtil { public static boolean isEmpty(String text) { return te
 import java.nio.file.*; import io.github.aw1y2z.sesame.util.idMap.UserIdMap; import io.github.aw1y2z.sesame.entity.FriendWatch;
 public class StatisticsAccountCheck {
     static void eq(int expected) { assert Statistics.getData(Statistics.TimeType.DAY, Statistics.DataType.COLLECTED) == expected; }
+    static Thread initBackground(String uid, java.util.concurrent.atomic.AtomicReference<Throwable> failure){
+        Thread worker=new Thread(()->{try{UserIdMap.initUser(uid);}catch(Throwable t){failure.set(t);}},"init-worker");worker.start();return worker;
+    }
+    static void initBackground(String uid)throws Exception{
+        FileUtil.requireBackground=true;
+        try {
+            java.util.concurrent.atomic.AtomicReference<Throwable> failure=new java.util.concurrent.atomic.AtomicReference<>();
+            Thread worker=initBackground(uid,failure);worker.join(2000);assert !worker.isAlive():"init did not finish";
+            assert failure.get()==null:failure.get();
+            assert io.github.aw1y2z.sesame.hook.ApplicationHook.handler.pending==null:"background init posted DAO work to main";
+        } finally {FileUtil.requireBackground=false;}
+    }
     public static void main(String[] args) throws Exception {
+        FileUtil.mainThread=Thread.currentThread();
         FileUtil.root = Path.of(args[0]).toFile();
         Files.writeString(Path.of(args[0], "statistics.json"), "{\\"day\\":{\\"collected\\":99}}");
         UserIdMap.uid = "A";
@@ -201,25 +218,54 @@ public class StatisticsAccountCheck {
             Files.writeString(friendFile,friendJson);UserIdMap.load("A");
             XHelpers.fail=scenario==0;
             XHelpers.friends=scenario==1?java.util.List.of(new XHelpers.Friend(),new Object()):scenario==2?java.util.List.of():java.util.List.of(new XHelpers.Friend());
-            Log.expectedParseFailure=true;UserIdMap.initUser("A");io.github.aw1y2z.sesame.hook.ApplicationHook.handler.run();Log.expectedParseFailure=false;
+            Log.expectedParseFailure=true;initBackground("A");Log.expectedParseFailure=false;
             assert UserIdMap.isFriendListLoaded()==(scenario>=2):"callback claimed incomplete friend enumeration: "+scenario;
             if(scenario<2)assert Files.readString(friendFile).equals(friendJson):"failed callback overwrote good friend cache";
-            else assert UserIdMap.getMaskName("friend")!=null== (scenario==3):"complete enumeration did not replace friend cache";
+            else assert (UserIdMap.getMaskName("friend")!=null)==(scenario==3):"complete enumeration did not replace friend cache";
             assert Files.isRegularFile(FileUtil.getSelfIdFile("A").toPath()):"friend failure discarded valid self info";
         }
         XHelpers.fail=false;
-        Files.writeString(friendFile,friendJson);UserIdMap.load("A");assert UserIdMap.isFriendListLoaded();
-        UserIdMap.initUser("B");assert !UserIdMap.isFriendListLoaded():"queued initialization retained old-account complete flag";
-        UserIdMap.uid="A";UserIdMap.load("A");assert UserIdMap.isFriendListLoaded();
-        android.os.Handler originalHandler=io.github.aw1y2z.sesame.hook.ApplicationHook.handler;
-        io.github.aw1y2z.sesame.hook.ApplicationHook.handler=null;
-        UserIdMap.initUser("B");assert !UserIdMap.isFriendListLoaded():"missing handler retained old-account complete flag";
-        io.github.aw1y2z.sesame.hook.ApplicationHook.handler=originalHandler;
-        UserIdMap.initUser("A");UserIdMap.uid="B";int staleWrites=FileUtil.writes;
-        io.github.aw1y2z.sesame.hook.ApplicationHook.handler.run();
-        assert FileUtil.writes==staleWrites:"queued old-account callback wrote new account metadata";
+        XHelpers.friends=java.util.List.of(new XHelpers.Friend());
+        XHelpers.entered=new java.util.concurrent.CountDownLatch(1);XHelpers.release=new java.util.concurrent.CountDownLatch(1);
+        FileUtil.requireBackground=true;
+        java.util.concurrent.atomic.AtomicReference<Throwable> failure=new java.util.concurrent.atomic.AtomicReference<>();
+        Thread worker=initBackground("A",failure);Thread second=null;
+        try {
+            assert XHelpers.entered.await(2,java.util.concurrent.TimeUnit.SECONDS):"DAO never entered on background caller";
+            assert !UserIdMap.isFriendListLoaded():"in-progress DAO retained complete flag";
+            java.util.concurrent.CompletableFuture<Void> mainProbe=java.util.concurrent.CompletableFuture.runAsync(()->{UserIdMap.add(new io.github.aw1y2z.sesame.entity.UserEntity("probe","",null,null,null,null));});
+            mainProbe.get(1,java.util.concurrent.TimeUnit.SECONDS);
+            second=initBackground("A",failure);
+            long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(1);
+            while(second.getState()!=Thread.State.BLOCKED&&second.isAlive()&&System.nanoTime()<deadline)Thread.sleep(5);
+            assert second.getState()==Thread.State.BLOCKED:"concurrent refresh escaped serialization";
+        } finally {XHelpers.release.countDown();worker.join(2000);if(second!=null)second.join(2000);FileUtil.requireBackground=false;}
+        assert !worker.isAlive()&&second!=null&&!second.isAlive()&&failure.get()==null:failure.get();
+        XHelpers.entered=new java.util.concurrent.CountDownLatch(1);XHelpers.release=new java.util.concurrent.CountDownLatch(1);
+        worker=initBackground("A",failure);second=null;
+        try {
+            assert XHelpers.entered.await(2,java.util.concurrent.TimeUnit.SECONDS);
+            second=initBackground("A",failure);
+            long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(1);
+            while(second.getState()!=Thread.State.BLOCKED&&second.isAlive()&&System.nanoTime()<deadline)Thread.sleep(5);
+            assert second.getState()==Thread.State.BLOCKED;
+            io.github.aw1y2z.sesame.hook.ApplicationHook.hostUid="B";UserIdMap.uid="B";
+            FileUtil.write2File("{}",FileUtil.getFriendIdMapFile("B"));UserIdMap.load("B");
+            assert UserIdMap.isFriendListLoaded();
+            int publishes=FileUtil.publishes,staleWrites=FileUtil.writes;
+            XHelpers.release.countDown();worker.join(2000);second.join(2000);
+            assert !worker.isAlive()&&!second.isAlive()&&failure.get()==null:failure.get();
+            assert UserIdMap.uid.equals("B")&&FileUtil.publishes==publishes:"queued old UID republished or replaced current account";
+            assert UserIdMap.isFriendListLoaded():"queued old UID cleared new account completeness";
+            assert FileUtil.writes==staleWrites:"queued old UID wrote account cache";
+        } finally {XHelpers.release.countDown();worker.join(2000);if(second!=null)second.join(2000);}
+        io.github.aw1y2z.sesame.hook.ApplicationHook.hostUid="A";
+        XHelpers.entered=XHelpers.release=null;
+        Files.writeString(friendFile,friendJson);int writesBeforeChange=FileUtil.writes;
+        XHelpers.changeUid=true;initBackground("A");XHelpers.changeUid=false;
+        assert FileUtil.writes==writesBeforeChange&&Files.readString(friendFile).equals(friendJson):"UID changed during DAO but callback wrote cache";
         UserIdMap.uid="A";
-        System.out.println("PASS: account statistics/blacklists isolated; failed friend loads preserve statistics and complete lists still filter strangers");
+        System.out.println("PASS: account statistics/blacklists isolated; background friend refresh is serialized without holding UserIdMap monitor over DAO; failed loads preserve caches and statistics");
     }
 }""")
     cp = os.pathsep.join(map(str, [LOMBOK, JSON, *JACKSON]))

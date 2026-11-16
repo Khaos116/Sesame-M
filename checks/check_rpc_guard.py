@@ -186,8 +186,8 @@ public class StartupCheck {
         }
     }
     static class Agreement {static boolean isAccepted(){return true;}}
-    static class FileUtil {static boolean acquireHostLock(){return true;}}
-    static class AppConfig {static boolean loaded,fail;static void load(){if(fail)throw new IllegalStateException("config load failed");loaded=true;}}
+    static class FileUtil {static boolean fail;static boolean acquireHostLock(){return !fail;}}
+    static class AppConfig {static boolean loaded;static void load(){loaded=true;}}
     static class Log {static AtomicInteger lines=new AtomicInteger(),errors=new AtomicInteger();static void i(String s){assert AppConfig.loaded;assert s.equals("模块初始化开始");lines.incrementAndGet();}
         static void i(String tag,String message){}
         static void err(String tag,String message,Throwable cause){errors.incrementAndGet();}}
@@ -195,6 +195,7 @@ public class StartupCheck {
     public static void main(String[] args) throws Exception {
         StartupCheck work=new StartupCheck();var child=new XC_LoadPackage.LoadPackageParam();child.processName="main:child";
         work.handleLoadPackage(child);assert hooks.get()==0&&Log.lines.get()==0&&!AppConfig.loaded;
+        AppConfig.load(); // onModuleLoaded loads configuration before package-ready hook admission.
         var main=new XC_LoadPackage.LoadPackageParam();main.processName="main";
         XHelpers.failures.set(1);
         try{work.handleLoadPackage(main);}catch(IllegalStateException expected){}
@@ -202,10 +203,10 @@ public class StartupCheck {
         XHelpers.optionalFailures.set(1);
         work.handleLoadPackage(main);assert hooked&&hooks.get()==1&&XHelpers.installed.get()==1&&Log.errors.get()==2;
         work.handleLoadPackage(main);assert hooks.get()==1&&XHelpers.installed.get()==1&&XHelpers.optionalAttempts.get()==1:"optional failure reinstalled successful hooks";
-        hooked=initStartLogged=false;AppConfig.loaded=false;Log.lines.set(0);hooks.set(0);XHelpers.installed.set(0);AppConfig.fail=true;
+        hooked=initStartLogged=false;Log.lines.set(0);hooks.set(0);XHelpers.installed.set(0);FileUtil.fail=true;
         try{work.handleLoadPackage(main);}catch(IllegalStateException expected){}
         assert !hooked&&XHelpers.installed.get()==0:"failed startup preparation permanently sealed hook admission";
-        AppConfig.fail=false;
+        FileUtil.fail=false;
         var ready=new CountDownLatch(1);var threads=new ArrayList<Thread>();
         for(int i=0;i<40;i++){var t=new Thread(()->{try{ready.await();work.handleLoadPackage(main);}catch(InterruptedException e){throw new AssertionError(e);}});threads.add(t);t.start();}
         ready.countDown();for(var thread:threads)thread.join();

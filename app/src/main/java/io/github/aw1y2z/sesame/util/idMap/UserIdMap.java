@@ -1,7 +1,5 @@
 package io.github.aw1y2z.sesame.util.idMap;
 
-import android.os.Handler;
-
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.github.aw1y2z.sesame.util.XHelpers;
 import lombok.Getter;
@@ -20,6 +18,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class UserIdMap {
     
+    private static final Object userInitLock = new Object();
+
     private static final Map<String, UserEntity> userMap = new ConcurrentHashMap<>();
 
     private static final Map<String, UserEntity> readOnlyUserMap = Collections.unmodifiableMap(userMap);
@@ -123,18 +123,13 @@ public class UserIdMap {
         return userMap.values();
     }
     
-    public synchronized static void initUser(String currentUserId) {
-        friendListLoaded = false;
-        setCurrentUserId(currentUserId);
-        FileUtil.publishCurrentLogUser(currentUserId);
-        // mainHandler 只在 Service onCreate hook 内赋值：未就绪说明模块还没起来，
-        // 此时加载用户数据必然失败，安静跳过并等下一次触发，不再让 NPE 冒泡成「加载失败」
-        Handler handler = ApplicationHook.getMainHandler();
-        if (handler == null) {
-            Log.record("跳过用户数据加载：mainHandler 尚未就绪");
-            return;
-        }
-        handler.post(() -> {
+    // Callers run in a background lifecycle work scope; keep DAO and file work on that caller.
+    public static void initUser(String currentUserId) {
+        synchronized (userInitLock) {
+            if (!Objects.equals(currentUserId, ApplicationHook.getUserId())) return;
+            friendListLoaded = false;
+            setCurrentUserId(currentUserId);
+            FileUtil.publishCurrentLogUser(currentUserId);
             if (!Objects.equals(currentUserId, getCurrentUid()) || !Objects.equals(currentUserId, ApplicationHook.getUserId())) return;
             ClassLoader loader;
             try {
@@ -213,7 +208,7 @@ public class UserIdMap {
                 Log.i("checkUnknownId.run err:");
                 Log.printStackTrace(t);
             }
-        });
+        }
     }
     
     /**
