@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import androidx.compose.ui.unit.IntOffset
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import top.yukonga.miuix.kmp.basic.Card
 import android.content.BroadcastReceiver
 import android.content.ComponentName
@@ -94,6 +95,11 @@ import io.github.aw1y2z.sesame.util.Statistics.DataType
 import io.github.aw1y2z.sesame.util.Statistics.TimeType
 import io.github.aw1y2z.sesame.util.TimeUtil
 import io.github.aw1y2z.sesame.util.ToastUtil
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -296,24 +302,48 @@ class MiuixMainActivity : MiuixBaseActivity() {
      * 重新加载统计并刷新首页。
      * <p>靠可观察的 statisticsVersion 触发重组:静态单例变化不会重组,首页会一直是 0。
      */
-    fun refreshStatistics() {
-        if (!hasPermission) {
-            Statistics.unload()
-            statisticsVersion++
-            return
-        }
-        try {
-            // 统计按账号分文件，界面一次读全部账号：首项是合计（默认显示），其后是各账号。
-            // 不再读单例：界面进程没有「当前账号」的概念，读单例只会拿到没有归属的那一份。
-            val perAccount = FileUtil.listAccountStatisticsUids().map { uid ->
-                StatisticsPage(uid, accountDisplayName(uid), Statistics.readFrom(uid))
+    private val statisticsScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val statisticsRequests = Channel<Long>(Channel.CONFLATED)
+    private val statisticsRevision = java.util.concurrent.atomic.AtomicLong()
+
+    init {
+        statisticsScope.launch {
+            for (revision in statisticsRequests) {
+                if (!hasPermission) {
+                    Statistics.unload()
+                    statisticsVersion++
+                    continue
+                }
+                try {
+                    val pages = withContext(Dispatchers.IO) { loadStatisticsPages() }
+                    if (revision != statisticsRevision.get() || !hasPermission) continue
+                    if (pages == null) {
+                        refreshStatistics()
+                        continue
+                    }
+                    statisticsPages = pages
+                    statisticsVersion++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.printStackTrace(e)
+                }
             }
-            val total = Statistics.aggregate(perAccount.map { it.statistics })
-            statisticsPages = listOf(StatisticsPage(null, "全部账号合计", total)) + perAccount
-            statisticsVersion++
-        } catch (e: Exception) {
-            Log.printStackTrace(e)
         }
+    }
+
+    fun refreshStatistics() {
+        statisticsRequests.trySend(statisticsRevision.incrementAndGet())
+    }
+
+    private fun loadStatisticsPages(): List<StatisticsPage>? {
+        val owner = FileUtil.getPublishedUserId()
+        val perAccount = FileUtil.listAccountStatisticsUids().map { uid ->
+            StatisticsPage(uid, accountDisplayName(uid), Statistics.readFrom(uid))
+        }
+        val total = Statistics.aggregate(perAccount.map { it.statistics })
+        if (owner != FileUtil.getPublishedUserId()) return null
+        return listOf(StatisticsPage(null, "全部账号合计", total)) + perAccount
     }
 
     fun updateSubTitle(runType: RunType) {
@@ -423,6 +453,8 @@ class MiuixMainActivity : MiuixBaseActivity() {
     }
 
     override fun onDestroy() {
+        statisticsScope.cancel()
+        statisticsRequests.close()
         super.onDestroy()
         handler.removeCallbacks(titleRunner)
         try {
@@ -443,11 +475,13 @@ fun MainScreen(activity: MiuixMainActivity) {
     LaunchedEffect(Unit) {
         var previousFolder: String? = null
         while (true) {
-            val folder = withContext(Dispatchers.IO) { FileUtil.getRuntimeLogFile().parentFile?.name ?: "default" }
-            currentAccount = if (folder == "default") "未知账号" else accountDisplayName(folder)
-            if (folder != previousFolder) {
-                previousFolder = folder
-                activity.refreshStatistics()
+            val account = withContext(Dispatchers.IO) { readCurrentAccount() }
+            if (account != null) {
+                currentAccount = account.second
+                if (account.first != previousFolder) {
+                    previousFolder = account.first
+                    activity.refreshStatistics()
+                }
             }
             delay(1000)
         }
@@ -1023,19 +1057,23 @@ fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
                     pendingDelete = null
                     revealedUid = null
                     deleteInProgress = true
-                    scope.launch {
+                    val accepted = SettingsIo.submitExternal(work = {
                         try {
-                            val deleted = withContext(Dispatchers.IO) {
-                                val result = FileUtil.deleteAccount(target.first)
-                                // 删除开始后即使界面退出，也要卸载旧配置，避免目录被重新写回。
-                                ConfigV2.unload()
-                                result
-                            }
+                            FileUtil.deleteAccount(target.first)
+                        } finally {
+                            // 与配置保存共用准入；页面退出不会取消已经开始的删除/卸载。
+                            ConfigV2.unload()
+                        }
+                    }, complete = { deleted ->
+                        if (scope.isActive) {
                             refreshKey++
                             ToastUtil.show(context, if (deleted) "已删除账号 ${target.second}" else "删除失败，请检查存储权限")
-                        } finally {
                             deleteInProgress = false
                         }
+                    })
+                    if (!accepted) {
+                        deleteInProgress = false
+                        ToastUtil.show(context, "配置正在处理，请稍后重试")
                     }
                 }
             },
@@ -1243,6 +1281,15 @@ fun BooleanSwitch(title: String, checked: Boolean, summary: String? = null, onCh
         checked = checked,
         onCheckedChange = onCheckedChange
     )
+}
+
+private fun readCurrentAccount(): Pair<String, String>? {
+    val owner = FileUtil.getPublishedUserId()
+    val folder = FileUtil.getRuntimeLogFile().parentFile?.name ?: "default"
+    val title = if (folder == "default") "未知账号" else accountDisplayName(folder)
+    if (owner != FileUtil.getPublishedUserId()
+        || folder != (FileUtil.getRuntimeLogFile().parentFile?.name ?: "default")) return null
+    return folder to title
 }
 
 private fun accountDisplayName(folderOrUid: String): String {

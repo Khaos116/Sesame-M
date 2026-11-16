@@ -36,6 +36,15 @@ import io.github.aw1y2z.sesame.entity.FriendWatch
 import io.github.aw1y2z.sesame.util.FileUtil
 import io.github.aw1y2z.sesame.util.Log
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import io.github.aw1y2z.sesame.util.ToastUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Icon
@@ -50,10 +59,16 @@ private const val PENDING_PROFILE_FILE = "pending_profile.txt"
 /** 宿主包名 */
 private const val HOST_PACKAGE = "com.eg.android.AlipayGphone"
 
+private val profileMarkerLock = Any()
+
 /** 好友统计二级页:展示单向好友列表及其互动记录,与其它二级页面统一风格(LogTopBar)。 */
 class MiuixFriendStatsActivity : MiuixBaseActivity() {
 
     var currentUserId by mutableStateOf<String?>(null)
+    private val profileScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var accountJob: Job? = null
+    private var profileJob: Job? = null
+    private var profileOpening = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,28 +78,78 @@ class MiuixFriendStatsActivity : MiuixBaseActivity() {
     }
 
     fun openFriendProfile(userId: String) {
-        try {
-            // 先落标记：宿主一 resume / 拿到窗口焦点就读它跳转
-            FileUtil.write2File(
-                "$userId\n${System.currentTimeMillis()}",
-                File(FileUtil.MAIN_DIRECTORY_FILE, PENDING_PROFILE_FILE)
-            )
-            // 再拉起：只有「自身入口」状态，宿主进程内的深链才不会被 appSchemeCheck 拦掉
-            packageManager.getLaunchIntentForPackage(HOST_PACKAGE)?.let {
-                it.addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK
-                        or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-                )
-                startActivity(it)
+        if (profileOpening) return
+        profileOpening = true
+        val marker = "$userId\n${System.currentTimeMillis()}"
+        val pendingFile = File(FileUtil.MAIN_DIRECTORY_FILE, PENDING_PROFILE_FILE)
+        profileJob = profileScope.launch {
+            var launched = false
+            try {
+                val saved = withContext(Dispatchers.IO) {
+                    synchronized(profileMarkerLock) {
+                        ensureActive()
+                        FileUtil.write2File(marker, pendingFile)
+                    }
+                }
+                if (!saved) {
+                    ToastUtil.show(this@MiuixFriendStatsActivity, "好友跳转标记保存失败，请重试")
+                    return@launch
+                }
+                val intent = packageManager.getLaunchIntentForPackage(HOST_PACKAGE)
+                if (intent == null) {
+                    ToastUtil.show(this@MiuixFriendStatsActivity, "无法打开支付宝")
+                    return@launch
+                }
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                startActivity(intent)
+                launched = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.printStackTrace(e)
+                ToastUtil.show(this@MiuixFriendStatsActivity, "无法打开好友主页")
+            } finally {
+                try {
+                    // A cancelled click must not leave its unused marker for a later host launch.
+                    if (!launched) withContext(NonCancellable + Dispatchers.IO) {
+                        try {
+                            synchronized(profileMarkerLock) {
+                                if (FileUtil.readFromFile(pendingFile) == marker) pendingFile.delete()
+                            }
+                        } catch (e: Exception) {
+                            Log.printStackTrace(e)
+                        }
+                    }
+                } finally {
+                    profileOpening = false
+                }
             }
-        } catch (t: Throwable) {
-            Log.printStackTrace(t)
         }
     }
 
     override fun onResume() {
         super.onResume()
-        currentUserId = FileUtil.getPublishedUserId()
+        accountJob?.cancel()
+        accountJob = profileScope.launch {
+            try {
+                currentUserId = withContext(Dispatchers.IO) { FileUtil.getPublishedUserId() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.printStackTrace(e)
+            }
+        }
+    }
+
+    override fun onPause() {
+        accountJob?.cancel()
+        profileJob?.cancel()
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        profileScope.cancel()
+        super.onDestroy()
     }
 }
 

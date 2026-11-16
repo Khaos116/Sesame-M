@@ -291,6 +291,7 @@ assert 'if (!AccountFolderName.isValidUid(userId))' in file_util
 assert 'String userId = uidOfLogFolder(folder);' in file_util
 assert "FileUtil.getPublishedUserId()" in activity
 assert "Statistics.readFrom(uid)" in activity and "Statistics.aggregate(" in activity
-assert "if (folder != previousFolder)" in activity
+assert "if (account.first != previousFolder)" in activity
+assert "withContext(Dispatchers.IO) { readCurrentAccount() }" in activity
 assert 'FriendWatch.getList(userId)' in (SOURCE / "ui/miuix/MiuixFriendStatsActivity.kt").read_text(encoding="utf-8")
 assert hook.index("UserIdMap.initUser(userId)") < hook.index("Statistics.load();", hook.index("UserIdMap.initUser(userId)")) < hook.index("Model.initAllModel();", hook.index("UserIdMap.initUser(userId)"))
