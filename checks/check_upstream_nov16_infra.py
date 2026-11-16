@@ -48,7 +48,7 @@ public class InfraCheck {
   }
   static class Model {
    static boolean fail;
-   static final List<Class<? extends Model>> modelClazzList=List.of(Good.class,Failing.class);
+   static final List<Class<? extends Model>> modelClazzList=new ArrayList<>(List.of(Good.class,Failing.class));
    static final Model[] modelArray=new Model[2];
    static final Map<Class<? extends Model>,Model> modelMap=new HashMap<>();
    static final Map<String,ModelConfig> modelConfigMap=new LinkedHashMap<>();
@@ -59,6 +59,8 @@ public class InfraCheck {
   }
   public static class Good extends Model {public Good(){}}
   public static class Failing extends Model {public Failing(){if(fail)throw new IllegalStateException("registration failed");}}
+  public static class FirstExtension {public static class SameCode extends Model {public SameCode(){}}}
+  public static class SecondExtension {public static class SameCode extends Model {public SameCode(){}}}
   static class Config {
    final Map<String,ModelFields> modelFieldsMap=new LinkedHashMap<>();
    static final Config INSTANCE=new Config();static final Map<String,String> valueBaseline=new HashMap<>();static String lastSyncedText;
@@ -86,6 +88,11 @@ public class InfraCheck {
    @@KNOWNPATHS@@
   }
   static void check()throws Exception {
+   Model.modelClazzList.set(0,FirstExtension.SameCode.class);Model.modelClazzList.set(1,SecondExtension.SameCode.class);
+   Model.initAllModel();assert Model.modelConfigMap.size()==1&&!Model.isRegistrationComplete():"duplicate model code authorized an incomplete configuration map";
+   Config.disk="preserve collision configuration";Config.writes=0;
+   for(boolean force:List.of(false,true))assert !Config.save("A",force)&&Config.writes==0:"duplicate model code allowed configuration overwrite";
+   Model.modelClazzList.set(0,Good.class);Model.modelClazzList.set(1,Failing.class);
    String saved="{\"modelFieldsMap\":{\"Good\":{\"enable\":true},\"Failing\":{\"enable\":true}}}";
    String partial="{\"modelFieldsMap\":{\"Good\":{\"enable\":true}}}";
    Model.fail=true;Model.initAllModel();

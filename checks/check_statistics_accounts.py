@@ -259,8 +259,15 @@ public class StatisticsAccountCheck {
             assert UserIdMap.isFriendListLoaded():"queued old UID cleared new account completeness";
             assert FileUtil.writes==staleWrites:"queued old UID wrote account cache";
         } finally {XHelpers.release.countDown();worker.join(2000);if(second!=null)second.join(2000);}
+        io.github.aw1y2z.sesame.hook.ApplicationHook.hostUid=null;
+        int unavailablePublishes=FileUtil.publishes,unavailableWrites=FileUtil.writes;
+        initBackground("A");
+        assert UserIdMap.uid.equals("B")&&UserIdMap.isFriendListLoaded():"unavailable host UID changed current-account state";
+        assert FileUtil.publishes==unavailablePublishes&&FileUtil.writes==unavailableWrites:"unavailable host UID published unverified account";
         io.github.aw1y2z.sesame.hook.ApplicationHook.hostUid="A";
         XHelpers.entered=XHelpers.release=null;
+        initBackground("A");
+        assert UserIdMap.uid.equals("A")&&"A".equals(FileUtil.publishedUid)&&UserIdMap.isFriendListLoaded():"host UID recovery failed to publish account";
         Files.writeString(friendFile,friendJson);int writesBeforeChange=FileUtil.writes;
         XHelpers.changeUid=true;initBackground("A");XHelpers.changeUid=false;
         assert FileUtil.writes==writesBeforeChange&&Files.readString(friendFile).equals(friendJson):"UID changed during DAO but callback wrote cache";
