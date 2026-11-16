@@ -75,7 +75,7 @@ public class UpstreamOct15Check {
 '''
 code = code.replace("@@PLANT@@", plant).replace("@@GUARD@@", method("rpc/intervallimit/RpcRequestGuard.java", "public static boolean isFailure("))
 code = code.replace("@@DIR@@", method("util/FileUtil.java", "private static File getUserDataDirectoryFile(") + method("util/FileUtil.java", "private static boolean isSafeUserId("))
-code = code.replace("@@BOXES@@", method("model/task/antFarm/AntFarm.java", "private Outcome openFarmLeyuanBoxes(") + method("model/task/antForest/AntForestV2.java", "private Outcome openForestLeyuanBoxes("))
+code = code.replace("@@BOXES@@", method("model/task/antFarm/AntFarm.java", "private Outcome openFarmLeyuanBoxes(") + method("model/task/antForest/AntForestGame.java", "private static int gameQuota(") + method("model/task/antForest/AntForestV2.java", "private Outcome openForestLeyuanBoxes("))
 cache = Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches/modules-2/files-2.1/org.json/json"
 jar = next(p for p in cache.glob("*/*/json-*.jar") if not p.name.endswith(("-sources.jar", "-javadoc.jar")))
 with tempfile.TemporaryDirectory(prefix="sesame-upstream-oct15-") as tmp:

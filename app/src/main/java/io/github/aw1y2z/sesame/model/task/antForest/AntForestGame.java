@@ -33,29 +33,6 @@ final class AntForestGame {
         this.host = host;
     }
 
-    /**
-     * 检查并处理6秒拼手速逻辑（每天主动执行一次）
-     */
-    void whackMole() {
-        if (MyUtils.closeVerification()) return;
-        try {
-            if (host.whackModeName.getValue() == whackModeNames.CLOSE) {
-                // 检查今天是否已执行过打地鼠
-                if (Status.hasFlagToday("forest::whackMole::executed")) {
-                    Log.record("⏭️ 今天已完成过6秒拼手速，跳过执行");
-                } else {
-                    // 主动执行打地鼠（今日首次）
-                    Log.record("🎮 开始执行6秒拼手速（今日首次）");
-                    checkAndHandleWhackMole();
-                    Status.flagToday("forest::whackMole::executed");
-                    Log.record("✅ 6秒拼手速已完成，今天不再执行");
-                }
-            }
-        } catch (Throwable t) {
-            Log.err(TAG, "whackMole err:", t);
-        }
-    }
-
     void checkAndHandleWhackMole() {
         if (MyUtils.closeVerification()) return;
         try {
@@ -94,6 +71,7 @@ final class AntForestGame {
                 }
             }
         } catch (Throwable t) {
+            if (t instanceof TaskCancelledException) throw (TaskCancelledException) t;
             Log.printStackTrace(TAG, t);
         }
     }
@@ -293,6 +271,17 @@ final class AntForestGame {
         }
     }
 
+    private static int gameQuota(JSONObject rights, String key) {
+        Object value = rights.opt(key);
+        if (!(value instanceof Number)) return -1;
+        try {
+            int quota = new java.math.BigDecimal(value.toString()).intValueExact();
+            return quota >= 0 ? quota : -1;
+        } catch (NumberFormatException | ArithmeticException e) {
+            return -1;
+        }
+    }
+
     public void doforestgame() {
         try {
             String response = AntForestRpcCall.queryGameList();
@@ -306,12 +295,19 @@ final class AntForestGame {
 
             JSONObject drawRights = jo.optJSONObject("gameCenterDrawRights");
             if (drawRights != null) {
-                int perTime = drawRights.optInt("quotaPerTime", 100);
+                int perTime = drawRights.has("quotaPerTime") ? gameQuota(drawRights, "quotaPerTime") : 100;
+                int quotaCanUse = gameQuota(drawRights, "quotaCanUse");
+                int quotaLimit = gameQuota(drawRights, "quotaLimit");
+                int usedQuota = gameQuota(drawRights, "usedQuota");
+                if (perTime <= 0 || quotaCanUse < 0 || quotaLimit < 0 || usedQuota < 0) {
+                    Log.record("森林乐园：查询额度缺失或无效，本轮不执行开箱和任务上报");
+                    return;
+                }
 
                 // 换算实际宝箱次数
-                int canUseCount = drawRights.optInt("quotaCanUse") / perTime;
-                int limitCount = drawRights.optInt("quotaLimit") / perTime;
-                int usedCount = drawRights.optInt("usedQuota") / perTime;
+                int canUseCount = quotaCanUse / perTime;
+                int limitCount = quotaLimit / perTime;
+                int usedCount = usedQuota / perTime;
 
                 // 1. 处理待开启奖励 (批量开启)
                 if (canUseCount > 0) {
@@ -365,9 +361,11 @@ final class AntForestGame {
                 } else {
                     Log.record("今日森林乐园游戏任务已满额");
                 }
+            } else {
+                Log.record("森林乐园：查询响应缺少开箱额度，本轮不执行开箱和任务上报");
             }
 
-        } catch (CancellationException e) {
+        } catch (TaskCancelledException | CancellationException e) {
             throw e;
         } catch (Throwable t) {
             Log.printStackTrace("doforestgame 流程异常", t);
@@ -572,12 +570,11 @@ final class AntForestGame {
                 return Outcome.RETRY;
             }
             JSONObject drawRights = jo.optJSONObject("gameCenterDrawRights");
-            if (drawRights == null || !(drawRights.opt("quotaPerTime") instanceof Number)
-                    || !(drawRights.opt("quotaCanUse") instanceof Number)) {
+            if (drawRights == null) {
                 return Outcome.RETRY;
             }
-            int perTime = drawRights.optInt("quotaPerTime", -1);
-            int beforeQuota = drawRights.optInt("quotaCanUse", -1);
+            int perTime = gameQuota(drawRights, "quotaPerTime");
+            int beforeQuota = gameQuota(drawRights, "quotaCanUse");
             if (perTime <= 0 || beforeQuota < 0) return Outcome.RETRY;
             int canUseCount = beforeQuota / perTime;
             if (canUseCount <= 0) {
@@ -591,8 +588,8 @@ final class AntForestGame {
                         ? Outcome.RETRY : Outcome.UNABLE;
             }
             JSONObject after = drawJo.optJSONObject("gameCenterDrawRights");
-            if (after == null || !(after.opt("quotaCanUse") instanceof Number)
-                    || after.optInt("quotaCanUse", -1) < 0 || after.optInt("quotaCanUse") >= beforeQuota) {
+            int afterQuota = after == null ? -1 : gameQuota(after, "quotaCanUse");
+            if (afterQuota < 0 || afterQuota >= beforeQuota) {
                 Log.markUnresolved();
                 Log.record("森林乐园[开箱回查]：额度缺失或未减少，本轮停止");
                 return Outcome.RETRY;
