@@ -93,6 +93,18 @@ public class ApplicationHook extends XposedModule {
     private static final String PENDING_PROFILE_FILE = "pending_profile.txt";
     /** 待打开标记的有效期：超过这个时间视为用户早已放弃，冷启动后再跳转会很突兀。 */
     private static final long PENDING_PROFILE_TTL = 20_000L;
+    private static final Object profileProbeLock = new Object();
+    private static Runnable pendingProfileProbe;
+    private static boolean profileProbeRunning;
+    private static boolean pendingProfileExplicit;
+    private static long pendingProfileGeneration;
+    private static String pendingProfileAccountUid;
+    private static final java.util.concurrent.ExecutorService profileProbeWorker =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread thread = new Thread(r, "Sesame-ProfileProbe");
+                thread.setDaemon(true);
+                return thread;
+            });
     /** 上次打开的好友主页，用于屏蔽模块 App 补发的重复广播。 */
     private static String lastProfileUserId;
     private static long lastProfileTime;
@@ -219,6 +231,8 @@ public class ApplicationHook extends XposedModule {
     private static BroadcastReceiver broadcastReceiver = null;
 
     private static volatile boolean broadcastReceiverRegistered = false;
+    private static android.os.HandlerThread controlThread;
+    private static Handler controlHandler;
 
     /** 主进程"模块初始化开始"标记是否已打印（供日志查看器按轮分组，每个主进程加载周期只打一次） */
     private static volatile boolean initStartLogged = false;
@@ -397,8 +411,7 @@ public class ApplicationHook extends XposedModule {
                 Log.err(TAG, "hook CSGAPushActivity err:", t);
             }
             // 模块 App 点击好友时会把目标好友落盘并立刻拉起支付宝。
-            // 这里在支付宝任意页面 resume 时消费该标记，热启动/冷启动都能在第一帧就跳走，
-            // 不必再靠模块 App 延迟发广播（那 2.5s 的等待就是延迟的来源）。
+            // 任意页面 resume 时在后台消费标记，再投递主线程跳转；冷暖启动均保留广播兜底。
             try {
                 XHelpers.findAndHookMethod("android.app.Activity", classLoader, "onResume", new XC_MethodHook() {
                     @Override
@@ -2064,10 +2077,15 @@ public class ApplicationHook extends XposedModule {
             intentFilter.addAction(ACTION_CONTROL);
 
             broadcastReceiver = new AlipayBroadcastReceiver();
+            if (controlHandler == null) {
+                controlThread = new android.os.HandlerThread("Sesame-Control");
+                controlThread.start();
+                controlHandler = new Handler(controlThread.getLooper());
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(broadcastReceiver, intentFilter, Context.RECEIVER_EXPORTED);
+                context.registerReceiver(broadcastReceiver, intentFilter, null, controlHandler, Context.RECEIVER_EXPORTED);
             } else {
-                context.registerReceiver(broadcastReceiver, intentFilter);
+                context.registerReceiver(broadcastReceiver, intentFilter, null, controlHandler);
             }
             broadcastReceiverRegistered = true;
         } catch (Throwable th) {
@@ -2082,9 +2100,11 @@ public class ApplicationHook extends XposedModule {
      * @param userId 好友的支付宝 userId
      */
     private static void openFriendProfile(Context context, String userId) {
-        // 兜底广播进来时标记可能还留着（resume 那条路没走通），先清掉：
-        // 否则下一次任意页面 resume 会把同一个好友再弹一次。
-        new java.io.File(FileUtil.MAIN_DIRECTORY_FILE, PENDING_PROFILE_FILE).delete();
+        requestFriendProfile(context, userId);
+    }
+
+    /** 文件消费完成后只在主线程启动页面，广播与焦点探测共用此入口。 */
+    private static void launchFriendProfile(Context context, String userId) {
         if (StringUtil.isEmpty(userId)) {
             Log.record("打开好友主页失败#缺少userId");
             return;
@@ -2272,36 +2292,114 @@ public class ApplicationHook extends XposedModule {
 
     /**
      * 消费「待打开好友」标记：模块 App 点击好友行时先落盘再拉起支付宝，宿主冷启动后
-     * 一进 {@code LauncherActivity.onResume} 就能直接跳主页，省掉「先停在首页」的闪烁。
+     * 页面恢复时后台消费，再回主线程跳转，避免文件存储阻塞宿主界面。
      * <p>标记只消费一次，超过 {@link #PENDING_PROFILE_TTL} 视为过期。
      */
     private static void checkPendingProfile(Context context) {
-        try {
+        requestFriendProfile(context, null);
+    }
+
+    private static void requestFriendProfile(Context context, String userId) {
+        if (context == null) return;
+        if (userId != null && !USER_ID_PATTERN.matcher(userId).matches()) {
+            Log.record("打开好友主页失败#userId 格式非法");
+            return;
+        }
+        WeakReference<Context> contextRef = new WeakReference<>(context.getApplicationContext());
+        long generation = TaskLifecycle.generation();
+        String accountUid = UserIdMap.getCurrentUid();
+        synchronized (profileProbeLock) {
+            // 焦点事件只合并一次探测，不能覆盖尚未处理的显式广播跳转。
+            if (userId == null && pendingProfileExplicit && pendingProfileGeneration == generation
+                    && Objects.equals(pendingProfileAccountUid, accountUid)) return;
+            pendingProfileProbe = () -> consumePendingProfile(contextRef, generation, accountUid, userId);
+            pendingProfileExplicit = userId != null;
+            pendingProfileGeneration = generation;
+            pendingProfileAccountUid = accountUid;
+            if (profileProbeRunning) return;
+            profileProbeRunning = true;
+            try {
+                profileProbeWorker.execute(() -> {
+                    while (true) {
+                        Runnable probe;
+                        synchronized (profileProbeLock) {
+                            probe = pendingProfileProbe;
+                            pendingProfileProbe = null;
+                            pendingProfileExplicit = false;
+                            if (probe == null) {
+                                profileProbeRunning = false;
+                                return;
+                            }
+                        }
+                        probe.run();
+                    }
+                });
+            } catch (Throwable t) {
+                profileProbeRunning = false;
+                Log.err(TAG, "profile probe dispatch err:", t);
+            }
+        }
+    }
+
+    private static void consumePendingProfile(WeakReference<Context> contextRef, long generation,
+                                               String expectedUid, String explicitUserId) {
+        java.io.File claimed = null;
+        try (TaskLifecycle.Work work = TaskLifecycle.enter(generation)) {
+            if (work == null || (expectedUid != null && !Objects.equals(expectedUid, UserIdMap.getCurrentUid()))) return;
+            Context context = contextRef.get();
+            if (context == null) return;
             java.io.File file = new java.io.File(FileUtil.MAIN_DIRECTORY_FILE, PENDING_PROFILE_FILE);
-            if (!file.exists()) {
-                return;
+            java.io.File consuming = new java.io.File(FileUtil.MAIN_DIRECTORY_FILE, "pending_profile.consuming");
+            if (explicitUserId == null && !file.exists() && !consuming.exists()) return;
+            // 冷启动时模块 UID 尚未发布，先在后台确认宿主账号；主线程不查宿主服务。
+            String accountUid = getUserId();
+            if (accountUid == null || (expectedUid != null && !expectedUid.equals(accountUid))) return;
+            String userId = explicitUserId;
+            if (file.exists()) {
+                if (consuming.exists() && !consuming.delete()) return;
+                if (!file.renameTo(consuming)) return;
+                claimed = consuming;
+            } else if (consuming.exists()) {
+                claimed = consuming;
             }
-            String text = FileUtil.readFromFile(file);
-            // 先删再跳：即使下面跳转抛异常也不会反复触发
-            file.delete();
-            if (StringUtil.isEmpty(text)) {
-                return;
-            }
-            String[] parts = text.trim().split("\\s+");
-            String userId = parts[0];
-            long ts = 0;
-            if (parts.length > 1) {
-                try {
-                    ts = Long.parseLong(parts[1]);
-                } catch (NumberFormatException ignored) {
+            if (claimed != null) {
+                String text = FileUtil.readFromFile(claimed);
+                String[] parts = text == null ? new String[0] : text.trim().split("\\s+");
+                if (parts.length == 2 && USER_ID_PATTERN.matcher(parts[0]).matches()) {
+                    try {
+                        long age = System.currentTimeMillis() - Long.parseLong(parts[1]);
+                        if (age >= 0 && age <= PENDING_PROFILE_TTL) userId = parts[0];
+                    } catch (NumberFormatException ignored) { }
                 }
             }
-            if (ts > 0 && System.currentTimeMillis() - ts > PENDING_PROFILE_TTL) {
-                return;
+            if (userId == null || !USER_ID_PATTERN.matcher(userId).matches()
+                    || !accountUid.equals(getUserId())) return;
+            String publishedUid = UserIdMap.getCurrentUid();
+            if (publishedUid != null && !accountUid.equals(publishedUid)) return;
+            if (claimed != null) {
+                if (!claimed.delete()) return;
+                claimed = null;
             }
-            openFriendProfile(context, userId);
+            String targetUid = userId;
+            new Handler(Looper.getMainLooper()).post(() -> {
+                try (TaskLifecycle.Work launchWork = TaskLifecycle.enter(generation)) {
+                    if (launchWork == null) return;
+                    String currentUid = UserIdMap.getCurrentUid();
+                    if (currentUid != null && !accountUid.equals(currentUid)) return;
+                    launchFriendProfile(context, targetUid);
+                }
+            });
         } catch (Throwable th) {
             Log.err(TAG, "checkPendingProfile err:", th);
+        } finally {
+            // 只清理已领取的文件，不删另一个进程刚写入原路径的新点击。
+            if (claimed != null) {
+                try {
+                    if (!claimed.delete()) Log.record("好友跳转标记清理失败，保留待下次检查");
+                } catch (Throwable t) {
+                    Log.err(TAG, "profile claim cleanup err:", t);
+                }
+            }
         }
     }
 

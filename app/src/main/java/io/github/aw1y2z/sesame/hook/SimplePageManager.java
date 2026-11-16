@@ -110,7 +110,10 @@ public class SimplePageManager {
     }
     
     public static List<WeakReference<Dialog>> getDialogs() {
-        return dialogs;
+        synchronized (dialogs) {
+            dialogs.removeIf(ref -> ref.get() == null);
+            return new ArrayList<>(dialogs);
+        }
     }
     
     public static void enableWindowMonitoring(ClassLoader classLoader) {
@@ -139,10 +142,7 @@ public class SimplePageManager {
      */
     @SuppressLint("UseCompatLoadingForDrawables")
     public static io.github.aw1y2z.sesame.hook.SimpleViewImage tryGetTopView(String xpath) {
-        // 清理空引用：CopyOnWriteArrayList 的 removeIf 内部按快照处理，不会与其它线程的写入冲突
-        dialogs.removeIf(ref -> ref.get() == null);
-        
-        for (WeakReference<Dialog> dialogWeakReference : dialogs) {
+        for (WeakReference<Dialog> dialogWeakReference : getDialogs()) {
             Dialog dialog = dialogWeakReference.get();
             if (dialog == null || !dialog.isShowing()) {
                 continue;
@@ -276,21 +276,15 @@ public class SimplePageManager {
      * 如果对话框不存在则添加到监控列表
      */
     private static void addDialogIfNotExists(Dialog dialog, String source) {
-        boolean exists = false;
-        for (WeakReference<Dialog> ref : dialogs) {
-            if (ref.get() == dialog) {
-                exists = true;
-                break;
+        synchronized (dialogs) {
+            dialogs.removeIf(ref -> ref.get() == null);
+            for (WeakReference<Dialog> ref : dialogs) {
+                if (ref.get() == dialog) return;
             }
-        }
-        
-        if (!exists) {
             dialogs.add(new WeakReference<>(dialog));
-            Log.d(TAG, "对话框已从 " + source + " 添加，总数: " + dialogs.size());
-            triggerDialogProcessing();
-        } else {
-            Log.d(TAG, "对话框从 " + source + " 已存在于列表中");
         }
+        Log.d(TAG, "对话框已从 " + source + " 添加，总数: " + dialogs.size());
+        triggerDialogProcessing();
     }
     
     /**
