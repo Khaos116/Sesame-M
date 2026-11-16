@@ -13,6 +13,7 @@ import java.util.Locale;
  * <p>状态存 {@link AppConfig}，因此是设备级、跨账号共享，且卸载重装后才会重置。
  */
 public final class Agreement {
+    private static final java.util.concurrent.locks.ReentrantLock persistenceLock = new java.util.concurrent.locks.ReentrantLock();
 
     /**
      * 条款版本。递增时须同步三处：{@code docs/合规与免责.md} 的版本记录表、
@@ -29,12 +30,18 @@ public final class Agreement {
 
     /** 当前设备是否已同意当前版本的条款 */
     public static boolean isAccepted() {
-        // 未加载时读到的是默认值，会把已同意的设备误判成未同意
-        if (!AppConfig.INSTANCE.isInit()) {
-            AppConfig.load();
+        // 不等待后台写盘，也不读取尚未提交/可能回滚的临时版本。
+        if (!persistenceLock.tryLock()) return false;
+        try {
+            // 未加载时读到的是默认值，会把已同意的设备误判成未同意
+            if (!AppConfig.INSTANCE.isInit()) {
+                AppConfig.load();
+            }
+            Integer acceptedVersion = AppConfig.INSTANCE.getAgreementVersion();
+            return acceptedVersion != null && acceptedVersion >= VERSION;
+        } finally {
+            persistenceLock.unlock();
         }
-        Integer acceptedVersion = AppConfig.INSTANCE.getAgreementVersion();
-        return acceptedVersion != null && acceptedVersion >= VERSION;
     }
 
     /**
@@ -45,28 +52,42 @@ public final class Agreement {
      * @return 是否已成功落盘
      */
     public static boolean accept() {
-        AppConfig config = AppConfig.INSTANCE;
-        Integer previousVersion = config.getAgreementVersion();
-        Long previousAcceptedAt = config.getAgreementAcceptedAt();
+        persistenceLock.lock();
+        try {
+            AppConfig config = AppConfig.INSTANCE;
+            Integer previousVersion = config.getAgreementVersion();
+            Long previousAcceptedAt = config.getAgreementAcceptedAt();
+            try {
+                config.setAgreementVersion(VERSION);
+                config.setAgreementAcceptedAt(System.currentTimeMillis());
 
-        config.setAgreementVersion(VERSION);
-        config.setAgreementAcceptedAt(System.currentTimeMillis());
-
-        Boolean saved = AppConfig.save();
-        if (!Boolean.TRUE.equals(saved) && AppConfig.isLoadFailed()) {
-            // 配置解析失败时 save() 会一直拒绝写盘，协议页将永远无法完成同意；
-            // 用户此刻已明确表达同意，改为备份损坏文件后重写，别把人锁死在门禁页
-            saved = AppConfig.forceSave();
+                Boolean saved = AppConfig.save();
+                if (!Boolean.TRUE.equals(saved) && AppConfig.isLoadFailed()) {
+                    // 配置解析失败时 save() 会一直拒绝写盘，协议页将永远无法完成同意；
+                    // 用户此刻已明确表达同意，改为备份损坏文件后重写，别把人锁死在门禁页
+                    saved = AppConfig.forceSave();
+                }
+                if (!Boolean.TRUE.equals(saved)) {
+                    // 回滚：内存留着「已同意」而磁盘没有，会让 onResume 与下次启动的判断不一致
+                    config.setAgreementVersion(previousVersion);
+                    config.setAgreementAcceptedAt(previousAcceptedAt);
+                    Log.i("协议同意状态写入失败");
+                    return false;
+                }
+                Log.i("已同意用户协议 v" + VERSION);
+                return true;
+            } catch (Throwable t) {
+                config.setAgreementVersion(previousVersion);
+                config.setAgreementAcceptedAt(previousAcceptedAt);
+                // 序列化/存储异常的 message 可能含配置正文，仅保留类型和原调用栈。
+                RuntimeException diagnostic = new RuntimeException("Agreement persistence failed: " + t.getClass().getSimpleName());
+                diagnostic.setStackTrace(t.getStackTrace());
+                Log.printStackTrace(diagnostic);
+                return false;
+            }
+        } finally {
+            persistenceLock.unlock();
         }
-        if (!Boolean.TRUE.equals(saved)) {
-            // 回滚：内存留着「已同意」而磁盘没有，会让 onResume 与下次启动的判断不一致
-            config.setAgreementVersion(previousVersion);
-            config.setAgreementAcceptedAt(previousAcceptedAt);
-            Log.i("协议同意状态写入失败");
-            return false;
-        }
-        Log.i("已同意用户协议 v" + VERSION);
-        return true;
     }
 
     /** 同意时间（yyyy-MM-dd HH:mm），未记录时返回 null，供「关于」页展示 */

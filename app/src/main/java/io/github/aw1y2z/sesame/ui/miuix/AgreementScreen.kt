@@ -29,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,6 +51,10 @@ import io.github.aw1y2z.sesame.data.Agreement
 import io.github.aw1y2z.sesame.util.PermissionUtil
 import io.github.aw1y2z.sesame.util.ToastUtil
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -132,6 +137,8 @@ private fun String.highlight(highlightColor: Color): AnnotatedString {
  */
 @Composable
 fun AgreementScreen(onAgree: () -> Unit, onExit: () -> Unit) {
+    val saveScope = rememberCoroutineScope()
+    var saving by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val view = LocalView.current
     val scrollState = rememberScrollState()
@@ -216,8 +223,23 @@ fun AgreementScreen(onAgree: () -> Unit, onExit: () -> Unit) {
                         !hasStorage -> ToastUtil.show(context, "需要「所有文件访问权限」才能保存同意状态")
                         !checked -> ToastUtil.show(context, "请先勾选同意")
                         !phraseOk -> ToastUtil.show(context, "请输入「${Agreement.ACCEPT_PHRASE}」")
-                        !Agreement.accept() -> ToastUtil.show(context, "同意状态保存失败，请稍后重试")
-                        else -> onAgree()
+                        saving -> Unit
+                        else -> {
+                            saving = true
+                            saveScope.launch {
+                                try {
+                                    val accepted = withContext(Dispatchers.IO) { Agreement.accept() }
+                                    if (accepted) onAgree()
+                                    else ToastUtil.show(context, "同意状态保存失败，请稍后重试")
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (_: Exception) {
+                                    ToastUtil.show(context, "同意状态保存失败，请稍后重试")
+                                } finally {
+                                    saving = false
+                                }
+                            }
+                        }
                     }
                 }
             )

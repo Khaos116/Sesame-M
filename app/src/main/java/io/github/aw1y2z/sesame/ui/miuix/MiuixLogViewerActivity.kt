@@ -237,13 +237,22 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     val context = LocalContext.current
     val shareScope = rememberCoroutineScope()
     var sharing by remember(logType) { mutableStateOf(false) }
-    var file by remember(logType) { mutableStateOf(logType.file) }
+    var resolvedFile by remember(logType) { mutableStateOf<File?>(null) }
+    val currentFile by androidx.compose.runtime.rememberUpdatedState(resolvedFile)
     LaunchedEffect(logType) {
         while (true) {
-            file = withContext(Dispatchers.IO) { logType.file }
+            resolvedFile = withContext(Dispatchers.IO) { logType.file }
             delay(1000)
         }
     }
+    val file = resolvedFile
+    if (file == null) {
+        Text("正在读取日志…")
+        return
+    }
+    var actionBusy by remember(logType) { mutableStateOf(false) }
+    var clearing by remember(logType) { mutableStateOf(false) }
+    var readRevision by remember(logType) { mutableStateOf(0L) }
     var loaded by remember(file) { mutableStateOf(false) }
     val logReader = remember(logType) { LogTailReader() }
     var entries by remember(logType) { mutableStateOf(emptyList<LogEntry>()) }
@@ -294,10 +303,73 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
     // 只解析新增的完整行，保留跟随、历史阅读和账号切换行为。
     val fileUpdateChannel = remember(logType) { Channel<Unit>(Channel.CONFLATED) }
     LaunchedEffect(fileUpdateChannel, file) {
-        updateEntries(withContext(Dispatchers.IO) { logReader.poll(file) }, reset = true)
+        suspend fun refreshEntries(reset: Boolean = false) {
+            if (clearing) return
+            val revision = readRevision
+            val updated = withContext(Dispatchers.IO) {
+                synchronized(logReader) { logReader.poll(file) }
+            }
+            if (currentFile == file && revision == readRevision && !clearing) updateEntries(updated, reset)
+        }
+        refreshEntries(reset = true)
         fileUpdateChannel.receiveAsFlow().collect {
-            updateEntries(withContext(Dispatchers.IO) { logReader.poll(file) })
+            refreshEntries()
             delay(300)
+        }
+    }
+
+    fun exportCurrentLog(summary: Boolean) {
+        if (actionBusy) return
+        actionBusy = true
+        shareScope.launch {
+            try {
+                val message = withContext(Dispatchers.IO) {
+                    val source = if (summary) RpcFailureJournal.fileFor(file.parentFile, System.currentTimeMillis()) else file
+                    if (summary && !source.isFile) "当前账号今日暂无异常请求统计"
+                    else FileUtil.exportFile(source)?.let { "已导出: ${it.path}" } ?: "导出失败"
+                }
+                if (currentFile == file) ToastUtil.show(context, message)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (currentFile == file) ToastUtil.show(context, "导出失败")
+            } finally {
+                actionBusy = false
+            }
+        }
+    }
+
+    fun clearCurrentLog() {
+        if (actionBusy) return
+        actionBusy = true
+        clearing = true
+        readRevision++
+        shareScope.launch {
+            try {
+                val updated = withContext(Dispatchers.IO) {
+                    synchronized(logReader) {
+                        if (FileUtil.clearFile(file)) logReader.reload(file) else null
+                    }
+                }
+                if (currentFile == file) {
+                    if (updated != null) {
+                        updateEntries(updated, reset = true)
+                        searchQuery = ""
+                        selectedTag = null
+                        ToastUtil.show(context, "已清空")
+                    } else ToastUtil.show(context, "清空失败")
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (currentFile == file) ToastUtil.show(context, "清空失败")
+            } finally {
+                readRevision++
+                clearing = false
+                actionBusy = false
+                // 清空期间被合并/跳过的最后一次文件事件也必须补读。
+                fileUpdateChannel.trySend(Unit)
+            }
         }
     }
     DisposableEffect(file) {
@@ -347,30 +419,10 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                 },
                 onBack = { activity.finish() },
                 onExportSummary = if (logType == LogType.ERROR) ({
-                    val report = RpcFailureJournal.fileFor(logType.file.parentFile, System.currentTimeMillis())
-                    if (!report.isFile) {
-                        ToastUtil.show(context, "当前账号今日暂无异常请求统计")
-                    } else {
-                        val exported = FileUtil.exportFile(report)
-                        ToastUtil.show(context, if (exported != null) "已导出: ${exported.path}" else "导出失败")
-                    }
+                    exportCurrentLog(summary = true)
                 }) else null,
-                onExport = {
-                    val exported = FileUtil.exportFile(logType.file)
-                    if (exported != null) {
-                        ToastUtil.show(context, "已导出: " + exported.path)
-                    } else {
-                        ToastUtil.show(context, "导出失败")
-                    }
-                },
-                onClear = {
-                    if (FileUtil.clearFile(file)) {
-                        updateEntries(logReader.reload(file), reset = true)
-                        searchQuery = ""
-                        selectedTag = null
-                        ToastUtil.show(context, "已清空")
-                    }
-                },
+                onExport = { exportCurrentLog(summary = false) },
+                onClear = { clearCurrentLog() },
                 onShare = if (logType == LogType.RUNTIME || logType == LogType.DEBUG) {
                     {
                         if (!sharing) {
@@ -383,6 +435,7 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                                     val shared = withContext(Dispatchers.IO) {
                                         FileUtil.copyForShare(source, File(context.cacheDir, "share"))
                                     }
+                                    if (currentFile != source) return@launch
                                     if (shared == null) {
                                         ToastUtil.show(context, "分享失败")
                                     } else {
@@ -402,7 +455,7 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                                 } catch (cancelled: CancellationException) {
                                     throw cancelled
                                 } catch (_: Exception) {
-                                    ToastUtil.show(context, "分享失败")
+                                    if (currentFile == source) ToastUtil.show(context, "分享失败")
                                 } finally {
                                     sharing = false
                                 }
