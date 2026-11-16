@@ -9,6 +9,7 @@ import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.util.Statistics;
 import io.github.aw1y2z.sesame.util.Status;
+import io.github.aw1y2z.sesame.util.TaskCancelledException;
 import io.github.aw1y2z.sesame.util.TimeUtil;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 import static io.github.aw1y2z.sesame.model.task.antForest.AntForestV2.*;
@@ -51,7 +52,7 @@ final class AntForestWater {
                         String bizNo = jo.optString("bizNo");
                         int friendWaterEnergy = friendWaterEnergy(uid, waterEnergy);
                         if (friendWaterEnergy <= 0) continue;
-                        KVNode<Integer, Boolean> waterCountKVNode = returnFriendWater(uid, bizNo, remainCount, friendWaterEnergy);
+                        KVNode<Integer, Boolean> waterCountKVNode = returnFriendWater(uid, bizNo, remainCount, friendWaterEnergy, taskUid);
                         int wateredCount = waterCountKVNode.getKey();
                         if (wateredCount > 0) {
                             Status.waterFriendToday(uid, wateredCount, taskUid);
@@ -61,6 +62,8 @@ final class AntForestWater {
                             break;
                         }
                     }
+                } catch (TaskCancelledException e) {
+                    throw e;
                 } catch (Throwable t) {
                     Log.err(TAG, "waterFriendEnergy err:", t);
                 }
@@ -69,6 +72,11 @@ final class AntForestWater {
     }
 
     KVNode<Integer, Boolean> returnFriendWater(String userId, String bizNo, int count, int waterEnergy) {
+        return returnFriendWater(userId, bizNo, count, waterEnergy, null);
+    }
+
+    private KVNode<Integer, Boolean> returnFriendWater(String userId, String bizNo, int count, int waterEnergy,
+                                                     String configuredTaskUid) {
         if (bizNo == null || bizNo.isEmpty()) {
             return new KVNode<>(0, true);
         }
@@ -117,6 +125,12 @@ final class AntForestWater {
                         break label;
                 }
             }
+        } catch (TaskCancelledException e) {
+            // 取消仍保留已确认次数，避免下一轮重复补浇；自动回浇不占配置次数。
+            if (configuredTaskUid != null && wateredTimes > 0) {
+                Status.waterFriendToday(userId, wateredTimes, configuredTaskUid);
+            }
+            throw e;
         } catch (Throwable t) {
             Log.err(TAG, "returnFriendWater err:", t);
         }

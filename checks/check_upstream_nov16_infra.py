@@ -248,6 +248,9 @@ public class InfraCheck {
   assert !ApplicationHook.verifyAlarmNonce(new Intent("alarm").putExtra("nonce",generated));assert !ApplicationHook.verifyControl(new Intent("control").putExtra("token",generated));
   assert ApplicationHook.verifyControl(new Intent("control").setPackage(ApplicationHook.HOST_PACKAGE_NAME).putExtra("token",generated));
   ApplicationHook.lastControlAt.clear();assert !ApplicationHook.controlRateLimited("status")&&ApplicationHook.controlRateLimited("status")&&!ApplicationHook.controlRateLimited("execute");
+  resetHost();AppConfig.INSTANCE.agreementVersion=0;AppConfig.diskVersion=0;int profilesBefore=ApplicationHook.profileOpens;
+  for(String op:List.of("restart","reloadConfig","execute","status","openProfile","forestQuery","walkPath"))assert ApplicationHook.dispatchControl(op,"A",null,null,true).equals("agreement not accepted");
+  assert ApplicationHook.Thread.jobs.isEmpty()&&ApplicationHook.initCalls==0&&ModelTask.named==0&&ModelTask.all==0&&ApplicationHook.profileOpens==profilesBefore:"unaccepted agreement admitted a control operation";
   resetHost();AppConfig.INSTANCE.agreementVersion=0;assert ApplicationHook.dispatchControl("status",null,null,null,false)==null&&AppConfig.INSTANCE.agreementVersion==Agreement.VERSION:"accepted App state never reached running host";
   assert ApplicationHook.dispatchControl("rpctest",null,null,null,false).equals("unknown op");assert ApplicationHook.dispatchControl("forestQuery",null,"unknown",null,false).equals("unknown method");
   resetHost();ApplicationHook.dispatchControl("restart","A",null,null,false);drain();assert ApplicationHook.initCalls==1&&ApplicationHook.initAdmitted&&!ApplicationHook.lastExec;

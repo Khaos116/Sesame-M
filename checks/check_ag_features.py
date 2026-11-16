@@ -100,6 +100,7 @@ public class AGCheck {
         Field<Map<String,Integer>> waterFriendGramList=new Field<>(new HashMap<>()),waterFriendList=new Field<>(new HashMap<>());
         List<Integer> grams=new ArrayList<>();
         KVNode<Integer,Boolean> returnFriendWater(String uid,String biz,int count,int gram){grams.add(gram);return new KVNode<>(count,true);}
+        KVNode<Integer,Boolean> returnFriendWater(String uid,String biz,int count,int gram,String taskUid){return returnFriendWater(uid,biz,count,gram);}
         @@FOREST@@
     }
 

@@ -1078,8 +1078,11 @@ final class AntForestProp {
     }
 
     void giveProp(String targetUserId) {
+        final int maxGiveRounds = 100;
+        Map<String, Long> lastStockByPropId = new HashMap<>();
         try {
-            do {
+            for (int round = 0; round < maxGiveRounds; round++) {
+                if (RunGeneration.isStale()) throw new TaskCancelledException();
                 try {
                     JSONObject jo = MyUtils.newJSONObject(AntForestRpcCall.queryPropList(true));
                     if (!MessageUtil.checkResultCode(TAG, jo)) {
@@ -1089,18 +1092,29 @@ final class AntForestProp {
                     if (forestPropVOList != null && forestPropVOList.length() > 0) {
                         jo = forestPropVOList.optJSONObject(0);
                         if (jo == null) {
-                            break;
+                            return;
                         }
                         JSONObject giveConfigVO = jo.optJSONObject("giveConfigVO");
                         JSONObject propConfigVO = jo.optJSONObject("propConfigVO");
                         JSONArray propIdList = jo.optJSONArray("propIdList");
                         if (giveConfigVO == null || propConfigVO == null || propIdList == null || propIdList.length() == 0) {
-                            break;
+                            Log.record("赠送道具#道具信息不完整，本轮停止");
+                            return;
                         }
-                        String giveConfigId = giveConfigVO.optString("giveConfigId");
-                        int holdsNum = jo.optInt("holdsNum", 0);
+                        String giveConfigId = giveConfigVO.opt("giveConfigId") instanceof String ? giveConfigVO.optString("giveConfigId") : "";
+                        long holdsNum = forestFeatureLong(jo, "holdsNum");
                         String propName = propConfigVO.optString("propName");
-                        String propId = propIdList.optString(0);
+                        String propId = propIdList.opt(0) instanceof String ? propIdList.optString(0) : "";
+                        if (giveConfigId.isEmpty() || propId.isEmpty() || holdsNum <= 0) {
+                            Log.record("赠送道具#道具标识或库存无效，本轮停止");
+                            return;
+                        }
+                        // 同一ID可能代表一叠道具，只有库存严格减少才允许继续赠送。
+                        Long previousStock = lastStockByPropId.put(propId, holdsNum);
+                        if (previousStock != null && holdsNum >= previousStock) {
+                            Log.record("赠送道具#赠送后库存未推进，本轮停止");
+                            return;
+                        }
                         jo = MyUtils.newJSONObject(AntForestRpcCall.giveProp(giveConfigId, propId, targetUserId));
                         if (MessageUtil.checkResultCode(TAG, jo)) {
                             Log.forest("赠送道具🎭[" + UserIdMap.getMaskName(targetUserId) + "]#" + propName);
@@ -1112,8 +1126,11 @@ final class AntForestProp {
                 } finally {
                     TimeUtil.sleep(1500);
                 }
-                break;
-            } while (true);
+                return;
+            }
+            Log.record("赠送道具#本轮已达" + maxGiveRounds + "次上限，剩余道具留待下一轮");
+        } catch (TaskCancelledException e) {
+            throw e;
         } catch (Throwable th) {
             Log.err(TAG, "giveProp err:", th);
         }

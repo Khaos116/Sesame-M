@@ -1,4 +1,4 @@
-"""Replay real WhackMole and energy-rain methods with isolated replies; no device or network."""
+"""Replay forest games, bounded gifts and watering cancellation; no device or network."""
 from pathlib import Path
 import os
 import re
@@ -19,7 +19,7 @@ stubs = {
     "util.Log": '''import java.util.*;public class Log {
         public static List<String> messages=new ArrayList<>();
         public static void record(String s){messages.add(s);}public static void forest(String s){messages.add(s);}
-        public static void i(String tag,String s){messages.add(s);}
+        public static void i(String tag,String s){messages.add(s);}public static void i(String s){messages.add(s);}
         public static void err(String tag,String stage,Throwable t){messages.add(stage+":"+t.getClass().getSimpleName());}
         public static void printStackTrace(String stage,Throwable t){err("test",stage,t);}
         public static void printStackTrace(Throwable t){err("test","error",t);}}''',
@@ -161,7 +161,94 @@ public class UpstreamForestCheck {
             System.out.println("PASS home success validation, empty parse rejection, valid server clock and team normalization");
         }
     }
-    public static void main(String[] args){whack();Rain.check();Home.check();}
+    static void expectCancel(Runnable action){try{action.run();throw new AssertionError("forest cancellation swallowed");}catch(TaskCancelledException expected){}}
+    static class Gifts {
+        static final String TAG="gifts";static Deque<String> inventories=new ArrayDeque<>();
+        static int queries,gives,waits,cancelWait;static boolean unique,cancelQuery,cancelGive;static String giftReply;
+        static class UserIdMap {static String getMaskName(String uid){return "friend";}}
+        static class AntForestRpcCall {
+            static String queryPropList(boolean onlyGive){
+                assert onlyGive;queries++;if(cancelQuery)throw new TaskCancelledException();
+                if(queries>110)throw new AssertionError("unbounded gift loop");
+                return unique?inventory("p"+queries,2):inventories.size()>1?inventories.removeFirst():inventories.peekFirst();
+            }
+            static String giveProp(String config,String prop,String uid){
+                assert config.equals("config")&&!prop.isEmpty()&&uid.equals("friend");gives++;
+                if(cancelGive)throw new TaskCancelledException();return giftReply;
+            }
+        }
+        static class TimeUtil {static void sleep(long ms){assert ms==1500;waits++;if(waits==cancelWait||RunGeneration.isStale())throw new TaskCancelledException();}}
+        @@GIVE@@
+        @@GIVE_NUMBER@@
+        static JSONObject prop(String id,int count){return new JSONObject().put("giveConfigVO",new JSONObject().put("giveConfigId","config"))
+            .put("propConfigVO",new JSONObject().put("propName","card")).put("propIdList",new JSONArray().put(id)).put("holdsNum",count);}
+        static String inventory(String id,int count){return new JSONObject().put("resultCode","SUCCESS").put("forestPropVOList",new JSONArray().put(prop(id,count))).toString();}
+        static void reset(){inventories.clear();queries=gives=waits=cancelWait=0;unique=cancelQuery=cancelGive=false;giftReply="{resultCode:'SUCCESS'}";Log.messages.clear();}
+        static void check(){Gifts gifts=new Gifts();
+            reset();inventories.add(inventory("stack",2));gifts.giveProp("friend");
+            assert queries==2&&gives==1:"unchanged gift inventory was resent: "+queries+" queries / "+gives+" gifts";
+            assert Log.messages.stream().anyMatch(s->s.contains("库存未推进"));
+            reset();inventories.add(inventory("stack",2));inventories.add(inventory("stack",1));gifts.giveProp("friend");
+            assert queries==2&&gives==2:"a decreasing stack must continue";
+            reset();inventories.add(inventory("a",2));inventories.add(inventory("b",2));inventories.add(inventory("a",2));gifts.giveProp("friend");
+            assert queries==3&&gives==2:"alternating cached ids escaped progress guard";
+            reset();inventories.add(inventory("stack",2));inventories.add(inventory("stack",3));gifts.giveProp("friend");assert queries==2&&gives==1;
+            reset();unique=true;gifts.giveProp("friend");assert queries==100&&gives==100:"changing inventory escaped round limit";
+            assert Log.messages.stream().anyMatch(s->s.contains("100")&&s.contains("上限"));
+            reset();inventories.add("{resultCode:'SUCCESS',forestPropVOList:[]}");gifts.giveProp("friend");assert queries==1&&gives==0;
+            reset();inventories.add("{resultCode:'FAIL'}");gifts.giveProp("friend");assert queries==1&&gives==0;
+            reset();inventories.add(inventory("stack",2));giftReply="{resultCode:'FAIL'}";gifts.giveProp("friend");assert queries==1&&gives==1;
+            for(JSONObject invalid:List.of(prop("",2),prop("p",0),prop("p",2).put("holdsNum",true),prop("p",2).put("holdsNum",1.5),
+                    prop("p",2).put("propIdList",new JSONArray().put(true)),prop("p",2).put("giveConfigVO",new JSONObject().put("giveConfigId",true)))){
+                reset();inventories.add(new JSONObject().put("resultCode","SUCCESS").put("forestPropVOList",new JSONArray().put(invalid)).toString());
+                gifts.giveProp("friend");assert gives==0:"invalid gift identity/stock sent an RPC";
+            }
+            reset();inventories.add(inventory("stack",2));cancelQuery=true;expectCancel(()->gifts.giveProp("friend"));assert queries==1&&gives==0;
+            reset();inventories.add(inventory("stack",2));cancelGive=true;expectCancel(()->gifts.giveProp("friend"));assert queries==1&&gives==1;
+            reset();inventories.add(inventory("stack",2));cancelWait=1;expectCancel(()->gifts.giveProp("friend"));assert queries==1&&gives==1;
+            reset();inventories.add(inventory("stack",2));AtomicLong generation=new AtomicLong(1);RunGeneration prior=RunGeneration.bind(0,generation::get);
+            try{expectCancel(()->gifts.giveProp("friend"));assert queries==0&&gives==0:"stale gift run sent a request";}finally{RunGeneration.restore(prior);}
+            System.out.println("PASS gift unchanged/cycling stock, decreasing stack, hard cap, invalid fields and query/send/wait cancellation");
+        }
+    }
+    static class Watering {
+        static final String TAG="water";static int queries,transfers,waits,cancelWait;static boolean cancelQuery,cancelTransfer,failFirstQuery;static String transferReply;
+        static class Field<T>{final T value;Field(T value){this.value=value;}T getValue(){return value;}}
+        static class Host {String selfId="self";Field<Integer> waterFriendType=new Field<>(1);Field<Boolean> waterFriendEnergySendChat=new Field<>(false);
+            Field<Map<String,Integer>> waterFriendList=new Field<>(new LinkedHashMap<>()),waterFriendGramList=new Field<>(new HashMap<>());}
+        final Host host=new Host();
+        static class WaterFriendType {static int[] waterEnergy={0,10,18,33,66};}
+        static class KVNode<K,V>{final K key;final V value;KVNode(K key,V value){this.key=key;this.value=value;}K getKey(){return key;}V getValue(){return value;}}
+        static class UserIdMap {static String getCurrentUid(){return "self";}static String getMaskName(String id){return id;}static String getShowName(String id){return id;}}
+        static class Statistics {enum DataType{WATERINGCOUNT,WATERED}static void addData(DataType type,int n){}}
+        static class Status {static Map<String,Integer> watered=new HashMap<>();static int getWaterFriendToday(String id){return watered.getOrDefault(id,0);}
+            static void waterFriendToday(String id,int n,String taskUid){assert taskUid.equals("self");watered.merge(id,n,Integer::sum);}static void wateringFriendToday(String id){}}
+        static class AntForestRpcCall {
+            static String queryFriendHomePage(String id){queries++;if(cancelQuery)throw new TaskCancelledException();if(failFirstQuery&&queries==1)throw new IllegalStateException("transport");return "{resultCode:'SUCCESS',bizNo:'biz'}";}
+            static String transferEnergy(String id,String biz,int energyId,String chat){transfers++;if(cancelTransfer)throw new TaskCancelledException();return transferReply;}
+        }
+        static class TimeUtil {static void sleep(long ms){waits++;if(waits==cancelWait||RunGeneration.isStale())throw new TaskCancelledException();}}
+        @@WATER@@
+        void reset(){host.waterFriendList.value.clear();host.waterFriendList.value.put("a",2);host.waterFriendList.value.put("b",1);Status.watered.clear();
+            queries=transfers=waits=cancelWait=0;cancelQuery=cancelTransfer=failFirstQuery=false;transferReply="{resultCode:'SUCCESS',userBaseInfo:{currentEnergy:100}}";}
+        static void check(){Watering water=new Watering();
+            water.reset();water.waterFriendEnergy();assert queries==2&&transfers==3&&Status.watered.equals(Map.of("a",2,"b",1));
+            water.waterFriendEnergy();assert queries==2&&transfers==3:"configured counts were watered twice";
+            water.reset();cancelQuery=true;expectCancel(water::waterFriendEnergy);assert queries==1&&transfers==0;
+            water.reset();cancelWait=1;expectCancel(water::waterFriendEnergy);assert queries==1&&transfers==0:"cancelled homepage wait reached the next friend";
+            water.reset();cancelTransfer=true;expectCancel(water::waterFriendEnergy);assert queries==1&&transfers==1;
+            water.reset();cancelWait=2;expectCancel(water::waterFriendEnergy);assert queries==1&&transfers==1:"cancelled transfer wait reached the next friend";
+            water.reset();cancelWait=3;expectCancel(water::waterFriendEnergy);assert queries==1&&transfers==2;
+            assert Status.watered.equals(Map.of("a",1)):"cancellation discarded previously confirmed watering quota";
+            water.reset();cancelWait=1;expectCancel(()->water.returnFriendWater("a","biz",3,10));assert transfers==1;
+            water.reset();cancelWait=2;expectCancel(()->water.returnFriendWater("a","biz",3,10));assert transfers==2&&Status.watered.isEmpty():"automatic return watering consumed configured quota";
+            water.reset();cancelTransfer=true;expectCancel(()->water.returnFriendWater("a","biz",3,10));assert transfers==1;
+            water.reset();failFirstQuery=true;water.waterFriendEnergy();assert queries==2&&transfers==1:"ordinary friend failure stopped unrelated friends";
+            water.reset();transferReply="{resultCode:'ENERGY_INSUFFICIENT'}";water.waterFriendEnergy();assert queries==1&&transfers==1;
+            System.out.println("PASS watering counts/confirmed quota on cancel, query/transfer/wait cancellation, automatic return separation and ordinary failure");
+        }
+    }
+    public static void main(String[] args){whack();Rain.check();Home.check();Gifts.check();Watering.check();}
 }
 '''
 game = "model/task/antForest/AntForestGame.java"
@@ -172,6 +259,11 @@ test = test.replace("@@RAIN@@", rain_methods)
 home_methods = "\n".join(method("model/task/antForest/AntForestEnergy.java", signature)
                          for signature in ("JSONObject querySelfHome(", "JSONObject queryFriendHome("))
 test = test.replace("@@HOME@@", home_methods.replace("AntForestV2.offsetTimeMath", "offsetTimeMath"))
+test = test.replace("@@GIVE@@", method("model/task/antForest/AntForestProp.java", "void giveProp(String targetUserId)"))
+test = test.replace("@@GIVE_NUMBER@@", method("model/task/antForest/AntForestV2.java", "static long forestFeatureLong("))
+test = test.replace("@@WATER@@", "\n".join(method("model/task/antForest/AntForestWater.java", signature) for signature in (
+    "void waterFriendEnergy(", "KVNode<Integer, Boolean> returnFriendWater(", "private KVNode<Integer, Boolean> returnFriendWater(",
+    "int getEnergyId(", "int friendWaterEnergy(")))
 
 with tempfile.TemporaryDirectory(prefix="sesame-upstream-nov16-forest-") as temp:
     out = Path(temp)
