@@ -13,6 +13,7 @@ import io.github.aw1y2z.sesame.util.JsonUtil;
 import io.github.aw1y2z.sesame.util.Log;
 import io.github.aw1y2z.sesame.util.MyUtils;
 
+import java.io.File;
 import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -340,20 +341,21 @@ public class UserIdMap {
     }
     
     public synchronized static void load(String userId) {
+        friendListLoaded = false;
         userMap.clear();
         try {
-            String body = FileUtil.readFromFile(FileUtil.getFriendIdMapFile(userId));
-            if (!body.isEmpty()) {
-                Map<String, UserEntity.UserDto> dtoMap = JsonUtil.parseObject(body, new TypeReference<Map<String, UserEntity.UserDto>>() {
-                });
-                for (UserEntity.UserDto dto : dtoMap.values()) {
-                    add(dto.toEntity());
-                }
+            File file = FileUtil.getFriendIdMapFile(userId);
+            if (!file.exists()) return;
+            Map<String, UserEntity.UserDto> dtoMap = JsonUtil.copyMapper().readValue(file, new TypeReference<Map<String, UserEntity.UserDto>>() {
+            });
+            for (UserEntity.UserDto dto : dtoMap.values()) {
+                add(dto.toEntity());
             }
+            friendListLoaded = true;
         } catch (Exception e) {
             Log.printStackTrace(e);
+            Log.record("好友表加载失败#无法确认完整好友范围，暂不按陌生关系过滤");
         }
-        friendListLoaded = true;
     }
     
     public synchronized static void unload() {

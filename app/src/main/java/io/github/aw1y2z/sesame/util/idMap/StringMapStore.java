@@ -66,23 +66,24 @@ class StringMapStore {
         idMap.remove(key);
     }
 
-    /** 先清空再整份载入；文件不存在或内容为空时保持为空，解析失败只记栈不抛 */
+    /** 先清空再整份载入；读取或解析失败时保留未载入状态，禁止覆盖原文件 */
     synchronized void load(String userId) {
         idMap.clear();
         removedKeys.clear();
+        loaded = false;
         loadFailed = false;
         try {
-            String body = FileUtil.readFromFile(fileProvider.apply(userId));
-            if (!body.isEmpty()) {
-                Map<String, String> newMap = JsonUtil.parseObject(body, new TypeReference<Map<String, String>>() {
+            File file = fileProvider.apply(userId);
+            if (file.exists()) {
+                Map<String, String> newMap = JsonUtil.copyMapper().readValue(file, new TypeReference<Map<String, String>>() {
                 });
                 idMap.putAll(newMap);
             }
+            loaded = true;
         } catch (Exception e) {
             loadFailed = true;
             Log.printStackTrace(e);
         }
-        loaded = true;
     }
 
     /**
@@ -99,19 +100,19 @@ class StringMapStore {
 
     /** 把磁盘上内存没有的条目补进来；本次被 remove 的键跳过，避免删除被撤销 */
     private void mergeFromDisk(String userId) {
-        loaded = true;
+        loadFailed = false;
         try {
-            String body = FileUtil.readFromFile(fileProvider.apply(userId));
-            if (body.isEmpty()) {
-                return;
-            }
-            Map<String, String> onDisk = JsonUtil.parseObject(body, new TypeReference<Map<String, String>>() {
-            });
-            for (Map.Entry<String, String> entry : onDisk.entrySet()) {
-                if (!removedKeys.contains(entry.getKey())) {
-                    idMap.putIfAbsent(entry.getKey(), entry.getValue());
+            File file = fileProvider.apply(userId);
+            if (file.exists()) {
+                Map<String, String> onDisk = JsonUtil.copyMapper().readValue(file, new TypeReference<Map<String, String>>() {
+                });
+                for (Map.Entry<String, String> entry : onDisk.entrySet()) {
+                    if (!removedKeys.contains(entry.getKey())) {
+                        idMap.putIfAbsent(entry.getKey(), entry.getValue());
+                    }
                 }
             }
+            loaded = true;
         } catch (Exception e) {
             loadFailed = true;
             Log.printStackTrace(e);

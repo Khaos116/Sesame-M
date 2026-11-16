@@ -3,7 +3,12 @@ from pathlib import Path
 import os
 import re
 import subprocess
+import sys
 import tempfile
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).parent / "audit_regressions"))
+from run import method
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "app/src/main/java/io/github/aw1y2z/sesame"
@@ -26,6 +31,7 @@ with tempfile.TemporaryDirectory(prefix="sesame-statistics-") as directory:
 
     write("io/github/aw1y2z/sesame/util/Statistics.java", (SOURCE / "util/Statistics.java").read_text(encoding="utf-8"))
     write("io/github/aw1y2z/sesame/entity/FriendWatch.java", (SOURCE / "entity/FriendWatch.java").read_text(encoding="utf-8"))
+    write("io/github/aw1y2z/sesame/entity/UserEntity.java", (SOURCE / "entity/UserEntity.java").read_text(encoding="utf-8"))
     write("io/github/aw1y2z/sesame/util/idMap/AutoBlackListMap.java", (SOURCE / "util/idMap/AutoBlackListMap.java").read_text(encoding="utf-8"))
     write("io/github/aw1y2z/sesame/entity/IdAndName.java", """package io.github.aw1y2z.sesame.entity;
 public class IdAndName implements Comparable<IdAndName> { public String id, name; public int compareTo(IdAndName other) { return id.compareTo(other.id); } }""")
@@ -37,8 +43,24 @@ public final class R { public static final class string {
 } }""")
     write("io/github/aw1y2z/sesame/util/AccountFolderName.java", """package io.github.aw1y2z.sesame.util;
 public class AccountFolderName { public static boolean isValidUid(String uid) { return uid != null && uid.matches("[A-Za-z0-9_-]{1,128}"); } }""")
-    write("io/github/aw1y2z/sesame/util/idMap/UserIdMap.java", """package io.github.aw1y2z.sesame.util.idMap;
-public class UserIdMap { public static String uid; public static String getCurrentUid() { return uid; } public static String getMaskName(String id) { return id; } public static boolean isFriendListLoaded() {return false;} }""")
+    user_map = """package io.github.aw1y2z.sesame.util.idMap;
+import java.util.*;import java.io.File;import com.fasterxml.jackson.core.type.TypeReference;
+import io.github.aw1y2z.sesame.entity.UserEntity;import io.github.aw1y2z.sesame.util.*;
+public class UserIdMap {
+ public static String uid;public static boolean realMap;private static boolean friendListLoaded;
+ private static final Map<String,UserEntity> userMap=new HashMap<>();
+ public static String getCurrentUid(){return uid;}
+ public static String getMaskName(String id){return realMap?realMaskName(id):id;}
+ @@LOADED@@ @@LOAD@@ @@ADD@@ @@UNLOAD@@ @@MASK@@
+}"""
+    for tag, signature in {"LOADED":"public static boolean isFriendListLoaded(","LOAD":"public synchronized static void load(",
+                           "ADD":"public synchronized static void add(","UNLOAD":"public synchronized static void unload(",
+                           "MASK":"public static String getMaskName("}.items():
+        value = method("util/idMap/UserIdMap.java", signature)
+        if tag == "MASK": value = value.replace("getMaskName(String userId)", "realMaskName(String userId)")
+        if tag == "LOADED": value = value.replace("return friendListLoaded;", "return realMap && friendListLoaded;")
+        user_map = user_map.replace("@@"+tag+"@@", value)
+    write("io/github/aw1y2z/sesame/util/idMap/UserIdMap.java", user_map)
     write("io/github/aw1y2z/sesame/util/FileUtil.java", """package io.github.aw1y2z.sesame.util;
 import java.io.*; import java.nio.file.*; import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 public class FileUtil {
@@ -48,6 +70,7 @@ public class FileUtil {
     public static File getStatisticsFile() { return getStatisticsFile(UserIdMap.getCurrentUid()); }
     public static File getFriendWatchFile(String uid) { return new File(new File(new File(root, "config"), uid), "friendWatch.json"); }
     public static File getFriendWatchFile() { return getFriendWatchFile(UserIdMap.getCurrentUid()); }
+    public static File getFriendIdMapFile(String uid) { return new File(new File(new File(root, "config"), uid), "friendIdMap.json"); }
     public static File getAutoBlackListMapFile(String uid) { return new File(new File(new File(root, "config"), uid), "AutoBlackList.json"); }
     public static File getAutoBlackListMapFile() { return getAutoBlackListMapFile(UserIdMap.getCurrentUid()); }
     public static String readFromFile(File file) { try { return file.isFile() ? Files.readString(file.toPath()) : ""; } catch (Exception e) { throw new RuntimeException(e); } }
@@ -56,7 +79,8 @@ public class FileUtil {
     write("io/github/aw1y2z/sesame/util/JsonUtil.java", """package io.github.aw1y2z.sesame.util;
 import com.fasterxml.jackson.databind.ObjectMapper;
 public class JsonUtil {
-    public static ObjectMapper copyMapper() { return new ObjectMapper(); }
+    public static int failFileReads;
+    public static ObjectMapper copyMapper() { return new ObjectMapper(){@Override public <T>T readValue(java.io.File file, com.fasterxml.jackson.core.type.TypeReference<T> type)throws java.io.IOException{if(failFileReads>0){failFileReads--;throw new java.io.IOException("transient read failure");}return super.readValue(file,type);}}; }
     public static String toFormatJsonString(Object value) { try { return copyMapper().writerWithDefaultPrettyPrinter().writeValueAsString(value); } catch (Exception e) { throw new RuntimeException(e); } }
     public static boolean isRewriteLossless(String before, String after) { return true; }
     public static <T> T parseObject(String body, com.fasterxml.jackson.core.type.TypeReference<T> type) { try { return copyMapper().readValue(body, type); } catch (Exception e) { throw new RuntimeException(e); } }
@@ -71,6 +95,7 @@ public class TimeUtil { public static java.util.Calendar getNow() { return java.
 public static String getDateStr() { return "2026-09-24"; } }""")
     write("io/github/aw1y2z/sesame/util/MyUtils.java", """package io.github.aw1y2z.sesame.util;
 public class MyUtils { public static org.json.JSONObject newJSONObject() {return new org.json.JSONObject();} public static org.json.JSONObject newJSONObject(String text) { try { return new org.json.JSONObject(text); } catch (Exception e) { return new org.json.JSONObject(); } }
+public static void cacheUserName(String id,String name) {}
 public static java.util.Calendar getInstance() { return TimeUtil.getNow(); } }""")
     write("io/github/aw1y2z/sesame/util/MessageUtil.java", """package io.github.aw1y2z.sesame.util;
 public class MessageUtil { public static org.json.JSONObject newJSONObject(String text) {try{return new org.json.JSONObject(text);}catch(Exception e){return null;}} }""")
@@ -135,7 +160,25 @@ public class StatisticsAccountCheck {
         io.github.aw1y2z.sesame.util.idMap.AutoBlackListMap.save();
         UserIdMap.uid = "A"; io.github.aw1y2z.sesame.util.idMap.AutoBlackListMap.ensureLoaded();
         assert "A".equals(io.github.aw1y2z.sesame.util.idMap.AutoBlackListMap.get("task"));
-        System.out.println("PASS: statistics, friend watch and auto-blacklist are isolated by UID; legacy totals remain untouched");
+        UserIdMap.realMap=true;UserIdMap.uid="A";
+        Path friendFile=FileUtil.getFriendIdMapFile("A").toPath();
+        String friendJson="{\\"friend\\":{\\"userId\\":\\"friend\\",\\"nickName\\":\\"Friend\\"}}";
+        Files.writeString(friendFile,friendJson);UserIdMap.load("A");assert UserIdMap.isFriendListLoaded();
+        FriendWatch.load();FriendWatch.friendWatch("friend",2);FriendWatch.save();assert FriendWatch.getList("A").get(0).getAllGet()==7;
+        Files.writeString(friendFile,"truncated JSON");Log.expectedParseFailure=true;UserIdMap.load("A");Log.expectedParseFailure=false;
+        assert !UserIdMap.isFriendListLoaded()&&UserIdMap.getMaskName("friend")==null:"failed friend parse claimed a complete list";
+        FriendWatch.friendWatch("friend",3);FriendWatch.save();assert FriendWatch.getList("A").get(0).getAllGet()==10:"failed friend map suppressed real friend statistics";
+        assert Files.readString(friendFile).equals("truncated JSON");
+        Files.writeString(friendFile,friendJson);UserIdMap.load("A");assert UserIdMap.isFriendListLoaded();
+        JsonUtil.failFileReads=1;Log.expectedParseFailure=true;UserIdMap.load("A");Log.expectedParseFailure=false;
+        assert !UserIdMap.isFriendListLoaded()&&JsonUtil.failFileReads==0:"friend file I/O failure was hidden";
+        UserIdMap.load("A");assert UserIdMap.isFriendListLoaded();
+        Files.writeString(friendFile,"");Log.expectedParseFailure=true;UserIdMap.load("A");Log.expectedParseFailure=false;assert !UserIdMap.isFriendListLoaded();
+        Files.delete(friendFile);UserIdMap.load("A");assert !UserIdMap.isFriendListLoaded():"missing friend file is not an authoritative empty list";
+        Files.writeString(friendFile,"{}");UserIdMap.load("A");assert UserIdMap.isFriendListLoaded()&&UserIdMap.getMaskName("friend")==null;
+        FriendWatch.friendWatch("friend",99);FriendWatch.save();assert FriendWatch.getList("A").get(0).getAllGet()==10:"valid complete list stopped filtering strangers";
+        UserIdMap.unload();assert !UserIdMap.isFriendListLoaded();
+        System.out.println("PASS: account statistics/blacklists isolated; failed friend loads preserve statistics and complete lists still filter strangers");
     }
 }""")
     cp = os.pathsep.join(map(str, [LOMBOK, JSON, *JACKSON]))

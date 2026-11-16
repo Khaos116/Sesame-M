@@ -22,7 +22,7 @@ import java.util.concurrent.*;import java.util.concurrent.atomic.*;import java.u
 import java.text.SimpleDateFormat;import java.security.SecureRandom;
 import com.fasterxml.jackson.core.type.TypeReference;import com.fasterxml.jackson.databind.*;import com.fasterxml.jackson.annotation.JsonInclude;
 public class InfraCheck {
- static File root;
+ static File root;static int fileReadFailures;
  static class Log {
   static List<String> lines=new ArrayList<>();static void i(String s){lines.add(s);}static void i(String t,String s){lines.add(s);}
   static void record(String s){lines.add(s);}static void debug(String s){lines.add(s);}static void error(String s){lines.add(s);}
@@ -34,6 +34,7 @@ public class InfraCheck {
  static class JsonUtil {
   static final ObjectMapper MAPPER=new ObjectMapper();
   @@JSON_INIT@@
+  static ObjectMapper copyMapper(){return new ObjectMapper(){@Override public <T>T readValue(File f,TypeReference<T> t)throws IOException{if(fileReadFailures>0){fileReadFailures--;throw new IOException("transient read failure");}return super.readValue(f,t);}};}
   static <T>T parseObject(String s,TypeReference<T> t){try{return MAPPER.readValue(s,t);}catch(Exception e){throw new IllegalArgumentException(e);}}
   static String toJsonString(Object o){try{return MAPPER.writeValueAsString(o);}catch(Exception e){throw new IllegalArgumentException(e);}}
   @@REWRITE@@
@@ -45,7 +46,7 @@ public class InfraCheck {
   static void initPrivateDirectory(Context c){}
   static File getHttpTokenFile(){return new File(root,"private/http_token.txt");}
   static File getLegacyHttpTokenFile(){return new File(MAIN_DIRECTORY_FILE,"http_token.txt");}
-  static String readFromFile(File f){try{return f.exists()?Files.readString(f.toPath()):"";}catch(Exception e){throw new IllegalArgumentException(e);}}
+  static String readFromFile(File f){if(fileReadFailures>0){fileReadFailures--;throw new IllegalStateException("transient read failure");}try{return f.exists()?Files.readString(f.toPath()):"";}catch(Exception e){throw new IllegalArgumentException(e);}}
   static boolean write2File(String s,File f){writes++;if(failWrites)return false;try{f.getParentFile().mkdirs();Files.writeString(f.toPath(),s);return true;}catch(Exception e){return false;}}
   static File getBackupDirectoryFile(){
    if(verifyDeleteLease)try(RandomAccessFile access=new RandomAccessFile(getHostLockFile(),"rw")){
@@ -199,7 +200,24 @@ public class InfraCheck {
   StringMapStore store=new StringMapStore(uid->map);store.add("new","new");store.add("override","new");store.remove("deleted");assert store.save("A");
   Map<String,String> result=JsonUtil.parseObject(FileUtil.readFromFile(map),new TypeReference<Map<String,String>>(){});assert result.equals(Map.of("old","old","override","new","new","new"));
   FileUtil.write2File("corrupt raw",map);store=new StringMapStore(uid->map);store.add("new","new");int before=FileUtil.writes;assert !store.save("A")&&FileUtil.writes==before&&FileUtil.readFromFile(map).equals("corrupt raw");
-  store.load("A");assert !store.save("A");FileUtil.write2File("{\"repaired\":\"yes\"}",map);store.load("A");assert store.save("A")&&store.get("repaired").equals("yes");
+  assert !store.save("A")&&FileUtil.writes==before:"persistent corruption was overwritten";
+  FileUtil.write2File("{\"repaired\":\"yes\"}",map);assert store.save("A"):"repaired file never retried after merge failure";
+  assert store.getMap().equals(Map.of("repaired","yes","new","new"));
+  FileUtil.write2File("{\"old\":\"old\",\"override\":\"old\",\"deleted\":\"old\"}",map);
+  store=new StringMapStore(uid->map);store.add("new","new");store.add("override","new");store.remove("deleted");before=FileUtil.writes;fileReadFailures=1;
+  assert !store.save("A")&&fileReadFailures==0&&FileUtil.writes==before:"failed read wrote partial memory";
+  assert store.save("A"):"transient merge failure permanently disabled saves";
+  assert store.getMap().equals(Map.of("old","old","override","new","new","new")):"retry lost additions, overrides or removals";
+  FileUtil.write2File("corrupt raw",map);store.load("A");store.add("pending","yes");before=FileUtil.writes;
+  assert !store.save("A")&&FileUtil.writes==before&&FileUtil.readFromFile(map).equals("corrupt raw");
+  FileUtil.write2File("{\"repaired\":\"yes\"}",map);assert store.save("A"):"load failure never retried after repair";
+  assert store.getMap().equals(Map.of("repaired","yes","pending","yes"));
+  fileReadFailures=1;store.load("A");store.add("afterReadFailure","yes");assert fileReadFailures==0&&store.save("A"):"transient load failure permanently disabled saves";
+  assert store.getMap().equals(Map.of("repaired","yes","pending","yes","afterReadFailure","yes"));
+  File emptyMap=new File(root,"empty-map.json");Files.writeString(emptyMap.toPath(),"");StringMapStore emptyStore=new StringMapStore(uid->emptyMap);emptyStore.add("new","new");before=FileUtil.writes;
+  assert !emptyStore.save("A")&&FileUtil.writes==before&&Files.readString(emptyMap.toPath()).isEmpty():"empty damaged file was overwritten";
+  File missingMap=new File(root,"missing-map.json");StringMapStore missingStore=new StringMapStore(uid->missingMap);missingStore.load("A");missingStore.add("new","new");assert missingStore.save("A")&&missingMap.exists();
+  FileUtil.write2File("{\"repaired\":\"yes\"}",map);
   store.clear();store.add("later","yes");assert store.save("A");result=JsonUtil.parseObject(FileUtil.readFromFile(map),new TypeReference<Map<String,String>>(){});
   assert result.equals(Map.of("repaired","yes","later","yes")):"lifecycle cache clear erased disk candidates";
   store.remove("repaired");assert store.save("A")&&store.get("repaired")==null;
@@ -256,7 +274,7 @@ public class InfraCheck {
   assert profile.onPost(session,"").code==200&&ApplicationHook.profileOpens==opens+1:"POST profile action unavailable";
   assert new ControlHandler("token","status").onGet(session).code==200&&ApplicationHook.statusCalls==statuses+1;
   for(String op:List.of("reLogin","restart","reloadConfig","execute","forestQuery","walkPath"))assert new ControlHandler("token",op).onGet(session).code==405:op;
-  System.out.println("PASS Nov16 infra: known-path nested preservation, secret-free diagnostics, corrupt map protection, agreement rollback/GMT8, directed pairing/token/alarm, generation/account admitted controls, deletion lease and host lock");
+  System.out.println("PASS Nov16 infra: known-path preservation, secret-free diagnostics, map read retries/corrupt file protection, agreement rollback/GMT8, directed pairing/token/alarm, generation/account controls, deletion lease and host lock");
  }
 }
 '''
