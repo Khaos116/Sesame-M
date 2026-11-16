@@ -2316,27 +2316,41 @@ public class ApplicationHook extends XposedModule {
             pendingProfileExplicit = userId != null;
             pendingProfileGeneration = generation;
             pendingProfileAccountUid = accountUid;
-            if (profileProbeRunning) return;
-            profileProbeRunning = true;
-            try {
-                profileProbeWorker.execute(() -> {
-                    while (true) {
-                        Runnable probe;
-                        synchronized (profileProbeLock) {
-                            probe = pendingProfileProbe;
-                            pendingProfileProbe = null;
-                            pendingProfileExplicit = false;
-                            if (probe == null) {
-                                profileProbeRunning = false;
-                                return;
-                            }
-                        }
-                        probe.run();
-                    }
-                });
-            } catch (Throwable t) {
+            startProfileProbeWorker();
+        }
+    }
+
+    /** 调用方持有 profileProbeLock，确保最多一个 drain 在运行或排队。 */
+    private static void startProfileProbeWorker() {
+        if (profileProbeRunning) return;
+        profileProbeRunning = true;
+        try {
+            profileProbeWorker.execute(ApplicationHook::drainProfileProbes);
+        } catch (Throwable t) {
+            profileProbeRunning = false;
+            Log.err(TAG, "profile probe dispatch err:", t);
+        }
+    }
+
+    private static void drainProfileProbes() {
+        try {
+            while (true) {
+                Runnable probe;
+                synchronized (profileProbeLock) {
+                    probe = pendingProfileProbe;
+                    pendingProfileProbe = null;
+                    pendingProfileExplicit = false;
+                }
+                if (probe == null) return;
+                probe.run();
+            }
+        } catch (Throwable t) {
+            Log.err(TAG, "profile probe err:", t);
+        } finally {
+            synchronized (profileProbeLock) {
                 profileProbeRunning = false;
-                Log.err(TAG, "profile probe dispatch err:", t);
+                // 异常期间或正常退出窗口中新到的请求仍须处理，不能丢失已接受的合并槽。
+                if (pendingProfileProbe != null) startProfileProbeWorker();
             }
         }
     }
@@ -2368,7 +2382,7 @@ public class ApplicationHook extends XposedModule {
                 if (parts.length == 2 && USER_ID_PATTERN.matcher(parts[0]).matches()) {
                     try {
                         long age = System.currentTimeMillis() - Long.parseLong(parts[1]);
-                        if (age >= 0 && age <= PENDING_PROFILE_TTL) userId = parts[0];
+                        if (explicitUserId == null && age >= 0 && age <= PENDING_PROFILE_TTL) userId = parts[0];
                     } catch (NumberFormatException ignored) { }
                 }
             }

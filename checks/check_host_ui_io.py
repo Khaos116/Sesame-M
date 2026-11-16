@@ -54,7 +54,7 @@ public class HostUiIoCheck {
  static class Handler {static final Queue<Runnable> pending=new ConcurrentLinkedQueue<>();final ExecutorService executor;Handler(){executor=null;}Handler(Object looper){executor=looper instanceof ExecutorService?(ExecutorService)looper:null;}void post(Runnable r){if(executor==null)pending.add(r);else executor.execute(r);}void postDelayed(Runnable r,long delay){pending.add(r);} }
  static class Looper {static Object getMainLooper(){return null;}}
  static final Handler mainHandler=new Handler();
- static class Log {static void err(String tag,String s,Throwable t){throw new AssertionError(t);}static void d(String tag,String s){}static void record(String s){}static void i(String s){}static void i(String t,String s){}}
+ static class Log {static void err(String tag,String s,Throwable t){if(!s.equals("profile probe err:"))throw new AssertionError(t);}static void d(String tag,String s){}static void record(String s){}static void i(String s){}static void i(String t,String s){}}
  static final java.util.regex.Pattern USER_ID_PATTERN=java.util.regex.Pattern.compile("[0-9]{1,32}");
  static String lastProfileUserId;static long lastProfileTime,profileOpenExpectAt;
  static final List<String> opened=new CopyOnWriteArrayList<>();static volatile String hostUid="A";
@@ -91,6 +91,9 @@ public class HostUiIoCheck {
   mainCall(()->checkPendingProfile(new Context()));assert entered.await(2,TimeUnit.SECONDS);mark("2099");release.countDown();awaitProbe();
   assert files.containsKey(PENDING_PROFILE_FILE)&&files.get(PENDING_PROFILE_FILE).startsWith("2099 "):"claim cleanup deleted a concurrent new click";
   blocking=null;flushUi();assert opened.equals(List.of("2088"));mainCall(()->checkPendingProfile(new Context()));awaitProbe();flushUi();assert opened.equals(List.of("2088","2099"));
+  resetProfile();mark("2088");mainCall(()->openFriendProfile(new Context(),"2099"));awaitProbe();flushUi();
+  assert opened.equals(List.of("2099"))&&files.isEmpty():"explicit target was overwritten by old pending marker";
+  mainCall(()->checkPendingProfile(new Context()));awaitProbe();flushUi();assert opened.equals(List.of("2099")):"focus reopened discarded old marker";
   for(boolean broadcastFirst:List.of(true,false)){
    resetProfile();mark("2088");
    if(broadcastFirst)mainCall(()->openFriendProfile(new Context(),"2088"));else mainCall(()->checkPendingProfile(new Context()));awaitProbe();flushUi();
@@ -113,6 +116,13 @@ public class HostUiIoCheck {
   }
   resetProfile();UserIdMap.uid=null;mark("2088");mainCall(()->checkPendingProfile(new Context()));awaitProbe();UserIdMap.uid="A";flushUi();assert opened.equals(List.of("2088")):"cold-start UID publication lost pending click";
   assert !mainIo.get():"cold-start profile queried host on main";
+  resetProfile();CountDownLatch executorEntered=new CountDownLatch(1),executorRelease=new CountDownLatch(1),probeEntered=new CountDownLatch(1),probeRelease=new CountDownLatch(1);
+  profileProbeWorker.execute(()->{executorEntered.countDown();try{executorRelease.await();}catch(InterruptedException e){throw new AssertionError(e);}});executorEntered.await();
+  mainCall(()->checkPendingProfile(new Context()));
+  synchronized(profileProbeLock){pendingProfileProbe=()->{probeEntered.countDown();try{probeRelease.await();}catch(InterruptedException e){throw new AssertionError(e);}throw new IllegalStateException("injected probe failure");};}
+  executorRelease.countDown();assert probeEntered.await(2,TimeUnit.SECONDS);
+  mainCall(()->openFriendProfile(new Context(),"2099"));probeRelease.countDown();awaitProbe();flushUi();assert opened.equals(List.of("2099")):"pending request was lost when active probe threw";
+  mainCall(()->openFriendProfile(new Context(),"2100"));awaitProbe();flushUi();assert opened.equals(List.of("2099","2100"))&&workerThreads.get()==1:"probe failure wedged queue or killed worker";
  }
  static void dialog()throws Exception {
   dialogs.clear();Dialog live=new Dialog();WeakReference<Dialog> expired=new WeakReference<>(new Dialog());expired.clear();dialogs.add(expired);
@@ -141,7 +151,7 @@ public class HostUiIoCheck {
 }
 '''
 source = (SOURCE / hook).read_text(encoding="utf-8")
-extra = method(hook, "private static void requestFriendProfile(") + method(hook, "private static void consumePendingProfile(")
+extra = "".join(method(hook, signature) for signature in ("private static void requestFriendProfile(", "private static void startProfileProbeWorker(", "private static void drainProfileProbes(", "private static void consumePendingProfile("))
 code = code.replace("@@EXTRA@@", extra)
 for key, path, signature in (
     ("@@OPEN@@", hook, "private static void openFriendProfile("),
@@ -154,7 +164,7 @@ for key, path, signature in (
     ("@@DIALOGADD@@", "hook/SimplePageManager.java", "private static void addDialogIfNotExists("),
 ):
     code = code.replace(key, method(path, signature).replace("public final class TaskLifecycle", "static final class TaskLifecycle"))
-code = code.replace("java.io.File", "ProbeFile").replace("android.os.Handler", "Handler").replace("android.os.Looper", "Looper").replace("android.os.HandlerThread", "HandlerThread")
+code = code.replace("ApplicationHook::drainProfileProbes", "HostUiIoCheck::drainProfileProbes").replace("java.io.File", "ProbeFile").replace("android.os.Handler", "Handler").replace("android.os.Looper", "Looper").replace("android.os.HandlerThread", "HandlerThread")
 with tempfile.TemporaryDirectory(prefix="sesame-host-io-") as temporary:
     java = Path(temporary) / "HostUiIoCheck.java"
     java.write_text(code, encoding="utf-8")
