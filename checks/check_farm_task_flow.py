@@ -10,6 +10,7 @@ farm = 'model/task/antFarm/AntFarm.java'
 code = r'''
 import org.json.*;import java.util.*;import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class FarmFlowCheck {
+ boolean awardTroughFullThisRun;static final String CODE_FEED_TROUGH_FULL="331";
  static final String TAG="farm";static final int MAX_FARM_TASK_ROUNDS=20;
  boolean farmTaskAwardBusy;Set<String> farmTaskAttempted;
  int foodStock=0,foodStockLimit=1800,unReceiveTaskAward;

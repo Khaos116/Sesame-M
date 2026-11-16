@@ -216,7 +216,7 @@ for key, path, signatures in (
 ):
     code = code.replace(key, "\n".join(method(path, signature) for signature in signatures))
 forest_source=(SOURCE/'model/task/antForest/AntForestV2.java').read_text(encoding='utf-8')
-code=code.replace('@@CONSTANTS@@','\n'.join(re.findall(r'    private static final int ENERGY_RECORD_(?:PAGE_SIZE|MAX_PAGES) = \d+;',forest_source)).replace('private ',''))
+code=code.replace('@@CONSTANTS@@','\n'.join(re.findall(r'    (?:private )?static final int ENERGY_RECORD_(?:PAGE_SIZE|MAX_PAGES) = \d+;',forest_source)).replace('private ',''))
 with tempfile.TemporaryDirectory(prefix="sesame-energy-manure-") as tmp:
     source = Path(tmp) / "EnergyManureCheck.java"
     source.write_text(code, encoding="utf-8")

@@ -87,8 +87,18 @@ public class MergeConfigCheck {
         var cards = new SelectAndCountModelField("continuousUseCardOptions", "cards",
                 new LinkedHashMap<>(), Collections.<IdAndName>emptyList());
         var forest = new ModelFields(); forest.addField(cards);
+        forest.addField(field("forestSign", false)); forest.addField(field("forest7DaySign", false));
         ModelTask.configs.put("AntForestV2", new ModelConfig("AntForestV2", forest));
         var oldForest = new ModelFields();
+        oldForest.addField(field("receiveForestTaskAward", true));
+        test.setModelFieldsMap(Map.of("AntForestV2", oldForest));
+        assert Boolean.TRUE.equals(forest.get("forestSign").getValue()) && Boolean.TRUE.equals(forest.get("forest7DaySign").getValue());
+        oldForest.addField(field("forestSign", false));
+        test.setModelFieldsMap(Map.of("AntForestV2", oldForest));
+        assert Boolean.FALSE.equals(forest.get("forestSign").getValue()) && Boolean.TRUE.equals(forest.get("forest7DaySign").getValue());
+        oldForest.remove("forestSign"); oldForest.put("receiveForestTaskAward", field("receiveForestTaskAward", false));
+        test.setModelFieldsMap(Map.of("AntForestV2", oldForest));
+        assert Boolean.FALSE.equals(forest.get("forestSign").getValue()) && Boolean.FALSE.equals(forest.get("forest7DaySign").getValue());
         oldForest.addField(field("continuousUseCardOptions", List.of("doubleClick", "robExpandCard")));
         test.setModelFieldsMap(Map.of("AntForestV2", oldForest));
         assert cards.getValue().equals(Map.of("doubleClick", 0, "robExpandCard", 0)) : "old selected cards lost";

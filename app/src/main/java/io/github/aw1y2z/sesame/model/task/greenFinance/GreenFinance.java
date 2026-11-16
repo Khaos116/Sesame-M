@@ -28,6 +28,7 @@ import java.util.TreeMap;
  */
 public class GreenFinance extends ModelTask {
     private static final String TAG = GreenFinance.class.getSimpleName();
+    private static final int MAX_STEAL_PAGES = 50;
 
     private BooleanModelField greenFinanceLsxd;
     private BooleanModelField greenFinanceLsbg;
@@ -82,7 +83,11 @@ public class GreenFinance extends ModelTask {
                 return;
             }
             JSONObject result = jo.optJSONObject("result");
-            if (result == null || !result.optBoolean("greenFinanceSigned")) {
+            if (result == null) {
+                Log.record("绿色经营[首页]：响应缺少 result，本轮未收叶或执行后续任务");
+                return;
+            }
+            if (!result.optBoolean("greenFinanceSigned")) {
                 Log.i("绿色经营📊未开通");
                 return;
             }
@@ -437,7 +442,7 @@ public class GreenFinance extends ModelTask {
                 return;
             }
             int n = 0;
-            while (true) {
+            for (int page = 0; page < MAX_STEAL_PAGES; page++) {
                 try {
                     String str = GreenFinanceRpcCall.queryRankingList(n);
                     TimeUtil.sleep(1500);
@@ -502,12 +507,15 @@ public class GreenFinance extends ModelTask {
                         break;
                     }
                     n = next;
+                    if (page == MAX_STEAL_PAGES - 1) Log.record("绿色经营[金币巡查]：达到50页上限，未确认巡查完成");
                 } catch (Exception e) {
+                    if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
                     Log.printStackTrace(e);
-                    break;
+                    return;
                 }
             }
         } catch (Throwable th) {
+            if (th instanceof TaskCancelledException) throw (TaskCancelledException) th;
             Log.err(TAG, "batchStealFriend err:", th);
         }
     }

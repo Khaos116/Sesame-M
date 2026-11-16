@@ -1,6 +1,10 @@
 package io.github.aw1y2z.sesame.ui.miuix
 
 import android.app.PendingIntent
+import androidx.compose.ui.unit.IntOffset
+import io.github.aw1y2z.sesame.util.idMap.UserIdMap
+import kotlinx.coroutines.launch
+import top.yukonga.miuix.kmp.basic.Card
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -13,6 +17,7 @@ import android.provider.Settings
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import io.github.aw1y2z.sesame.ui.HostBridge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -44,6 +49,8 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -51,21 +58,29 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.draw.clip
-import top.yukonga.miuix.kmp.basic.Card
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.aw1y2z.sesame.R
+import io.github.aw1y2z.sesame.data.Agreement
 import io.github.aw1y2z.sesame.data.AppConfig
+import io.github.aw1y2z.sesame.data.ConfigV2
 import io.github.aw1y2z.sesame.data.RunType
 import io.github.aw1y2z.sesame.data.ViewAppInfo
 import io.github.aw1y2z.sesame.entity.UserEntity
@@ -93,6 +108,7 @@ import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.File
+import kotlin.math.roundToInt
 
 class MiuixMainActivity : MiuixBaseActivity() {
 
@@ -101,6 +117,9 @@ class MiuixMainActivity : MiuixBaseActivity() {
     /** 可观察的激活状态：HomeTab 等页面订阅它，onServiceBind/广播更新时自动重组刷新 */
     var uiRunType by mutableStateOf<RunType>(RunType.DISABLE)
     var hasPermission by mutableStateOf(false)
+
+    /** 是否已同意条款：界面与 onResume 共用同一份状态，避免两处判断不一致 */
+    private var agreed by mutableStateOf(Agreement.isAccepted())
 
     /** 统计分页：首项是「全部账号合计」，其后按账号；由 refreshStatistics() 重新读取 */
     var statisticsPages by mutableStateOf<List<StatisticsPage>>(emptyList())
@@ -119,10 +138,7 @@ class MiuixMainActivity : MiuixBaseActivity() {
     private lateinit var titleRunner: Runnable
 
     init {
-        /**
-         * 激活探测:仅当真实状态仍为 DISABLE 时才显示未激活,并在超时前周期性重试,
-         * 避免覆盖晚到的 onServiceBind 激活信号,也避免 XposedService 绑定较慢时误报未激活
-         */
+        /** 激活探测:仅当状态仍为 DISABLE 才显示未激活并周期性重试,避免覆盖晚到的 onServiceBind */
         titleRunner = Runnable {
             if (ViewAppInfo.getRunType() == RunType.DISABLE) {
                 runTypeProbeTimes++
@@ -142,9 +158,8 @@ class MiuixMainActivity : MiuixBaseActivity() {
         private const val MAX_RUN_TYPE_PROBE_TIMES = 5
 
         /**
-         * 设备显示名:优先读市场名(如 Xiaomi 13)。
-         * 小米/红米及多数云手机、模拟器的 ro.product.model 只是内部型号编号(如 2211133C),
-         * 多设备会显示相同,须用 ro.product.marketname 才有人类可读名称。
+         * 设备显示名:优先读 ro.product.marketname。
+         * 小米/红米及多数模拟器的 ro.product.model 只是内部型号,多设备会重复。
          */
         fun getDeviceDisplayName(): String {
             try {
@@ -165,10 +180,15 @@ class MiuixMainActivity : MiuixBaseActivity() {
     private val broadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val action = intent.action
-            Log.i("view broadcast action:" + action + " intent:" + intent)
             if (action != null) {
                 when (action) {
                     "io.github.aw1y2z.sesame.status" -> {
+                        // 回包必须带本机已配对的令牌：缺失或对不上就是别人伪造的探活，忽略
+                        val token = intent.getStringExtra("token")
+                        if (token == null || token != HostBridge.getToken(context)) {
+                            Log.i("status reply without valid token, ignored")
+                            return
+                        }
                         // 模块已被 LSPosed 启用并注入支付宝，标记为已激活
                         ViewAppInfo.setRunTypeByCode(RunType.MODEL.getCode())
                         runTypeProbeTimes = 0
@@ -203,25 +223,50 @@ class MiuixMainActivity : MiuixBaseActivity() {
             registerReceiver(broadcastReceiver, intentFilter)
         }
         setAppContent {
-            MainScreen(this)
+            // 未同意协议只渲染门禁页：此阶段不碰宿主、不读统计，已同意的用户行为完全不变
+            if (agreed) {
+                MainScreen(this)
+            } else {
+                AgreementScreen(
+                    onAgree = {
+                        agreed = true
+                        // onResume 在未同意时提前返回，这里补一次配对、激活探测与统计读取
+                        HostBridge.ensurePaired(this)
+                        probeRunType()
+                        checkPermissionAndRefresh()
+                    },
+                    onExit = { finishAffinity() }
+                )
+            }
         }
     }
 
     override fun onResume() {
         super.onResume()
-        // 激活状态探测独立于存储权限：防止 titleRunner 重复累积，先清空再启动
-        if (RunType.DISABLE == ViewAppInfo.getRunType()) {
+        // 界面与副作用共用同一份判断：同意状态若在运行期被改变，界面随之退回门禁页
+        agreed = Agreement.isAccepted()
+        // 未同意协议前不产生任何副作用：不配对宿主、不探测激活状态、不刷统计
+        if (!agreed) {
             handler.removeCallbacks(titleRunner)
-            runTypeProbeTimes = 0
-            sendQueryBroadcast()
-            handler.postDelayed(titleRunner, 3000)
+            return
         }
+        // 回到前台补一次配对：首次启动时宿主多半没在跑，用户开完支付宝再回来就通了
+        HostBridge.ensurePaired(this)
+        probeRunType()
         checkPermissionAndRefresh()
     }
 
+    /** 激活状态探测独立于存储权限：先清空旧回调，避免 titleRunner 重复累积 */
+    private fun probeRunType() {
+        if (RunType.DISABLE != ViewAppInfo.getRunType()) return
+        handler.removeCallbacks(titleRunner)
+        runTypeProbeTimes = 0
+        sendQueryBroadcast()
+        handler.postDelayed(titleRunner, 3000)
+    }
+
     /**
-     * 检查文件权限：已授权则每次都重读统计。
-     * <p>权限早已授予时也要刷新——否则从配置页或后台返回首页，统计仍是旧值（只有退出重进才更新）。
+     * 检查文件权限：已授权也要重读统计，否则从配置页或后台返回首页仍是旧值。
      */
     private fun checkPermissionAndRefresh() {
         hasRequestedPermission = false
@@ -245,9 +290,8 @@ class MiuixMainActivity : MiuixBaseActivity() {
     }
 
     /**
-     * 重新从统计文件加载并通知首页表格刷新。
-     * 基于可观察的 statisticsVersion 触发 Compose 重组,解决"首次进入首页统计为 0、
-     * 必须进入配置返回后才刷新"的问题(此前 StatisticsTable 直接读静态单例,单例变化不会重组)。
+     * 重新加载统计并刷新首页。
+     * <p>靠可观察的 statisticsVersion 触发重组:静态单例变化不会重组,首页会一直是 0。
      */
     fun refreshStatistics() {
         if (!hasPermission) {
@@ -279,46 +323,26 @@ class MiuixMainActivity : MiuixBaseActivity() {
     }
 
     fun sendStatus() {
-        try {
-            isClick = true
-            sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.status"))
-        } catch (th: Throwable) {
-            Log.i("view sendBroadcast status err:")
-            Log.printStackTrace(th)
-        }
+        isClick = true
+        HostBridge.send(this, "status", null, null, false)
     }
 
     /** 向支付宝进程查询本模块注入状态（不弹 Toast），由 titleRunner 周期性调用 */
     fun sendQueryBroadcast() {
-        try {
-            sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.status"))
-        } catch (th: Throwable) {
-            Log.i("view sendBroadcast status err:")
-            Log.printStackTrace(th)
-        }
+        HostBridge.send(this, "status", null, null, false)
+    }
+
+    /**
+     * 让注入进程整体重启（重新初始化并重挂 hook），用于必须重挂的开关如「使用新接口」；
+     * 只重载 AppConfig 的 broadcastReloadConfig() 不够。
+     */
+    fun broadcastRestart() {
+        HostBridge.send(this, "restart", null, null, false)
     }
 
     /** 通知支付宝进程重载共享配置（日志开关等），使开关在注入进程中即时生效 */
-    /**
-     * 让注入进程整体重启（重新初始化并重挂 hook）。
-     * 适用于改完必须重新初始化的开关，比如「使用新接口」要重挂 RPC bridge；
-     * 只是重载 AppConfig 的 broadcastReloadConfig() 不够用。
-     */
-    fun broadcastRestart() {
-        try {
-            sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.restart"))
-        } catch (t: Throwable) {
-            Log.printStackTrace(t)
-        }
-    }
-
     fun broadcastReloadConfig() {
-        try {
-            sendBroadcast(Intent("com.eg.android.AlipayGphone.sesame.reloadConfig"))
-        } catch (th: Throwable) {
-            Log.i("view sendBroadcast reloadConfig err:")
-            Log.printStackTrace(th)
-        }
+        HostBridge.send(this, "reloadConfig", null, null, false)
     }
 
     fun openUrl(url: String) {
@@ -725,10 +749,24 @@ fun LogsTab(activity: MiuixMainActivity, currentAccount: String) {
     SmallTitle(text = "系统记录")
     CardColumn {
         var debug by remember { mutableStateOf(AppConfig.INSTANCE.enableDebugLog ?: false) }
-        LogSwitchRow("抓包记录", debug, onClick = { openLog(activity, LogType.DEBUG) }) {
+        LogSwitchRow(
+            "抓包记录", debug,
+            onClick = { openLog(activity, LogType.DEBUG) },
+            // 同时是 /debugHandler 的门禁：开了等于允许 PC 端打任意 RPC
+            summary = "同时允许 PC 调试"
+        ) {
             debug = it
             AppConfig.INSTANCE.enableDebugLog = it
             AppConfig.save()
+            if (it) {
+                // 副本由宿主写入，未配对时只能等它下次加载
+                if (!HostBridge.isPaired(activity)) {
+                    ToastUtil.show(activity, "已开启，打开支付宝后生效")
+                }
+            } else {
+                // 关闭即撤销副本：宿主那条 reloadConfig 在未配对、宿主未运行或频控命中时都不生效
+                HostBridge.revokeMirrorToken(activity)
+            }
             activity.broadcastReloadConfig()
             // 关闭时**不清空** debug 日志：抓到的包是排查证据，要清空请到日志页点「删除」
         }
@@ -753,16 +791,21 @@ fun LogsTab(activity: MiuixMainActivity, currentAccount: String) {
 }
 
 /**
- * 日志条目行：**点按整行**进入对应日志详情，右侧开关控制是否记录。
- * 用库的 SwitchPreference 渲染，字体（样式/字重/颜色）与设置页的行由同一组件保证一致；
- * 它的 insideMargin 覆写为上下 8dp（库默认 16dp）以尽量贴近日志页原来的行距；
- * 它没有 onClick 参数，所以外层再套一层可点区域实现"点整行"。
+ * 日志条目行：点按整行进详情，右侧开关控制是否记录；用库的 SwitchPreference 保证字体与设置页一致。
+ * <p>insideMargin 覆写为 8dp（库默认 16dp）贴合原行距；它没有 onClick，外层再套一层可点区域。
  */
 @Composable
-fun LogSwitchRow(title: String, checked: Boolean, onClick: () -> Unit, onCheckedChange: (Boolean) -> Unit) {
+fun LogSwitchRow(
+    title: String,
+    checked: Boolean,
+    onClick: () -> Unit,
+    summary: String? = null,
+    onCheckedChange: (Boolean) -> Unit
+) {
     Box(Modifier.fillMaxWidth()) {
         SwitchPreference(
             title = title,
+            summary = summary,
             checked = checked,
             onCheckedChange = onCheckedChange,
             // 覆写库默认的 16dp 上下内边距，尽量贴近日志页原来的行距（左右仍是 16dp，与设置页一致）
@@ -795,19 +838,115 @@ fun openLog(activity: MiuixMainActivity, logType: LogType) {
     }
 }
 
+/**
+ * 可左滑露出「删除」的账号行。
+ * <p>miuix 0.9.4 没有滑动组件，这里用 Animatable + detectHorizontalDragGestures 自绘：
+ * 内容整体左移、露出底层的删除区；同一时间只允许一行展开（由外部 revealedKey 控制）。
+ * <p>行里的 ArrowPreference 自带 clickable，只消费点按、不消费移动，所以父级仍能拿到拖动事件。
+ */
+@Composable
+private fun SwipeRevealRow(
+    rowKey: String,
+    revealedKey: String?,
+    onRevealChange: (String?) -> Unit,
+    onDelete: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val actionWidth = 88.dp
+    val actionWidthPx = with(LocalDensity.current) { actionWidth.toPx() }
+    val offsetX = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val revealed = revealedKey == rowKey
+
+    LaunchedEffect(revealed) {
+        offsetX.animateTo(if (revealed) -actionWidthPx else 0f, tween(180))
+    }
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clipToBounds()
+    ) {
+        // 底层：删除操作区。只有开始左滑后才组合出来——miuix 的 preference 行本身不画背景，
+        // 常驻的话会从卡片底色里透出来，看起来像「没滑动就展开」
+        if (offsetX.value < -0.5f) {
+            Row(
+                Modifier.matchParentSize(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .width(actionWidth)
+                        .background(Color(0xFFD93A3A))
+                        .clickable {
+                            onRevealChange(null)
+                            onDelete()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("删除", color = Color.White)
+                }
+            }
+        }
+        // 上层：行内容，跟着手指平移
+        Box(
+            Modifier
+                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                .pointerInput(rowKey) {
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            scope.launch {
+                                offsetX.snapTo((offsetX.value + dragAmount).coerceIn(-actionWidthPx, 0f))
+                            }
+                        },
+                        onDragEnd = {
+                            val shouldReveal = offsetX.value <= -actionWidthPx / 2f
+                            onRevealChange(if (shouldReveal) rowKey else null)
+                            scope.launch {
+                                offsetX.animateTo(if (shouldReveal) -actionWidthPx else 0f, tween(180))
+                            }
+                        },
+                        onDragCancel = {
+                            val shouldReveal = offsetX.value <= -actionWidthPx / 2f
+                            onRevealChange(if (shouldReveal) rowKey else null)
+                            scope.launch {
+                                offsetX.animateTo(if (shouldReveal) -actionWidthPx else 0f, tween(180))
+                            }
+                        }
+                    )
+                }
+        ) {
+            content()
+        }
+    }
+}
+
 @Composable
 fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
     val context = LocalContext.current
-    val items = remember {
-        val list = ArrayList<Pair<String?, String>>()
-        list.add(null to "默认")
+    // 删除账号后自增，触发重新扫描账号目录
+    var refreshKey by remember { mutableIntStateOf(0) }
+    val items = remember(refreshKey) {
+        // (userId, 标题, 副标题)：标题固定为「账号N」保证单行不换行，昵称/账号放副标题
+        val list = ArrayList<Triple<String?, String, String?>>()
+        list.add(Triple(null, "默认", null))
         try {
             val dir = FileUtil.CONFIG_DIRECTORY_FILE
             dir.listFiles()?.forEach { configDir ->
                 if (configDir.isDirectory) {
                     val userId = configDir.name
-                    val name = accountDisplayName(userId)
-                    list.add(userId to name)
+                    UserIdMap.loadSelf(userId)
+                    val userEntity = UserIdMap.get(userId)
+                    val label = UserIdMap.getAccountLabel(userId) ?: userId
+                    // 副标题优先显示「昵称:账号」；新用户尚未被模块钩子同步资料（self.json 不存在）时
+                    // 回退显示 userId 本身，避免空白且仍能区分账号
+                    // 副标题优先显示「昵称:账号」；昵称缺失时只显示账号，不再出现字面 "null"
+                    val summary = userEntity?.let { ue ->
+                        ue.showName?.let { name -> "$name: ${ue.account}" } ?: (ue.account ?: userId)
+                    } ?: userId
+                    list.add(Triple(userId, label, summary))
                 }
             }
         } catch (e: Exception) {
@@ -816,21 +955,60 @@ fun ConfigTab(activity: MiuixMainActivity, currentAccount: String) {
         list
     }
 
+    // 删除确认：只有点了左滑露出的「删除」才弹，避免误触不可恢复操作
+    var pendingDelete by remember { mutableStateOf<Triple<String, String, String?>?>(null) }
+    // 同一时间只允许展开一行
+    var revealedUid by remember { mutableStateOf<String?>(null) }
+
     TabTitleRow(title = "配置", account = currentAccount)
 
     SmallTitle(text = "配置管理")
     CardColumn {
-        items.forEach { (userId, name) ->
-            ArrowPreference(
-                title = name,
-                summary = if (userId == null) null else "UID: $userId",
-                onClick = {
-                    val intent = Intent(context, MiuixSettingsActivity::class.java)
-                    if (userId != null) intent.putExtra("userId", userId)
-                    context.startActivity(intent)
+        items.forEach { (userId, title, summary) ->
+            val openSettings = {
+                val intent = Intent(context, MiuixSettingsActivity::class.java)
+                if (userId != null) intent.putExtra("userId", userId)
+                context.startActivity(intent)
+            }
+            if (userId == null) {
+                // 「默认」不是账号，只提供进入配置
+                ArrowPreference(title = title, summary = summary, onClick = openSettings)
+            } else {
+                SwipeRevealRow(
+                    rowKey = userId,
+                    revealedKey = revealedUid,
+                    onRevealChange = { revealedUid = it },
+                    onDelete = {
+                        revealedUid = null
+                        // 宿主运行中它的注入进程会持续写账号目录，删完立刻被重建，所以直接拒绝
+                        if (FileUtil.isHostRunning()) {
+                            ToastUtil.show(context, "支付宝正在运行，请先在系统里强制停止支付宝，再删除账号")
+                        } else {
+                            pendingDelete = Triple(userId, title, summary)
+                        }
+                    }
+                ) {
+                    ArrowPreference(title = title, summary = summary, onClick = openSettings)
                 }
-            )
+            }
         }
+    }
+    pendingDelete?.let { target ->
+        val display = if (target.third.isNullOrBlank()) target.second else "${target.second}（${target.third}）"
+        ConfirmDialog(
+            title = "删除账号",
+            text = "将删除 $display 的配置、状态与备份，无法恢复。该账号下次登录时会重新出现，并从默认配置开始。",
+            onConfirm = {
+                pendingDelete = null
+                revealedUid = null
+                val deleted = FileUtil.deleteAccount(target.first)
+                // 模块 App 若正持有该账号配置，卸载掉，避免继续往已删除的目录写
+                ConfigV2.unload()
+                refreshKey++
+                ToastUtil.show(context, if (deleted) "已删除账号 ${target.second}" else "删除失败，请检查存储权限")
+            },
+            onDismiss = { pendingDelete = null }
+        )
     }
     Spacer(Modifier.height(16.dp))
 

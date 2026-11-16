@@ -13,6 +13,7 @@ import org.json.*;
 import java.util.*;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class OceanFriendCheck {
+ static class FalseField {boolean getValue(){return false;}}FalseField antfishAppraise=new FalseField();void antfishAppraiseFish(){throw new AssertionError("disabled likes issued");}
  static final String TAG="check",VERSION="20241203";
  static class Field {boolean on;boolean getValue(){return on;}} Field recommendedSailing=new Field(),giveFriendPiece=new Field();
  static class Type {int n=1;int getValue(){return n;}} Type cleanOceanType=new Type();

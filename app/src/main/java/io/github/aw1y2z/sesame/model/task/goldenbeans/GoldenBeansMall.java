@@ -265,8 +265,10 @@ public final class GoldenBeansMall {
                         + "#code=" + (jo == null ? "EMPTY" : jo.optString("resultCode", jo.optString("code", "UNKNOWN"))));
                 return false;
             }
-            if (!jo.optBoolean("canBuy", false)) {
-                if (Boolean.FALSE.equals(jo.opt("canBuy"))) {
+            JSONObject data = jo.optJSONObject("data");
+            Object canBuy = jo.has("canBuy") ? jo.opt("canBuy") : data == null ? null : data.opt("canBuy");
+            if (!Boolean.TRUE.equals(canBuy)) {
+                if (Boolean.FALSE.equals(canBuy)) {
                     Log.goldenBeans("金豆商城⏭️服务端判定不可兑[" + name + "]");
                     runtime.putVerified(receiptKey, "");
                     Status.flagToday(FLAG_EXCHANGE_PREFIX + name + "::rejected");
@@ -275,7 +277,9 @@ public final class GoldenBeansMall {
                 }
                 return false;
             }
-            receipt.put("orderNo", jo.optString("orderNo", ""));
+            Object orderNo = jo.opt("orderNo");
+            if (!(orderNo instanceof String) || ((String) orderNo).isEmpty()) orderNo = data == null ? null : data.opt("orderNo");
+            receipt.put("orderNo", orderNo instanceof String ? orderNo : "");
             runtime.putVerified(receiptKey, receipt.toString());
             return reconcile(interval, item, receiptKey, receipt, orderSnapshot);
         } catch (Throwable th) {
@@ -351,6 +355,10 @@ public final class GoldenBeansMall {
             JSONObject jo = GoldenBeansSupport.parse(goldenbeansRpcCall.mallOrders(page, PAGE_SIZE));
             if (!GoldenBeansSupport.ok(jo)) return null;
             JSONArray orders = jo.optJSONArray("orderInfos");
+            if (orders == null && !jo.has("orderInfos")) {
+                JSONObject data = jo.optJSONObject("data");
+                orders = data == null ? null : data.optJSONArray("orderInfos");
+            }
             if (orders == null || !pages.add(orders.toString())) return null;
             for (int i = 0; i < orders.length(); i++) {
                 JSONObject order = orders.optJSONObject(i);

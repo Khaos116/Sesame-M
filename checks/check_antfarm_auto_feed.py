@@ -54,7 +54,7 @@ public class AutoFeedCheck {
  static class RpcContract {static final String VERSION="test";static String farmId2UserId(String id){return "self";}@@RPC@@}
  static class ChildModelTask {String id;Runnable action;long time,generation=TaskLifecycle.generation();ChildModelTask(String id,String group,Runnable r,Long at){this.id=id;action=r;time=at;}
   void run(){try(TaskLifecycle.Work w=TaskLifecycle.enter(generation)){if(w!=null)action.run();}}}
- static class Farm {
+ static class Farm {boolean awardTroughFullThisRun;
   String TAG="Farm",ownerFarmId="farm";static final String CODE_FEED_TROUGH_FULL="331",SPACE_TYPE_CHICK_FAMILY="FAMILY";
   boolean enabled=true,throwTool,farmTaskAwardBusy;int foodStock=360,foodStockLimit=1800,unReceiveTaskAward;TaskAttemptPolicy.ProbeResult probeFarmStatus(String key){return TaskAttemptPolicy.ProbeResult.UNKNOWN;}Field feedAnimal=new Field(),useAccelerateTool=new Field(),useBigEaterTool=new Field(),family=new Field();IntField sleepMinutes=new IntField();Animal ownerAnimal=new Animal();
   Map<String,ChildModelTask> tasks=new LinkedHashMap<>();boolean isEnable(){return enabled;}boolean hasChildTask(String id){return tasks.containsKey(id);}void removeChildTask(String id){tasks.remove(id);}boolean addChildTask(ChildModelTask t){tasks.put(t.id,t);return true;}

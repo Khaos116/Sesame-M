@@ -189,7 +189,6 @@ public class AntSports extends ModelTask {
                         }
                     }
                 });
-                Log.i(TAG, "hook readDailyStep successfully: " + className);
             } catch (Throwable t) {
                 if (t instanceof ClassNotFoundException || t instanceof NoSuchMethodException
                         || t instanceof NoSuchMethodError || t.getCause() instanceof ClassNotFoundException) continue;
@@ -2758,47 +2757,52 @@ public class AntSports extends ModelTask {
      */
     public static void queryAndProcessBubbleTasks() {
         try {
-            JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.queryBubbleTask());
-            if (!MessageUtil.checkSuccess(TAG, jsonResult)) {
-                return;
-            }
-            JSONObject data = jsonResult.optJSONObject("data");
-            JSONArray tasks = data != null ? data.optJSONArray("bubbleTaskVOS") : null;
-            boolean needRetry = false;
-
-            for (int i = 0; tasks != null && i < tasks.length(); i++) {
-                JSONObject task = tasks.optJSONObject(i);
-                if (task == null || !task.has("bubbleTaskStatus")) {
-                    continue;
+            Set<String> processed = new HashSet<>();
+            for (int round = 0; round < 4; round++) {
+                TimeUtil.sleep(0);
+                JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.queryBubbleTask());
+                if (!MessageUtil.checkSuccess(TAG, jsonResult)) {
+                    return;
                 }
-                String title = task.optString("title");
-                String bubbleTaskStatus = task.optString("bubbleTaskStatus");
+                JSONObject data = jsonResult.optJSONObject("data");
+                JSONArray tasks = data != null ? data.optJSONArray("bubbleTaskVOS") : null;
+                boolean needRetry = false;
 
-                if (bubbleTaskStatus.equals("INIT")) {
-                    if ("AD_BALL".equals(task.optString("taskId"))) {
-                        task.put("lightTaskId", "adBubble");
-                        if (receiveBrowseReward(task)) {
-                            TimeUtil.sleep(1000);
-                            needRetry = true;
-                        }
-                    } else if ("STRATEGY_BALL".equals(task.optString("taskId"))) {
-                        receiveSpecialPrize(task.optString("taskId") + "_ACTIVITY", title);
-                    } else if ("SIGN_BALL".equals(task.optString("taskId"))) {
-                        signIn();
+                for (int i = 0; tasks != null && i < tasks.length(); i++) {
+                    JSONObject task = tasks.optJSONObject(i);
+                    if (task == null || !task.has("bubbleTaskStatus")) {
+                        continue;
                     }
-                    break;
+                    if (!processed.add(task.toString())) continue;
+                    String title = task.optString("title");
+                    String bubbleTaskStatus = task.optString("bubbleTaskStatus");
+
+                    if (bubbleTaskStatus.equals("INIT")) {
+                        if ("AD_BALL".equals(task.optString("taskId"))) {
+                            task.put("lightTaskId", "adBubble");
+                            if (receiveBrowseReward(task)) {
+                                TimeUtil.sleep(1000);
+                                needRetry = true;
+                            }
+                        } else if ("STRATEGY_BALL".equals(task.optString("taskId"))) {
+                            receiveSpecialPrize(task.optString("taskId") + "_ACTIVITY", title);
+                        } else if ("SIGN_BALL".equals(task.optString("taskId"))) {
+                            signIn();
+                        }
+                        break;
+                    }
+                    if (bubbleTaskStatus.equals("TO_RECEIVE")) {
+                        // 已完成任务，领取奖励
+                        receiveBubbleReward(task.optString("medEnergyBallInfoRecordId"), title);
+                        break;
+                    }
                 }
-                if (bubbleTaskStatus.equals("TO_RECEIVE")) {
-                    // 已完成任务，领取奖励
-                    receiveBubbleReward(task.optString("medEnergyBallInfoRecordId"), title);
-                    break;
-                }
+                // 如果有任务触发了状态变更，重试一次
+                if (!needRetry) return;
             }
-            // 如果有任务触发了状态变更，重试一次
-            if (needRetry) {
-                queryAndProcessBubbleTasks();
-            }
+            Log.record("悦动健康气泡任务：达到本轮回查上限，剩余任务留待下轮");
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.err(TAG, "queryBubbleTask err:", e);
         }
     }
@@ -2900,6 +2904,7 @@ public class AntSports extends ModelTask {
         try {
             Set<String> processed = new HashSet<>();
             for (int round = 0; round < 20; round++) {
+                TimeUtil.sleep(0);
                 JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.queryTaskCenter());
                 if (!MessageUtil.checkSuccess(TAG, jsonResult)) {
                     return;
@@ -2946,6 +2951,7 @@ public class AntSports extends ModelTask {
             }
             Log.record("悦动健康任务中心：达到本轮回查上限，剩余任务留待下轮");
         } catch (Exception e) {
+            if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.err(TAG, "processTaskCenter err:", e);
         }
     }
@@ -2955,43 +2961,47 @@ public class AntSports extends ModelTask {
      */
     public static void processBrowseTasks() {
         try {
-            JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.queryTaskInfo());
-            if (!MessageUtil.checkSuccess(TAG, jsonResult)) {
-                return;
-            }
-
-            JSONObject data = jsonResult.optJSONObject("data");
-            if (data == null || !data.has("taskInfos")) {
-                return;
-            }
-
-            JSONArray tasks = data.optJSONArray("taskInfos");
-            boolean hasNewTask = false;
-
-            for (int i = 0; tasks != null && i < tasks.length(); i++) {
-                JSONObject task = tasks.optJSONObject(i);
-                if (task == null) continue;
-                String taskName = task.optString("title", "浏览商品15s得健康能量");
-                long viewMillis = TimeUnit.SECONDS.toMillis(task.optInt("viewSec", -1));
-                if (viewMillis < 0 || viewMillis > TimeUnit.MINUTES.toMillis(5)) continue;
-                // 行为伪造：真人要"看够 viewSec 秒"，这里按服务端给的时长等待后领奖（服务端只认客户端等待）。
-                // 交给 TaskAttemptPolicy 管：同一天同一任务只伪造一次，失败不再每轮白等 15 秒
-                Outcome outcome = TaskAttemptPolicy.handle("sports::browse::" + taskName, taskName, null,
-                        () -> {
-                            TimeUtil.sleep(viewMillis);
-                            // boolean 失败无法证明任务不可执行；临时/未知失败留待下轮，不写当日失败标记。
-                            return receiveBrowseReward(task) ? Outcome.DONE : Outcome.RETRY;
-                        },
-                        Log::other, new TaskAttemptPolicy.Site("AntSportsTaskList", "运动任务", taskName, "",
-                                (k) -> probeBrowseStatus(taskName)));
-                if (outcome == Outcome.DONE) {
-                    hasNewTask = true;
+            Set<String> processed = new HashSet<>();
+            for (int round = 0; round < 4; round++) {
+                TimeUtil.sleep(0);
+                JSONObject jsonResult = MyUtils.newJSONObject(AntSportsRpcCall.queryTaskInfo());
+                if (!MessageUtil.checkSuccess(TAG, jsonResult)) {
+                    return;
                 }
-            }
 
-            if (hasNewTask) {
-                processBrowseTasks();
+                JSONObject data = jsonResult.optJSONObject("data");
+                if (data == null || !data.has("taskInfos")) {
+                    return;
+                }
+
+                JSONArray tasks = data.optJSONArray("taskInfos");
+                boolean hasNewTask = false;
+
+                for (int i = 0; tasks != null && i < tasks.length(); i++) {
+                    JSONObject task = tasks.optJSONObject(i);
+                    if (task == null) continue;
+                    if (!processed.add(task.toString())) continue;
+                    String taskName = task.optString("title", "浏览商品15s得健康能量");
+                    long viewMillis = TimeUnit.SECONDS.toMillis(task.optInt("viewSec", -1));
+                    if (viewMillis < 0 || viewMillis > TimeUnit.MINUTES.toMillis(5)) continue;
+                    // 行为伪造：真人要"看够 viewSec 秒"，这里按服务端给的时长等待后领奖（服务端只认客户端等待）。
+                    // 交给 TaskAttemptPolicy 管：同一天同一任务只伪造一次，失败不再每轮白等 15 秒
+                    Outcome outcome = TaskAttemptPolicy.handle("sports::browse::" + taskName, taskName, null,
+                            () -> {
+                                TimeUtil.sleep(viewMillis);
+                                // boolean 失败无法证明任务不可执行；临时/未知失败留待下轮，不写当日失败标记。
+                                return receiveBrowseReward(task) ? Outcome.DONE : Outcome.RETRY;
+                            },
+                            Log::other, new TaskAttemptPolicy.Site("AntSportsTaskList", "运动任务", taskName, "",
+                                    (k) -> probeBrowseStatus(taskName)));
+                    if (outcome == Outcome.DONE) {
+                        hasNewTask = true;
+                    }
+                }
+
+                if (!hasNewTask) return;
             }
+            Log.record("悦动健康浏览任务：达到本轮回查上限，剩余任务留待下轮");
         } catch (Exception e) {
             if (e instanceof TaskCancelledException) throw (TaskCancelledException) e;
             Log.err(TAG, "processBrowseTasks err:", e);

@@ -187,6 +187,7 @@ fun main() {
         val padding = " 好家任务已完成✅".repeat(15)
         file.writeText((0..5099).joinToString("\\n", postfix="\\n") { "12:00:00.000 I: entry $it$padding" })
         check(file.length() > 1024 * 1024L && file.length() < MAX_TAIL_BYTES)
+        var loaded = false
         var entries = emptyList<LogEntry>()
         val listState = ListState()
         @@UPDATE@@

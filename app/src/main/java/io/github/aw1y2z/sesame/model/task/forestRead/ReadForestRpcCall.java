@@ -10,15 +10,20 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.io.InterruptedIOException;
 import java.net.URLEncoder;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.net.ConnectException;
 import javax.net.ssl.SSLException;
-import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
+import okhttp3.ConnectionPool;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import io.github.aw1y2z.sesame.util.MyUtils;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcFailurePolicy;
 import io.github.aw1y2z.sesame.hook.ApplicationHook;
@@ -30,7 +35,16 @@ public final class ReadForestRpcCall {
     public static final String APP_ID = "2021003114652763";
     public static final String VERSION = "0.2.2410251510.53";
     private static final String HOST = "https://m.zhangwenwh.com/api";
+    private static final MediaType JSON = MediaType.parse("application/json;charset=UTF-8");
+    private static final OkHttpClient CLIENT = new OkHttpClient.Builder()
+            .connectionPool(new ConnectionPool(4, 5, TimeUnit.MINUTES))
+            .connectTimeout(5, TimeUnit.SECONDS).readTimeout(12, TimeUnit.SECONDS)
+            .callTimeout(15, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false)
+            .retryOnConnectionFailure(false).build();
+    private static final OkHttpClient SHORT_CLIENT = CLIENT.newBuilder()
+            .readTimeout(4, TimeUnit.SECONDS).callTimeout(6, TimeUnit.SECONDS).build();
     private String token;
+    private boolean recentlyWarning;
 
     public ReadForestRpcCall() { }
 
@@ -79,7 +93,16 @@ public final class ReadForestRpcCall {
         try { body.put("chapter_id", Long.parseLong(chapter)); }
         catch (NumberFormatException e) { body.put("chapter_id", chapter); }
         request("/user/updateWel", MyUtils.newJSONObject(body.toString()).put("time", seconds), book, chapter);
-        request("/book/set_read_recently", body.put("chapter_name", name), book, chapter);
+        try {
+            request(SHORT_CLIENT, "/book/set_read_recently", body.put("chapter_name", name), book, chapter);
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Exception e) {
+            if (e instanceof ReadFailure && ((ReadFailure) e).needsLogin) throw e;
+            if (!recentlyWarning) {
+                recentlyWarning = true;
+                ReadForestTask.log("无纸阅读：最近阅读展示上报失败，阅读时长已受理，继续回查能量；原因=" + failureReason(e));
+            }
+        }
     }
 
     private static String encode(String value) throws Exception {
@@ -176,39 +199,35 @@ public final class ReadForestRpcCall {
     }
 
     private JSONObject request(String path, JSONObject body, String book, String chapter) throws Exception {
+        return request(CLIENT, path, body, book, chapter);
+    }
+
+    private JSONObject request(OkHttpClient client, String path, JSONObject body, String book, String chapter) throws Exception {
         checkCancelled();
-        HttpURLConnection conn = (HttpURLConnection) new URL(HOST + path).openConnection();
-        try {
-            conn.setConnectTimeout(10_000);
-            conn.setReadTimeout(20_000);
-            conn.setInstanceFollowRedirects(false);
-            conn.setUseCaches(false);
-            conn.setRequestMethod(body == null ? "GET" : "POST");
-            conn.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
-            conn.setRequestProperty("x-release-type", "ONLINE");
-            conn.setRequestProperty("x-requested-with", "com.eg.android.AlipayGphone");
-            conn.setRequestProperty("x-mass-tappid", APP_ID);
-            conn.setRequestProperty("accept-language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
+        Request.Builder builder = new Request.Builder().url(HOST + path)
+                .header("Content-Type", "application/json;charset=UTF-8")
+                .header("x-release-type", "ONLINE")
+                .header("x-requested-with", "com.eg.android.AlipayGphone")
+                .header("x-mass-tappid", APP_ID)
+                .header("accept-language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
             String referer = "https://" + APP_ID + ".hybrid.alipay-eco.com/" + APP_ID + "/" + VERSION + "/index.html";
             referer += book.isEmpty() ? "#pages/index/index"
                     : "#moduleA/pages/chapter/index?__appxPageId=1&bid=" + encode(book) + "&cid=" + encode(chapter);
-            conn.setRequestProperty("Referer", referer);
-            conn.setRequestProperty("User-Agent", getBaseUserAgent());
-            if (token != null) conn.setRequestProperty("Authorization", "Bearer " + token);
-            if (body != null) {
-                byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
-                conn.setDoOutput(true);
-                conn.setFixedLengthStreamingMode(bytes.length);
-                try (OutputStream out = conn.getOutputStream()) { out.write(bytes); }
-            }
-            int status = conn.getResponseCode();
-            if (status != HttpURLConnection.HTTP_OK) {
+        builder.header("Referer", referer).header("User-Agent", getBaseUserAgent());
+        if (token != null) builder.header("Authorization", "Bearer " + token);
+        if (body == null) builder.get();
+        else builder.post(RequestBody.create(body.toString(), JSON));
+        try (Response response = client.newCall(builder.build()).execute()) {
+            int status = response.code();
+            if (status != 200) {
                 throw new ReadFailure(path.split("\\?")[0] + " 返回 HTTP " + status
                         + (status == 401 || status == 403 ? "，登录凭据失效或服务拒绝访问" : "，服务器未接受请求"),
                         status == 401 || status == 403);
             }
             String raw;
-            try (InputStream in = conn.getInputStream(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            ResponseBody responseBody = response.body();
+            if (responseBody == null) throw new ReadFailure("阅读服务返回空响应体");
+            try (InputStream in = responseBody.byteStream(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
                 byte[] buffer = new byte[4096];
                 int n;
                 while ((n = in.read(buffer)) != -1) {
@@ -239,8 +258,12 @@ public final class ReadForestRpcCall {
                         || message.contains("登录") || message.contains("授权"));
             }
             return result;
-        } finally {
-            conn.disconnect();
+        } catch (InterruptedIOException e) {
+            checkCancelled();
+            if (e instanceof SocketTimeoutException) throw e;
+            SocketTimeoutException timeout = new SocketTimeoutException("请求超时");
+            timeout.initCause(e);
+            throw timeout;
         }
     }
 }

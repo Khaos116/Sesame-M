@@ -26,6 +26,8 @@ public final class ReadForestTask {
     private static final String TOKEN = "readForest.token";
     // ponytail: 单轮最多 15 分钟，避免异常限额一直占用森林线程；有更长阅读需求再调整。
     private static final long MAX_RUN_MS = 15 * 60_000L;
+    private static final long CHAPTER_BUDGET_MS = 15_000L;
+    private static final int SLOW_EVENT_LIMIT = 5;
 
     private ReadForestTask() { }
 
@@ -42,7 +44,6 @@ public final class ReadForestTask {
                 return;
             }
             if (DailyTask.skipFlag(DONE, "无纸阅读")) {
-                log("无纸阅读：跳过，今日已成功达到满额");
                 return;
             }
             long started = SystemClock.elapsedRealtime();
@@ -79,7 +80,7 @@ public final class ReadForestTask {
             JSONArray blocks = client.index().optJSONArray("data");
             if (blocks == null) throw new ReadFailure("首页缺少书籍列表");
             Set<String> visited = new HashSet<>();
-            int count = 0, stagnant = 0;
+            int count = 0, stagnant = 0, consecutiveSlow = 0;
             for (int i = 0; i < blocks.length(); i++) {
                 JSONObject block = blocks.optJSONObject(i);
                 JSONArray books = block == null ? null : block.optJSONArray("block_resource");
@@ -91,6 +92,7 @@ public final class ReadForestTask {
                     if (bid.isEmpty() || "0".equals(bid) || "null".equals(bid) || finished.has(bid) || !visited.add(bid)) continue;
                     if (stopForTime(started, progress, count)) return;
                     stage = "查询章节";
+                    long chapterStarted = SystemClock.elapsedRealtime();
                     JSONObject chapter = client.chapter(bid, "").optJSONObject("data");
                     Set<String> chapters = new HashSet<>();
                     while (true) {
@@ -119,6 +121,13 @@ public final class ReadForestTask {
                         } else stagnant++;
                         if (full(progress, uid)) return;
                         current = after;
+                        consecutiveSlow = SystemClock.elapsedRealtime() - chapterStarted > CHAPTER_BUDGET_MS
+                                ? consecutiveSlow + 1 : 0;
+                        if (consecutiveSlow >= SLOW_EVENT_LIMIT) {
+                            log("无纸阅读：本轮停止，连续5章处理超过15秒；今日 " + current + "/" + progress.optInt("total")
+                                    + "，尚未满额，后续调度继续，不记今日完成");
+                            return;
+                        }
                         if (stagnant >= 5) {
                             log("无纸阅读：本轮停止，连续 5 章能量未增加；今日 " + current + "/" + progress.optInt("total")
                                     + "，尚未满额；服务端未说明原因，不记今日完成");
@@ -132,6 +141,7 @@ public final class ReadForestTask {
                         TimeUtil.sleep(RandomUtil.nextInt(1000, 3002));
                         if (stopForTime(started, progress, count)) return;
                         stage = "查询章节";
+                        chapterStarted = SystemClock.elapsedRealtime();
                         chapter = client.chapter(bid, next).optJSONObject("data");
                     }
                 }

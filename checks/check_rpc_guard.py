@@ -185,6 +185,8 @@ public class StartupCheck {
             optionalAttempts.incrementAndGet();if(optionalFailures.getAndUpdate(n->Math.max(0,n-1))>0)throw new IllegalStateException("optional install failed");
         }
     }
+    static class Agreement {static boolean isAccepted(){return true;}}
+    static class FileUtil {static boolean acquireHostLock(){return true;}}
     static class AppConfig {static boolean loaded,fail;static void load(){if(fail)throw new IllegalStateException("config load failed");loaded=true;}}
     static class Log {static AtomicInteger lines=new AtomicInteger(),errors=new AtomicInteger();static void i(String s){assert AppConfig.loaded;assert s.equals("模块初始化开始");lines.incrementAndGet();}
         static void i(String tag,String message){}
@@ -367,6 +369,7 @@ public class ApplicationHook {
     public static void setOffline(boolean v) { offline = v; }
     public static int loginBroadcasts;
     public static void reLoginByBroadcast() { loginBroadcasts++; }
+    public static void reLogin() { loginBroadcasts++; }
     public static int verificationLaunches;
     public static void showVerification() { verificationLaunches++; }
     public static ClassLoader getClassLoader() { return ApplicationHook.class.getClassLoader(); }

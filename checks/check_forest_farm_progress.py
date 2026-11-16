@@ -9,11 +9,14 @@ forest = 'model/task/antForest/AntForestV2.java'
 farm = 'model/task/antFarm/AntFarm.java'
 whack = 'model/task/antForest/WhackMole.java'
 run = method(forest, 'public void run()')
+run = re.sub(r'\b(?:(?:energy|game|task|patrol|prop|team|water|mall|ecoLife|greenLife|pvp|dress)Helper|AntForest(?:Energy|Game|Task|Patrol|Prop|Team|Water|Mall|EcoLife|GreenLife|Pvp|Dress))\.', '', run)
 home_loop = run[run.index('                boolean hasMore = false;'):run.index('                JSONArray usingUserProps = ')]
 code = r'''
 import org.json.*;import java.util.*;import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class ForestFarmProgressCheck {
- static final String TAG="test",SOURCE="test",EXEC_FLAG="whack";
+ static final String TAG="test",SOURCE="test",EXEC_FLAG="whack",FAIL_FLAG="whack-fail";
+ static final int MAX_FAILURES=3;
+ static class RunGeneration {static boolean isStale(){return false;}}
  @@LIMITS@@
  static class MyUtils {static JSONObject newJSONObject(String s){try{return new JSONObject(s);}catch(Exception e){return new JSONObject();}}static Calendar getInstance(){return Calendar.getInstance(TimeZone.getTimeZone("GMT+8"));}}
  static class Log {static List<String> logs=new ArrayList<>();static void record(String s){logs.add(s);}static void forest(String s){}static void farm(String s){}static void i(String s){}static void i(String t,String s){}static void err(String t,String s,Throwable e){if(e instanceof TaskCancelledException)throw (TaskCancelledException)e;throw new AssertionError(e);}static void printStackTrace(String s,Throwable t){if(t instanceof TaskCancelledException)throw (TaskCancelledException)t;throw new AssertionError(t);}}
@@ -64,7 +67,7 @@ public class ForestFarmProgressCheck {
  static class GameTask {static class Farm_ddply {static int reportSync(String s,int n){reported+=n;if(gameMode==2)initialQuota+=n;else if(gameMode==3)initialQuota++;return n;}}}
  @@FARM@@
  enum Mode {COMPATIBLE,AGGRESSIVE}static boolean isRunning;static int moleCount=15,cancelStage,settles;
- static void runAggressiveMode(){}
+ static boolean runAggressiveMode(){return false;}
  @@WHACK@@
  static void reset(){homeQueries=waterCalls=propCalls=0;reject=homeNull=false;Status.flags.clear();Status.counts.clear();patrolQueries=switchCalls=goCalls=exchanges=keepCalls=0;initialQuota=used=draws=reported=gameQueries=gameMode=0;failBefore=failAfter=cancelGame=failDraw=false;settles=0;Log.logs.clear();}
  public static void main(String[] args){ForestFarmProgressCheck f=new ForestFarmProgressCheck();
@@ -104,7 +107,9 @@ code = code.replace('@@HOME@@', home_loop).replace('@@PATROL@@', method(forest, 
 code = code.replace('@@FARM@@', method(farm, 'private void drawGameCenterAward('))
 farm_source=(SOURCE/farm).read_text(encoding='utf-8')
 code = code.replace('@@LIMITS@@', '\n'.join(re.search(r'private static final [^;]*\b'+name+r'\s*=.*?;',farm_source).group(0) for name in ('FLAG_GAME_DRAW_TASK_TRY','MAX_GAME_DRAW_TASK_TRY','MAX_GAME_DRAW_ROUND')))
-code = code.replace('@@WHACK@@', method(whack, 'public static void startSuspend(') + method(whack, 'private static void runCompatibleMode('))
+code = code.replace('@@WHACK@@', (method(whack, 'public static void startSuspend(')
+                    + method(whack, 'private static boolean runCompatibleMode(')
+                    + method(whack, 'private static void checkCancelled(')).replace('WhackMole.class', 'ForestFarmProgressCheck.class'))
 cache = Path(os.environ.get('GRADLE_USER_HOME', Path.home()/'.gradle'))/'caches/modules-2/files-2.1/org.json/json'
 jar = sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar', '-javadoc.jar')))[-1]
 with tempfile.TemporaryDirectory(prefix='sesame-forest-farm-progress-') as tmp:
@@ -114,7 +119,7 @@ with tempfile.TemporaryDirectory(prefix='sesame-forest-farm-progress-') as tmp:
     subprocess.run(['java', '-ea', '-cp', tmp+os.pathsep+str(jar), 'ForestFarmProgressCheck'], check=True)
 
 # Keep the real run entry, catch/finally and mode helpers; isolate unrelated task work at body().
-priority_run = run[:run.index('            if (waterFriendEnergyFirst.getValue())')] + '            body();\n' + run[run.rindex('        } catch (Throwable t)'):]
+priority_run = run[:run.index('            boolean energyOnly = ')] + '            body();\n' + run[run.rindex('        } catch (Throwable t)'):]
 priority_run = priority_run.replace('AntForestV2.this', 'ForestTeamPriorityCheck.this')
 priority = r'''
 import org.json.*;import java.util.*;import java.util.concurrent.TimeUnit;
@@ -225,7 +230,7 @@ public class ForestTeamPriorityCheck {
  }
 }
 '''
-fix_signature=re.search(r'private (?:static )?void fixTeamModeIfNeeded\(', (SOURCE/forest).read_text(encoding='utf-8')).group(0)
+fix_signature='private static void fixTeamModeIfNeeded('
 priority=priority.replace('@@RUN@@',priority_run).replace('@@HELPERS@@','\n'.join(method(forest,s) for s in (
     fix_signature,'private void teamCooperateWater(','private static JSONObject queryTeamHomePage(', 'private static boolean updateUserConfiginTeam(',
     'private static int teamState(', 'private static boolean isTeam(', 'private static String getTeamId(', 'private static int getTeamCanWaterCount(')))

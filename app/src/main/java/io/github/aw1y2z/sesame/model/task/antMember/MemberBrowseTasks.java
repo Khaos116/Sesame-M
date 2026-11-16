@@ -8,6 +8,7 @@ import io.github.aw1y2z.sesame.rpc.intervallimit.RpcFailurePolicy;
 import io.github.aw1y2z.sesame.rpc.intervallimit.RpcRequestGuard;
 import io.github.aw1y2z.sesame.util.*;
 import io.github.aw1y2z.sesame.util.idMap.AntMemberTaskListMap;
+import io.github.aw1y2z.sesame.util.idMap.AntMemberAdTaskListMap;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
@@ -65,7 +66,7 @@ final class MemberBrowseTasks {
         Set<String> mixedAdStages = new HashSet<>();
         for (int page = 1; page <= 64; page++) {
             TimeUtil.sleep(0);
-            List<JSONObject> rows = rows(AntMemberRpcCall.signPageTaskList(page, session));
+            List<JSONObject> rows = fetchRows(0, page, session);
             if (rows == null) { Log.record(TAG + "：签到页第" + page + "页查询失败或结构无效，保留已取得的任务和回查记录"); break; }
             if (rows.isEmpty()) { complete = true; break; }
             boolean advanced = false, validPage = false;
@@ -105,8 +106,7 @@ final class MemberBrowseTasks {
                 }
             }
             TimeUtil.sleep(0);
-            String raw = source == 0 ? AntMemberRpcCall.currentMemberAdTasks() : AntMemberRpcCall.currentMemberProcesses();
-            List<JSONObject> rows = rows(raw);
+            List<JSONObject> rows = fetchRows(source + 1, 0, "");
             if (rows == null) { Log.record(TAG + "：" + (source == 0 ? "广告" : adProcessLookup ? "进行中（含待确认广告）" : "进行中") + "列表查询失败或结构无效，仅保留可独立回查的任务"); continue; }
             if (source == 0) adComplete = true;
             else processComplete = true;
@@ -122,12 +122,12 @@ final class MemberBrowseTasks {
         }
         boolean newTitles = false;
         for (JSONObject row : result.values()) {
-            String title = title(row);
-            if (!title.isEmpty() && !AntMemberTaskListMap.getMap().containsKey(title)) {
-                AntMemberTaskListMap.add(title, title); newTitles = true;
-            }
+            newTitles |= rememberTitle(row);
         }
-        if (newTitles) AntMemberTaskListMap.save();
+        if (newTitles) {
+            if (!AntMemberTaskListMap.getMap().isEmpty()) AntMemberTaskListMap.save();
+            if (!AntMemberAdTaskListMap.getMap().isEmpty()) AntMemberAdTaskListMap.save();
+        }
         // 报名后的 process 行替代同配置的未报名展示行，避免重复报名。
         // 过滤只限制执行，不能证明已观察到的活跃流程结束；未知提交仍需保护。
         Set<String> observedActive = new HashSet<>();
@@ -342,15 +342,65 @@ final class MemberBrowseTasks {
         }
     }
 
+    private static List<JSONObject> fetchRows(int source, int page, String session) throws Exception {
+        String key = "memberTaskList::" + source;
+        String endpoint = source == 0 ? "signPageTaskList" : source == 1 ? "currentMemberAdTasks" : "currentMemberProcesses";
+        if (Status.hasFlagToday(key + "::failed")
+                || System.currentTimeMillis() / 1000 < Status.getIntFlagToday(key + "::cooldown")) return null;
+        List<JSONObject> result = null;
+        try {
+            String raw = source == 0 ? AntMemberRpcCall.signPageTaskList(page, session)
+                    : source == 1 ? AntMemberRpcCall.currentMemberAdTasks() : AntMemberRpcCall.currentMemberProcesses();
+            result = rows(raw);
+        } catch (TaskCancelledException e) { throw e;
+        } catch (MemberTaskPausedException e) {
+            throw e;
+        } catch (Exception e) {
+            Log.record(TAG + "[" + endpoint + "]：查询或解析异常=" + e.getClass().getSimpleName() + "，未取得有效任务");
+        }
+        if (result == null) {
+            int failures = Status.getIntFlagToday(key + "::failures") + 1;
+            Status.setIntFlagToday(key + "::failures", failures);
+            Status.setIntFlagToday(key + "::cooldown", (int) (System.currentTimeMillis() / 1000) + 600);
+            if (failures >= 3) Status.flagToday(key + "::failed");
+            Log.record(TAG + "[" + endpoint + "]：未取得成功且结构有效的任务列表(" + failures + "/3)，"
+                    + (failures >= 3 ? "今日停止该列表，保留待确认记录" : "10分钟后再试，其它列表独立查询"));
+        } else if (source != 0 || result.isEmpty()) {
+            Status.setIntFlagToday(key + "::failures", 0);
+        }
+        return result;
+    }
+
+    static boolean rememberTitle(JSONObject row) {
+        String title = title(row);
+        if (title.isEmpty()) return false;
+        if (isAd(row)) {
+            if (AntMemberAdTaskListMap.getMap().containsKey(title)) return false;
+            AntMemberAdTaskListMap.add(title, title);
+        } else {
+            if (AntMemberTaskListMap.getMap().containsKey(title)) return false;
+            AntMemberTaskListMap.add(title, title);
+        }
+        return true;
+    }
+
+    static boolean listAccepted(JSONObject response) {
+        if (GameTaskAction.accepted(response)) return true;
+        // 旧可领列表成功时可省略状态码；只有完整数组且没有失败字段才接受。
+        return response.opt("availableTaskList") instanceof JSONArray && !RpcRequestGuard.isFailure(response)
+                && !response.has("success") && !response.has("resultCode") && !response.has("code")
+                && !response.has("error") && !response.has("errorCode") && !response.has("retCode");
+    }
+
     private static List<JSONObject> rows(String raw) throws MemberTaskPausedException {
         JSONObject response = checkedResponse(raw);
-        if (!GameTaskAction.accepted(response)) return null;
+        if (!listAccepted(response)) return null;
         JSONObject data = response.optJSONObject("resultData");
         if (data == null) data = response;
         List<JSONObject> rows = new ArrayList<>();
         boolean found = false;
         for (JSONObject root : data == response ? new JSONObject[]{response} : new JSONObject[]{response, data}) {
-            for (String key : new String[]{"availableTaskProcessList", "availableTaskConfigList", "taskProcessVOList", "taskHistoryVOList", "pureTaskList", "adTaskList", "alipayGrowthTaskList"}) {
+            for (String key : new String[]{"availableTaskProcessList", "availableTaskConfigList", "taskProcessVOList", "taskHistoryVOList", "pureTaskList", "adTaskList", "alipayGrowthTaskList", "availableTaskList", "taskHistoryList"}) {
                 if (!root.has(key)) continue;
                 found = true;
                 if (!append(rows, root.optJSONArray(key))) return null;
@@ -388,8 +438,10 @@ final class MemberBrowseTasks {
     }
 
     private static String title(JSONObject task) {
-        String title = config(task).optString("title");
-        return title.isEmpty() ? config(task).optString("name") : title;
+        JSONObject config = config(task);
+        Object title = config.opt("title");
+        if (!(title instanceof String) || ((String) title).isEmpty()) title = config.opt("name");
+        return title instanceof String ? (String) title : "";
     }
 
     private static String configId(JSONObject task) {

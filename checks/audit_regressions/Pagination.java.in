@@ -1,5 +1,6 @@
 import org.json.*;import java.util.*;
 public class GreenCurrent {
+static final int MAX_STEAL_PAGES=50;static class TaskCancelledException extends RuntimeException {}
 static String TAG="test";static List<Integer> pages=new ArrayList<>();static class Field{boolean getValue(){return true;}}static Field greenFinancePointFriend=new Field();
 static class Status{static boolean canGreenFinancePointFriend(){return true;}static void greenFinancePointFriend(){}}
 static class TimeUtil{static void sleep(long n){}}

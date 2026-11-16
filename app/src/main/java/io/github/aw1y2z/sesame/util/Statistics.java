@@ -28,6 +28,9 @@ public class Statistics {
     /** 本轮（一次执行周期）收取的能量。仅内存计数、不落盘（静态字段不进 Jackson） */
     private static volatile int roundCollected = 0;
 
+    /** 本次加载是否解析失败：内存只剩默认值时不得落盘，否则历史月/年累计被清零 */
+    private static volatile boolean loadFailed = false;
+
     /** 本轮收取能量 */
     public static int getRoundCollected() {
         return roundCollected;
@@ -240,6 +243,7 @@ public class Statistics {
         unload();
         if (!AccountFolderName.isValidUid(userId)) return INSTANCE;
         loadedUserId = userId;
+        loadFailed = false;
         try {
             File statisticsFile = FileUtil.getStatisticsFile(userId);
             if (statisticsFile.exists()) {
@@ -264,10 +268,12 @@ public class Statistics {
         }
         catch (Throwable t) {
             Log.printStackTrace(TAG, t);
-            Log.i(TAG, "统计文件格式有误，已重置统计文件");
+            // 只回落内存默认值、不写盘：写盘会把历史累计清零
+            loadFailed = true;
+            Log.record("统计文件解析失败，本次使用默认值（不写盘，原文件保留）");
             try {
                 JsonUtil.copyMapper().updateValue(INSTANCE, new Statistics());
-                FileUtil.write2File(JsonUtil.toFormatJsonString(INSTANCE), FileUtil.getStatisticsFile(userId));
+
             }
             catch (JsonMappingException e) {
                 Log.printStackTrace(TAG, e);
@@ -278,6 +284,7 @@ public class Statistics {
     
     public static synchronized void unload() {
         loadedUserId = null;
+        loadFailed = false;
         resetRoundCollected();
         try {
             JsonUtil.copyMapper().updateValue(INSTANCE, new Statistics());
@@ -295,6 +302,7 @@ public class Statistics {
         String userId = UserIdMap.getCurrentUid();
         if (!AccountFolderName.isValidUid(userId)) return;
         if (!userId.equals(loadedUserId)) load(userId);
+        if (loadFailed) return;
         if (updateDay(nowCalendar)) {
             Log.system(TAG, "重置 statistics.json");
         }

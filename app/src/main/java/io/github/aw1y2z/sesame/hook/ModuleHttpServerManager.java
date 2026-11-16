@@ -63,9 +63,6 @@ public class ModuleHttpServerManager {
             newServer.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
             
             server = newServer;
-            // 原Kotlin中注释的日志可根据需要启用
-            // 注：不打印鉴权令牌，避免运行日志（查看器支持分享/导出）泄露令牌
-            Log.record("服务启动🚀HTTP: http://127.0.0.1:" + port);
             
         } catch (BindException e) {
             String summary = bindFailedLogged ? null : "HTTP 服务启动失败：端口 " + port

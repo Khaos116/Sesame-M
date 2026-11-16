@@ -94,6 +94,7 @@ public class ToolRewardCheck {
         }
     }
     static class Farm {
+        boolean awardTroughFullThisRun;static final String CODE_FEED_TROUGH_FULL="331";
         static final String FLAG_FARM_TASK_ALL_DONE = "antFarm::farmTaskAllDone";
         static final int MAX_FARM_TASK_ROUNDS = 20;
         String TAG = "Farm";

@@ -38,8 +38,11 @@ public class ManualTaskCheck {
 }
 '''.replace('@@METHOD@@', method('data/task/ModelTask.java','public static boolean startNamedTask(String code, String uid)')+'\n'+method('data/task/ModelTask.java','public static boolean startNamedTask(String code, String uid, String action)')).replace('static List<','static java.util.List<')
 ui=(SOURCE/'ui/miuix/MiuixGroupFieldsActivity.kt').read_text(encoding='utf-8')
-assert '.putExtra("model", modelCode)' in ui and '.putExtra("userId", userId)' in ui and '.putExtra("taskAction", action)' in ui
-assert '.setPackage("com.eg.android.AlipayGphone")' in ui
+bridge=(SOURCE/'ui/HostBridge.java').read_text(encoding='utf-8')
+assert 'HostBridge.executeModule(this, userId, modelCode, action)' in ui
+assert 'intent.putExtra("model", model)' in bridge and 'intent.putExtra("userId", userId)' in bridge and 'intent.putExtra("taskAction", taskAction)' in bridge
+assert 'new Intent(ACTION_CONTROL).setPackage(HOST_PACKAGE)' in bridge
+assert 'intent.putExtra("token", token)' in bridge
 assert 'ModelTask' not in ui and 'ApplicationHook' not in ui.replace('ApplicationHook/hook.Toast/NotificationUtil','')
 daily_source = (SOURCE / 'util/DailyTask.java').read_text(encoding='utf-8')
 daily_body = daily_source[daily_source.index('public final class DailyTask'):].replace('public final class DailyTask', 'static final class DailyTask', 1)

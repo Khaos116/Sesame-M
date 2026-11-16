@@ -24,6 +24,7 @@ public class AsyncGameCheck {
     }
     static class Game {
         int requestsPerEgg = 1;
+        String ensureToken(Runnable checkpoint) {checkpoint.run();return login();}
         String login() { if (fail) throw new IllegalStateException("login failed"); return overlap ? "token" + (++logins) : "token"; }
         boolean executeSingleReport(String type,int index,int total,String channel,Runnable checkpoint,String token) {
             checkpoint.run();

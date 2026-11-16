@@ -38,11 +38,12 @@ public final class R { public static final class string {
     write("io/github/aw1y2z/sesame/util/AccountFolderName.java", """package io.github.aw1y2z.sesame.util;
 public class AccountFolderName { public static boolean isValidUid(String uid) { return uid != null && uid.matches("[A-Za-z0-9_-]{1,128}"); } }""")
     write("io/github/aw1y2z/sesame/util/idMap/UserIdMap.java", """package io.github.aw1y2z.sesame.util.idMap;
-public class UserIdMap { public static String uid; public static String getCurrentUid() { return uid; } public static String getMaskName(String id) { return id; } }""")
+public class UserIdMap { public static String uid; public static String getCurrentUid() { return uid; } public static String getMaskName(String id) { return id; } public static boolean isFriendListLoaded() {return false;} }""")
     write("io/github/aw1y2z/sesame/util/FileUtil.java", """package io.github.aw1y2z.sesame.util;
 import java.io.*; import java.nio.file.*; import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 public class FileUtil {
     public static File root;
+    public static int writes;
     public static File getStatisticsFile(String uid) { return new File(new File(new File(root, "config"), uid), "statistics.json"); }
     public static File getStatisticsFile() { return getStatisticsFile(UserIdMap.getCurrentUid()); }
     public static File getFriendWatchFile(String uid) { return new File(new File(new File(root, "config"), uid), "friendWatch.json"); }
@@ -50,7 +51,7 @@ public class FileUtil {
     public static File getAutoBlackListMapFile(String uid) { return new File(new File(new File(root, "config"), uid), "AutoBlackList.json"); }
     public static File getAutoBlackListMapFile() { return getAutoBlackListMapFile(UserIdMap.getCurrentUid()); }
     public static String readFromFile(File file) { try { return file.isFile() ? Files.readString(file.toPath()) : ""; } catch (Exception e) { throw new RuntimeException(e); } }
-    public static boolean write2File(String text, File file) { try { file.getParentFile().mkdirs(); Files.writeString(file.toPath(), text); return true; } catch (Exception e) { throw new RuntimeException(e); } }
+    public static boolean write2File(String text, File file) { try { file.getParentFile().mkdirs(); Files.writeString(file.toPath(), text); writes++; return true; } catch (Exception e) { throw new RuntimeException(e); } }
 }""")
     write("io/github/aw1y2z/sesame/util/JsonUtil.java", """package io.github.aw1y2z.sesame.util;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -62,15 +63,17 @@ public class JsonUtil {
     public static String toJsonString(Object value) { return toFormatJsonString(value); }
 }""")
     write("io/github/aw1y2z/sesame/util/Log.java", """package io.github.aw1y2z.sesame.util;
-public class Log { public static void i(String a, String b) {} public static void printStackTrace(String a, Throwable b) { throw new RuntimeException(b); }
-public static void printStackTrace(Throwable b) { throw new RuntimeException(b); } public static void err(String a, String b, Throwable c) { throw new RuntimeException(c); }
+public class Log { public static boolean expectedParseFailure; public static void record(String s){} public static void i(String a, String b) {} public static void printStackTrace(String a, Throwable b) { if(!expectedParseFailure)throw new RuntimeException(b); }
+public static void printStackTrace(Throwable b) { if(!expectedParseFailure)throw new RuntimeException(b); } public static void err(String a, String b, Throwable c) { throw new RuntimeException(c); }
 public static void system(String a, String b) {} public static void debug(String a) {} }""")
     write("io/github/aw1y2z/sesame/util/TimeUtil.java", """package io.github.aw1y2z.sesame.util;
 public class TimeUtil { public static java.util.Calendar getNow() { return java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("GMT+8")); }
 public static String getDateStr() { return "2026-09-24"; } }""")
     write("io/github/aw1y2z/sesame/util/MyUtils.java", """package io.github.aw1y2z.sesame.util;
-public class MyUtils { public static org.json.JSONObject newJSONObject(String text) { try { return new org.json.JSONObject(text); } catch (Exception e) { return new org.json.JSONObject(); } }
+public class MyUtils { public static org.json.JSONObject newJSONObject() {return new org.json.JSONObject();} public static org.json.JSONObject newJSONObject(String text) { try { return new org.json.JSONObject(text); } catch (Exception e) { return new org.json.JSONObject(); } }
 public static java.util.Calendar getInstance() { return TimeUtil.getNow(); } }""")
+    write("io/github/aw1y2z/sesame/util/MessageUtil.java", """package io.github.aw1y2z.sesame.util;
+public class MessageUtil { public static org.json.JSONObject newJSONObject(String text) {try{return new org.json.JSONObject(text);}catch(Exception e){return null;}} }""")
     write("io/github/aw1y2z/sesame/util/StringUtil.java", """package io.github.aw1y2z.sesame.util;
 public class StringUtil { public static boolean isEmpty(String text) { return text == null || text.isEmpty(); } }""")
     write("io/github/aw1y2z/sesame/util/StatisticsAccountCheck.java", """package io.github.aw1y2z.sesame.util;
@@ -108,6 +111,21 @@ public class StatisticsAccountCheck {
         FriendWatch.friendWatch("friend", 3); FriendWatch.save();
         assert FriendWatch.getList("A").get(0).getAllGet() == 5;
         assert FriendWatch.getList("B").get(0).getAllGet() == 3;
+        String originalStats=Files.readString(FileUtil.getStatisticsFile("A").toPath());
+        Files.writeString(FileUtil.getStatisticsFile("A").toPath(), "corrupt statistics");
+        UserIdMap.uid="A";Log.expectedParseFailure=true;Statistics.load("A");Log.expectedParseFailure=false;
+        Statistics.addData(Statistics.DataType.COLLECTED,2);Statistics.save();
+        assert Files.readString(FileUtil.getStatisticsFile("A").toPath()).equals("corrupt statistics");
+        UserIdMap.uid="B";Statistics.load("B");Statistics.save();eq(8);
+        Files.writeString(FileUtil.getStatisticsFile("A").toPath(),originalStats);UserIdMap.uid="A";Statistics.load("A");eq(11);
+        String originalFriends=Files.readString(FileUtil.getFriendWatchFile("A").toPath());
+        Files.writeString(FileUtil.getFriendWatchFile("A").toPath(),"corrupt friends");
+        assert !FriendWatch.load();int writes=FileUtil.writes;FriendWatch.friendWatch("friend",99);FriendWatch.save();
+        assert FriendWatch.getList("A").isEmpty()&&FileUtil.writes==writes;
+        assert Files.readString(FileUtil.getFriendWatchFile("A").toPath()).equals("corrupt friends");
+        UserIdMap.uid="B";FriendWatch.save();assert FileUtil.writes>writes:"corrupt A prevented valid B save";
+        Files.writeString(FileUtil.getFriendWatchFile("A").toPath(),originalFriends);UserIdMap.uid="A";assert FriendWatch.load();
+        assert FriendWatch.getList("A").get(0).getAllGet()==5;
         UserIdMap.uid = "A"; io.github.aw1y2z.sesame.util.idMap.AutoBlackListMap.ensureLoaded();
         io.github.aw1y2z.sesame.util.idMap.AutoBlackListMap.put("task", "A");
         io.github.aw1y2z.sesame.util.idMap.AutoBlackListMap.save();

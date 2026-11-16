@@ -4,6 +4,7 @@ import android.os.Build;
 
 import io.github.aw1y2z.sesame.entity.AlipayAntFarmDoFarmTaskList;
 import io.github.aw1y2z.sesame.entity.AlipayAntFarmDrawMachineTaskList;
+import io.github.aw1y2z.sesame.entity.AlipayAntKitchenTaskList;
 import io.github.aw1y2z.sesame.entity.GameCenterMallItem;
 import io.github.aw1y2z.sesame.model.task.antGame.GameTask;
 import io.github.aw1y2z.sesame.model.task.antMember.AntMemberRpcCall;
@@ -52,6 +53,12 @@ public class AntFarm extends ModelTask {
     private static final int MAX_FARM_TASK_ROUNDS = 20;
     /** 家庭分享：当日最多尝试几次，超过后当天不再重试（避免每轮任务都重发邀请请求） */
     private static final int MAX_FAMILY_SHARE_ATTEMPT = 3;
+    /**
+     * 喂鸡「使用美食」：当天被服务端判定"食谱未配置"的菜品标记前缀（后接 cuisineId）。
+     * <p>这类菜是服务端没配喂鸡效果（厨房赛季菜上线初期常见），发了只会回 U05；
+     * 按天记忆后不再重复发，第二天自动重试——服务端配好后无需改代码就能喂上。
+     */
+    private static final String FLAG_UNUSABLE_CUISINE = "antFarm::unusableCuisineV2::";
 
     /**
      * 公益捐蛋当日标记：当天已经捐过一次公益蛋。只归「每日捐蛋」自己用。
@@ -90,6 +97,9 @@ public class AntFarm extends ModelTask {
      */
     private static final int MAX_GAME_DRAW_ROUND = 6;
 
+    /** 小鸡乐园单次对局的轮次上限：防 remainingGameCount 恒回正值时每 2s 无限重刷 */
+    private static final int MAX_GAME_ROUNDS = 20;
+
     /** 投喂被服务端拒绝的「饲料槽已满」结果码（按码判据，不认文案） */
     private static final String CODE_FEED_TROUGH_FULL = "331";
     /** 小鸡所在空间标识：家庭空间。睡觉/起床靠它区分走家庭接口还是个人小屋接口 */
@@ -113,6 +123,11 @@ public class AntFarm extends ModelTask {
      * 一轮里连着刷 3 次只是白刷（每轮开头重置，见 {@link #run()}）。
      */
     private boolean farmTaskAwardBusy = false;
+    /**
+     * 本轮领奖时服务端回了「饲料槽已满」（同 {@link #CODE_FEED_TROUGH_FULL}）：本轮不再领其余饲料任务。
+     * <p>槽满与任务无关，继续领只会逐个被拒、刷出一串相同的错误（每轮开头重置，见 {@link #run()}）。
+     */
+    private boolean awardTroughFullThisRun = false;
     private double finalScore = 0d;
     private int foodInTrough = 0;
 
@@ -145,6 +160,11 @@ public class AntFarm extends ModelTask {
     private BooleanModelField gameCenterBuyMallItem;
     private SelectAndCountModelField gameCenterBuyMallItemList;
     private BooleanModelField kitchen;
+    private BooleanModelField aiKitchen;                       // 小鸡大厨(AI 厨房)
+    private BooleanModelField aiKitchenCook;                   // 小鸡大厨 | 自动做美食
+    private BooleanModelField aiKitchenFinishTask;             // 小鸡大厨 | 自动完成任务
+    private BooleanModelField AutoAntKitchenTaskList;          // 小鸡大厨 | 自动黑名单
+    private SelectModelField AntKitchenTaskList;               // 小鸡大厨 | 黑名单列表
     private BooleanModelField useSpecialFood;
     @Getter
     private IntegerModelField useSpecialFoodCountLimit;
@@ -308,6 +328,14 @@ public class AntFarm extends ModelTask {
         // 兑奖次数下限设为 1：勾选即至少兑奖 1 次，避免默认 0 导致勾选不生效
         modelFields.addField(gameCenterBuyMallItemList = new SelectAndCountModelField("gameCenterBuyMallItemList", "小鸡乐园 | 兑奖", new LinkedHashMap<>(), GameCenterMallItem::getList, "请填写兑奖次数(每日)", 1, 100).setDependsOn("gameCenterBuyMallItem"));
         modelFields.addField(kitchen = new BooleanModelField("kitchen", "小鸡厨房", false));
+        modelFields.addField(aiKitchen = new BooleanModelField("aiKitchen", "小鸡大厨", false));
+        modelFields.addField(aiKitchenCook = new BooleanModelField("aiKitchenCook", "小鸡大厨 | 自动做美食", false)
+                .setDependsOn("aiKitchen"));
+        // 只申报浏览/签到类任务，充值、游戏、社交类不会自动做
+        modelFields.addField(aiKitchenFinishTask = new BooleanModelField("aiKitchenFinishTask", "小鸡大厨 | 自动完成任务", true)
+                .setDependsOn("aiKitchen"));
+        modelFields.addField(AutoAntKitchenTaskList = new BooleanModelField("AutoAntKitchenTaskList", "小鸡大厨 | 自动黑名单", true).setDependsOn("aiKitchen"));
+        modelFields.addField(AntKitchenTaskList = new SelectModelField("AntKitchenTaskList", "小鸡大厨 | 黑名单列表", new LinkedHashSet<>(), AlipayAntKitchenTaskList::getList).setDependsOn("AutoAntKitchenTaskList"));
         modelFields.addField(chickenDiary = new BooleanModelField("chickenDiary", "小鸡日记", false));
         modelFields.addField(harvestProduce = new BooleanModelField("harvestProduce", "收取爱心鸡蛋", false));
         modelFields.addField(receiveFarmToolReward = new BooleanModelField("receiveFarmToolReward", "收取道具奖励", false));
@@ -433,6 +461,7 @@ public class AntFarm extends ModelTask {
     public void run() {
         try {
             farmTaskAwardBusy = false;
+            awardTroughFullThisRun = false;
             if (enterFarm() == null) {
                 return;
             }
@@ -555,6 +584,13 @@ public class AntFarm extends ModelTask {
                 }
             });
 
+            step("小鸡大厨", () -> {
+                if (aiKitchen.getValue()) {
+                    AntKitchen.execute(aiKitchenCook.getValue(), aiKitchenFinishTask.getValue(),
+                            AntKitchenTaskList.getValue(), AutoAntKitchenTaskList.getValue());
+                }
+            });
+
             step("小鸡日记", () -> {
                 if (chickenDiary.getValue()) {
                     queryChickenDiary("");
@@ -663,6 +699,7 @@ public class AntFarm extends ModelTask {
             });
 
             step("NPC小鸡", this::manageFarmNpc);
+            step("NPC小鸡任务", this::runOrdinaryNpcTasks);
 
             // 雇佣小鸡
             step("雇佣小鸡", () -> {
@@ -1327,7 +1364,7 @@ public class AntFarm extends ModelTask {
         }
         try {
             for (Animal animal : animals) {
-                if (SubAnimalType.NPC.name().equals(animal.subAnimalType)) continue;
+                if (SubAnimalType.NPC.name().equals(animal.subAnimalType) || Arrays.asList(FARM_NPC_IDS).contains(animal.animalId)) continue;
                 if (AnimalInteractStatus.STEALING.name().equals(animal.animalInteractStatus) && !SubAnimalType.GUEST.name().equals(animal.subAnimalType) && !SubAnimalType.WORK.name().equals(animal.subAnimalType)) {
                     // 赶鸡
                     String user = AntFarmRpcCall.farmId2UserId(animal.masterFarmId);
@@ -2725,7 +2762,14 @@ public class AntFarm extends ModelTask {
 
     private void recordFarmGame(GameType gameType) {
         try {
+            // remainingGameCount 由服务端下发，一直回正值就会每 2s 无限刷一遍；
+            // 加轮次上限，正常对局次数远小于此值
+            int loopCount = 0;
             do {
+                if (++loopCount > MAX_GAME_ROUNDS) {
+                    Log.i(TAG, "小鸡乐园🎮游玩次数超过上限，本轮停止");
+                    break;
+                }
                 try {
                     if (!manualFarmOwner(ownerUserId) || !recordFarmGame.getValue()) return;
                     JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.initFarmGame(gameType.name()));
@@ -2878,7 +2922,7 @@ public class AntFarm extends ModelTask {
                 String title = taskJo.optString("title");
                 //黑名单任务跳过
                 if (AntFarmDoFarmTaskList.getValue().contains(title)) {
-                    if (taskStatus == TaskStatus.FINISHED) {
+                    if (taskStatus == TaskStatus.FINISHED && (Mode == null || Mode == TaskStatus.FINISHED)) {
                         actionable++;
                         if (!alreadyTried(taskJo, "receive") && receiveFarmTaskAward(taskJo)) {
                             progressed++;
@@ -3299,6 +3343,7 @@ public class AntFarm extends ModelTask {
             // 小额奖励（1-3 个，如美食按个数计）：饲料奖励都是 30 的倍数，1-3 不可能是饲料；
             // 该判断同时用于领取前容量检查和领取后库存更新
             boolean isSmallPieceReward = awardCount >= 1 && awardCount <= 3;
+            if (awardTroughFullThisRun && "ALLPURPOSE".equals(awardType) && !isSmallPieceReward) return false;
             if (Objects.equals(awardType, "ALLPURPOSE")) {
                 if (awardCount + foodStock > foodStockLimit) {
                     if (isSmallPieceReward) {
@@ -3317,8 +3362,10 @@ public class AntFarm extends ModelTask {
                 if (TaskAward.confirmReceivedOrBlackList("饲料领取🎖️任务",
                         k -> probeFarmStatus(task.optString("bizKey")), task.optString("bizKey"),
                         task.optString("title", ""),
-                        () -> MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDoFarmTaskList",
-                                task.optString("title", ""), jo),
+                        () -> {
+                            if (!CODE_FEED_TROUGH_FULL.equals(jo.optString("resultCode")))
+                                MessageUtil.checkResultCodeAndMarkTaskBlackList("AntFarmDoFarmTaskList", task.optString("title", ""), jo);
+                        },
                         msg -> Log.farm(msg))) {
                     return true;
                 }
@@ -3326,6 +3373,10 @@ public class AntFarm extends ModelTask {
                 if (MessageUtil.isServerBusy(jo) && !farmTaskAwardBusy) {
                     farmTaskAwardBusy = true;
                     Log.record("服务端繁忙🌧️本轮跳过剩余饲料任务领取");
+                }
+                if (CODE_FEED_TROUGH_FULL.equals(jo.optString("resultCode")) && !awardTroughFullThisRun) {
+                    awardTroughFullThisRun = true;
+                    Log.record("饲料槽已满，本轮跳过剩余饲料任务领取；待办任务与其他奖励继续处理");
                 }
                 // 留痕：非饲料奖励（美食/道具等）领失败时，把任务定位信息打出来，
                 // 否则只能看到 checkMemo 的通用报错，不知道是哪类奖励调不通
@@ -4229,7 +4280,8 @@ public class AntFarm extends ModelTask {
     private List<JSONObject> getSortedCuisineList(JSONArray cuisineList) {
         List<JSONObject> list = new ArrayList<>();
         for (int i = 0; i < cuisineList.length(); i++) {
-            list.add(cuisineList.optJSONObject(i));
+            JSONObject cuisine = cuisineList.optJSONObject(i);
+            if (cuisine != null) list.add(cuisine);
         }
         Collections.sort(list, new Comparator<JSONObject>() {
             @Override
@@ -4264,14 +4316,28 @@ public class AntFarm extends ModelTask {
             return false;
         }
         try {
+            if (cuisine == null || !(cuisine.opt("cookbookId") instanceof String)
+                    || !(cuisine.opt("cuisineId") instanceof String)
+                    || cuisine.optString("cookbookId").trim().isEmpty() || cuisine.optString("cuisineId").trim().isEmpty()
+                    || npcTaskNumber(cuisine, "count") > Integer.MAX_VALUE || npcTaskNumber(cuisine, "count") < 0) return true;
             String cookbookId = cuisine.optString("cookbookId");
             String cuisineId = cuisine.optString("cuisineId");
             String name = cuisine.optString("name");
             int count = cuisine.optInt("count");
+            String cuisineType = cuisine.optString("cuisineType", ""), resultLevel = cuisine.optString("resultLevel", "");
+            if (cuisine.has("cuisineType") && !(cuisine.opt("cuisineType") instanceof String)
+                    || cuisine.has("resultLevel") && !(cuisine.opt("resultLevel") instanceof String)) return true;
+            String unusableFlag = FLAG_UNUSABLE_CUISINE + cuisineId;
+            if (Status.hasFlagToday(unusableFlag)) return true;
             for (int j = 0; j < count; j++) {
                 if (!manualFarmOwner(ownerUserId) || !useSpecialFood.getValue()) return false;
-                JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.useFarmFood(cookbookId, cuisineId));
+                JSONObject jo = MyUtils.newJSONObject(AntFarmRpcCall.useFarmFood(cookbookId, cuisineId, cuisineType, resultLevel));
                 if (!MessageUtil.checkMemo(TAG, jo)) {
+                    if (jo.optString("memo", "").contains("食谱未配置")) {
+                        // 只是这一道菜不在喂鸡食谱里：跳过它继续下一道，别让整轮就此停住
+                        Status.flagToday(unusableFlag);
+                        return true;
+                    }
                     return false;
                 }
                 JSONObject foodEffect = jo.optJSONObject("foodEffect");
@@ -4346,6 +4412,8 @@ public class AntFarm extends ModelTask {
         for (int i = 0; i < cuisines.length(); i++) {
             JSONObject cuisine = cuisines.optJSONObject(i);
             if (cuisine == null || !(cuisine.opt("cookbookId") instanceof String) || !(cuisine.opt("cuisineId") instanceof String)) return null;
+            if (cuisine.has("cuisineType") && !(cuisine.opt("cuisineType") instanceof String)
+                    || cuisine.has("resultLevel") && !(cuisine.opt("resultLevel") instanceof String)) return null;
             String book = cuisine.optString("cookbookId"), id = cuisine.optString("cuisineId");
             if (book.isEmpty() || id.isEmpty() || book.length() > 128 || id.length() > 128
                     || book.contains("|") || id.contains("|") || !keys.add(book + "|" + id)) return null;
@@ -4389,6 +4457,7 @@ public class AntFarm extends ModelTask {
         JSONObject unknown = null, chosen = null;
         double best = Double.POSITIVE_INFINITY;
         for (JSONObject cuisine : getSortedCuisineList(state.cuisines)) {
+            if (Status.hasFlagToday(FLAG_UNUSABLE_CUISINE + cuisine.optString("cuisineId"))) continue;
             if (cuisine.optInt("count") <= 0) continue;
             double unit = foodNumber(benefits, foodKey(cuisine));
             if (!Double.isFinite(unit) || unit <= 0) { if (unknown == null) unknown = cuisine; continue; }
@@ -4447,8 +4516,25 @@ public class AntFarm extends ModelTask {
                 if (!dynamicFoodOwner(uid)) return;
                 JSONObject item = MyUtils.newJSONObject();
                 item.put("cookbookId", cuisine.optString("cookbookId")); item.put("cuisineId", cuisine.optString("cuisineId"));
+                if (cuisine.opt("cuisineType") instanceof String) item.put("cuisineType", cuisine.optString("cuisineType"));
+                if (cuisine.opt("resultLevel") instanceof String) item.put("resultLevel", cuisine.optString("resultLevel"));
                 item.put("count", count); item.put("useCuisine", true);
                 JSONObject result = MyUtils.newJSONObject(AntFarmRpcCall.useFarmFood(new JSONArray().put(item)));
+                if (result.opt("memo") instanceof String && result.optString("memo").contains("食谱未配置")
+                        && !"SUCCESS".equals(result.optString("memo")) && dynamicFoodOwner(uid)) {
+                    DynamicFoodState after = queryDynamicFoodState(uid);
+                    if (after == null || foodStock(current, key) != foodStock(after, key)
+                            || after.harvested != current.harvested || after.progress != current.progress) {
+                        Log.record("动态美食：食谱未配置但库存/产蛋回查未确认，保留保护标记"); return;
+                    }
+                    budget.put("used", rankingInt(budget, "used") - count); budget.put("pending", false);
+                    if (!RuntimeInfo.getInstance().putVerified(DYNAMIC_FOOD_KEY, budget.toString())) return;
+                    Status.clearFlag(DYNAMIC_FOOD_PENDING);
+                    Status.flagToday(FLAG_UNUSABLE_CUISINE + cuisine.optString("cuisineId"));
+                    Log.record("动态美食：服务端食谱未配置且回查未消耗，今日跳过这道菜，继续其他美食");
+                    current = after;
+                    continue;
+                }
                 if (!MessageUtil.checkMemo(TAG, result) || !dynamicFoodOwner(uid)) return;
                 JSONObject effect = result.optJSONObject("foodEffect");
                 double delta = foodNumber(effect, "deltaProduce"), target = foodNumber(effect, "targetProduce");
@@ -5774,6 +5860,86 @@ public class AntFarm extends ModelTask {
         return true;
     }
 
+    private JSONArray queryOrdinaryNpcTasks(String scene) throws JSONException {
+        JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.listNpcFarmTasks("H5", scene));
+        JSONArray tasks = response.optJSONArray("farmTaskList");
+        if (!farmFeatureOk(response) || tasks == null) {
+            Log.record("NPC小鸡：专属任务列表未确认；" + RpcRequestGuard.errorMessage(response));
+            return null;
+        }
+        Set<String> ids = new HashSet<>();
+        for (int i = 0; i < tasks.length(); i++) {
+            JSONObject task = tasks.optJSONObject(i);
+            if (task == null || !(task.opt("taskId") instanceof String) || task.optString("taskId").trim().isEmpty()
+                    || !Set.of("TODO", "FINISHED", "RECEIVED").contains(task.optString("taskStatus"))
+                    || task.has("taskSceneCode") && !scene.equals(task.opt("taskSceneCode"))
+                    || !ids.add(task.optString("taskId"))) {
+                Log.record("NPC小鸡：任务身份、状态或场景无效，停止本轮任务");
+                return null;
+            }
+        }
+        return tasks;
+    }
+
+    private void runOrdinaryNpcTasks() {
+        try {
+            if (ownerFarmId == null || ownerFarmId.isEmpty()) return;
+            boolean selected = farmNpcType.getValue() == 1 || farmNpcType.getValue() == 2;
+            if (!selected && (animals == null || Arrays.stream(animals).noneMatch(
+                    a -> a != null && "NPC".equals(a.subAnimalType)
+                            && (FARM_NPC_IDS[1].equals(a.animalId) || FARM_NPC_IDS[2].equals(a.animalId))))) return;
+            JSONObject farm = queryNpcFarm();
+            if (farm == null) { Log.record("NPC小鸡：任务前庄园状态未确认，未查询专属任务"); return; }
+            int type = findFarmNpc(farm.optJSONArray("animals"), FARM_NPC_IDS[1]) != null ? 1
+                    : findFarmNpc(farm.optJSONArray("animals"), FARM_NPC_IDS[2]) != null ? 2 : 0;
+            if (type == 0) return;
+            String scene = type == 1 ? "ANTFARM_CAIFU_NPC_TASK" : "feiliaoji_202507";
+            JSONArray tasks = queryOrdinaryNpcTasks(scene);
+            Set<String> attempted = new HashSet<>();
+            for (int round = 0; tasks != null && round < 20; round++) {
+                TimeUtil.sleep(0);
+                JSONObject target = null;
+                for (int i = 0; i < tasks.length(); i++) {
+                    JSONObject task = tasks.optJSONObject(i);
+                    String status = task.optString("taskStatus"), id = task.optString("taskId");
+                    if ("FINISHED".equals(status)) {
+                        if (!(task.opt("awardType") instanceof String) || task.optString("awardType").trim().isEmpty()) continue;
+                    } else if (!"TODO".equals(status) || !"VIEW".equals(task.optString("taskMode"))
+                            || !(task.opt("bizKey") instanceof String) || task.optString("bizKey").trim().isEmpty()
+                            || TaskAlternative.isTransactionTask(task.optString("bizKey"))
+                            || AntFarmDoFarmTaskList.getValue().contains(task.optString("title"))
+                            || AntFarmDoFarmTaskList.getValue().contains(id)) continue;
+                    if (attempted.add(id + "|" + status + "|" + task.optString("rightsTimes"))) { target = task; break; }
+                }
+                if (target == null) return;
+                boolean award = "FINISHED".equals(target.optString("taskStatus"));
+                String id = target.optString("taskId");
+                JSONObject response = MyUtils.newJSONObject(award
+                        ? AntFarmRpcCall.receiveNpcFarmAward(id, target.optString("awardType"), "H5", scene)
+                        : AntFarmRpcCall.doNpcFarmTask(target.optString("bizKey"), scene));
+                if ("RPC_SKIPPED".equals(response.optString("error"))) return;
+                tasks = queryOrdinaryNpcTasks(scene);
+                if (tasks == null) return;
+                JSONObject latest = null;
+                for (int i = 0; i < tasks.length(); i++) {
+                    JSONObject task = tasks.optJSONObject(i);
+                    if (id.equals(task.optString("taskId"))) { latest = task; break; }
+                }
+                String status = latest == null ? "未找到同一任务" : latest.optString("taskStatus");
+                if (award && "RECEIVED".equals(status)) {
+                    Log.farm("NPC小鸡：" + FARM_NPC_NAMES[type] + "任务奖励已回查领取[" + target.optString("title", id) + "]");
+                } else if (award || !("FINISHED".equals(status) || "RECEIVED".equals(status))) {
+                    Log.record("NPC小鸡：" + (award ? "领奖" : "浏览任务完成") + "结果未确认，回查状态=" + status
+                            + "；" + RpcRequestGuard.errorMessage(response));
+                    return;
+                }
+                TimeUtil.sleep(800);
+            }
+            if (tasks != null) Log.record("NPC小鸡：达到20次任务动作上限，保留下轮回查");
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) { Log.err(TAG, "runOrdinaryNpcTasks", t); }
+    }
+
     private JSONArray queryTaojinbiNpcTasks() throws JSONException {
         JSONObject response = MyUtils.newJSONObject(AntFarmRpcCall.listNpcFarmTasks("H5", TAOJINBI_TASK_SCENE));
         JSONArray tasks = response.optJSONArray("farmTaskList");
@@ -6260,7 +6426,7 @@ public class AntFarm extends ModelTask {
         try {
             syncAnimalStatus(ownerFarmId);
             for (Animal animal : animals) {
-                if (!SubAnimalType.WORK.name().equals(animal.subAnimalType)) {
+                if (!SubAnimalType.WORK.name().equals(animal.subAnimalType) || Arrays.asList(FARM_NPC_IDS).contains(animal.animalId)) {
                     continue;
                 }
                 String taskId = "HIRE|" + animal.animalId;

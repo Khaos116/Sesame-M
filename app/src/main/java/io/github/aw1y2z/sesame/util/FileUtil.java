@@ -1,5 +1,6 @@
 package io.github.aw1y2z.sesame.util;
 
+import android.content.Context;
 import android.os.Build;
 import android.os.Environment;
 import io.github.aw1y2z.sesame.entity.UserEntity;
@@ -8,6 +9,8 @@ import io.github.aw1y2z.sesame.model.normal.base.BaseModel;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 import java.io.*;
 import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
@@ -26,6 +29,8 @@ public class FileUtil {
     public static final File MAIN_DIRECTORY_FILE = getMainDirectoryFile();
     public static final File CONFIG_DIRECTORY_FILE = getConfigDirectoryFile();
     public static final File LOG_DIRECTORY_FILE = getLogDirectoryFile();
+    /** 宿主私有目录下的同名子目录，只放凭据类文件（令牌等），共享目录的替代 */
+    private static volatile File privateDirectoryFile;
     private static File cityCodeFile;
     private static File wuaFile;
 
@@ -95,14 +100,10 @@ public class FileUtil {
     public static final String BACKUP_FILE_PREFIX = "config_v2_";
     public static final String BACKUP_FILE_EXT = ".json";
     
-    /**
-     * 从 BaseModel 动态读取备份保留份数（核心修改）
-     *
-     * @return 配置中的备份份数，失败则返回默认值5
-     */
+    /** 备份保留份数：读 BaseModel 配置，失败回退 5 */
     public static int getBackupMaxCountFromConfig() {
         try {
-            //获取 BaseModel 实例（注意：原代码bakupConfigDays有拼写错误，建议修正为backupConfigDays）
+            // 库里的字段名就拼作 bakupConfigDays，别"修正"成 backupConfigDays
             Integer configCount = BaseModel.backupConfigDays.getValue();
             
             //校验配置值有效性（非正数则用默认值）
@@ -122,9 +123,7 @@ public class FileUtil {
         }
     }
     
-    /**
-     * 获取备份根目录（sesame/bak）
-     */
+    /** 备份根目录 sesame/bak */
     public static File getBackupDirectoryFile() {
         File mainDir = getMainDirectoryFile();
         File backupDir = new File(mainDir, BACKUP_DIR_NAME);
@@ -134,20 +133,12 @@ public class FileUtil {
         return backupDir;
     }
     
-    /**
-     * 生成备份文件的后缀（A/B/C...）
-     *
-     * @param index 索引（0=A,1=B,2=C...）
-     */
+    /** 备份后缀 A/B/C…（index 0=A） */
     public static String getBackupSuffix(int index) {
         return String.valueOf((char) ('A' + index));
     }
     
-    /**
-     * 检查指定用户当天是否已备份过config_v2
-     *
-     * @param userId 用户ID（空则为默认用户）
-     */
+    /** 指定用户当天是否已备份过 config_v2 */
     public static boolean isConfigV2BackedUpTodayForUser(String userId) {
         String safeUserId = StringUtil.isEmpty(userId) ? "default" : userId;
         File backupDir = getBackupDirectoryFile();
@@ -164,9 +155,7 @@ public class FileUtil {
         return false;
     }
     
-    /**
-     * 判断文件是否为当天修改（复用项目日志工具的日期格式化）
-     */
+    /** 文件是否为当天修改 */
     private static boolean isFileModifiedToday(File file) {
         long fileLastModified = file.lastModified();
         // 防护：文件不存在/无修改时间
@@ -187,10 +176,160 @@ public class FileUtil {
     }
     
     /**
-     * 找到指定用户下「下一个要使用的备份文件」（按A→B→C顺序，循环覆盖）
-     * 核心修改：不再找最早修改的文件，而是按后缀顺序分配
-     *
-     * @param userId 用户ID（空则为默认用户）
+     * 彻底删除一个账号：数据目录、滚动备份、旧版单文件配置。
+     * <p>不保留任何「已删除」记录：该账号再次登录时目录会被正常重建，重新出现在列表里。
+     * <p>序号（accountIndex.json）故意不回收——历史日志里的「账号N」必须仍指向该账号。
+     */
+    public static boolean deleteAccount(String userId) {
+        if (!isSafeUserId(userId)) return false;
+        try (RandomAccessFile access = new RandomAccessFile(getHostLockFile(), "rw")) {
+            FileLock lease;
+            try {
+                lease = access.getChannel().tryLock();
+            } catch (OverlappingFileLockException e) {
+                return false;
+            }
+            if (lease == null) return false;
+            try (FileLock ignored = lease) {
+                boolean ok = deleteRecursively(new File(CONFIG_DIRECTORY_FILE, userId));
+                File[] backups = getBackupDirectoryFile().listFiles();
+                if (backups != null) {
+                    String prefix = BACKUP_FILE_PREFIX + userId + "_";
+                    for (File backup : backups) {
+                        if (backup.isFile() && backup.getName().startsWith(prefix) && !backup.delete()) ok = false;
+                    }
+                }
+                File legacyFile = new File(CONFIG_DIRECTORY_FILE, "config_v2-" + userId + ".json");
+                if (legacyFile.exists() && !legacyFile.delete()) ok = false;
+                return ok;
+            }
+        } catch (IOException e) {
+            Log.printStackTrace(TAG, e);
+            return false;
+        }
+    }
+
+    /** 递归删除目录/文件；不存在视为成功 */
+    private static boolean deleteRecursively(File file) {
+        if (file == null || !file.exists()) {
+            return true;
+        }
+        boolean ok = true;
+        if (file.isDirectory() && !Files.isSymbolicLink(file.toPath())) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    ok = deleteRecursively(child) && ok;
+                }
+            }
+        }
+        return file.delete() && ok;
+    }
+
+    // ===== 宿主进程存活探测（文件锁）=====
+    /** 注入进程启动时对 main 目录下这个文件加独占锁并一直持有，进程退出后由内核自动释放 */
+    private static final String HOST_LOCK_FILE_NAME = "host.lock";
+    private static RandomAccessFile hostLockRaf;
+    private static FileLock hostLock;
+
+    public static File getHostLockFile() {
+        return new File(MAIN_DIRECTORY_FILE, HOST_LOCK_FILE_NAME);
+    }
+
+    /**
+     * 宿主（支付宝）主进程是否仍在运行。
+     * <p>注入进程在 {@code ApplicationHook} 里对 host.lock 加独占锁，进程被杀后内核自动释放，
+     * 所以「锁能被拿到」等价于「宿主没在跑」。宿主运行期间它的注入进程会不断重写账号目录，
+     * 此时删账号一定会被写回来，删除操作必须先挡掉。
+     */
+    public static boolean isHostRunning() {
+        File lockFile = getHostLockFile();
+        RandomAccessFile raf = null;
+        FileChannel channel = null;
+        FileLock lock = null;
+        try {
+            File dir = lockFile.getParentFile();
+            if (dir != null && !dir.exists()) {
+                dir.mkdirs();
+            }
+            raf = new RandomAccessFile(lockFile, "rw");
+            channel = raf.getChannel();
+            lock = channel.tryLock();
+            return lock == null;
+        } catch (OverlappingFileLockException e) {
+            // 本进程已持有（正常不会发生），按「在运行」处理更安全
+            return true;
+        } catch (Throwable t) {
+            Log.printStackTrace(TAG, t);
+            // 探测不了就当作在运行：宁可拒绝删除，也不要删了又被写回来
+            return true;
+        } finally {
+            if (lock != null) {
+                try {
+                    lock.release();
+                } catch (Throwable ignored) {
+                }
+            }
+            if (channel != null) {
+                try {
+                    channel.close();
+                } catch (Throwable ignored) {
+                }
+            }
+            if (raf != null) {
+                try {
+                    raf.close();
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+    }
+
+    /**
+     * 注入进程侧调用：抢占 host.lock 并持有到进程结束，供模块 App 判断宿主是否在运行。
+     * <p>只在宿主主进程调用（写账号数据的也只有主进程）。
+     */
+    public static synchronized boolean acquireHostLock() {
+        if (hostLock != null) {
+            return true;
+        }
+        // 模块 App 恰好在这一瞬间做探测时会短暂占锁，重试几次即可
+        for (int i = 0; i < 3 && hostLock == null; i++) {
+            RandomAccessFile raf = null;
+            try {
+                File lockFile = getHostLockFile();
+                File dir = lockFile.getParentFile();
+                if (dir != null && !dir.exists()) {
+                    dir.mkdirs();
+                }
+                raf = new RandomAccessFile(lockFile, "rw");
+                FileLock lock = raf.getChannel().tryLock();
+                if (lock != null) {
+                    hostLockRaf = raf;
+                    hostLock = lock;
+                    return true;
+                }
+            } catch (Throwable t) {
+                Log.printStackTrace(TAG, t);
+            }
+            if (raf != null) {
+                try {
+                    raf.close();
+                } catch (Throwable ignored) {
+                }
+            }
+            try {
+                Thread.sleep(30);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 该用户下一个要用的备份文件：按 A→B→C 顺序循环覆盖，不按修改时间挑最旧。
      */
     private static File findNextBackupFileForUser(String userId) {
         String safeUserId = StringUtil.isEmpty(userId) ? "default" : userId;
@@ -225,8 +364,8 @@ public class FileUtil {
     }
     
     /**
-     * 写盘前的即时快照（覆盖式，不受「每日一次」限制）：与 backupConfigV2WithRolling 的
-     * 每日滚动备份解耦，保证每次覆盖配置前都留有一份上一版，写坏时可回退。
+     * 写盘前快照（覆盖式，不受「每日一次」限制）：保证每次覆盖前都留一份上一版，
+     * 与 backupConfigV2WithRolling 的每日滚动解耦。
      */
     public static void backupConfigV2BeforeWrite(String userId) {
         try {
@@ -243,11 +382,7 @@ public class FileUtil {
         }
     }
 
-    /**
-     * 执行用户config_v2的n天滚动备份（每日一次，按A→B→C顺序循环）
-     *
-     * @param userId 用户ID（空则为默认用户）
-     */
+    /** config_v2 的 n 天滚动备份：每日一次，按 A→B→C 循环 */
     public static void backupConfigV2WithRolling(String userId) {
         BACKUP_MAX_COUNT = getBackupMaxCountFromConfig();
         // 1. 校验：当天已备份则跳过
@@ -278,11 +413,7 @@ public class FileUtil {
         }
     }
     
-    /**
-     * 查找最新的备份文件
-     * @param userId 用户ID
-     * @return 最新的备份文件
-     */
+    /** @return 该用户最新的备份文件 */
     public static File findLatestBackupFile(String userId) {
         String safeUserId = StringUtil.isEmpty(userId) ? "default" : userId;
         File backupDir = getBackupDirectoryFile();
@@ -428,10 +559,32 @@ public class FileUtil {
     }
 
     /**
-     * 本地 HTTP 服务的鉴权令牌文件：首次启动随机生成，之后各次启动复用同一份
-     * （硬编码在源码里会随公开分发的 APK 一起泄漏）。
+     * 宿主私有目录 sesame-M（与共享目录同名，仅宿主可读写）。必须在读令牌前调用：
+     * 未初始化时 {@link #getHttpTokenFile()} 直接抛错而不回退共享目录——那里的令牌等于公开。
      */
+    public static void initPrivateDirectory(Context context) {
+        if (privateDirectoryFile != null || context == null) {
+            return;
+        }
+        File dir = new File(context.getFilesDir(), CONFIG_DIRECTORY_NAME);
+        if (!dir.isDirectory() && !dir.mkdirs()) {
+            Log.error("私有目录创建失败：" + dir);
+            return;
+        }
+        privateDirectoryFile = dir;
+    }
+
+    /** 本地 HTTP 鉴权令牌：首次启动随机生成，之后复用（硬编码会随 APK 分发泄漏） */
     public static File getHttpTokenFile() {
+        File dir = privateDirectoryFile;
+        if (dir == null) {
+            throw new IllegalStateException("私有目录尚未初始化，拒绝在共享目录读写令牌");
+        }
+        return new File(dir, "http_token.txt");
+    }
+
+    /** 迁移前令牌所在的共享路径：兼容期只写副本，不再作为读取来源 */
+    public static File getLegacyHttpTokenFile() {
         return new File(MAIN_DIRECTORY_FILE, "http_token.txt");
     }
     
@@ -439,10 +592,7 @@ public class FileUtil {
         return write2File(json, new File(MAIN_DIRECTORY_FILE, "token_config.json"));
     }
     
-    /**
-     * 账号序号映射文件（uid -> 账号N 的 N）：首次出现时分配并持久化，只增不改，
-     * 保证历史日志里的「账号N」与配置页显示的序号始终指向同一账号。
-     */
+    /** 账号序号映射（uid -> N）：首次出现时分配并持久化，只增不改，保证日志与配置页的「账号N」指向同一账号 */
     public static File getAccountIndexFile() {
         return getFile(MAIN_DIRECTORY_FILE, "accountIndex.json");
     }
@@ -513,12 +663,8 @@ public class FileUtil {
     }
 
     /**
-     * 取文件助手的公共实现：路径同名处若被历史脏数据占成了目录，先删掉再返回。
-     * <p>原先每个 getXxxFile 都抄一遍「new File + exists/isDirectory/delete + return」，
-     * 现在统一走这里，各 getter 只剩一行。
-     * <p>⚠️ 方法体必须自己 {@code new File(...)}：2026-09-18 批量改写时曾把它改成调用自身
-     * （`File file = getFile(dir, name);`），实机启动即 StackOverflowError（栈里几千帧 getFile）。
-     * 改这里请务必保留真实的文件构造。
+     * 取文件助手：路径同名处若被历史脏数据占成目录，先删掉再返回。
+     * <p>⚠️ 方法体必须自己 {@code new File(...)}，改成调用自身会立刻 StackOverflowError。
      */
     private static File getFile(File dir, String name) {
         File file = new File(dir, name);
@@ -529,9 +675,8 @@ public class FileUtil {
     }
 
     /**
-     * 运行时/日志类文件首次使用时需要真正落地一个空文件（否则后续写入/追加会失败）。
-     * <p>原先每个 getXxxLogFile 都抄一遍「不存在则 createNewFile + 吞异常」，统一走这里。
-     * <p>⚠️ 同理：这里必须自己做 exists/createNewFile，不能改成调用自身。
+     * 运行时/日志文件首次使用时落地空文件，否则后续追加会失败。
+     * <p>⚠️ 同理必须自己做 exists/createNewFile，不能改成调用自身。
      */
     private static File ensureFileExists(File file) {
         if (!file.exists()) {
@@ -659,6 +804,10 @@ public class FileUtil {
         return getFile(MAIN_DIRECTORY_FILE, "AntFarmDrawMachineTask.json");
     }
 
+    public static File getAntKitchenTaskListMapFile() {
+        return getFile(MAIN_DIRECTORY_FILE, "AntKitchenTask.json");
+    }
+
     public static File getAntDodoTaskListMapFile() {
         return getFile(MAIN_DIRECTORY_FILE, "AntDodoTask.json");
     }
@@ -718,6 +867,10 @@ public class FileUtil {
     
     public static File getAntMemberTaskListMapFile() {
         return getFile(MAIN_DIRECTORY_FILE, "AntMemberTask.json");
+    }
+
+    public static File getAntMemberAdTaskListMapFile() {
+        return getFile(MAIN_DIRECTORY_FILE, "AntMemberAdTask.json");
     }
     
     public static File getExportedStatisticsFile() {
@@ -1239,9 +1392,8 @@ public class FileUtil {
     }
     
     /**
-     * 清空某类日志：截断日志目录下该类别所有日期文件（保留文件本身，避免破坏已打开的句柄）
-     *
-     * @param logName 日志类别名，如 runtime/record/forest/farm/other/debug/error
+     * 清空某类日志：截断该类所有日期文件，保留文件本身以免破坏已打开的句柄。
+     * @param logName runtime/record/forest/farm/other/debug/error
      */
     public static void clearLog(String logName) {
         try {

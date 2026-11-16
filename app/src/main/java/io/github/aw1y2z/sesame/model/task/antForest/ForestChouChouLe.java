@@ -477,6 +477,7 @@ public class ForestChouChouLe {
                     ? AntForestRpcCall.finishTask4Chouchoule(taskType, taskSceneCode)
                     : AntForestRpcCall.finishTaskopengreen(taskType, taskSceneCode));
             if (!MessageUtil.checkSuccess(TAG, result)) {
+                if (MessageUtil.isAlreadyDone(result)) return Outcome.DONE;
                 result = MyUtils.newJSONObject(xlight
                         ? AntForestRpcCall.finishTaskopengreen(taskType, taskSceneCode)
                         : AntForestRpcCall.finishTask4Chouchoule(taskType, taskSceneCode));
@@ -487,6 +488,7 @@ public class ForestChouChouLe {
                 Log.forest("森林寻宝🧾上报已受理[" + taskName + "]");
                 return Outcome.DONE;
             }
+            if (MessageUtil.isAlreadyDone(result)) return Outcome.DONE;
             if (MessageUtil.isRetryable(result) || MessageUtil.isServerBusy(result)) {
                 return Outcome.RETRY;
             }

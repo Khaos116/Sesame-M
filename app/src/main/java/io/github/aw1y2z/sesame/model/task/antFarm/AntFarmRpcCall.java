@@ -431,8 +431,19 @@ public class AntFarmRpcCall {
         return ApplicationHook.requestString("com.alipay.antfarm.cook", "[{\"requestType\":\"RPC\"," + "\"sceneCode" + "\":\"ANTFARM\",\"source\":\"antfarmzuofanrw\"," + "\"userId\":\"" + userId + "\",\"version" + "\":\"unknown\"}]");
     }
 
-    public static String useFarmFood(String cookbookId, String cuisineId) {
-        return ApplicationHook.requestString("com.alipay.antfarm.useFarmFood", "[{\"cookbookId\":\"" + cookbookId + "\",\"cuisineId\":\"" + cuisineId + "\",\"requestType\":\"NORMAL\",\"sceneCode\":\"ANTFARM\"," + "\"source\":\"chInfo_ch_appcenter__chsub_9patch\",\"useCuisine\":true," + "\"version" + "\":\"" + VERSION + "\"}]");
+    /**
+     * 使用美食喂鸡。
+     * <p>厨房赛季菜必须带上 {@code cuisineType}（如 AI_KITCHEN）与 {@code resultLevel}（菜品评级，如 BAD）：
+     * 服务端靠这两个字段定位赛季食谱，缺了它们一律回 U05「食谱未配置」。老菜谱传空串即可，参数与原先一致。
+     */
+    public static String useFarmFood(String cookbookId, String cuisineId, String cuisineType, String resultLevel) throws JSONException {
+        JSONObject args = MyUtils.newJSONObject();
+        args.put("cookbookId", cookbookId).put("cuisineId", cuisineId).put("requestType", "NORMAL")
+                .put("sceneCode", "ANTFARM").put("source", "chInfo_ch_appcenter__chsub_9patch")
+                .put("useCuisine", true).put("version", VERSION);
+        if (cuisineType != null && !cuisineType.isEmpty()) args.put("cuisineType", cuisineType);
+        if (resultLevel != null && !resultLevel.isEmpty()) args.put("resultLevel", resultLevel);
+        return ApplicationHook.requestString("com.alipay.antfarm.useFarmFood", new JSONArray().put(args).toString());
     }
 
     public static String collectKitchenGarbage() {

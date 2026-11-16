@@ -19,8 +19,21 @@ SOURCE = ROOT / "app/src/main/java/io/github/aw1y2z/sesame"
 
 
 def method(path, signature):
-    text = (SOURCE / path).read_text(encoding="utf-8")
-    start = text.index(signature)
+    source_path = SOURCE / path
+    text = source_path.read_text(encoding="utf-8")
+    start = text.find(signature)
+    moved = False
+    if start < 0 and path == "model/task/antForest/AntForestV2.java":
+        declaration = re.sub(r"^(?:public|private|protected)\s+", "", signature.strip())
+        pattern = re.compile(r"(?m)^[ \t]*(?:(?:public|private|protected)\s+)?" + re.escape(declaration))
+        for helper in [p for p in sorted(source_path.parent.glob("AntForest*.java")) if p != source_path] + [source_path]:
+            candidate = helper.read_text(encoding="utf-8")
+            match = pattern.search(candidate)
+            if match:
+                text, start, moved = candidate, match.start(), True
+                break
+    if start < 0:
+        raise ValueError(f"{path}: missing production declaration {signature}")
     # Ignore braces inside comments and literals while retaining original offsets.
     masked = re.sub(r'//[^\n]*|/\*[\s\S]*?\*/|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'',
                     lambda m: " " * len(m[0]), text)
@@ -28,7 +41,12 @@ def method(path, signature):
     for end in range(masked.index("{", start), len(text)):
         depth += (masked[end] == "{") - (masked[end] == "}")
         if depth == 0:
-            return text[start:end + 1]
+            result = text[start:end + 1]
+            if moved:
+                result = result.replace("forestChildSnapshot()", "getChildTaskSnapshot()")
+                result = re.sub(r"\bhost\.(?:(?:energy|game|task|patrol|prop|team|water|mall|ecoLife|greenLife|pvp|dress)Helper\.)?", "", result)
+                result = re.sub(r"\b(?:AntForest(?:V2|Energy|Game|Task|Patrol|Prop|Team|Water|Mall|EcoLife|GreenLife|Pvp|Dress)|(?:energy|game|task|patrol|prop|team|water|mall|ecoLife|greenLife|pvp|dress)Helper)\.", "", result)
+            return result
     raise AssertionError(signature)
 
 

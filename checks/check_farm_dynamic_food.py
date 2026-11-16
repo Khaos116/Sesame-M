@@ -17,7 +17,7 @@ signatures = ["private static final class DynamicFoodState", "private static dou
 code = r'''
 import java.util.*;import org.json.*;import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class FarmDynamicFoodCheck {
- static final String TAG="check",DYNAMIC_FOOD_KEY="farmDynamicFood",DYNAMIC_FOOD_PENDING="farm::dynamicFoodUnconfirmed";
+ static final String TAG="check",DYNAMIC_FOOD_KEY="farmDynamicFood",DYNAMIC_FOOD_PENDING="farm::dynamicFoodUnconfirmed",FLAG_UNUSABLE_CUISINE="antFarm::unusableCuisineV2::";
  static final int SPECIAL_FOOD_BATCH_LIMIT=10;
  static class System {static long now=java.time.OffsetDateTime.parse("2026-10-07T19:58:00+08:00").toInstant().toEpochMilli();static long currentTimeMillis(){return now;}}
  static class Bool {boolean n=true;boolean getValue(){return n;}}
@@ -43,18 +43,26 @@ public class FarmDynamicFoodCheck {
  static class AntFarmRpcCall {
   static int stock=25,otherStock=1,uses,reads,harvests;static double progress,harvested,unit=0.6;
   static boolean stockChange=true,effectChange=true,unknown,missingEffect,failed,switchOwner,cancel,failSaveAfter;
+  static boolean recipeMissing,recipeStockDrift,recipeEggDrift,recipeProbeFail,recipeRollbackFail,season;
+  static List<JSONObject> payloads=new ArrayList<>();
   static String home="HOME",feed="EATING",responseOwner="A";static Object badCount=null;static boolean duplicate,stockAlias;
   static List<Integer> batches=new ArrayList<>();
   static String enterDonationCompetitionRank(){return "{\"memo\":\"SUCCESS\"}";}
   static String enterFarm(String farmId,String uid){assert farmId.isEmpty()&&uid.equals("A");reads++;
+   if(recipeMissing&&recipeProbeFail&&uses>0)return "invalid";
    JSONArray cuisines=new JSONArray().put(cuisine("food",badCount==null?stock:badCount)).put(cuisine("other",otherStock));
+   if(season)for(int i=0;i<cuisines.length();i++)cuisines.getJSONObject(i).put("cuisineType","AI_KITCHEN").put("resultLevel","BAD");
    if(stockAlias)for(int i=0;i<cuisines.length();i++){JSONObject item=cuisines.getJSONObject(i);item.put("stock",item.get("count"));item.remove("count");}
    if(duplicate)cuisines.put(cuisine("food",1));
    return new JSONObject().put("memo","SUCCESS").put("cuisineList",cuisines).put("farmVO",new JSONObject().put("masterUserInfoVO",new JSONObject().put("userId",responseOwner)).put("harvestBenevolenceScore",harvested)
     .put("subFarmVO",new JSONObject().put("farmId","farmA").put("farmProduce",new JSONObject().put("benevolenceScore",progress)).put("animals",new JSONArray().put(new JSONObject().put("masterFarmId","farmA").put("animalStatusVO",new JSONObject().put("animalInteractStatus",home).put("animalFeedStatus",feed)))))).toString();}
-  static String useFarmFood(JSONArray items){uses++;assert items.length()==1;JSONObject item=items.getJSONObject(0);int count=item.getInt("count");assert count>0&&count<=10&&item.getBoolean("useCuisine");batches.add(count);
+  static String useFarmFood(JSONArray items){uses++;assert items.length()==1;JSONObject item=items.getJSONObject(0);payloads.add(new JSONObject(item.toString()));int count=item.getInt("count");assert count>0&&count<=10&&item.getBoolean("useCuisine");batches.add(count);
    assert RuntimeInfo.getInstance().getString(DYNAMIC_FOOD_KEY).contains("\"pending\":true"):"reserve before RPC";
    assert Status.hasFlagToday(DYNAMIC_FOOD_PENDING);
+   if(recipeMissing&&item.getString("cuisineId").equals("food")){
+    if(recipeStockDrift)stock--;if(recipeEggDrift)progress+=0.5;if(recipeRollbackFail)RuntimeInfo.fail=true;
+    return "{memo:'食谱未配置',resultCode:U05}";
+   }
    if(stockChange){if(item.getString("cuisineId").equals("food"))stock-=count;else otherStock-=count;}
    double delta=count*unit;if(effectChange)progress+=delta;
    if(switchOwner)UserIdMap.uid="B";if(cancel)throw new TaskCancelledException();if(failSaveAfter)RuntimeInfo.fail=true;
@@ -66,7 +74,8 @@ public class FarmDynamicFoodCheck {
  static class ProductionRpc {static String VERSION="test";@@RPC@@}
  @@METHODS@@
  static void reset(FarmDynamicFoodCheck f){System.now=java.time.OffsetDateTime.parse("2026-10-07T19:58:00+08:00").toInstant().toEpochMilli();UserIdMap.uid=f.ownerUserId="A";f.ownerFarmId="farmA";f.enabled=f.useSpecialFood.n=f.dynamicSpecialFood.n=f.rankingDonation.n=f.rankingFoodRefill.n=true;f.dynamicFoodDailyLimit.n=20;f.useSpecialFoodCountLimit.n=0;f.harvestBenevolenceScore=f.benevolenceScore=0;
-  liveWindow=true;rankQuota=20;badRank=false;liveActivity="season";liveRound="day";RuntimeInfo.accounts.clear();RuntimeInfo.fail=false;RuntimeInfo.writes=0;Status.flags.clear();Status.used=0;AntFarmRpcCall.stock=25;AntFarmRpcCall.otherStock=0;AntFarmRpcCall.uses=AntFarmRpcCall.reads=AntFarmRpcCall.harvests=0;AntFarmRpcCall.progress=AntFarmRpcCall.harvested=0;AntFarmRpcCall.unit=0.6;AntFarmRpcCall.stockChange=AntFarmRpcCall.effectChange=true;AntFarmRpcCall.unknown=AntFarmRpcCall.missingEffect=AntFarmRpcCall.failed=AntFarmRpcCall.switchOwner=AntFarmRpcCall.cancel=AntFarmRpcCall.failSaveAfter=AntFarmRpcCall.duplicate=AntFarmRpcCall.stockAlias=false;AntFarmRpcCall.home="HOME";AntFarmRpcCall.feed="EATING";AntFarmRpcCall.responseOwner="A";AntFarmRpcCall.badCount=null;AntFarmRpcCall.batches.clear();}
+  liveWindow=true;rankQuota=20;badRank=false;liveActivity="season";liveRound="day";RuntimeInfo.accounts.clear();RuntimeInfo.fail=false;RuntimeInfo.writes=0;Status.flags.clear();Status.used=0;AntFarmRpcCall.stock=25;AntFarmRpcCall.otherStock=0;AntFarmRpcCall.uses=AntFarmRpcCall.reads=AntFarmRpcCall.harvests=0;AntFarmRpcCall.progress=AntFarmRpcCall.harvested=0;AntFarmRpcCall.unit=0.6;AntFarmRpcCall.stockChange=AntFarmRpcCall.effectChange=true;AntFarmRpcCall.unknown=AntFarmRpcCall.missingEffect=AntFarmRpcCall.failed=AntFarmRpcCall.switchOwner=AntFarmRpcCall.cancel=AntFarmRpcCall.failSaveAfter=AntFarmRpcCall.duplicate=AntFarmRpcCall.stockAlias=false;AntFarmRpcCall.home="HOME";AntFarmRpcCall.feed="EATING";AntFarmRpcCall.responseOwner="A";AntFarmRpcCall.badCount=null;AntFarmRpcCall.batches.clear();
+  AntFarmRpcCall.recipeMissing=AntFarmRpcCall.recipeStockDrift=AntFarmRpcCall.recipeEggDrift=AntFarmRpcCall.recipeProbeFail=AntFarmRpcCall.recipeRollbackFail=AntFarmRpcCall.season=false;AntFarmRpcCall.payloads.clear();}
  public static void main(String[] args)throws Exception {
   TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));FarmDynamicFoodCheck f=new FarmDynamicFoodCheck();RankingSnapshot rank=new RankingSnapshot();reset(f);
   JSONArray payload=new JSONArray().put(cuisine("x",3).put("useCuisine",true));ProductionRpc.useFarmFood(payload);assert ApplicationHook.args.getJSONArray("cuisineList").getJSONObject(0).getInt("count")==3;assert ApplicationHook.args.getString("requestType").equals("NORMAL");
@@ -78,6 +87,20 @@ public class FarmDynamicFoodCheck {
   FarmDynamicFoodCheck restarted=new FarmDynamicFoodCheck();restarted.useDynamicSpecialFood(0,null);assert AntFarmRpcCall.uses==3;
   System.now+=86400000L;Status.used=0;f.useDynamicSpecialFood(0,null);assert AntFarmRpcCall.batches.equals(List.of(1,10,9,5));
   reset(f);f.useSpecialFoodCountLimit.n=4;f.useDynamicSpecialFood(0,null);assert AntFarmRpcCall.batches.equals(List.of(1,3))&&Status.used==4;
+  reset(f);AntFarmRpcCall.season=true;f.dynamicFoodDailyLimit.n=1;f.useDynamicSpecialFood(0,null);
+  assert AntFarmRpcCall.payloads.get(0).getString("cuisineType").equals("AI_KITCHEN")&&AntFarmRpcCall.payloads.get(0).getString("resultLevel").equals("BAD");
+  reset(f);AntFarmRpcCall.recipeMissing=true;AntFarmRpcCall.otherStock=2;f.useDynamicSpecialFood(0,null);
+  assert AntFarmRpcCall.stock==25&&AntFarmRpcCall.otherStock==0&&Status.used==2&&AntFarmRpcCall.uses==3;
+  JSONObject recipeBudget=MyUtils.newJSONObject(RuntimeInfo.getInstance().getString(DYNAMIC_FOOD_KEY));
+  assert recipeBudget.getInt("used")==2&&!recipeBudget.getBoolean("pending")&&!Status.hasFlagToday(DYNAMIC_FOOD_PENDING)&&Status.hasFlagToday(FLAG_UNUSABLE_CUISINE+"food");
+  new FarmDynamicFoodCheck().useDynamicSpecialFood(0,null);assert AntFarmRpcCall.uses==3:"unusable recipe repeated after restart";
+  System.now+=86400000L;Status.flags.clear();Status.used=0;f.useDynamicSpecialFood(0,null);assert AntFarmRpcCall.uses==4:"recipe must retry next GMT+8 day";
+  for(String issue:List.of("stock","egg","probe","save")){
+   reset(f);AntFarmRpcCall.recipeMissing=true;switch(issue){case "stock":AntFarmRpcCall.recipeStockDrift=true;break;case "egg":AntFarmRpcCall.recipeEggDrift=true;break;case "probe":AntFarmRpcCall.recipeProbeFail=true;break;case "save":AntFarmRpcCall.recipeRollbackFail=true;}
+   f.useDynamicSpecialFood(0,null);assert AntFarmRpcCall.uses==1&&Status.used==0:issue;
+   assert MyUtils.newJSONObject(RuntimeInfo.getInstance().getString(DYNAMIC_FOOD_KEY)).getBoolean("pending")&&Status.hasFlagToday(DYNAMIC_FOOD_PENDING):issue;
+   f.useDynamicSpecialFood(0,null);assert AntFarmRpcCall.uses==1:issue;
+  }
   reset(f);f.useDynamicSpecialFood(3,rank);assert AntFarmRpcCall.batches.equals(List.of(1,4)):AntFarmRpcCall.batches;assert f.harvestBenevolenceScore==3&&AntFarmRpcCall.stock==20;
   reset(f);AntFarmRpcCall.progress=2;f.useDynamicSpecialFood(2,rank);assert AntFarmRpcCall.uses==0&&f.harvestBenevolenceScore==2;
   reset(f);f.rankingFoodRefill.n=false;f.useDynamicSpecialFood(2,rank);assert AntFarmRpcCall.uses==0;

@@ -121,6 +121,10 @@ python checks/check_seedum_features.py
 python checks/check_upstream_oct15.py
 python checks/check_upstream_oct20.py
 python checks/check_upstream_oct31.py
+python checks/check_upstream_nov16_forest.py
+python checks/check_upstream_nov16_farm.py
+python checks/check_upstream_nov16_tasks.py
+python checks/check_upstream_nov16_infra.py
 java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :app:compileNormalDebugJavaWithJavac :app:compileNormalDebugKotlin --console=plain
 ```
 

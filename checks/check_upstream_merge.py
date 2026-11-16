@@ -192,6 +192,7 @@ public class FlowCheck {
         @@MEMBER@@
     }
     static class VitalityBenefitIdMap {
+        static void load(String uid) {}
         static int saves; static Map<String,String> items = new HashMap<>();
         static Map<String,String> getMap() { return items; }
         static void add(String id, String name) { items.put(id, name); }
@@ -509,7 +510,7 @@ public class UpstreamFixCheck {
  static class FileUtil {static boolean success;static int writes;static File getStatusFile(String s){return new File("never-created-status.json");}static boolean write2File(String s,File f){writes++;return success;}}
  static class JsonUtil {static boolean fail;static String toFormatJsonString(Object o){if(fail)throw new IllegalStateException("serialization");return "{}";}}
  static class MessageUtil {static void sweepExpiredBlackList(){}static void sweepReleasedDefaults(){}}
- static class Status {static final String TAG="check";static final Status INSTANCE=new Status();static boolean saveFailureNotified;static int unloads;long saveTime;Set<String> flags=new HashSet<>();static void unload(){unloads++;INSTANCE.flags.clear();}static String ensureLoadedForCurrentUid(){return UserIdMap.getCurrentUid();}
+ static class Status {static final String TAG="check";static final Status INSTANCE=new Status();static boolean saveFailureNotified,loadFailed;static int unloads;long saveTime;Set<String> flags=new HashSet<>();static void unload(){unloads++;INSTANCE.flags.clear();}static String ensureLoadedForCurrentUid(){return UserIdMap.getCurrentUid();}
  @@STATUS@@
  }
  static class Statistics {enum DataType{COLLECTED}static int collected;static void addData(DataType type,int amount){collected+=amount;}}
@@ -802,7 +803,7 @@ reload_check = reload_check.replace('@@INIT@@', '\n'.join(method(hook,s) for s i
 life = (SOURCE/'data/task/TaskLifecycle.java').read_text(encoding='utf-8').split('\n',1)[1].replace('public final class TaskLifecycle', 'static final class TaskLifecycle')
 reload_check = reload_check.replace('@@LIFECYCLE@@',life)
 reload_check = reload_check.replace('@@NOTICE@@', '\n'.join(method('util/NotificationUtil.java',s) for s in ('private static String energyText(', 'private static String titleWithEnergy(', 'private static void applyText(', 'private static void sendText(', 'public static void updateIdleText(')))
-reload_check = reload_check.replace('@@EXCHANGE@@',method('model/task/antForest/AntForestV2.java','private static Boolean exchangeBenefit('))
+reload_check = reload_check.replace('@@EXCHANGE@@',method('model/task/antForest/AntForestV2.java','private static Boolean exchangeBenefit(String spuId, String skuId)'))
 
 cards_check = r'''
 import java.util.*; import java.util.concurrent.TimeUnit; import org.json.*;
@@ -844,6 +845,7 @@ public class CardLimitCheck {
     }
     static class Log {static int missing,used;static void i(String s){}static void i(String t,String s){}static void forest(String s){used++;} static void record(String s){missing++;}static void err(String t,String s,Throwable e){throw new AssertionError(e);}}
     static class VitalityBenefitIdMap {
+        static void load(String uid) {}
         static Map<String,String> map=new HashMap<>();static Map<String,String> getMap(){return map;}
         static void add(String id,String name){map.put(id,name);}static void save(String uid){}
     }
@@ -965,7 +967,9 @@ public class CardLimitCheck {
         reset();f=new CardLimitCheck();f.vitality_ExchangeBenefitList.value.put("sku",4);f.skuInfo.put("sku",new JSONObject().put("spuId","spu"));
         f.vitalityExchangeBenefit();assert f.exchanges==4 : "exchange loop did not honor hard limit";
         Status.clearFlag("forest::vitalitySkuList");
+        AntForestRpcCall.catalogFail=true;
         assert !f.exchangeBenefit("missing")&&!Status.hasFlagToday("forest::exchangeSkuMissing::missing") : "partial/failed catalogue poisoned SKU";
+        AntForestRpcCall.catalogFail=false;
         Status.flagToday("forest::vitalitySkuList");assert !f.exchangeBenefit("missing");assert !f.exchangeBenefit("missing")&&Log.missing==1;
         Status.day++;Status.flagToday("forest::vitalitySkuList");assert !f.exchangeBenefit("missing")&&Log.missing==2 : "missing SKU remained blocked on next day";
         System.out.println("PASS continuous-card per-type/account/day limits, successful consumption, M renewal, malformed inventory, bounded exchange and missing SKU recovery");

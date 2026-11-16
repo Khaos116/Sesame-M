@@ -1,6 +1,7 @@
 package io.github.aw1y2z.sesame.entity;
 
 import org.json.JSONObject;
+import io.github.aw1y2z.sesame.util.MessageUtil;
 import io.github.aw1y2z.sesame.util.*;
 import io.github.aw1y2z.sesame.util.idMap.UserIdMap;
 
@@ -19,6 +20,9 @@ public class FriendWatch extends IdAndName {
 
     private static JSONObject joFriendWatch;
     private static String loadedUserId;
+
+    /** 本次加载是否解析失败：内存是空对象时不得落盘，否则历史统计被抹成 {} */
+    private static volatile boolean loadFailed;
 
     private String startTime;
 
@@ -47,10 +51,13 @@ public class FriendWatch extends IdAndName {
             String userId = UserIdMap.getCurrentUid();
             if (!AccountFolderName.isValidUid(userId)) return;
             if (!userId.equals(loadedUserId)) load();
+            if (loadFailed || joFriendWatch == null) return;
+            String maskName = UserIdMap.getMaskName(id);
+            if (UserIdMap.isFriendListLoaded() && maskName == null) return;
             JSONObject joSingle = joFriendWatch.optJSONObject(id);
             if (joSingle == null) {
-                joSingle = new JSONObject();
-                joSingle.put("name", UserIdMap.getMaskName(id));
+                joSingle = MyUtils.newJSONObject();
+                joSingle.put("name", maskName);
                 joSingle.put("allGet", 0);
                 joSingle.put("startTime", TimeUtil.getDateStr());
                 joFriendWatch.put(id, joSingle);
@@ -61,11 +68,36 @@ public class FriendWatch extends IdAndName {
         }
     }
 
+    /**
+     * 剔除没有名字的记录：老版本不区分好友关系，把 PK 好友也记进了统计，表现为 name 缺失或空白。
+     * 真正的通讯录好友记录时一定带着 {@code UserEntity#getMaskName()}（形如「昵称|*实名」），不会是空串。
+     *
+     * @return 是否发生了删除
+     */
+    private static boolean pruneNonFriends(JSONObject jo) {
+        boolean changed = false;
+        List<String> toRemove = new ArrayList<>();
+        Iterator<String> ids = jo.keys();
+        while (ids.hasNext()) {
+            String id = ids.next();
+            JSONObject friend = jo.optJSONObject(id);
+            if (friend == null || friend.optString("name").trim().isEmpty()) {
+                toRemove.add(id);
+            }
+        }
+        for (String id : toRemove) {
+            jo.remove(id);
+            changed = true;
+        }
+        return changed;
+    }
+
     public static synchronized void save() {
         try {
             String userId = UserIdMap.getCurrentUid();
             if (!AccountFolderName.isValidUid(userId)) return;
             if (!userId.equals(loadedUserId)) load();
+            if (loadFailed || joFriendWatch == null) return;
             FileUtil.write2File(joFriendWatch.toString(), FileUtil.getFriendWatchFile(userId));
         } catch (Exception e){
             Log.err(TAG, "friendWatch save err:", e);
@@ -76,6 +108,7 @@ public class FriendWatch extends IdAndName {
         String userId = UserIdMap.getCurrentUid();
         if (!AccountFolderName.isValidUid(userId)) return;
         if (!userId.equals(loadedUserId)) load();
+        if (loadFailed || joFriendWatch == null) return;
         if (!needUpdateAll(FileUtil.getFriendWatchFile().lastModified())) {
             return;
         }
@@ -105,21 +138,25 @@ public class FriendWatch extends IdAndName {
 
     public static synchronized Boolean load() {
         String userId = UserIdMap.getCurrentUid();
-        if (!AccountFolderName.isValidUid(userId)) {
-            unload();
+        unload();
+        if (!AccountFolderName.isValidUid(userId)) return false;
+        loadedUserId = userId;
+        String raw = FileUtil.readFromFile(FileUtil.getFriendWatchFile(userId));
+        joFriendWatch = raw.isEmpty() ? MyUtils.newJSONObject() : MessageUtil.newJSONObject(raw);
+        loadFailed = joFriendWatch == null;
+        if (loadFailed) {
+            joFriendWatch = MyUtils.newJSONObject();
+            Log.record("好友统计解析失败，本次不写盘，原文件保留");
             return false;
         }
-        // MyUtils.newJSONObject 内部已经吞掉了 JSONException（null/非法 JSON 时返回空对象），
-        // 不再需要这里再包一层 try/catch
-        String strFriendWatch = FileUtil.readFromFile(FileUtil.getFriendWatchFile(userId));
-        joFriendWatch = strFriendWatch.isEmpty() ? new JSONObject() : MyUtils.newJSONObject(strFriendWatch);
-        loadedUserId = userId;
+        if (pruneNonFriends(joFriendWatch)) save();
         return true;
     }
 
     public static synchronized void unload() {
-        joFriendWatch = new JSONObject();
+        joFriendWatch = MyUtils.newJSONObject();
         loadedUserId = null;
+        loadFailed = false;
     }
 
     public static boolean needUpdateAll(long last) {
@@ -159,16 +196,19 @@ public class FriendWatch extends IdAndName {
         try {
             JSONObject joFriendWatch;
             if (StringUtil.isEmpty(strFriendWatch)) {
-                joFriendWatch = new JSONObject();
+                joFriendWatch = MyUtils.newJSONObject();
             } else {
-                joFriendWatch = MyUtils.newJSONObject(strFriendWatch);
+                joFriendWatch = MessageUtil.newJSONObject(strFriendWatch);
+                if (joFriendWatch == null) return list;
             }
+            // 打开统计页时也清一次：这一步在模块 App 进程里跑，不依赖注入进程是否已启动
+            pruneNonFriends(joFriendWatch);
             Iterator<String> ids = joFriendWatch.keys();
             while (ids.hasNext()) {
                 String id = ids.next();
                 JSONObject friend = joFriendWatch.optJSONObject(id);
                 if (friend == null) {
-                    friend = new JSONObject();
+                    friend = MyUtils.newJSONObject();
                 }
                 String name = friend.optString("name");
                 FriendWatch friendWatch = new FriendWatch(id, name);
@@ -178,12 +218,9 @@ public class FriendWatch extends IdAndName {
                 list.add(friendWatch);
             }
         } catch (Throwable t) {
+            // 只跳过本次读取：覆写成 {} 会把历史统计抹掉
             Log.err(TAG, "FriendWatch getList: ", t);
-            try {
-                FileUtil.write2File(new JSONObject().toString(), FileUtil.getFriendWatchFile(userId));
-            } catch (Exception e) {
-                Log.printStackTrace(e);
-            }
+
         }
         return list;
     }

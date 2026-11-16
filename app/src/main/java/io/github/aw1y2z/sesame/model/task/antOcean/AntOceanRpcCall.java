@@ -304,4 +304,23 @@ public class AntOceanRpcCall {
         return ApplicationHook.requestString("alipay.antaifish.h5.touchfish", 
             "[{\"source\":\"ANT_OCEAN\",\"uniqueId\":\"" + getAntfishUniqueId() + "\"}]");
     }
+
+    /**
+     * 查询待评价的鱼列表（评价可得能量，每日有上限，响应里 appraiseRewardRemainNum 是剩余次数）
+     */
+    public static String antfishQueryNeedAppraiseFishList() {
+        return ApplicationHook.requestString("alipay.antaifish.h5.queryNeedAppraiseFishList",
+            "[{\"source\":\"ANT_OCEAN\",\"uniqueId\":\"" + getAntfishUniqueId() + "\"}]");
+    }
+
+    /**
+     * 评价某条鱼（获得能量）
+     * <p>{@code uniqueId} 为此接口专用格式：毫秒时间戳 + "_" + 8 位十六进制，与其它接口不同。
+     */
+    public static String antfishFishAppraise(String imageId, String seasonId, String targetUserId) throws JSONException {
+        String uniqueId = System.currentTimeMillis() + "_" + String.format("%08x", RandomUtil.nextInt(0, Integer.MAX_VALUE));
+        JSONObject body = MyUtils.newJSONObject().put("appraiseType", "LIKE").put("imageId", imageId)
+                .put("seasonId", seasonId).put("source", "ANT_OCEAN").put("targetUserId", targetUserId).put("uniqueId", uniqueId);
+        return ApplicationHook.requestString("alipay.antaifish.h5.fishAppraise", new JSONArray().put(body).toString(), 1, 0);
+    }
 }

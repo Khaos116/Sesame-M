@@ -40,6 +40,13 @@ public class AppConfig {
     private Boolean enableCaptchaLog = true;
     private Boolean enableFarmLog = true;
     private Boolean enableOtherLog = true;
+    /**
+     * 抓包记录。
+     * <p>同时充当 /debugHandler（PC 调用任意 RPC）的门禁：两者都是调试专用、默认关闭，
+     * 且实际使用场景高度重合（要调 RPC 的人本来就要抓包），合并成一个开关避免用户维护两个「调试」开关。
+     * <p>⚠ 若将来这个开关面向普通用户开放，必须拆出独立的执行开关——
+     * 否则「多记点日志」会顺带变成「开放远程执行」。
+     */
     private Boolean enableDebugLog = false;
     private Boolean enableViewErrorLog = true;
     private Boolean enableViewRuntimeLog = true;
@@ -63,6 +70,16 @@ public class AppConfig {
     // d1ad4438 由 closeCaptchaDialogVPN 更名而来：旧配置文件仍是老字段名，用别名接住，避免老用户设置被静默重置
     @JsonAlias("closeCaptchaDialogVPN")
     private Boolean closeCaptchaDialog = true;
+
+    /**
+     * 已同意的条款版本，与 {@link Agreement#VERSION} 比较，小于即需重新确认。
+     * <p>放在这里而不是 ConfigV2：协议是设备级状态，与账号无关，删账号不该导致重新弹窗。
+     * <p>⚠ 本文件位于公共目录，用户可手改；不做加密、不绑定安装标识——源码开源的前提下
+     * 那类「防伪」只增加维护与阅读成本，不改变结果。
+     */
+    private Integer agreementVersion = 0;
+    /** 同意时间戳（毫秒），仅本机记录、不上传，用于日后核对「同意的是哪一版、什么时候」 */
+    private Long agreementAcceptedAt = 0L;
 
     public Boolean getNewRpc() {
         return newRpc;
@@ -222,6 +239,48 @@ public class AppConfig {
         return FileUtil.write2File(toSaveStr(), new File(APP_CONFIG_DIRECTORY_FILE, "appConfig.json"));
     }
 
+    /** 上次 load 是否解析失败；调用方据此判断能否走 {@link #forceSave()} */
+    public static boolean isLoadFailed() {
+        return loadFailed;
+    }
+
+    /**
+     * 忽略「上次加载失败」强制写盘，只在用户明确操作后必须落盘的场景使用（当前仅协议同意）。
+     * <p>常规 {@link #save()} 会拒绝写盘以保护用户配置；但协议页若因此永远写不进去，
+     * 用户就被锁死在门禁页、只能手动删文件。这里先写临时文件，再把损坏的旧文件改名备份，
+     * 最后替换——任一步失败都不会动到原文件。
+     *
+     * @return 是否写盘成功
+     */
+    public static synchronized Boolean forceSave() {
+        File target = new File(APP_CONFIG_DIRECTORY_FILE, "appConfig.json");
+        File temp = new File(APP_CONFIG_DIRECTORY_FILE, "appConfig.json.tmp");
+        if (!Boolean.TRUE.equals(FileUtil.write2File(toSaveStr(), temp))) {
+            Log.i(TAG, "强制写盘失败：临时文件未写入");
+            return false;
+        }
+        File backup = null;
+        if (target.exists()) {
+            backup = new File(APP_CONFIG_DIRECTORY_FILE, "appConfig.corrupt-" + System.currentTimeMillis() + ".json");
+            if (!target.renameTo(backup)) {
+                temp.delete();
+                Log.i(TAG, "强制写盘失败：损坏配置无法备份");
+                return false;
+            }
+            Log.i(TAG, "损坏配置已备份为 " + backup.getName());
+        }
+        if (!temp.renameTo(target)) {
+            if (backup != null && !backup.renameTo(target)) {
+                Log.i(TAG, "损坏配置恢复失败，原内容保留在 " + backup.getName());
+            }
+            temp.delete();
+            Log.i(TAG, "强制写盘失败：临时文件替换失败");
+            return false;
+        }
+        loadFailed = false;
+        return true;
+    }
+
     public static synchronized AppConfig load() {
         File appConfigFile = new File(APP_CONFIG_DIRECTORY_FILE, "appConfig.json");
         loadFailed = false;
@@ -233,7 +292,15 @@ public class AppConfig {
                 // 导致「运行日志已关闭」时启动进程仍写入加载日志
                 if (!loadLogged) {
                     loadLogged = true;
-                    Log.i("加载APP配置");
+                    // 跨进程去重：宿主有多个进程，各自 load 一次，原实现每进程写一条（一天 180+ 条）。
+                    // 用配置内容指纹落盘判断，只有首次加载或配置真的变了才记一条。
+                    File markFile = new File(APP_CONFIG_DIRECTORY_FILE, "appConfig.loadmark");
+                    String mark = Integer.toHexString(json.hashCode()) + ":" + json.length();
+                    String lastMark = markFile.exists() ? FileUtil.readFromFile(markFile) : null;
+                    if (!mark.equals(lastMark)) {
+                        Log.i("加载APP配置");
+                        FileUtil.write2File(mark, markFile);
+                    }
                 }
                 String formatted = toSaveStr();
                 if (formatted != null && !formatted.equals(json)) {

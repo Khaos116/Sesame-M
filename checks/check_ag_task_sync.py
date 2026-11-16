@@ -23,6 +23,7 @@ public class AgTaskSyncCheck {
   static RuntimeInfo getInstance(){return accounts.computeIfAbsent(uid,k->new RuntimeInfo());}String getString(String k){return data.getOrDefault(k,"");}List<String> keysStartingWith(String prefix){return new ArrayList<>(data.keySet().stream().filter(k->k.startsWith(prefix)).toList());}
   boolean putVerified(String k,String v){if(fail)return false;data.put(k,v);return true;}void put(String k,Object v){if(v==null)data.remove(k);else data.put(k,v.toString());}}
  static class Status {static Set<String> flags=new HashSet<>();static final Status INSTANCE=new Status();Set<String> flagLogList=new HashSet<>();static String key(String k){return RuntimeInfo.uid+":"+MyUtils.day+":"+k;}static boolean hasFlagToday(String k){return flags.contains(key(k));}static void flagToday(String k){flags.add(key(k));}static boolean flagTodayVerified(Set<String> tags,String day){for(String tag:tags)flagToday(tag);return true;}
+  static Map<String,Integer> counts=new HashMap<>();static int getIntFlagToday(String k){return counts.getOrDefault(key(k),0);}static void setIntFlagToday(String k,int n){counts.put(key(k),n);}
   static void ensureLoadedForCurrentUid(){INSTANCE.flagLogList.clear();String prefix=key("");for(String flag:flags)if(flag!=null&&flag.startsWith(prefix))INSTANCE.flagLogList.add(flag.substring(prefix.length()));}
   @@STATUS_FLAGS@@
  }
@@ -53,11 +54,12 @@ public class AgTaskSyncCheck {
   static String currentMemberTaskDetail(String id){details++;if(details>1&&detailAfterFirst!=null)return detailAfterFirst;if(detailReply!=null)return detailReply;JSONObject row=tasks.values().stream().filter(t->id.equals(t.optString("processId"))).findFirst().orElse(null);if(row!=null&&omitConfig){row=new JSONObject(row.toString());row.remove("simpleTaskConfig");}return brokenDetail?"{}":new JSONObject().put("success",true).put("resultData",new JSONObject().put("taskProcessVO",row)).toString();}
   static String executeCurrentMemberTask(String type,String param){execute++;if(zeroAdAfterExecute)tasks.get("ad").put("extInfo",new JSONObject().put("PERIOD_CURRENT_COUNT",0).put("PERIOD_TARGET_COUNT",0));if(statusOnly)tasks.get(param).put("status","PROCESSING");else if(advance){JSONObject row=tasks.get(param);int n=row.optInt("currentCount")+1;row.put("currentCount",n);if(n>=row.optInt("targetCount"))row.put("status","FINISHED");}if(afterExecute!=null)tasks.put(param,afterExecute);return executeReply;}
  }
- static class AntMemberTaskListMap {static Map<String,String> names=new HashMap<>();static Map<String,String> getMap(){return names;}static void add(String k,String v){names.put(k,v);}static void save(){}}
+ static class AntMemberTaskListMap {static Map<String,String> names=new HashMap<>();static Map<String,String> getMap(){return names;}static void add(String k,String v){names.put(k,v);}static void save(){}static void load(){}}
+ static class AntMemberAdTaskListMap {static Map<String,String> names=new HashMap<>();static Map<String,String> getMap(){return names;}static void add(String k,String v){names.put(k,v);}static void save(){}static void load(){}}
  static class TaskAlternative { @@TRANSACTION@@ }
  static class RpcContract { @@RPC@@ }
  @@MEMBER@@
- static void reset(){RuntimeInfo.accounts.clear();RuntimeInfo.uid="A";RuntimeInfo.fail=false;ApplicationHook.calls.clear();ApplicationHook.reply="{success:true}";ApplicationHook.transport=false;MyUtils.day=0;TimeUtil.cancel=TimeUtil.cancelWait=TimeUtil.rollDay=false;TimeUtil.waits.clear();GameTask.writes=0;GameTask.result=2;DailyTask.manual=false;Status.flags.clear();MessageUtil.rejected=0;Log.category.clear();AntMemberRpcCall.detailAfterFirst=null;AntMemberRpcCall.afterAdApply=AntMemberRpcCall.afterExecute=AntMemberRpcCall.afterAdFinish=null;}
+ static void reset(){RuntimeInfo.accounts.clear();RuntimeInfo.uid="A";RuntimeInfo.fail=false;ApplicationHook.calls.clear();ApplicationHook.reply="{success:true}";ApplicationHook.transport=false;MyUtils.day=0;TimeUtil.cancel=TimeUtil.cancelWait=TimeUtil.rollDay=false;TimeUtil.waits.clear();GameTask.writes=0;GameTask.result=2;DailyTask.manual=false;Status.flags.clear();Status.counts.clear();AntMemberTaskListMap.names.clear();AntMemberAdTaskListMap.names.clear();MessageUtil.rejected=0;Log.category.clear();AntMemberRpcCall.detailAfterFirst=null;AntMemberRpcCall.afterAdApply=AntMemberRpcCall.afterExecute=AntMemberRpcCall.afterAdFinish=null;}
  static JSONObject game(int seconds){return new JSONObject().put("gameAppId","2060170000000002").put("source","channel").put("browseSeconds",seconds);}
  static void games() throws Exception {
   for(int reports:new int[]{@@LEGACY_COUNTS@@}){
@@ -93,7 +95,7 @@ public class AgTaskSyncCheck {
  static void adChecks()throws Exception{
   resetMember();AntMemberRpcCall.tasks.put("ad",adTask());MemberBrowseTasks.run(true, Set.of(), true, Set.of());assert AntMemberRpcCall.adApply==1&&AntMemberRpcCall.adFinish==1&&AntMemberRpcCall.apply==0&&AntMemberRpcCall.execute==0:"ad task did not use dedicated apply/finish flow";
   assert TimeUtil.waits.stream().anyMatch(n->n>=14900)&&Log.category.stream().anyMatch(x->x.contains("#详情奖励积分[5]"))&&Log.category.stream().noneMatch(x->x.contains("#详情奖励积分[10]"));
-  resetMember();AntMemberRpcCall.tasks.put("ad",adTask());MemberBrowseTasks.run(true, Set.of("taskad"), true, Set.of("taskad"));assert AntMemberRpcCall.adApply==0;assert AntMemberTaskListMap.names.containsKey("taskad");
+  resetMember();AntMemberRpcCall.tasks.put("ad",adTask());MemberBrowseTasks.run(true, Set.of("taskad"), true, Set.of("taskad"));assert AntMemberRpcCall.adApply==0;assert AntMemberAdTaskListMap.names.containsKey("taskad")&&!AntMemberTaskListMap.names.containsKey("taskad");
   for(Object bad:List.of("bad",new JSONObject().put("bizId",1).put("adId","ad"),new JSONObject().put("bizId","biz"))){resetMember();AntMemberRpcCall.tasks.put("ad",adTask().put("lightsAdExtMap",bad));MemberBrowseTasks.run(true, Set.of(), true, Set.of());assert AntMemberRpcCall.adApply==0;}
   resetMember();JSONObject explicit=adTask().put("targetBusiness","CALL_APP#sub#one");AntMemberRpcCall.tasks.put("ad",explicit);MemberBrowseTasks.run(true, Set.of(), true, Set.of());assert AntMemberRpcCall.adApply==0;
   resetMember();AntMemberRpcCall.tasks.put("ad",adTask());AntMemberRpcCall.adAdvance=false;MemberBrowseTasks.run(true, Set.of(), true, Set.of());MemberBrowseTasks.run(true, Set.of(), true, Set.of());assert AntMemberRpcCall.adApply==1&&AntMemberRpcCall.adFinish==1&&Log.category.isEmpty():"ACK was treated as confirmed points or unknown finish repeated";
@@ -115,7 +117,7 @@ public class AgTaskSyncCheck {
   JSONObject apply=ApplicationHook.calls.get(0);assert apply.optString("adBizId").equals("biz\\quoted")&&apply.optString("adId").equals("ad\"quoted")&&apply.optInt("awardNum")==10&&apply.optString("scene").equals("TASK_WALL")&&apply.optString("spaceCode").equals("ant_member_xlight_task")&&apply.optJSONObject("sourcePassMap").optString("source").equals("mytab");
   assert ApplicationHook.calls.get(1).optString("bizId").equals("biz\\quoted")&&ApplicationHook.calls.get(1).optJSONObject("extendInfo").length()==0;
   List<JSONObject> legacy=MemberBrowseTasks.rows("{success:true,categoryTaskList:[{type:'BROWSE',taskList:[{taskConfigInfo:{id:'legacy',name:'legacyAd'},adTask:true}]}]}");assert legacy!=null&&legacy.size()==1;
-  resetMember();JSONObject nameOnly=adTask();nameOnly.optJSONObject("simpleTaskConfig").put("title","").put("name","nameOnly");AntMemberRpcCall.tasks.put("ad",nameOnly);MemberBrowseTasks.run(true, Set.of("nameOnly"), true, Set.of("nameOnly"));assert AntMemberRpcCall.adApply==0&&AntMemberTaskListMap.names.containsKey("nameOnly");
+  resetMember();JSONObject nameOnly=adTask();nameOnly.optJSONObject("simpleTaskConfig").put("title","").put("name","nameOnly");AntMemberRpcCall.tasks.put("ad",nameOnly);MemberBrowseTasks.run(true, Set.of("nameOnly"), true, Set.of("nameOnly"));assert AntMemberRpcCall.adApply==0&&AntMemberAdTaskListMap.names.containsKey("nameOnly")&&!AntMemberTaskListMap.names.containsKey("nameOnly");
   System.out.println("PASS upstream member ad apply/wait/finish, blacklist candidates, unknown ACK, resume, malformed contracts and legacy categories");
  }
  static void splitAdChecks()throws Exception{
@@ -188,7 +190,7 @@ public class AgTaskSyncCheck {
   for(boolean failedPage:new boolean[]{false,true}){
    resetMember();AntMemberRpcCall.tasks.put("ad",adTask());if(failedPage)AntMemberRpcCall.failAdRecheckPage=2;else AntMemberRpcCall.adListAfterApply="{}";
    MemberBrowseTasks.run(false,Set.of(),true,Set.of());assert AntMemberRpcCall.adApply==1&&AntMemberRpcCall.adFinish==0&&RuntimeInfo.getInstance().data.containsKey("memberAd::ad"):"matching ad row from incomplete recheck authorized finish";
-   AntMemberRpcCall.failAdRecheckPage=0;AntMemberRpcCall.adListAfterApply=null;MemberBrowseTasks.run(false,Set.of(),true,Set.of());assert AntMemberRpcCall.adApply==1&&AntMemberRpcCall.adFinish==1:"complete recheck recovery reapplied advertisement";
+   AntMemberRpcCall.failAdRecheckPage=0;AntMemberRpcCall.adListAfterApply=null;MemberBrowseTasks.run(false,Set.of(),true,Set.of());assert AntMemberRpcCall.adApply==1&&AntMemberRpcCall.adFinish==0:"cooling source authorized completion";Status.setIntFlagToday("memberTaskList::"+(failedPage?0:1)+"::cooldown",0);MemberBrowseTasks.run(false,Set.of(),true,Set.of());assert AntMemberRpcCall.adApply==1&&AntMemberRpcCall.adFinish==1:"complete recheck recovery reapplied advertisement";
   }
   resetMember();AntMemberRpcCall.tasks.put("one",member("one",false));AntMemberRpcCall.applyReply="{success:false,resultCode:'1009'}";
   MemberBrowseTasks.run(true,Set.of(),false,Set.of());AntMemberRpcCall.applyReply=null;MemberBrowseTasks.run(true,Set.of(),false,Set.of());assert AntMemberRpcCall.apply==2&&AntMemberRpcCall.execute==1:"known refused signup remained reserved after risk pause";
@@ -689,13 +691,13 @@ public class AgTaskSyncCheck {
  }
  static void candidateAndClassifiedPauses()throws Exception{
   resetMember();AntMemberRpcCall.tasks.put("ad",adTask());MemberBrowseTasks.run(true,Set.of(),false,Set.of());
-  assert AntMemberTaskListMap.names.containsKey("taskad")&&AntMemberRpcCall.adQueries==0&&AntMemberRpcCall.adApply==0:"disabled advertisement disappeared from blacklist candidates";
+  assert AntMemberAdTaskListMap.names.containsKey("taskad")&&!AntMemberTaskListMap.names.containsKey("taskad")&&AntMemberRpcCall.adQueries==0&&AntMemberRpcCall.adApply==0:"disabled advertisement disappeared from blacklist candidates";
   resetMember();AntMemberRpcCall.tasks.put("one",member("one",false));AntMemberRpcCall.processListReply="{}";MemberBrowseTasks.run(true,Set.of(),false,Set.of());
   assert AntMemberTaskListMap.names.containsKey("taskone")&&AntMemberRpcCall.apply==0:"execution safety filtering removed a valid blacklist candidate";
   resetMember();JSONObject ad=adTask();AntMemberRpcCall.tasks.put("ad",ad);JSONObject contract=MemberBrowseTasks.adContract(ad);Calendar now=MyUtils.getInstance();
   RuntimeInfo store=RuntimeInfo.getInstance();store.put("memberAd::ad",new JSONObject().put("contract",contract.toString()).put("day",now.get(Calendar.YEAR)+":"+now.get(Calendar.DAY_OF_YEAR)).put("submitted",true).put("before",new JSONObject(ad.toString())).toString());
   ad.put("status","FINISHED");AntMemberRpcCall.adListReply="{}";MemberBrowseTasks.run(false,Set.of(),true,Set.of());
-  assert AntMemberTaskListMap.names.containsKey("taskad")&&store.data.containsKey("memberAd::ad")&&Log.category.isEmpty():"candidate registration falsely confirmed an incomplete advertisement snapshot";
+  assert AntMemberAdTaskListMap.names.containsKey("taskad")&&!AntMemberTaskListMap.names.containsKey("taskad")&&store.data.containsKey("memberAd::ad")&&Log.category.isEmpty():"candidate registration falsely confirmed an incomplete advertisement snapshot";
   for(String code:List.of("48","TRANSPORT_ERROR","3000","SYSTEM_ERROR","1GBM02","UNKNOWN")){
    resetMember();AntMemberRpcCall.tasks.put("one",member("one",true));AntMemberRpcCall.adListReply=new JSONObject().put("success",false).put("error","RPC_SKIPPED").put("causeCode",code).put("riskPause",false).toString();
    MemberBrowseTasks.run(true,Set.of(),true,Set.of());assert AntMemberRpcCall.execute==1:"classified non-risk pause blocked independent tasks: "+code;
@@ -896,7 +898,8 @@ real_status = r'''
  static class Status {
   static final Status INSTANCE=new Status();static final String TAG="Status";
   Set<String> flagLogList=new HashSet<>();static Set<String> flags=INSTANCE.flagLogList;
-  long saveTime;static boolean saveFailureNotified;
+  long saveTime;static boolean saveFailureNotified,loadFailed;
+  static Map<String,Integer> counts=new HashMap<>();static int getIntFlagToday(String k){return counts.getOrDefault(k,0);}static void setIntFlagToday(String k,int n){counts.put(k,n);}
   static String ensureLoadedForCurrentUid(){return RuntimeInfo.uid;}
   static boolean hasFlagToday(String key){return flags.contains(key);}
   static boolean updateDay(Calendar now){return false;}

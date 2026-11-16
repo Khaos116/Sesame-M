@@ -10,6 +10,7 @@ code = r'''
 import org.json.*;
 import java.util.*;
 public class SportsOceanAudit {
+ static class TaskCancelledException extends RuntimeException {}
  static String TAG="test";
  static class Field<T>{T value; Field(T x){value=x;} T getValue(){return value;}}
  Field<Boolean> WALK_GRID=new Field<>(true),awardspecialActivityReceive=new Field<>(true);

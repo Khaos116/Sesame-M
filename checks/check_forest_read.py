@@ -74,6 +74,67 @@ stubs = {
     ''',
 }
 stubs.update({
+    "okhttp3.ConnectionPool": '''public class ConnectionPool {
+        public ConnectionPool(int count,long keep,java.util.concurrent.TimeUnit unit){assert count==4&&unit.toMinutes(keep)==5;}}
+    ''',
+    "okhttp3.MediaType": '''public class MediaType {public static MediaType parse(String value){return new MediaType();}}''',
+    "okhttp3.RequestBody": '''public class RequestBody {final String data;RequestBody(String s){data=s;}
+        public static RequestBody create(String data,MediaType type){return new RequestBody(data);}}
+    ''',
+    "okhttp3.Request": '''import java.util.*;public class Request {
+        String url;RequestBody body;Map<String,String> headers=new LinkedHashMap<>();
+        public static class Builder {Request request=new Request();
+        public Builder url(String s){request.url=s;return this;}
+        public Builder header(String key,String value){request.headers.put(key,value);return this;}
+        public Builder post(RequestBody body){request.body=body;return this;}
+        public Builder get(){request.body=null;return this;}public Request build(){return request;}}}
+    ''',
+    "okhttp3.ResponseBody": '''import java.io.*;public class ResponseBody implements AutoCloseable {
+        final java.net.HttpURLConnection connection;InputStream input;boolean closed;
+        ResponseBody(java.net.HttpURLConnection c){connection=c;}
+        public InputStream byteStream()throws IOException{
+            if(input==null)input=new FilterInputStream(connection.getInputStream()){
+                public void close()throws IOException{if(!closed){closed=true;super.close();}}};
+            return input;}
+        public void close()throws IOException{if(input!=null)input.close();}}
+    ''',
+    "okhttp3.Response": '''import java.io.*;public class Response implements AutoCloseable {
+        final java.net.HttpURLConnection connection;final int status;final ResponseBody body;
+        Response(java.net.HttpURLConnection c,int code){connection=c;status=code;body=new ResponseBody(c);}
+        public int code(){return status;}public ResponseBody body(){return body;}
+        public void close()throws IOException{try{body.close();}finally{connection.disconnect();}}}
+    ''',
+    "okhttp3.OkHttpClient": '''import java.io.*;import java.net.*;import java.util.concurrent.*;
+        public class OkHttpClient {
+        int connectMs,readMs,callMs;boolean redirects,sslRedirects,retry;ConnectionPool pool;
+        public ConnectionPool connectionPool(){return pool;}
+        public Builder newBuilder(){return new Builder(this);}
+        public static class Builder {OkHttpClient client=new OkHttpClient();
+            public Builder(){}Builder(OkHttpClient base){client.connectMs=base.connectMs;client.readMs=base.readMs;
+            client.callMs=base.callMs;client.redirects=base.redirects;client.sslRedirects=base.sslRedirects;
+            client.retry=base.retry;client.pool=base.pool;}
+            public Builder connectionPool(ConnectionPool p){client.pool=p;return this;}
+            public Builder connectTimeout(long n,TimeUnit unit){client.connectMs=(int)unit.toMillis(n);return this;}
+            public Builder readTimeout(long n,TimeUnit unit){client.readMs=(int)unit.toMillis(n);return this;}
+            public Builder callTimeout(long n,TimeUnit unit){client.callMs=(int)unit.toMillis(n);return this;}
+            public Builder followRedirects(boolean b){client.redirects=b;return this;}
+            public Builder followSslRedirects(boolean b){client.sslRedirects=b;return this;}
+            public Builder retryOnConnectionFailure(boolean b){client.retry=b;return this;}
+            public OkHttpClient build(){return client;}}
+        public class Call {Request request;Call(Request r){request=r;}
+            public Response execute()throws IOException{
+                assert !redirects&&!sslRedirects&&!retry&&pool!=null;
+                assert callMs==(request.url.endsWith("set_read_recently")?6000:15000);
+                HttpURLConnection c=(HttpURLConnection)new URL(request.url).openConnection();
+                try{c.setConnectTimeout(connectMs);c.setReadTimeout(readMs);c.setInstanceFollowRedirects(redirects);
+                    c.setRequestMethod(request.body==null?"GET":"POST");
+                    for(var entry:request.headers.entrySet())c.setRequestProperty(entry.getKey(),entry.getValue());
+                    if(request.body!=null){c.setDoOutput(true);try(OutputStream out=c.getOutputStream()){
+                        out.write(request.body.data.getBytes(java.nio.charset.StandardCharsets.UTF_8));}}
+                    return new Response(c,c.getResponseCode());
+                }catch(IOException e){c.disconnect();throw e;}}
+        }public Call newCall(Request request){return new Call(request);}}
+    ''',
     "android.content.Context": 'public class Context {public static final String CONNECTIVITY_SERVICE="connectivity",TELEPHONY_SERVICE="phone";public Object getSystemService(String key){return key.equals(CONNECTIVITY_SERVICE)?new android.net.ConnectivityManager():new android.telephony.TelephonyManager();}public android.content.res.Resources getResources(){return new android.content.res.Resources();}}',
     "android.content.res.Resources": 'public class Resources {public android.util.DisplayMetrics getDisplayMetrics(){return new android.util.DisplayMetrics();}}',
     "android.util.DisplayMetrics": 'public class DisplayMetrics {public static int widthPixels=800;public static float density=2;}',
@@ -108,7 +169,7 @@ public class ForestReadCheck {
     }
     public static class SkipResult {public Object getAuthExecuteResult(){return new ExecuteResult();}}
     public static class ExecuteResult {public String getAuthCode(){return "secret-code-"+UserIdMap.uid;}}
-    static class Reply {String path,raw; int status; long elapsed; Reply(String p,String r,int s){path=p;raw=r;status=s;}}
+    static class Reply {String path,raw,failure=""; int status; long elapsed; Reply(String p,String r,int s){path=p;raw=r;status=s;}}
     static Queue<Reply> queue=new ArrayDeque<>(); static List<MockConnection> connections=new ArrayList<>();
     static class MockConnection extends HttpURLConnection {
         Reply reply; ByteArrayOutputStream sent=new ByteArrayOutputStream(); boolean disconnected;
@@ -118,14 +179,16 @@ public class ForestReadCheck {
         public OutputStream getOutputStream(){return sent;}
         public int getResponseCode()throws IOException{
             android.os.SystemClock.now+=reply.elapsed;
-            assert !getInstanceFollowRedirects(); assert getConnectTimeout()==10000 && getReadTimeout()==20000;
+            assert !getInstanceFollowRedirects(); assert getConnectTimeout()==5000;
+            assert getReadTimeout()==(reply.path.endsWith("set_read_recently")?4000:12000);
             assert !TaskLifecycle.isIdle(); assert TaskLifecycle.freezeIfIdle()==null;
             assert getRequestProperty("alipayminimark")==null;
             assert getRequestProperty("x-requested-with").equals("com.eg.android.AlipayGphone");
             assert getRequestProperty("x-mass-tappid").equals(ReadForestRpcCall.APP_ID);
             String ua=getRequestProperty("User-Agent");assert ua.contains("MYWeb/1.11.126.260911211123")&&ua.contains("nt:WIFI,ws:400|0|2.0")&&!ua.contains("ChannelId(");
-            switch(networkFailure){
+            switch(reply.failure.isEmpty()?networkFailure:reply.failure){
                 case "timeout":throw new SocketTimeoutException("secret-token-A");
+                case "callTimeout":throw new InterruptedIOException("timeout secret-token-A");
                 case "DNS":throw new UnknownHostException("secret-code-A");
                 case "TLS":throw new javax.net.ssl.SSLException("secret-code-A");
                 case "connect":throw new ConnectException("secret-token-A");
@@ -165,6 +228,10 @@ public class ForestReadCheck {
         for(MockConnection c:connections)assert c.disconnected;
         for(String m:Log.messages)assert !m.contains("secret-code") && !m.contains("secret-token");}
     public static void main(String[] args)throws Exception{
+        var clientField=ReadForestRpcCall.class.getDeclaredField("CLIENT");clientField.setAccessible(true);
+        var shortField=ReadForestRpcCall.class.getDeclaredField("SHORT_CLIENT");shortField.setAccessible(true);
+        assert ((okhttp3.OkHttpClient)clientField.get(null)).connectionPool()
+                ==((okhttp3.OkHttpClient)shortField.get(null)).connectionPool();
         java.lang.reflect.Method uaMethod=ReadForestRpcCall.class.getDeclaredMethod("getBaseUserAgent");uaMethod.setAccessible(true);
         android.net.NetworkCapabilities.transport=android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
         assert uaMethod.invoke(null).toString().contains("nt:5G");
@@ -226,6 +293,14 @@ public class ForestReadCheck {
         run();assert reads==36 && Status.flags.isEmpty();
         assert Log.runtime.stream().anyMatch(s->s.contains("连续 5 章能量未增加") && s.contains("31/150"));
         System.out.println("PASS stagnant stop still works after the former chapter limit");
+        reset();login();energy(0,100);index(book("one","0.00"));
+        for(int i=1;i<=5;i++){chapter(i,i+1);slowLast(16000);update();energy(i,100);}
+        run();assert reads==5&&Status.flags.isEmpty();
+        assert Log.runtime.stream().anyMatch(s->s.contains("连续5章处理超过15秒")&&s.contains("不记今日完成"));
+        reset();login();energy(0,6);index(book("one","0.00"));
+        for(int i=1;i<=6;i++){chapter(i,i+1);if(i%2==1)slowLast(16000);update();energy(i,6);}
+        run();assert reads==6&&Status.flags.size()==1;
+        System.out.println("PASS consecutive slow requests yield without daily completion and fast chapters reset the slow count");
         reset(); login(); energy(0,100); index(book("one","0.00"));slowLast(15*60_000L);
         run();assert reads==0 && Status.flags.isEmpty();
         assert Log.runtime.stream().anyMatch(s->s.contains("15 分钟") && s.contains("尚未满额"));
@@ -262,10 +337,17 @@ public class ForestReadCheck {
             reset(); login(); raw("/user/forestPro","{}",status); run(); assert Status.flags.isEmpty();
             assert Log.runtime.stream().anyMatch(s->s.contains("HTTP "+status));
             if(status==401)assert Log.runtime.stream().anyMatch(s->s.contains("获取/刷新 Token"));}
-        for(String endpoint:List.of("/user/updateWel","/book/set_read_recently")){
-            reset(); login(); energy(0,10); index(book("one","0.00")); chapter(1,0);
-            if(endpoint.endsWith("set_read_recently"))add("/user/updateWel",new JSONObject());
-            raw(endpoint,"{\"code\":4000}",200);run();assert Status.flags.isEmpty() && RuntimeInfo.getInstance().getString("readForest.finishedBooks").isEmpty();}
+        reset(); login(); energy(0,10); index(book("one","0.00")); chapter(1,0);
+        raw("/user/updateWel","{\"code\":4000}",200);run();
+        assert Status.flags.isEmpty()&&RuntimeInfo.getInstance().getString("readForest.finishedBooks").isEmpty();
+        for(boolean timeout:List.of(false,true)){
+            reset();login();energy(0,1);index(book("one","0.00"));chapter(1,0);
+            add("/user/updateWel",new JSONObject());raw("/book/set_read_recently","{\"code\":4000}",200);
+            if(timeout)((ArrayDeque<Reply>)queue).getLast().failure="callTimeout";
+            energy(1,1);run();assert reads==1&&Status.flags.size()==1;
+            assert Log.runtime.stream().anyMatch(s->s.contains("最近阅读展示上报失败")&&s.contains("继续回查能量"));
+        }
+        System.out.println("PASS shared OkHttp pool, bounded normal/optional request timeouts and optional report failure does not discard credited reading");
         reset(); login(); energy(0,10); index(book("one","0.00")); add("/book/chapter",new JSONObject().put("id",1));
         run(); assert reads==0 && RuntimeInfo.getInstance().getString("readForest.finishedBooks").isEmpty();
         System.out.println("PASS malformed/status/type failures, 0/0, token validation, POST failures and no false daily completion");

@@ -244,6 +244,7 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
             delay(1000)
         }
     }
+    var loaded by remember(file) { mutableStateOf(false) }
     val logReader = remember(logType) { LogTailReader() }
     var entries by remember(logType) { mutableStateOf(emptyList<LogEntry>()) }
     val listState = rememberLazyListState()
@@ -285,6 +286,7 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
         val followTop = reset || entries.isEmpty() || !listState.canScrollBackward
         if (!reset && updated === entries) return
         entries = updated
+        loaded = true
         if (followTop) listState.requestScrollToItem(0)
     }
     // 实时刷新：文件被写入时重新加载尾部，做到打开日志页能看到正在执行的过程，
@@ -481,7 +483,11 @@ fun LogScreen(activity: MiuixLogViewerActivity, logType: LogType) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (searchQuery.isNotEmpty() || selectedTag != null) "无匹配日志" else "(空)",
+                        text = when {
+                            !loaded -> "加载中…"
+                            searchQuery.isNotEmpty() || selectedTag != null -> "无匹配日志"
+                            else -> "(空)"
+                        },
                         fontSize = 14.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary
                     )

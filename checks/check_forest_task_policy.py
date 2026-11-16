@@ -11,7 +11,7 @@ code = r'''
 import org.json.*;import java.util.*;import java.util.function.*;import java.util.regex.*;import java.util.concurrent.atomic.AtomicInteger;
 import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class ForestTaskPolicyCheck {
- static int totalCollected; static final String TAG="check"; static final int MAX_OPTIONAL_PLAY_ROUNDS=12;
+ static int totalCollected; static final String TAG="check",SLJYD_FLAG="forest::sljydReported"; static final int MAX_OPTIONAL_PLAY_ROUNDS=12;
  enum TaskStatus {TODO,FINISHED,RECEIVED}
  static class Field<T> {T value;Field(T v){value=v;}T getValue(){return value;}}
  Field<Set<String>> AntForestVitalityTaskList=new Field<>(new HashSet<>());
@@ -42,12 +42,14 @@ public class ForestTaskPolicyCheck {
   static boolean checkResultCode(String tag,JSONObject j){return "SUCCESS".equals(j.optString("resultCode"));}
   static boolean isRetryable(JSONObject j){return j.optBoolean("retryable");}static boolean isServerBusy(JSONObject j){return "102".equals(j.optString("code"));}
   static boolean isUnsupportedRpc(JSONObject j){return "400000040".equals(j.optString("code"));}
+  static boolean isAlreadyDone(JSONObject j){return j.optBoolean("alreadyDone");}
   static String blacklistKey;static void checkResultCodeAndMarkTaskBlackList(String a,String b,JSONObject j){blacklistKey=b;}
   static void MarkTaskBlackList(String a,String b,String c,String d){}
   static void beginDeferBlackList(){}static void endDeferBlackList(boolean b){}
   static String[] autoBlackListTarget(String f){return null;}
  }
- static class GameTask {static GameTask Forest_sljyd=new GameTask();static int reports;void report(String name,int n){reports++;}}
+ static class GameTask {static GameTask Forest_sljyd=new GameTask();static int reports,reportSuccess=1;
+  int reportSync(String name,int n,String source,BooleanSupplier done){reports++;if(reportSuccess>0)done.getAsBoolean();return reportSuccess;}}
  static class ApplicationHook {static int fallback;static String requestString(String rpc,String args){fallback++;return "{\"code\":\"102\"}";}}
  @@ALTERNATIVE@@
  @@POLICY@@
@@ -319,7 +321,7 @@ public class ForestTaskPolicyCheck {
   f.recordMonopolyAward("reward",120);f.recordMonopolyAward("reward",-1);check(totalCollected==10,"Invalid/negative energy delta counted");
   AntForestRpcCall.home="{}";f.recordMonopolyAward("reward",100);check(totalCollected==10,"Failed energy query counted");
   for(String type:List.of("GAME_DONE_SLJYD","GAME_DONE_UNKNOWN")){
-   GameTask.reports=0;AntForestRpcCall.rain=new JSONObject().put("resultCode","SUCCESS").put("energyRainEndGameGroupTask",new JSONObject().put("taskInfoList",new JSONArray().put(task(type,"TODO")))).toString();
+   Status.flags.clear();GameTask.reports=0;AntForestRpcCall.rain=new JSONObject().put("resultCode","SUCCESS").put("energyRainEndGameGroupTask",new JSONObject().put("taskInfoList",new JSONArray().put(task(type,"TODO")))).toString();
    checkAndDoEndGameTask();check(GameTask.reports==("GAME_DONE_SLJYD".equals(type)?1:0),"Energy rain reported unrelated game");
   }
   Status.flags.clear();Status.counts.clear();AntForestRpcCall.rain="{\"resultCode\":\"SUCCESS\",\"energyRainEndGameGroupTask\":false}";
@@ -327,14 +329,21 @@ public class ForestTaskPolicyCheck {
   for(String state:List.of("TODO","NOT_TRIGGER","","NEW_STATE","FINISHED","RECEIVED")) {
    Status.flags.clear();GameTask.reports=0;
    AntForestRpcCall.rain=new JSONObject().put("resultCode","SUCCESS").put("energyRainEndGameGroupTask",new JSONObject().put("taskInfoList",new JSONArray().put(task("GAME_DONE_SLJYD",state)))).toString();
-   checkAndDoEndGameTask();check(Status.hasFlagToday("EnergyRain::PlayGame")==List.of("FINISHED","RECEIVED").contains(state),"Unconfirmed rain state marked done: "+state);
+   checkAndDoEndGameTask();check(Status.hasFlagToday(SLJYD_FLAG)==List.of("TODO","NOT_TRIGGER","FINISHED","RECEIVED").contains(state),"Unknown state treated as accepted report: "+state);
+   check(!Status.hasFlagToday("EnergyRain::PlayGame"),"Report state must not prove actual rain settlement: "+state);
   }
   for(String after:List.of("FINISHED","RECEIVED","","NEW_STATE","TODO")) {
    Status.flags.clear();GameTask.reports=0;
    for(String state:List.of("TODO",after)) AntForestRpcCall.rainReplies.add(new JSONObject().put("resultCode","SUCCESS").put("energyRainEndGameGroupTask",new JSONObject().put("taskInfoList",new JSONArray().put(task("GAME_DONE_SLJYD",state)))).toString());
-   checkAndDoEndGameTask();check(GameTask.reports==1&&Status.hasFlagToday("EnergyRain::PlayGame")==List.of("FINISHED","RECEIVED").contains(after),"Rain report requires confirmed readback: "+after);
+   AntForestRpcCall.rain=AntForestRpcCall.rainReplies.getLast();
+   checkAndDoEndGameTask();check(GameTask.reports==1&&Status.hasFlagToday(SLJYD_FLAG)&&!Status.hasFlagToday("EnergyRain::PlayGame"),"Accepted report and unsettled rain must stay distinct: "+after);
+   checkAndDoEndGameTask();check(GameTask.reports==1,"Delayed state must not replay an accepted upload: "+after);
   }
-  Status.flags.clear();AntForestRpcCall.rain="{resultCode:'SUCCESS'}";checkAndDoEndGameTask();check(Status.flags.isEmpty(),"Missing group marked done");
+  Status.flags.clear();AntForestRpcCall.rain="{resultCode:'SUCCESS'}";checkAndDoEndGameTask();check(!Status.hasFlagToday(SLJYD_FLAG)&&!Status.hasFlagToday("EnergyRain::PlayGame"),"Missing group marked done without explicit no-init proof");
+  Status.flags.clear();AntForestRpcCall.rain="{resultCode:'SUCCESS',needInitTask:false}";checkAndDoEndGameTask();check(Status.hasFlagToday(SLJYD_FLAG)&&!Status.hasFlagToday("EnergyRain::PlayGame"),"Explicitly completed/removed group should stop uploads without claiming settlement");
+  Status.flags.clear();GameTask.reportSuccess=0;AntForestRpcCall.rain=new JSONObject().put("resultCode","SUCCESS").put("energyRainEndGameGroupTask",new JSONObject().put("taskInfoList",new JSONArray().put(task("GAME_DONE_SLJYD","TODO")))).toString();
+  checkAndDoEndGameTask();check(!Status.hasFlagToday(SLJYD_FLAG),"Rejected report must remain retryable");GameTask.reportSuccess=1;
+  Status.flags.clear();
   AntForestRpcCall.cancelRain=true;expectCancel(ForestTaskPolicyCheck::checkAndDoEndGameTask);AntForestRpcCall.cancelRain=false;
   if(failures>0)throw new AssertionError(failures+" forest task policy failures");
   System.out.println("PASS forest reward/completion requery, child/optional fallback, same-day prevention and probe cancellation");
@@ -351,6 +360,7 @@ code=code.replace('@@FARM_OPTIONAL@@','\n'.join(method('model/task/antFarm/AntFa
 code=code.replace('@@ORCHARD_OPTIONAL@@','\n'.join(method('model/task/antOrchard/AntOrchard.java',sig) for sig in ('private TaskAttemptPolicy.ProbeResult probeOrchardOptionalPlayStatus(', 'private void queryOptionalPlay()', 'private Outcome attemptFinishOptionalPlayTask(', 'private boolean attemptOrchardAward(', 'private void recordOrchardAwardFailure(')))
 methods=('private void recordMonopolyAward(', 'private int queryCurrentEnergy(', 'private static String energyRainSljydStatus(', 'public static void checkAndDoEndGameTask(', 'private Boolean doForsetTaskList(','private static final class YouthForestRoute', 'private void queryYouthForestTask(', 'private String queryYouthForestTaskStatus(', 'private static boolean collectOpenGreenTaskInfos(', 'private static boolean appendTaskInfoList(', 'private static boolean appendTaskGroups(','private Boolean receiveTaskAward(','private static String blackTaskKey(','private Outcome attemptFinishTask(','private TaskAttemptPolicy.ProbeResult probeForestVitalityStatus(','private static TaskAttemptPolicy.ProbeResult forestVitalityStatus(','private boolean awardFinishedChildren(','private boolean doChildTask(','private TaskAttemptPolicy.ProbeResult probeOptionalPlayStatus(', 'private void queryOptionalPlay()', 'private int optionalPlayRoundLimit(')
 methods+=('private TaskAttemptPolicy.Forge forestVitalityForge(', 'private static boolean isTakeLookVitalityTask(', 'private static boolean isWaterVitalityTask(', 'private static boolean isEnergyRainVitalityTask(')
+methods+=('private static boolean isSljydDone(',)
 code=code.replace('@@METHODS@@','\n'.join(method(forest,s) for s in methods))
 # The shared class declares the enum itself, so restore that declaration and its inner references.
 code=re.sub(r'(?<![.\w])Outcome\b', 'TaskAttemptPolicy.Outcome', code)

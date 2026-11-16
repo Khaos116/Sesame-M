@@ -5,7 +5,7 @@ sys.dont_write_bytecode=True
 sys.path.insert(0,str(Path(__file__).parent/'audit_regressions'))
 from run import method,SOURCE
 forest='model/task/antForest/AntForestV2.java';rpc='model/task/antForest/AntForestRpcCall.java'
-assert 'private void useSmartDoubleCard(' in (SOURCE/forest).read_text(encoding='utf-8'),'Missing smart double waiting count'
+assert 'useSmartDoubleCard(' in method(forest, 'private void useSmartDoubleCard('), 'Missing smart double waiting count'
 code=r'''
 import java.util.*;import org.json.*;import io.github.aw1y2z.sesame.util.TaskCancelledException;
 public class ForestSmartDoubleCheck {
@@ -79,12 +79,13 @@ code=code.replace('@@CTOR@@',method(forest,'BubbleTimerTask(String ui, long bi, 
 code=code.replace('@@SNAPSHOT@@',method('data/task/ModelTask.java','protected List<ChildModelTask> getChildTaskSnapshot('))
 code=code.replace('@@METHODS@@','\n'.join(method(forest,s) for s in ('private boolean canUseContinuousCard(','private void recordContinuousCardUse(','private boolean smartDoubleEnabled(','private List<BubbleTimerTask> smartDoubleTargets(','private List<BubbleTimerTask> confirmSmartDoubleTargets(','private long querySmartDoubleEnd(','private JSONArray querySmartDoubleInventory(','private JSONObject chooseSmartDoubleCard(','private static long smartDoubleStock(','private static boolean smartDoubleHasId(','private void useSmartDoubleCard(','private void scheduleSmartDoubleCheck(','static JSONObject forestSignPayload(','static long forestFeatureLong(')))
 code=code.replace('@@RPC@@',method(rpc,'public static String consumeProp(String propGroup, String propId, String propType, Boolean secondConfirm)'))
+code=code.replace('AntForestEnergy.getBubbleTimerTid', 'AntForestV2.getBubbleTimerTid')
 cache=Path(os.environ.get('GRADLE_USER_HOME',Path.home()/'.gradle'))/'caches/modules-2/files-2.1/org.json/json'
 jar=sorted(p for p in cache.glob('*/*/json-*.jar') if not p.name.endswith(('-sources.jar','-javadoc.jar')))[-1]
 src=(SOURCE/forest).read_text(encoding='utf-8')
 assert 'new BooleanModelField("smartDoubleCard",' in src and ', false)' in next(line for line in src.splitlines() if 'new BooleanModelField("smartDoubleCard",' in line)
 assert 'useSmartDoubleCard();' in method(forest,'private void continuousUseAndExchangeCard(')
-assert src.count('new BubbleTimerTask(userId, bubbleId, produceTime, userName, Boolean.TRUE.equals(bubble.opt("canBeRobbedTwice")))')==3 and 'Boolean.TRUE.equals(canbubble.opt("canBeRobbedTwice"))' in src
+assert (src+(SOURCE/'model/task/antForest/AntForestEnergy.java').read_text(encoding='utf-8')).count('new BubbleTimerTask(userId, bubbleId, produceTime, userName, Boolean.TRUE.equals(bubble.opt("canBeRobbedTwice")))')==3 and 'Boolean.TRUE.equals(canbubble.opt("canBeRobbedTwice"))' in (src+(SOURCE/'model/task/antForest/AntForestEnergy.java').read_text(encoding='utf-8'))
 with tempfile.TemporaryDirectory(prefix='sesame-smart-double-') as tmp:
  f=Path(tmp)/'ForestSmartDoubleCheck.java';f.write_text(code,encoding='utf-8')
  subprocess.run(['javac','-encoding','UTF-8','-cp',str(jar),'-d',tmp,str(f),str(SOURCE/'util/TaskCancelledException.java')],check=True)

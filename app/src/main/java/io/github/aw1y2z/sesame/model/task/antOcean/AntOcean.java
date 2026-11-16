@@ -13,6 +13,7 @@ import io.github.aw1y2z.sesame.data.modelFieldExt.BooleanModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.ChoiceModelField;
 import io.github.aw1y2z.sesame.data.modelFieldExt.SelectModelField;
 import io.github.aw1y2z.sesame.data.task.ModelTask;
+import io.github.aw1y2z.sesame.data.task.TaskLifecycle;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy;
 import io.github.aw1y2z.sesame.data.task.TaskAward;
 import io.github.aw1y2z.sesame.data.task.TaskAttemptPolicy.Outcome;
@@ -82,6 +83,7 @@ public class AntOcean extends ModelTask {
     private BooleanModelField useUniversalPiece;
     private BooleanModelField replica;
     private BooleanModelField antfishEnable;  // 开启摸鱼功能
+    private BooleanModelField antfishAppraise;  // 摸鱼点赞得能量
     private BooleanModelField antfishAutoTask;  // 自动完成任务获得次数
     private BooleanModelField antfishScientificRelease;
 
@@ -100,6 +102,7 @@ public class AntOcean extends ModelTask {
         modelFields.addField(useUniversalPiece = new BooleanModelField("useUniversalPiece", "万能拼图 | 使用", false));
         modelFields.addField(replica = new BooleanModelField("replica", "潘多拉海域", false));
         modelFields.addField(antfishEnable = new BooleanModelField("antfishEnable", "海洋摸鱼 | 开启摸鱼", false));
+        modelFields.addField(antfishAppraise = new BooleanModelField("antfishAppraise", "海洋摸鱼|点赞30次", false).setDependsOn("antfishEnable"));
         modelFields.addField(antfishAutoTask = new BooleanModelField("antfishAutoTask", "海洋摸鱼 | 摸鱼任务", false).setDependsOn("antfishEnable"));
         modelFields.addField(antfishScientificRelease = new BooleanModelField("antfishScientificRelease", "海洋摸鱼 | 科学放生", false).setDependsOn("antfishEnable").setDescription("按服务端项目规则兑换科学放生证书，仅处理服务端标记可兑换的阶段"));
         modelFields.addField(AutoAntOceanFishBlackList = new BooleanModelField("AutoAntOceanFishBlackList", "海洋摸鱼 | 自动黑名单", true).setDependsOn("antfishAutoTask"));
@@ -397,7 +400,7 @@ public class AntOcean extends ModelTask {
             String taskId = "Ocean|" + UserId;
             if (!hasChildTask(taskId)) {
                 addChildTask(new ChildModelTask(taskId, "Ocean", this::queryHomePage, canCleanLaterTime));
-                Log.record("神奇海洋🐳蹲添加蹲点在[" + TimeUtil.getCommonDate(canCleanLaterTime) + "]执行清理海洋");
+                Log.i(TAG + "神奇海洋🐳蹲添加蹲点在[" + TimeUtil.getCommonDate(canCleanLaterTime) + "]执行清理海洋");
             }
         } catch (Throwable t) {
             Log.err(TAG, "queryHomePage err:", t);
@@ -1426,12 +1429,17 @@ public class AntOcean extends ModelTask {
             // 2. 查询主页信息
             antfishQueryHomePage();
 
-            // 3. 查询并处理任务
+            // 3. 点赞得能量
+            if (antfishAppraise.getValue()) {
+                antfishAppraiseFish();
+            }
+
+            // 4. 查询并处理任务
             if (antfishAutoTask.getValue()) {
                 antfishHandleTasks();
             }
 
-            // 4. 执行摸鱼
+            // 5. 执行摸鱼
             touchfish();
             if (antfishScientificRelease.getValue()) {
                 antfishScientificRelease();
@@ -1608,12 +1616,12 @@ public class AntOcean extends ModelTask {
                             String ownerNickName = owner.optString("nickName", "");
                             String ownerUserId = owner.optString("userId", "");
                             if (!ownerNickName.isEmpty()) {
-                                Log.record("海洋摸鱼🐟当前鱼状态["+ fishInteractStatus +"]主人[" + ownerNickName + "](" + ownerUserId + ")");
+                                Log.i(TAG + "海洋摸鱼🐟当前鱼状态["+ fishInteractStatus +"]主人[" + ownerNickName + "](" + ownerUserId + ")");
                             }
                         }
                     }
                 }
-                Log.record("海洋摸鱼🐟当前赛季[" + seasonTitle + "](" + seasonId + ")项目[" + projectName + "](" + region + ")用户[" + nickName + "]鱼状态["+ fishInteractStatus +"]等级[" + fishLevelName + "]可摸鱼"+remainTouchChance+"累计摸" + touchTotal + "累计获得能量" + touchEnergy + "g(总"+energy+"g)");
+                Log.i(TAG + "海洋摸鱼🐟当前赛季[" + seasonTitle + "](" + seasonId + ")项目[" + projectName + "](" + region + ")用户[" + nickName + "]鱼状态["+ fishInteractStatus +"]等级[" + fishLevelName + "]可摸鱼"+remainTouchChance+"累计摸" + touchTotal + "累计获得能量" + touchEnergy + "g(总"+energy+"g)");
                 //鱼被困了，解救鱼
                 if("CAPTURED".equals(fishInteractStatus)){
                     rescueFish();
@@ -1687,6 +1695,102 @@ public class AntOcean extends ModelTask {
             Log.err(TAG, "rescueFish err:", t);
         }
         return false;
+    }
+
+    /**
+     * 点赞别人的鱼得能量。
+     * <p>点赞(LIKE)与点踩(DISLIKE)奖励相同，均为每次 1g，此处固定用 LIKE，不伤他人。
+     * <p>每日上限由服务端 {@code appraiseRewardRemainNum} 给出（实测满额 30 次），归零即停。
+     * <p>一次列表可批量评价：列表每页约 10 条，逐条评完再重拉，避免每条都拉一次列表。
+     */
+    private void antfishAppraiseFish() {
+        if (Status.hasFlagToday("Ocean::FISH_APPRAISE_LIMIT")) return;
+        try (TaskLifecycle.Work work = TaskLifecycle.enter()) {
+            if (work == null) return;
+            long day = Math.floorDiv(System.currentTimeMillis() + 28800000L, 86400000L);
+            Runnable checkpoint = () -> {
+                TimeUtil.sleep(0);
+                if (day != Math.floorDiv(System.currentTimeMillis() + 28800000L, 86400000L)) throw new TaskCancelledException();
+            };
+            long totalEnergy = 0;
+            int count = 0;
+            Set<String> attempted = new HashSet<>();
+            outer:
+            while (count < 40) {
+                checkpoint.run();
+                JSONObject jo = MyUtils.newJSONObject(AntOceanRpcCall.antfishQueryNeedAppraiseFishList());
+                checkpoint.run();
+                if (RpcRequestGuard.isFailure(jo) || !MessageUtil.checkResultCode(TAG, jo)) {
+                    Log.record("海洋摸鱼[点赞列表]：接口未成功，resultCode=" + jo.optString("resultCode", "缺失") + "，本轮停止");
+                    break;
+                }
+                Object remain = jo.opt("appraiseRewardRemainNum");
+                Integer remaining = remain instanceof String || remain instanceof Number ? StringUtil.parseIntOrNull(remain.toString()) : null;
+                if (remaining != null && remaining == 0) {
+                    Status.flagToday("Ocean::FISH_APPRAISE_LIMIT");
+                    break;
+                }
+                JSONArray fishList = jo.optJSONArray("fishList");
+                if (fishList == null) {
+                    Log.record("海洋摸鱼[点赞列表]：缺少有效 fishList，未确认今日满额");
+                    break;
+                }
+                boolean appraisedAny = false;
+                for (int i = 0; i < fishList.length() && count < 40; i++) {
+                    JSONObject fish = fishList.optJSONObject(i);
+                    JSONObject appraisal = fish == null ? null : fish.optJSONObject("appraiseVO");
+                    if (appraisal == null || !Boolean.TRUE.equals(appraisal.opt("canAppraise"))) continue;
+                    if (!(fish.opt("imageId") instanceof String) || !(fish.opt("seasonId") instanceof String)) continue;
+                    String imageId = fish.optString("imageId").trim(), seasonId = fish.optString("seasonId").trim();
+                    Object owner = appraisal.opt("receiveAppraiseUserId");
+                    if (!(owner instanceof String) || ((String) owner).trim().isEmpty()) owner = fish.opt("userId");
+                    if (!(owner instanceof String)) continue;
+                    String targetUserId = ((String) owner).trim();
+                    if (imageId.isEmpty() || seasonId.isEmpty() || targetUserId.isEmpty()
+                            || !attempted.add(new JSONArray().put(imageId).put(seasonId).put(targetUserId).toString())) continue;
+                    checkpoint.run();
+                    JSONObject response = MyUtils.newJSONObject(AntOceanRpcCall.antfishFishAppraise(imageId, seasonId, targetUserId));
+                    checkpoint.run();
+                    if (RpcRequestGuard.isFailure(response) || !MessageUtil.checkResultCode(TAG, response)) {
+                        Log.record("海洋摸鱼[点赞回执]：未确认受理，resultCode=" + response.optString("resultCode", "缺失") + "，本轮停止");
+                        break outer;
+                    }
+                    count++;
+                    appraisedAny = true;
+                    JSONArray rewards = response.optJSONArray("appraiseRewardList");
+                    boolean validRewards = rewards != null && rewards.length() <= 1000;
+                    long energyThis = 0;
+                    for (int j = 0; validRewards && j < rewards.length(); j++) {
+                        JSONObject reward = rewards.optJSONObject(j);
+                        JSONObject ext = reward == null ? null : reward.optJSONObject("extInfo");
+                        JSONObject popup = ext == null ? null : ext.optJSONObject("popup");
+                        Object raw = popup == null ? null : popup.opt("rightsNums");
+                        Integer amount = raw instanceof String || raw instanceof Number ? StringUtil.parseIntOrNull(raw.toString()) : null;
+                        if (amount == null || amount < 0) validRewards = false;
+                        else energyThis += amount;
+                    }
+                    remain = response.opt("appraiseRewardRemainNum");
+                    remaining = remain instanceof String || remain instanceof Number ? StringUtil.parseIntOrNull(remain.toString()) : null;
+                    if (validRewards) totalEnergy += energyThis;
+                    if (remaining != null && remaining == 0 || validRewards && energyThis == 0) {
+                        Status.flagToday("Ocean::FISH_APPRAISE_LIMIT");
+                        Log.record("海洋摸鱼[点赞]：今日奖励已满额，本轮停止");
+                        break outer;
+                    }
+                    if (!validRewards) {
+                        Log.record("海洋摸鱼[点赞回执]：已受理但奖励结构无效，未确认今日满额，本轮停止");
+                        break outer;
+                    }
+                    TimeUtil.sleep(1000);
+                }
+                if (!appraisedAny) break;
+            }
+            if (totalEnergy > 0) Log.other("海洋摸鱼点赞[" + count + "]次，共获得" + totalEnergy + "g能量");
+            if (count == 40) Log.record("海洋摸鱼[点赞]：达到本轮40次上限，剩余次数留待下轮");
+        } catch (TaskCancelledException e) { throw e;
+        } catch (Throwable t) {
+            Log.err(TAG, "antfishAppraiseFish err:", t);
+        }
     }
 
     /**

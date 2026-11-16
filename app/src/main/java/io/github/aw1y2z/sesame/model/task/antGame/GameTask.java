@@ -20,6 +20,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Random;
+import java.util.function.BooleanSupplier;
 
 /**
  * 游戏任务上报工具类
@@ -39,6 +40,12 @@ public enum GameTask {
     private final String channel;
     private final String version;
     private final int requestsPerEgg; // 完成1个🥚要多少次 为了防止网络崩溃 多加1次
+    private String cachedToken;
+    private String cachedTokenUid;
+    private long cachedTokenGeneration, cachedTokenAt;
+    private static final int CONNECT_TIMEOUT_MS = 5_000;
+    private static final int READ_TIMEOUT_MS = 8_000;
+    private static final long TOKEN_REUSE_MS = 5 * 60 * 1000L;
 
     /**
      * 根据小程序 appId 匹配游戏任务（金豆乐园游戏权益上报使用）
@@ -79,10 +86,6 @@ public enum GameTask {
     /**
      * 第一步：登录获取 Token
      */
-    private String login() {
-        return login(() -> { });
-    }
-
     private String login(Runnable checkpoint) {
         try {
             checkpoint.run();
@@ -115,8 +118,8 @@ public enum GameTask {
             conn.setRequestMethod("POST");
             conn.setInstanceFollowRedirects(false);
             // 防止外部游戏服连接挂起导致当前线程无限阻塞（主任务线程会因此冻结，只能重启恢复）
-            conn.setConnectTimeout(10_000);
-            conn.setReadTimeout(15_000);
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("alipayMiniMark", mark);
@@ -158,7 +161,7 @@ public enum GameTask {
                 if (data != null) {
                     Object value = data.opt("token");
                     if (!(value instanceof String) || ((String) value).trim().isEmpty()) return null;
-                    Log.other("登录成功✅Token已获取");
+                    Log.record("登录成功✅Token已获取[" + title + "]");
                     return (String) value;
                 }
             } else {
@@ -173,11 +176,36 @@ public enum GameTask {
         return null;
     }
 
+    private String ensureToken(Runnable checkpoint) {
+        checkpoint.run();
+        String uid = UserIdMap.getCurrentUid();
+        long generation = TaskLifecycle.generation(), now = System.currentTimeMillis();
+        synchronized (this) {
+            if (cachedToken != null && java.util.Objects.equals(uid, cachedTokenUid)
+                    && generation == cachedTokenGeneration && now >= cachedTokenAt && now - cachedTokenAt < TOKEN_REUSE_MS) return cachedToken;
+        }
+        // 登录在锁外完成；每个上报调用仍持有自己的 Token，避免并发串用。
+        String token = login(checkpoint);
+        checkpoint.run();
+        synchronized (this) {
+            cachedToken = token;
+            cachedTokenUid = uid;
+            cachedTokenGeneration = generation;
+            cachedTokenAt = System.currentTimeMillis();
+        }
+        return token;
+    }
+
+    private synchronized void invalidateToken(String token) {
+        if (java.util.Objects.equals(token, cachedToken)) cachedToken = null;
+    }
+
     /**
      * 外部调用：执行上报任务
      * @param eggCount 目标蛋数量
      */
     public void report(String gameType,int eggCount) {
+        if (eggCount <= 0 || eggCount > 1000) return;
         int totalNeeded = eggCount * (this.requestsPerEgg + 1); // 多1次确保网络请求不会错误
         final String reportUid = UserIdMap.getCurrentUid();
         // 提交前计数，覆盖等待线程启动的窗口。
@@ -190,7 +218,10 @@ public enum GameTask {
                         Log.record("任务流程🛑账号已切换，停止上报");
                         return;
                     }
-                    final String token = login();
+                    final String token = ensureToken(() -> {
+                        TimeUtil.sleep(0);
+                        if (!java.util.Objects.equals(reportUid, UserIdMap.getCurrentUid())) throw new TaskCancelledException();
+                    });
                     if (token == null || token.isEmpty()) {
                          Log.error("无法获取⚠️有效的Token，放弃上报任务");
                         return;
@@ -244,6 +275,11 @@ public enum GameTask {
      * @param channelOverride 非空时覆盖 action_finish_channel；为空用枚举默认渠道
      */
     public int reportSync(String gameType, int eggCount, String channelOverride) {
+        return reportSync(gameType, eggCount, channelOverride, null);
+    }
+
+    /** 每次受理后回查目标，达成即停止后续上报。 */
+    public int reportSync(String gameType, int eggCount, String channelOverride, BooleanSupplier reached) {
         if (eggCount <= 0 || eggCount > 1000) {
             return 0;
         }
@@ -260,7 +296,7 @@ public enum GameTask {
         if (work == null) throw new TaskCancelledException();
         try (TaskLifecycle.Work admitted = work) {
         int requiredSuccesses = eggCount * this.requestsPerEgg;
-        final String token = login(checkpoint);
+        final String token = ensureToken(checkpoint);
         if (token == null || token.isEmpty()) {
             Log.error("无法获取⚠️有效的Token，放弃上报任务");
             return 0;
@@ -273,6 +309,12 @@ public enum GameTask {
                 break;
             }
             successfulReports++;
+            checkpoint.run();
+            if (reached != null) {
+                boolean done = reached.getAsBoolean();
+                checkpoint.run();
+                if (done) break;
+            }
             if (i < requiredSuccesses) {
                 TimeUtil.sleep(new Random().nextInt(2001) + 1000);
                 checkpoint.run();
@@ -314,8 +356,8 @@ public enum GameTask {
             conn.setRequestMethod("POST");
             conn.setInstanceFollowRedirects(false);
             // 防止外部游戏服连接挂起导致当前线程无限阻塞（reportSync 在主任务线程同步执行）
-            conn.setConnectTimeout(10_000);
-            conn.setReadTimeout(15_000);
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
             conn.setDoOutput(true);
             conn.setRequestProperty("authorization", token);
             conn.setRequestProperty("alipayMiniMark", mark);
@@ -333,7 +375,11 @@ public enum GameTask {
 
             // 处理响应
             int respCode = conn.getResponseCode();
-            if (respCode < 200 || respCode >= 300) return false;
+            if (respCode < 200 || respCode >= 300) {
+                invalidateToken(token);
+                Log.error("游戏SDK上报未受理#次数[" + current + "]#HTTP[" + respCode + "]");
+                return false;
+            }
             StringBuilder responseText = new StringBuilder();
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                     respCode >= 200 && respCode <= 299 ? conn.getInputStream() : conn.getErrorStream(),
@@ -359,6 +405,7 @@ public enum GameTask {
                 }
                 return true;
             } else {
+                invalidateToken(token);
                 Log.error("游戏SDK未接受上报#次数[" + current + "]#HTTP[" + respCode + "]#code[" + resJson.optInt("code", 0) + "]");
                 return false;
             }

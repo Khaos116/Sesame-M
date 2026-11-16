@@ -271,6 +271,9 @@ public class NpcCheck {
         normal.animals=new NormalSendBackCheck.Animal[]{new NormalSendBackCheck.Animal("NPC"),
             new NormalSendBackCheck.Animal("WORK"),new NormalSendBackCheck.Animal("GUEST"),new NormalSendBackCheck.Animal("NORMAL")};
         normal.sendBackAnimal();assert AntFarmRpcCall.normalSends==1 : "generic send-back must only act on the ordinary visitor";
+        NormalSendBackCheck.Animal mislabeled=new NormalSendBackCheck.Animal("NORMAL");mislabeled.animalId=FARM_NPC_IDS[1];
+        normal.animals=new NormalSendBackCheck.Animal[]{mislabeled};normal.sendBackAnimal();
+        assert AntFarmRpcCall.normalSends==1 : "known special NPC must be preserved even when subtype is misreported";
         System.out.println("PASS NPC disabled/config, slots, hire/protected full/switch, pending rewards, malformed state, leave/arrival confirmation, uncertainty, cancellation, generic send-back exclusion and RPC args");
     }
 }
