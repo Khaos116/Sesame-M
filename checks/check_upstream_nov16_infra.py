@@ -39,6 +39,84 @@ public class InfraCheck {
   static String toJsonString(Object o){try{return MAPPER.writeValueAsString(o);}catch(Exception e){throw new IllegalArgumentException(e);}}
   @@REWRITE@@
  }
+ static class RegistrationReplay {
+  enum ModelGroup { BASE }
+  static class ModelFields extends LinkedHashMap<String,Object> {}
+  static class ModelConfig {
+   final String code;ModelConfig(Model model){code=model.getClass().getSimpleName();}
+   String getCode(){return code;}ModelGroup getGroup(){return ModelGroup.BASE;}
+  }
+  static class Model {
+   static boolean fail;
+   static final List<Class<? extends Model>> modelClazzList=List.of(Good.class,Failing.class);
+   static final Model[] modelArray=new Model[2];
+   static final Map<Class<? extends Model>,Model> modelMap=new HashMap<>();
+   static final Map<String,ModelConfig> modelConfigMap=new LinkedHashMap<>();
+   static final Map<ModelGroup,Map<String,ModelConfig>> groupModelConfigMap=new HashMap<>();
+   static void destroyAllModel(){Arrays.fill(modelArray,null);modelMap.clear();modelConfigMap.clear();groupModelConfigMap.clear();}
+   @@MODELREGISTER@@
+   @@MODELCOMPLETE@@
+  }
+  public static class Good extends Model {public Good(){}}
+  public static class Failing extends Model {public Failing(){if(fail)throw new IllegalStateException("registration failed");}}
+  static class Config {
+   final Map<String,ModelFields> modelFieldsMap=new LinkedHashMap<>();
+   static final Config INSTANCE=new Config();static final Map<String,String> valueBaseline=new HashMap<>();static String lastSyncedText;
+   static final String TAG="config";
+   public void setModelFieldsMap(Map<String,ModelFields> input){modelFieldsMap.clear();for(String name:Model.modelConfigMap.keySet()){ModelFields fields=new ModelFields();fields.put("enable",false);if(input!=null&&input.get(name)!=null)fields.putAll(input.get(name));modelFieldsMap.put(name,fields);}}
+   void setInit(boolean value){}static void unload(){}static void clampAllFields(){}
+   static class UserEntity {String getShowName(){return "A";}}
+   static class UserIdMap {static UserEntity get(String uid){return null;}}
+   @@CONFIGLOAD@@
+   @@CONFIGRESTORE@@
+   static String disk;static int writes;static Map<String,Object> collectChangedFields(){return Map.of("Good|enable",false);}
+   static boolean isModify(String uid){return true;}static boolean mergeDiskChanges(String uid){return false;}static void captureBaseline(){}
+   String toSaveStr(){return JsonUtil.toJsonString(Map.of("modelFieldsMap",modelFieldsMap));}
+   static class FileUtil {
+    static File getDefaultConfigV2File(){return new File(root,"registration-default.json");}
+    static File getConfigV2File(String uid){return new File(root,"registration-"+uid+".json");}
+    static File findLatestBackupFile(String uid){return new File(root,"registration-backup.json");}
+    static String readFromFile(File f){try{return f.exists()?Files.readString(f.toPath()):"";}catch(IOException e){throw new IllegalStateException(e);}}
+    static boolean write2File(String json,File f){try{Files.writeString(f.toPath(),json);writes++;return true;}catch(IOException e){throw new IllegalStateException(e);}}
+    static void backupConfigV2BeforeWrite(String uid){}static void backupConfigV2WithRolling(String uid){}
+    static boolean setDefaultConfigV2File(String json){disk=json;writes++;return true;}
+    static boolean setConfigV2File(String uid,String json){return setDefaultConfigV2File(json);}
+   }
+   @@CONFIGSAVE@@
+   @@KNOWNPATHS@@
+  }
+  static void check()throws Exception {
+   String saved="{\"modelFieldsMap\":{\"Good\":{\"enable\":true},\"Failing\":{\"enable\":true}}}";
+   String partial="{\"modelFieldsMap\":{\"Good\":{\"enable\":true}}}";
+   Model.fail=true;Model.initAllModel();
+   assert Model.modelConfigMap.containsKey("Good")&&!Model.modelConfigMap.containsKey("Failing");
+   Config config=new Config();
+   for(String name:Model.modelConfigMap.keySet()){ModelFields fields=new ModelFields();fields.put("enable",true);config.modelFieldsMap.put(name,fields);}
+   assert !JsonUtil.isRewriteLossless(saved,partial,config.collectKnownFieldPaths()):"failed model registration authorized deletion of saved configuration";
+   Config.INSTANCE.modelFieldsMap.putAll(config.modelFieldsMap);Config.INSTANCE.modelFieldsMap.get("Good").put("enable",false);
+   Config.disk=saved;Config.valueBaseline.put("Good|enable","true");
+   for(boolean force:List.of(false,true))assert !Config.save("A",force)&&saved.equals(Config.disk)&&Config.writes==0:"partial registration save overwrote missing model, force="+force;
+   Model.fail=false;Model.initAllModel();
+   for(String name:Model.modelConfigMap.keySet()){ModelFields fields=new ModelFields();fields.put("enable",true);config.modelFieldsMap.put(name,fields);}
+   Config.INSTANCE.modelFieldsMap.putAll(config.modelFieldsMap);
+   assert Config.save("A",false)&&Config.writes==1:"complete registration blocked normal save";
+   assert Config.save("A",true)&&Config.writes==2:"complete registration blocked force save";
+   File main=Config.FileUtil.getConfigV2File("A"),backup=Config.FileUtil.findLatestBackupFile("A"),defaults=Config.FileUtil.getDefaultConfigV2File();
+   Model.fail=true;Model.initAllModel();Files.writeString(main.toPath(),saved);Config.writes=0;
+   Config.load("A");assert Files.readString(main.toPath()).equals(saved)&&Config.writes==0:"partial registry reformatted valid main";
+   Files.writeString(main.toPath(),"broken");Files.writeString(backup.toPath(),saved);
+   Config.load("A");assert Files.readString(main.toPath()).equals("broken")&&Files.readString(backup.toPath()).equals(saved)&&Config.writes==0:"partial registry overwrote corrupt main with truncated backup";
+   Files.delete(backup.toPath());Config.load("A");assert Files.readString(main.toPath()).equals("broken")&&Config.writes==0:"partial registry reset corrupt main";
+   Files.delete(main.toPath());Config.load("A");assert !main.exists()&&Config.writes==0:"partial registry created incomplete defaults";
+   Files.writeString(defaults.toPath(),saved);Config.load("A");assert !main.exists()&&Files.readString(defaults.toPath()).equals(saved)&&Config.writes==0:"partial registry copied account defaults";
+   Files.delete(defaults.toPath());Model.fail=false;Model.initAllModel();Files.writeString(main.toPath(),"broken");Files.writeString(backup.toPath(),saved);
+   Config.load("A");assert JsonUtil.MAPPER.readTree(Files.readString(main.toPath())).path("modelFieldsMap").has("Failing"):"complete registry failed backup recovery";
+   Files.delete(backup.toPath());Files.writeString(main.toPath(),"broken");Config.load("A");assert JsonUtil.MAPPER.readTree(Files.readString(main.toPath())).path("modelFieldsMap").has("Failing"):"complete registry failed reset";
+   Files.delete(main.toPath());Config.load("A");assert main.exists():"complete registry failed initial config creation";
+   String retired="{\"modelFieldsMap\":{\"Good\":{\"enable\":true},\"Failing\":{\"enable\":true},\"Retired\":{\"enable\":true}}}";
+   assert JsonUtil.isRewriteLossless(retired,saved,config.collectKnownFieldPaths()):"complete registration no longer permits retired group cleanup";
+  }
+ }
  static class FileUtil {
   static final String TAG="file",HOST_LOCK_FILE_NAME="host.lock",BACKUP_FILE_PREFIX="config_v2_";
   static final File MAIN_DIRECTORY_FILE=new File(root,"shared"),CONFIG_DIRECTORY_FILE=new File(MAIN_DIRECTORY_FILE,"config");
@@ -179,10 +257,11 @@ public class InfraCheck {
  static void drain(){while(!ApplicationHook.Thread.jobs.isEmpty())ApplicationHook.Thread.jobs.remove().run();assert TaskLifecycle.isIdle();}
  static void resetHost(){ApplicationHook.initCalls=0;ApplicationHook.initAdmitted=false;ApplicationHook.Thread.jobs.clear();ConfigV2.loads=0;ModelTask.stops=ModelTask.named=ModelTask.groups=ModelTask.all=0;UserIdMap.uid="A";AppConfig.INSTANCE.agreementVersion=Agreement.VERSION;AppConfig.diskVersion=Agreement.VERSION;}
  public static void main(String[] args)throws Exception {
+
   TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));
   assert JsonUtil.toJsonString(new Date(0)).equals("\"1970-01-01 08:00:00\"");
   assert JsonUtil.MAPPER.readValue("\"1970-01-01 08:00:00\"",Date.class).getTime()==0;
-  root=new File(args[0]);FileUtil.MAIN_DIRECTORY_FILE.mkdirs();
+  root=new File(args[0]);FileUtil.MAIN_DIRECTORY_FILE.mkdirs();RegistrationReplay.check();
   Set<String> known=Set.of("modelFieldsMap","modelFieldsMap.Current","modelFieldsMap.Current.keep");
   String src="{\"modelFieldsMap\":{\"Current\":{\"keep\":{\"value\":{\"token\":\"private-token-value\",\"n\":2}},\"retired\":{\"value\":1}},\"Retired\":{}},\"obsoleteRoot\":1}";
   String good="{\"modelFieldsMap\":{\"Current\":{\"keep\":{\"value\":{\"token\":\"private-token-value\",\"n\":2}}}},\"obsoleteRoot\":1}";
@@ -277,12 +356,18 @@ public class InfraCheck {
   assert profile.onPost(session,"").code==200&&ApplicationHook.profileOpens==opens+1:"POST profile action unavailable";
   assert new ControlHandler("token","status").onGet(session).code==200&&ApplicationHook.statusCalls==statuses+1;
   for(String op:List.of("reLogin","restart","reloadConfig","execute","forestQuery","walkPath"))assert new ControlHandler("token",op).onGet(session).code==405:op;
-  System.out.println("PASS Nov16 infra: known-path preservation, secret-free diagnostics, map read retries/corrupt file protection, agreement rollback/GMT8, directed pairing/token/alarm, generation/account controls, deletion lease and host lock");
+  System.out.println("PASS Nov16 infra: failed-registration preservation, known-path preservation, secret-free diagnostics, map read retries/corrupt file protection, agreement rollback/GMT8, directed pairing/token/alarm, generation/account controls, deletion lease and host lock");
  }
 }
 '''
 
 replace = {
+    "@@CONFIGLOAD@@": method("data/ConfigV2.java", "public static synchronized ConfigV2 load(").replace("ConfigV2 load", "Config load"),
+    "@@CONFIGRESTORE@@": method("data/ConfigV2.java", "private static boolean restoreFromBackup("),
+    "@@CONFIGSAVE@@": method("data/ConfigV2.java", "public static synchronized Boolean save("),
+    "@@MODELREGISTER@@": method("data/Model.java", "public static synchronized void initAllModel("),
+    "@@MODELCOMPLETE@@": method("data/Model.java", "public static synchronized boolean isRegistrationComplete("),
+    "@@KNOWNPATHS@@": method("data/ConfigV2.java", "public Set<String> collectKnownFieldPaths("),
     "@@UID@@": method("util/AccountFolderName.java", "public static boolean isValidUid("),
     "@@REWRITE@@": rewrite_methods,
     "@@JSON_INIT@@": method("util/JsonUtil.java", "    static {"),

@@ -129,9 +129,12 @@ public class ConfigV2 {
      * 代码里认识的配置键路径（组级 + 字段级，含 {@code modelFieldsMap} 本身），
      * 供「格式化回写」判定区分"数据丢失"与"清掉代码里已删除的废弃键"。
      * 依据是 {@link #setModelFieldsMap} 只保留 ModelConfig 注册过的组与字段。
+     * 模型注册不完整时返回 null，要求回写检查保留所有原有键。
      */
     @JsonIgnore
     public Set<String> collectKnownFieldPaths() {
+        // 注册不完整时退回严格检查，不能把暂时缺失的模型配置当作废弃键删除。
+        if (!Model.isRegistrationComplete()) return null;
         Set<String> paths = new LinkedHashSet<>();
         paths.add("modelFieldsMap");
         for (Map.Entry<String, ModelFields> entry : modelFieldsMap.entrySet()) {
@@ -225,6 +228,10 @@ public class ConfigV2 {
     }
 
     public static synchronized Boolean save(String userId, Boolean force) {
+        if (!Model.isRegistrationComplete()) {
+            Log.record("配置保存失败#模型注册不完整，保留磁盘配置，请重新加载后重试");
+            return false;
+        }
         // 本进程没有任何字段级改动时直接返回：写盘只会把磁盘上本进程不认识的键整份覆盖丢失
         if (!valueBaseline.isEmpty() && collectChangedFields().isEmpty()) {
             return true;
@@ -261,6 +268,8 @@ public class ConfigV2 {
     public static synchronized ConfigV2 load(String userId) {
         String userName = "";
         File configV2File = null;
+        boolean canWrite = Model.isRegistrationComplete();
+        if (!canWrite) Log.record("模型注册不完整#本次配置仅加载到内存，保留磁盘原文");
         try {
             if (StringUtil.isEmpty(userId)) {
                 configV2File = FileUtil.getDefaultConfigV2File();
@@ -279,7 +288,7 @@ public class ConfigV2 {
                 String json = FileUtil.readFromFile(configV2File);
                 JsonUtil.copyMapper().readerForUpdating(INSTANCE).readValue(json);
                 String formatted = INSTANCE.toSaveStr();
-                if (formatted != null && !formatted.equals(json)) {
+                if (canWrite && formatted != null && !formatted.equals(json)) {
                     // 回写允许改格式、也允许清掉代码里已删除的废弃键；其余数据差异一律保留磁盘原文
                     Set<String> knownPaths = INSTANCE.collectKnownFieldPaths();
                     if (!JsonUtil.isRewriteLossless(json, formatted, knownPaths)) {
@@ -301,12 +310,12 @@ public class ConfigV2 {
                     String json = FileUtil.readFromFile(defaultConfigV2File);
                     JsonUtil.copyMapper().readerForUpdating(INSTANCE).readValue(json);
                     Log.i(TAG, "复制新配置: " + userName);
-                    FileUtil.write2File(json, configV2File);
+                    if (canWrite) FileUtil.write2File(json, configV2File);
                 } else {
                     INSTANCE.setModelFieldsMap(null);
                     unload();
                     Log.i(TAG, "初始新配置: " + userName);
-                    FileUtil.write2File(INSTANCE.toSaveStr(), configV2File);
+                    if (canWrite) FileUtil.write2File(INSTANCE.toSaveStr(), configV2File);
                 }
             }
         } catch (Throwable t) {
@@ -316,7 +325,7 @@ public class ConfigV2 {
                 Log.i(TAG, "重置配置: " + userName);
                 INSTANCE.setModelFieldsMap(null);
                 unload();
-                if (configV2File != null) {
+                if (canWrite && configV2File != null) {
                     FileUtil.write2File(INSTANCE.toSaveStr(), configV2File);
                 }
             }
@@ -372,7 +381,7 @@ public class ConfigV2 {
             INSTANCE.setModelFieldsMap(null);
             unload();
             JsonUtil.copyMapper().readerForUpdating(INSTANCE).readValue(json);
-            if (configV2File != null) {
+            if (Model.isRegistrationComplete() && configV2File != null) {
                 FileUtil.write2File(INSTANCE.toSaveStr(), configV2File);
             }
             Log.record("配置解析失败，已从备份恢复: " + backupFile.getName());

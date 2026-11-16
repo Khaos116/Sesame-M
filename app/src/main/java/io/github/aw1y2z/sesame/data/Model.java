@@ -72,6 +72,11 @@ public abstract class Model {
         return readOnlyModelConfigMap;
     }
 
+    /** 注册失败的模型不是已废弃模型，配置加载不得据此清理磁盘里的配置组。 */
+    public static synchronized boolean isRegistrationComplete() {
+        return modelConfigMap.size() == modelClazzList.size();
+    }
+
     public static Set<ModelGroup> getGroupModelConfigGroupSet() {
         return groupModelConfigMap.keySet();
     }
